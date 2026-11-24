@@ -18,7 +18,7 @@ import {
   RESERVED_PREFIX,
   SECRET_NAME,
 } from "@preprocess/sdk/protocol";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import {
