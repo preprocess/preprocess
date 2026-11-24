@@ -20,9 +20,11 @@ import { auditRoutes } from "./routes/audit.ts";
 import { devRoutes } from "./routes/dev.ts";
 import { groupRoutes } from "./routes/groups.ts";
 import { organizationRoutes } from "./routes/organization.ts";
+import { mcpCallback, mcpRoutes } from "./routes/mcp.ts";
 import { secretRoutes } from "./routes/secrets.ts";
 
 export { Counter } from "./counter.ts";
+export { McpService } from "./mcp.ts";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -65,9 +67,11 @@ orgApi.route("/", groupRoutes);
 orgApi.route("/", auditRoutes);
 orgApi.route("/", agentRoutes);
 orgApi.route("/", secretRoutes);
+orgApi.route("/", mcpRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
+v1.route("/", mcpCallback);
 v1.doc31("/openapi.json", {
   openapi: "3.1.0",
   info: { title: "Preprocess API", version: "1" },

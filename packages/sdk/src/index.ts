@@ -223,6 +223,7 @@ export const agent = <const S extends string = never>(
     name: string,
     call: ToolCall,
     env: Env,
+    mcp: McpBinding | undefined,
   ): Promise<ToolResult> => {
     const definitionTool = definition.tools[name];
     if (!definitionTool)
@@ -250,7 +251,7 @@ export const agent = <const S extends string = never>(
           throw new Error(
             `MCP server ${server} is not declared in this agent's mcp list`,
           );
-        const binding = env.MCP;
+        const binding = mcp;
         if (!binding) throw new Error("This deployment has no MCP binding");
         return {
           listTools: () => binding.listTools(server),
@@ -276,7 +277,11 @@ export const agent = <const S extends string = never>(
 
   return {
     manifest,
-    async fetch(request: Request, env: Env): Promise<Response> {
+    async fetch(
+      request: Request,
+      env: Env,
+      ctx?: ExecutionContext,
+    ): Promise<Response> {
       redactConsole(bound(env));
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/manifest")
@@ -309,7 +314,13 @@ export const agent = <const S extends string = never>(
       const match = /^\/tools\/([a-z][a-z0-9_]*)$/.exec(url.pathname);
       if (request.method === "POST" && match?.[1]) {
         return Response.json(
-          await runTool(match[1], await request.json<ToolCall>(), env),
+          await runTool(
+            match[1],
+            await request.json<ToolCall>(),
+            env,
+            // The runtime passes the MCP capability with each dispatch.
+            (ctx?.props as { MCP?: McpBinding } | undefined)?.MCP ?? env.MCP,
+          ),
         );
       }
       return Response.json({ error: "not found" }, { status: 404 });

@@ -15,6 +15,7 @@ import {
   secretGrants,
   type WaitingFor,
 } from "@preprocess/db/schema/deployments";
+import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { secrets } from "@preprocess/db/schema/secrets";
 import { MODELS, PROTOCOL, REASONING } from "@preprocess/sdk/protocol";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
@@ -130,7 +131,7 @@ export const syncDeployment = async (
   deploymentId: string,
   actor: Actor,
 ): Promise<string[]> => {
-  const { deployment, bound, waiting, delivered } = await withOrg(
+  const { deployment, bound, waiting, waitingMcp, delivered } = await withOrg(
     env,
     org,
     async (tx) => {
@@ -150,9 +151,20 @@ export const syncDeployment = async (
         .from(secretDeliveries)
         .innerJoin(secrets, eq(secrets.id, secretDeliveries.secretId))
         .where(eq(secretDeliveries.deploymentId, deploymentId));
+      const declaredMcp = (deployment.manifest as Manifest).mcp;
+      const granted = declaredMcp.length
+        ? await tx
+            .select({ slug: mcpServers.slug })
+            .from(mcpGrants)
+            .innerJoin(mcpServers, eq(mcpServers.id, mcpGrants.serverId))
+            .where(eq(mcpGrants.agentId, deployment.agentId))
+        : [];
       return {
         deployment,
         delivered,
+        waitingMcp: declaredMcp.filter(
+          (slug) => !granted.some((g) => g.slug === slug),
+        ),
         ...(await boundSecrets(env, tx, org, deployment.agentId, declared)),
       };
     },
@@ -214,16 +226,19 @@ export const syncDeployment = async (
     const status =
       deployment.status === "failed"
         ? "failed"
-        : waiting.length
+        : waiting.length || waitingMcp.length
           ? "waiting"
           : "ready";
-    const waitingFor: WaitingFor = waiting.length ? { secrets: waiting } : {};
+    const waitingFor: WaitingFor = {
+      ...(waiting.length && { secrets: waiting }),
+      ...(waitingMcp.length && { mcp: waitingMcp }),
+    };
     await tx
       .update(deployments)
       .set({ status, waitingFor })
       .where(eq(deployments.id, deploymentId));
   });
-  return waiting;
+  return [...waiting, ...waitingMcp.map((slug) => `MCP server ${slug}`)];
 };
 
 // Live scripts (doc 03): the production deployment and the newest deployment
@@ -398,7 +413,7 @@ export const promote = async (
   const waiting = await syncDeployment(env, org, deploymentId, actor);
   if (waiting.length)
     throw new HTTPException(409, {
-      message: `deployment is waiting for secret grants: ${waiting.join(", ")}`,
+      message: `deployment is waiting for grants: ${waiting.join(", ")}`,
     });
   await withOrg(env, org, async (tx) => {
     const [row] = await tx

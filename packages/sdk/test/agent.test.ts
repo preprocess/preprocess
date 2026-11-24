@@ -46,6 +46,7 @@ const call = async (
   name: string,
   input: unknown,
   e: Record<string, unknown> = env,
+  props?: Record<string, unknown>,
 ) => {
   const response = await sample.fetch(
     new Request(`https://agent/tools/${name}`, {
@@ -53,6 +54,7 @@ const call = async (
       body: JSON.stringify({ input, case: { id: "case_1" }, callId: "c1" }),
     }),
     e,
+    props && ({ props } as unknown as ExecutionContext),
   );
   return response.json<ToolResult>();
 };
@@ -175,7 +177,7 @@ describe("tool calls", () => {
     });
   });
 
-  it("calls declared MCP servers through the platform binding", async () => {
+  it("calls declared MCP servers through the capability the runtime passes", async () => {
     const mcp: McpBinding = {
       listTools: () => Promise.resolve([]),
       call: (server, toolName, args, opts) =>
@@ -190,6 +192,9 @@ describe("tool calls", () => {
       },
       isError: false,
     });
+    expect(
+      await call("contact", { q: "ada" }, env, { MCP: mcp }),
+    ).toMatchObject({ output: { server: "crm" }, isError: false });
     expect(await call("other", {}, { ...env, MCP: mcp })).toMatchObject({
       isError: true,
       output: expect.stringContaining("not declared") as string,

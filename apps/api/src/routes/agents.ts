@@ -27,7 +27,10 @@ const Deployment = z
     agentId: z.string(),
     status: z.enum(["ready", "waiting", "failed"]),
     production: z.boolean(),
-    waitingFor: z.object({ secrets: z.array(z.string()).optional() }),
+    waitingFor: z.object({
+      secrets: z.array(z.string()).optional(),
+      mcp: z.array(z.string()).optional(),
+    }),
     sdkVersion: z.string(),
     model: z.string(),
     reasoning: z.string(),

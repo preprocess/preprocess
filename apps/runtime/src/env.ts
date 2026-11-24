@@ -10,7 +10,10 @@ export type Env = {
   // runtime cannot emulate one, so local dev and tests bind
   // apps/namespace-local instead.
   DISPATCHER?: DispatchNamespace;
-  LOCAL_NAMESPACE?: Fetcher;
+  LOCAL_NAMESPACE?: LocalNamespace;
+  // The API Worker's MCP token service (design doc 03). The runtime hands
+  // each dispatch an McpBroker capability that calls it.
+  MCP_SERVICE?: McpService;
   // The API Worker's internal entrypoint: the one writer of the case index,
   // and the OCR service for files (design doc 04). Unbound in the runtime's
   // own tests, where reports are only captured.
@@ -18,6 +21,32 @@ export type Env = {
 };
 
 export type NetworkRules = { allow: string[]; block: string[] };
+
+export type McpProps = {
+  organizationId: string;
+  agentId: string;
+  deploymentId: string;
+};
+
+export type McpService = {
+  listTools(props: McpProps, server: string): Promise<unknown>;
+  call(
+    props: McpProps,
+    server: string,
+    tool: string,
+    args: unknown,
+  ): Promise<unknown>;
+};
+
+// apps/namespace-local: dispatch with props, as a dispatch namespace does.
+export type LocalNamespace = {
+  dispatch(
+    script: string,
+    outbound: { organizationId: string; network: string },
+    props: Record<string, unknown>,
+    request: Request,
+  ): Promise<Response>;
+};
 
 // What the runtime needs to know about the deployment a case runs on. The
 // platform's deployment record supplies it; agent code never does.

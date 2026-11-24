@@ -15,7 +15,7 @@ export type Deployment = {
   status: "ready" | "waiting" | "failed";
   environment: "production" | "preview";
   production: boolean;
-  waitingFor: { secrets?: string[] };
+  waitingFor: { secrets?: string[]; mcp?: string[] };
   sdkVersion: string;
   tools: string[];
 };
@@ -99,7 +99,12 @@ export const deploy = async (options: DeployOptions): Promise<Deployment> => {
 
 export const describe = (agent: string, d: Deployment) => {
   if (d.status === "failed") return `${agent}: deployment ${d.id} failed`;
-  if (d.status === "waiting")
-    return `${agent}: deployment ${d.id} is waiting for secret grants: ${(d.waitingFor.secrets ?? []).join(", ")}`;
+  if (d.status === "waiting") {
+    const grants = [
+      ...(d.waitingFor.secrets ?? []).map((s) => `secret ${s}`),
+      ...(d.waitingFor.mcp ?? []).map((m) => `MCP server ${m}`),
+    ];
+    return `${agent}: deployment ${d.id} is waiting for grants: ${grants.join(", ")}`;
+  }
   return `${agent}: deployment ${d.id} is ready (${d.production ? "serving production" : d.environment})`;
 };

@@ -139,7 +139,10 @@ const configs: Record<string, object> = {
       { tag: "v1", new_sqlite_classes: Object.values(runtimeDurableObjects) },
     ],
     r2_buckets: [{ binding: "RUNS", bucket_name: local.runs }],
-    services: [{ binding: "LOCAL_NAMESPACE", service: local.localNamespace }],
+    services: [
+      { binding: "LOCAL_NAMESPACE", service: local.localNamespace },
+      { binding: "MCP_SERVICE", service: local.api, entrypoint: "McpService" },
+    ],
   },
   "apps/outbound": {
     $schema: "node_modules/wrangler/config-schema.json",

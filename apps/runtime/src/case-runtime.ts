@@ -520,7 +520,7 @@ export class CaseRuntime extends DurableObject<Env> {
     harness: ({ storage, context, onWake }) => {
       const meta = this.meta();
       if (!meta) throw new Error("case has not started");
-      const worker = agentWorker(this.env, meta);
+      const worker = agentWorker(this.env, meta, this.ctx.exports);
       const tools = meta.manifest.tools.map((tool) =>
         defineTool({
           name: tool.name,
