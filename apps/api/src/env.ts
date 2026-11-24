@@ -5,6 +5,7 @@ import type { BuildQueue } from "./builds.ts";
 import type { Counter } from "./counter.ts";
 import type { Scheduler } from "./scheduler.ts";
 import type { Namespace } from "./namespace.ts";
+import type { OtelRetry } from "./otel.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import type { EffectiveSettings } from "./settings.ts";
 
@@ -185,7 +186,7 @@ export type Env = {
   // consumer writes the store and the Postgres summaries. LOG_STORE "sql" is
   // the Pipelines stream plus R2 SQL on deployed stages; anything else keeps
   // NDJSON in LOG_BUCKET, which is how local development and tests run.
-  LOGS: Queue<LogRecord>;
+  LOGS: Queue<LogRecord | OtelRetry>;
   LOG_BUCKET: R2Bucket;
   LOG_STORE?: string;
   LOG_STREAM?: Pipeline;

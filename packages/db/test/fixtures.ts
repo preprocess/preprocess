@@ -46,6 +46,7 @@ import {
   organizationDefaults,
 } from "../src/schema/settings.ts";
 import { logSummaries } from "../src/schema/logs.ts";
+import { otelExports } from "../src/schema/otel.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
   mcpAuthorizations,
@@ -363,6 +364,13 @@ export const seedOrganization = async (name: string) =>
       firstAt: new Date(),
       lastAt: new Date(),
     });
+    await tx.insert(otelExports).values({
+      organizationId: org,
+      endpoint: "https://otel.example.com",
+      keyVersion: 1,
+      headersCiphertext: new Uint8Array([1]),
+      updatedBy: userId,
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -424,6 +432,7 @@ export const tenantTables = {
   organization_defaults: "organization_id",
   agent_overrides: "organization_id",
   log_summaries: "organization_id",
+  otel_exports: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

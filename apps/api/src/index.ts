@@ -34,7 +34,9 @@ import { scheduleRoutes } from "./routes/schedules.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { spendingRoutes } from "./routes/spending.ts";
 import { ingestLogs, sendLogs } from "./logs.ts";
+import { exportLogs, type OtelRetry } from "./otel.ts";
 import { logRoutes } from "./routes/logs.ts";
+import { otelRoutes } from "./routes/otel.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
@@ -108,6 +110,7 @@ orgApi.route("/", settingsRoutes);
 orgApi.route("/", scheduleRoutes);
 orgApi.route("/", webhookRoutes);
 orgApi.route("/", logRoutes);
+orgApi.route("/", otelRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
@@ -167,13 +170,20 @@ export default {
     ctx.waitUntil(anchorAll(env, new Date(controller.scheduledTime)));
     ctx.waitUntil(deleteExpiredIdempotencyKeys(env));
   },
-  async queue(batch: MessageBatch<Job | OutboxMessage | LogRecord>, env: Env) {
+  async queue(
+    batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,
+    env: Env,
+  ) {
     if (batch.queue.startsWith("preprocess-logs-")) {
-      // A failed store write retries the whole batch.
-      await ingestLogs(
-        env,
-        batch.messages.map((m) => m.body as LogRecord),
-      );
+      // A failed store write retries the whole batch; a failed export
+      // retries only the export.
+      const bodies = batch.messages.map((m) => m.body as LogRecord | OtelRetry);
+      const fresh = bodies.filter((b): b is LogRecord => !("otelRetry" in b));
+      if (fresh.length) await ingestLogs(env, fresh);
+      await exportLogs(env, [
+        ...fresh.map((record) => ({ otelRetry: 0, record })),
+        ...bodies.filter((b): b is OtelRetry => "otelRetry" in b),
+      ]);
       batch.ackAll();
       return;
     }

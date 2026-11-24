@@ -11,11 +11,15 @@ import { vi } from "vitest";
 
 import worker from "../src/index.ts";
 import type { Env } from "../src/env.ts";
+import type { OtelRetry } from "../src/otel.ts";
 
 export const sent: { to: string; subject: string; text: string }[] = [];
 
 // Run-log records the API queued (design doc 09), instead of the local queue.
 export const logged: LogRecord[] = [];
+// Records an OpenTelemetry export put back on the queue for another attempt.
+export const retried: { body: OtelRetry; delaySeconds: number | undefined }[] =
+  [];
 
 // Email goes to this list instead of the local runtime's file sink.
 // Our cloud by default, where sign-up is open; self-hosted tests unset the region.
@@ -29,11 +33,16 @@ export const testEnv = (overrides: Partial<Env> = {}): Env => ({
     }),
   } as unknown as SendEmail,
   LOGS: {
-    sendBatch: (messages: { body: LogRecord }[]) => {
-      logged.push(...messages.map((m) => m.body));
+    sendBatch: (
+      messages: { body: LogRecord | OtelRetry; delaySeconds?: number }[],
+    ) => {
+      for (const m of messages)
+        if ("otelRetry" in m.body)
+          retried.push({ body: m.body, delaySeconds: m.delaySeconds });
+        else logged.push(m.body);
       return Promise.resolve();
     },
-  } as unknown as Queue<LogRecord>,
+  } as unknown as Queue<LogRecord | OtelRetry>,
   ...overrides,
 });
 
