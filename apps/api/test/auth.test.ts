@@ -173,4 +173,16 @@ describe("API keys", () => {
     const bogus = new Client(testEnv(), { authorization: "Bearer pp_nope" });
     expect((await bogus.call(`/v1/orgs/${org}/groups`)).status).toBe(401);
   });
+
+  it("are not capped at a handful of requests a day", async () => {
+    const { client } = await signUp("Busy");
+    const org = await createOrganization(client, "Busy");
+    const created = await client.call<{ key: string }>(
+      "/api/auth/api-key/create",
+      { body: { name: "cli", organizationId: org } },
+    );
+    const keyed = new Client(testEnv(), { "x-api-key": created.body.key });
+    for (let call = 0; call < 15; call++)
+      expect((await keyed.call(`/v1/orgs/${org}/groups`)).status).toBe(200);
+  });
 });
