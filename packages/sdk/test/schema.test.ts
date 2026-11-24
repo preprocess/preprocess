@@ -578,6 +578,7 @@ describe("effects", () => {
     expect(await call("escalate", { group: "finance" })).toEqual({
       output: "Group finance is not declared in this agent's groups list",
       isError: true,
+      threw: true,
     });
   });
 });

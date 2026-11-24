@@ -208,6 +208,7 @@ describe("tool calls", () => {
     expect(await call("fail", {})).toEqual({
       output: "ERP refused token [redacted:ERP_TOKEN]",
       isError: true,
+      threw: true,
     });
   });
 
