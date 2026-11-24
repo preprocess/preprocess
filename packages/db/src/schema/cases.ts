@@ -240,6 +240,7 @@ export const outboxKind = pgEnum("outbox_kind", [
   "webhook",
   "email",
   "secret.sync",
+  "eval.start",
 ]);
 
 export const outbox = pgTable(

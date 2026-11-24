@@ -46,6 +46,12 @@ import {
   organizationDefaults,
 } from "../src/schema/settings.ts";
 import { logSummaries } from "../src/schema/logs.ts";
+import {
+  evalResults,
+  evalRuns,
+  evalSuiteCases,
+  evalSuites,
+} from "../src/schema/evals.ts";
 import { otelExports } from "../src/schema/otel.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
@@ -371,6 +377,40 @@ export const seedOrganization = async (name: string) =>
       headersCiphertext: new Uint8Array([1]),
       updatedBy: userId,
     });
+    const suiteId = newId("evalSuite");
+    const runId = newId("evalRun");
+    await tx.insert(evalSuites).values({
+      id: suiteId,
+      organizationId: org,
+      agentId,
+      name: "Completed cases",
+      kind: "automatic",
+      cap: 100,
+      createdBy: userId,
+    });
+    await tx.insert(evalSuiteCases).values({
+      organizationId: org,
+      suiteId,
+      caseId,
+      input: { text: "hello" },
+      captureKey: "run.json",
+    });
+    await tx.insert(evalRuns).values({
+      id: runId,
+      organizationId: org,
+      suiteId,
+      deploymentId,
+      model: "stub",
+      trigger: "manual",
+      status: "running",
+      createdBy: userId,
+    });
+    await tx.insert(evalResults).values({
+      organizationId: org,
+      runId,
+      caseId,
+      status: "running",
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -433,6 +473,10 @@ export const tenantTables = {
   agent_overrides: "organization_id",
   log_summaries: "organization_id",
   otel_exports: "organization_id",
+  eval_suites: "organization_id",
+  eval_suite_cases: "organization_id",
+  eval_runs: "organization_id",
+  eval_results: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

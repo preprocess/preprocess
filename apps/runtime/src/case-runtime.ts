@@ -29,6 +29,7 @@ import type {
   CaseEvent,
   CaseStatus,
   Env,
+  EvalEvent,
   GroupRef,
   Settings,
   StartCase,
@@ -96,6 +97,58 @@ type Meta = StartCase & {
   // Set until the agent first gets the case's input, which a halt at start
   // can delay to the Rerun that restarts it.
   unprompted?: true;
+  // An eval case's side-effect tool results, from the source case's capture.
+  replay?: Replay[];
+};
+
+type Replay = { name: string; input: string; result: ToolResult };
+
+// Object keys sorted, so equal inputs compare equal however they were built.
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_, v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : v,
+  );
+
+// The side-effect results a replayed case may reuse: each tool call's input
+// with the result it got, in the order they ran.
+const replayFrom = (
+  capture: RunCapture,
+  sideEffects: Set<string>,
+): Replay[] => {
+  const calls = new Map<string, { name: string; input: unknown }>();
+  const replay: Replay[] = [];
+  for (const event of capture.events) {
+    const data = event.data as {
+      callId?: string;
+      name?: string;
+      input?: unknown;
+      output?: ToolResult["output"];
+      isError?: boolean;
+      effects?: ToolResult["effects"];
+    };
+    if (!data.callId || !data.name || !sideEffects.has(data.name)) continue;
+    if (event.kind === "tool.call")
+      calls.set(data.callId, { name: data.name, input: data.input });
+    if (event.kind !== "tool.result") continue;
+    const call = calls.get(data.callId);
+    if (!call) continue;
+    replay.push({
+      name: call.name,
+      input: canonical(call.input),
+      result: {
+        output: data.output ?? "",
+        isError: data.isError ?? false,
+        ...(data.effects && { effects: data.effects }),
+      },
+    });
+  }
+  return replay;
 };
 
 const MAX_TURNS = 24;
@@ -314,6 +367,11 @@ export class CaseRuntime extends DurableObject<Env> {
     this.record("case.event", full);
     if (!this.env.PLATFORM) return;
     try {
+      if (meta.eval) {
+        if (full.type === "status")
+          await this.env.PLATFORM.evalEvent(this.evalEvent(meta, full));
+        return;
+      }
       await this.env.PLATFORM.caseEvent(full);
     } catch (error) {
       this.record("platform.error", {
@@ -321,6 +379,25 @@ export class CaseRuntime extends DurableObject<Env> {
         error: String(error),
       });
     }
+  }
+
+  private evalEvent(
+    meta: Meta,
+    event: Extract<CaseEvent, { type: "status" }>,
+  ): EvalEvent {
+    return {
+      organizationId: meta.organizationId,
+      agentId: meta.agentId,
+      caseId: meta.caseId,
+      runId: meta.eval!.runId,
+      sourceCaseId: meta.eval!.sourceCaseId,
+      status: event.status,
+      waitingOn: event.waitingOn,
+      reason: event.error?.message ?? event.haltReason ?? event.reason,
+      answers: event.answers,
+      costMicroUsd: this.usage(this.events()).costMicroUsd,
+      captureKey: captureKey(meta),
+    };
   }
 
   // The spending limit (design doc 04): asked before each metered model, OCR
@@ -386,6 +463,22 @@ export class CaseRuntime extends DurableObject<Env> {
       }),
     );
     return null;
+  }
+
+  // Takes the first unused recorded result for this tool and input, so a
+  // tool called twice with the same input gets both results in order.
+  private replay(name: string, input: unknown): ToolResult {
+    const meta = this.meta()!;
+    const replay = meta.replay ?? [];
+    const key = canonical(input);
+    const index = replay.findIndex((r) => r.name === name && r.input === key);
+    if (index === -1)
+      return {
+        output: `${name} has side effects and is not available in evals: the original case made no call with this input`,
+        isError: true,
+      };
+    this.save({ ...meta, replay: replay.filter((_, i) => i !== index) });
+    return replay[index]!.result;
   }
 
   private platformTools(meta: Meta) {
@@ -633,25 +726,36 @@ export class CaseRuntime extends DurableObject<Env> {
             const callId = String(api.taskId);
             this.record("tool.call", { callId, name: tool.name, input });
             const started = Date.now();
-            const response = await worker.fetch(`/tools/${tool.name}`, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                input,
-                case: { id: meta.caseId },
-                callId,
-              }),
-            });
-            const result: ToolResult = response.ok
-              ? await response.json<ToolResult>()
-              : {
-                  output: `agent Worker answered ${response.status}`,
-                  isError: true,
-                };
+            // An eval case never repeats a side effect (design doc 09): it
+            // gets the source case's result for the same input, or an error.
+            const replayed =
+              tool.sideEffects && meta.eval
+                ? this.replay(tool.name, input)
+                : null;
+            const response = replayed
+              ? null
+              : await worker.fetch(`/tools/${tool.name}`, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    input,
+                    case: { id: meta.caseId },
+                    callId,
+                  }),
+                });
+            const result: ToolResult =
+              replayed ??
+              (response!.ok
+                ? await response!.json<ToolResult>()
+                : {
+                    output: `agent Worker answered ${response!.status}`,
+                    isError: true,
+                  });
             this.record("tool.result", {
               callId,
               name: tool.name,
               ms: Date.now() - started,
+              ...(replayed && { replayed: true }),
               ...result,
             });
             const problems = (result.effects ?? [])
@@ -809,6 +913,15 @@ export class CaseRuntime extends DurableObject<Env> {
     return `${meta.input.text}\n\nFiles:\n${parts.join("\n")}`;
   }
 
+  private async sourceReplay(key: string, manifest: Manifest) {
+    const object = await this.env.RUNS.get(key);
+    if (!object) return [];
+    return replayFrom(
+      await object.json<RunCapture>(),
+      new Set(manifest.tools.filter((t) => t.sideEffects).map((t) => t.name)),
+    );
+  }
+
   async start(start: StartCase): Promise<CaseView> {
     this.expectName(start);
     if (this.meta()) return this.view();
@@ -833,6 +946,9 @@ export class CaseRuntime extends DurableObject<Env> {
       operation: `case:${start.caseId}`,
       waitingOn: null,
       unprompted: true,
+      ...(start.eval && {
+        replay: await this.sourceReplay(start.eval.captureKey, manifest),
+      }),
     };
     this.save(meta);
     this.record("case.started", {
@@ -920,6 +1036,9 @@ export class CaseRuntime extends DurableObject<Env> {
         status === "failed"
           ? { code: "run_failed", message: next.reason ?? "unanswered" }
           : null,
+      ...(status === "completed" && {
+        completed: { input: next.input, captureKey: captureKey(next) },
+      }),
     });
   }
 

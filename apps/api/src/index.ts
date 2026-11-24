@@ -34,9 +34,11 @@ import { scheduleRoutes } from "./routes/schedules.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { spendingRoutes } from "./routes/spending.ts";
 import { ingestLogs, sendLogs } from "./logs.ts";
+import { startQueuedEval } from "./evals.ts";
 import { exportLogs, type OtelRetry } from "./otel.ts";
 import { logRoutes } from "./routes/logs.ts";
 import { otelRoutes } from "./routes/otel.ts";
+import { evalRoutes } from "./routes/evals.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
@@ -111,6 +113,7 @@ orgApi.route("/", scheduleRoutes);
 orgApi.route("/", webhookRoutes);
 orgApi.route("/", logRoutes);
 orgApi.route("/", otelRoutes);
+orgApi.route("/", evalRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
@@ -190,7 +193,9 @@ export default {
     if (batch.queue.startsWith("preprocess-cases-")) {
       // A start that throws is retried by the queue.
       for (const message of batch.messages as Message<OutboxMessage>[]) {
-        await startQueuedCase(env, message.body);
+        if (message.body.kind === "eval.start")
+          await startQueuedEval(env, message.body);
+        else await startQueuedCase(env, message.body);
         message.ack();
       }
       return;
