@@ -1,0 +1,264 @@
+import { audit } from "@preprocess/db/audit";
+import { withOrg } from "@preprocess/db/client";
+import { agents } from "@preprocess/db/schema/access";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { eq } from "drizzle-orm";
+import { HTTPException } from "hono/http-exception";
+
+import { eventBase, requireAdmin, type OrgVariables } from "../caller.ts";
+import {
+  deploy,
+  deployInput,
+  getDeployment,
+  listDeployments,
+  productionDeployment,
+  promote,
+} from "../deploy.ts";
+import type { Env } from "../env.ts";
+
+export const agentRoutes = new OpenAPIHono<{
+  Bindings: Env;
+  Variables: OrgVariables;
+}>();
+
+const Deployment = z
+  .object({
+    id: z.string(),
+    agentId: z.string(),
+    status: z.enum(["ready", "waiting", "failed"]),
+    production: z.boolean(),
+    waitingFor: z.object({ secrets: z.array(z.string()).optional() }),
+    sdkVersion: z.string(),
+    model: z.string(),
+    reasoning: z.string(),
+    git: z.object({
+      branch: z.string().nullable(),
+      commit: z.string().nullable(),
+    }),
+    source: z.enum(["cli", "github"]),
+    tools: z.array(z.string()),
+    secrets: z.array(z.string()),
+    createdAt: z.string(),
+    promotedAt: z.string().nullable(),
+  })
+  .openapi("Deployment");
+
+const Agent = z
+  .object({
+    id: z.string(),
+    slug: z.string(),
+    productionBranch: z.string(),
+    productionDeploymentId: z.string().nullable(),
+    archived: z.boolean(),
+  })
+  .openapi("Agent");
+
+const AgentParams = z.object({ org: z.string(), agent: z.string() });
+const DeploymentParams = AgentParams.extend({ deployment: z.string() });
+
+const agentBySlug = (env: Env, org: OrgVariables["org"], slug: string) =>
+  withOrg(env, org, async (tx) => {
+    const [agent] = await tx.select().from(agents).where(eq(agents.slug, slug));
+    if (!agent) throw new HTTPException(404, { message: "agent not found" });
+    return agent;
+  });
+
+const agentView = async (
+  env: Env,
+  org: OrgVariables["org"],
+  agent: typeof agents.$inferSelect,
+) => ({
+  id: agent.id,
+  slug: agent.slug,
+  productionBranch: agent.productionBranch,
+  productionDeploymentId:
+    (await productionDeployment(env, org, agent.id))?.id ?? null,
+  archived: agent.archivedAt !== null,
+});
+
+agentRoutes.openapi(
+  createRoute({
+    method: "get",
+    path: "/agents",
+    request: { params: z.object({ org: z.string() }) },
+    responses: {
+      200: {
+        description: "The organization's agents",
+        content: { "application/json": { schema: z.array(Agent) } },
+      },
+    },
+  }),
+  async (c) => {
+    const rows = await withOrg(c.env, c.var.org, (tx) =>
+      tx.select().from(agents).orderBy(agents.slug),
+    );
+    return c.json(
+      await Promise.all(rows.map((a) => agentView(c.env, c.var.org, a))),
+      200,
+    );
+  },
+);
+
+agentRoutes.openapi(
+  createRoute({
+    method: "get",
+    path: "/agents/{agent}",
+    request: { params: AgentParams },
+    responses: {
+      200: {
+        description: "One agent",
+        content: { "application/json": { schema: Agent } },
+      },
+    },
+  }),
+  async (c) => {
+    const agent = await agentBySlug(
+      c.env,
+      c.var.org,
+      c.req.valid("param").agent,
+    );
+    return c.json(await agentView(c.env, c.var.org, agent), 200);
+  },
+);
+
+agentRoutes.openapi(
+  createRoute({
+    method: "post",
+    path: "/agents/{agent}/deployments",
+    summary:
+      "Deploy an agent's bundled code; creates the agent on its first deploy",
+    request: {
+      params: AgentParams,
+      body: {
+        content: { "application/json": { schema: deployInput } },
+        required: true,
+      },
+    },
+    responses: {
+      201: {
+        description: "The new deployment",
+        content: { "application/json": { schema: Deployment } },
+      },
+    },
+  }),
+  async (c) => {
+    const deployment = await deploy(
+      c.env,
+      c.var.org,
+      c.req.valid("param").agent,
+      {
+        ...c.req.valid("json"),
+        source:
+          c.req.header("x-preprocess-source") === "github" ? "github" : "cli",
+      },
+      eventBase(c.var),
+    );
+    return c.json(deployment, 201);
+  },
+);
+
+agentRoutes.openapi(
+  createRoute({
+    method: "get",
+    path: "/agents/{agent}/deployments",
+    request: { params: AgentParams },
+    responses: {
+      200: {
+        description: "Newest first",
+        content: { "application/json": { schema: z.array(Deployment) } },
+      },
+    },
+  }),
+  async (c) => {
+    const agent = await agentBySlug(
+      c.env,
+      c.var.org,
+      c.req.valid("param").agent,
+    );
+    return c.json(await listDeployments(c.env, c.var.org, agent.id), 200);
+  },
+);
+
+agentRoutes.openapi(
+  createRoute({
+    method: "get",
+    path: "/agents/{agent}/deployments/{deployment}",
+    request: { params: DeploymentParams },
+    responses: {
+      200: {
+        description: "One deployment",
+        content: { "application/json": { schema: Deployment } },
+      },
+    },
+  }),
+  async (c) => {
+    const { agent: slug, deployment } = c.req.valid("param");
+    const agent = await agentBySlug(c.env, c.var.org, slug);
+    return c.json(
+      await getDeployment(c.env, c.var.org, agent.id, deployment),
+      200,
+    );
+  },
+);
+
+agentRoutes.openapi(
+  createRoute({
+    method: "post",
+    path: "/agents/{agent}/deployments/{deployment}/promote",
+    summary:
+      "Serve this deployment in production; promoting an earlier one is a rollback",
+    request: { params: DeploymentParams },
+    responses: {
+      200: {
+        description: "The promoted deployment",
+        content: { "application/json": { schema: Deployment } },
+      },
+    },
+  }),
+  async (c) => {
+    const { agent: slug, deployment } = c.req.valid("param");
+    const agent = await agentBySlug(c.env, c.var.org, slug);
+    await promote(c.env, c.var.org, agent.id, deployment, eventBase(c.var));
+    return c.json(
+      await getDeployment(c.env, c.var.org, agent.id, deployment),
+      200,
+    );
+  },
+);
+
+agentRoutes.openapi(
+  createRoute({
+    method: "post",
+    path: "/agents/{agent}/archive",
+    request: { params: AgentParams },
+    responses: {
+      200: {
+        description: "The archived agent",
+        content: { "application/json": { schema: Agent } },
+      },
+    },
+  }),
+  async (c) => {
+    requireAdmin(c.var.caller);
+    const agent = await agentBySlug(
+      c.env,
+      c.var.org,
+      c.req.valid("param").agent,
+    );
+    const archived = await withOrg(c.env, c.var.org, async (tx) => {
+      const [row] = await tx
+        .update(agents)
+        .set({ archivedAt: new Date() })
+        .where(eq(agents.id, agent.id))
+        .returning();
+      await audit(tx, {
+        ...eventBase(c.var),
+        action: "agent.archived",
+        targetType: "agent",
+        targetId: agent.id,
+      });
+      return row!;
+    });
+    return c.json(await agentView(c.env, c.var.org, archived), 200);
+  },
+);

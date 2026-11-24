@@ -67,11 +67,18 @@ export const deploymentTarget = (d: {
 
 const sha256 = async (text: string) =>
   Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))),
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)),
+    ),
     (b) => b.toString(16).padStart(2, "0"),
   ).join("");
 
-type Binding = { secretId: string; name: string; version: number; value: string };
+type Binding = {
+  secretId: string;
+  name: string;
+  version: number;
+  value: string;
+};
 
 // Bound set = declared ∩ granted (doc 03), with current values.
 const boundSecrets = async (
@@ -92,7 +99,9 @@ const boundSecrets = async (
     })
     .from(secretGrants)
     .innerJoin(secrets, eq(secrets.id, secretGrants.secretId))
-    .where(and(eq(secretGrants.agentId, agentId), inArray(secrets.name, declared)));
+    .where(
+      and(eq(secretGrants.agentId, agentId), inArray(secrets.name, declared)),
+    );
   const bound: Binding[] = [];
   for (const row of rows) {
     const key = await orgKeyVersion(env, tx, organizationId, row.keyVersion);
@@ -100,7 +109,11 @@ const boundSecrets = async (
       secretId: row.secretId,
       name: row.name,
       version: row.version,
-      value: await decrypt(key, row.ciphertext, `${organizationId}|${row.secretId}|${row.version}`),
+      value: await decrypt(
+        key,
+        row.ciphertext,
+        `${organizationId}|${row.secretId}|${row.version}`,
+      ),
     });
   }
   const granted = new Set(bound.map((b) => b.name));
@@ -117,28 +130,56 @@ export const syncDeployment = async (
   deploymentId: string,
   actor: Actor,
 ): Promise<string[]> => {
-  const { deployment, bound, waiting, delivered } = await withOrg(env, org, async (tx) => {
-    const [deployment] = await tx.select().from(deployments).where(eq(deployments.id, deploymentId));
-    if (!deployment) throw new HTTPException(404, { message: "deployment not found" });
-    const declared = (deployment.manifest as Manifest).secrets;
-    const delivered = await tx
-      .select({ secretId: secretDeliveries.secretId, version: secretDeliveries.secretVersion, name: secrets.name })
-      .from(secretDeliveries)
-      .innerJoin(secrets, eq(secrets.id, secretDeliveries.secretId))
-      .where(eq(secretDeliveries.deploymentId, deploymentId));
-    return { deployment, delivered, ...(await boundSecrets(env, tx, org, deployment.agentId, declared)) };
-  });
+  const { deployment, bound, waiting, delivered } = await withOrg(
+    env,
+    org,
+    async (tx) => {
+      const [deployment] = await tx
+        .select()
+        .from(deployments)
+        .where(eq(deployments.id, deploymentId));
+      if (!deployment)
+        throw new HTTPException(404, { message: "deployment not found" });
+      const declared = (deployment.manifest as Manifest).secrets;
+      const delivered = await tx
+        .select({
+          secretId: secretDeliveries.secretId,
+          version: secretDeliveries.secretVersion,
+          name: secrets.name,
+        })
+        .from(secretDeliveries)
+        .innerJoin(secrets, eq(secrets.id, secretDeliveries.secretId))
+        .where(eq(secretDeliveries.deploymentId, deploymentId));
+      return {
+        deployment,
+        delivered,
+        ...(await boundSecrets(env, tx, org, deployment.agentId, declared)),
+      };
+    },
+  );
   const namespace = namespaceFor(env);
   const current = new Map(delivered.map((d) => [d.secretId, d.version]));
   const changed = bound.filter((b) => current.get(b.secretId) !== b.version);
-  const removed = delivered.filter((d) => !bound.some((b) => b.secretId === d.secretId));
-  for (const b of changed) await namespace.putSecret(deployment.scriptName, { name: b.name, text: b.value });
-  for (const d of removed) await namespace.deleteSecret(deployment.scriptName, d.name);
+  const removed = delivered.filter(
+    (d) => !bound.some((b) => b.secretId === d.secretId),
+  );
+  for (const b of changed)
+    await namespace.putSecret(deployment.scriptName, {
+      name: b.name,
+      text: b.value,
+    });
+  for (const d of removed)
+    await namespace.deleteSecret(deployment.scriptName, d.name);
   await withOrg(env, org, async (tx) => {
     for (const b of changed) {
       await tx
         .insert(secretDeliveries)
-        .values({ organizationId: org, deploymentId, secretId: b.secretId, secretVersion: b.version })
+        .values({
+          organizationId: org,
+          deploymentId,
+          secretId: b.secretId,
+          secretVersion: b.version,
+        })
         .onConflictDoUpdate({
           target: [secretDeliveries.deploymentId, secretDeliveries.secretId],
           set: { secretVersion: b.version, deliveredAt: sql`now()` },
@@ -155,7 +196,12 @@ export const syncDeployment = async (
     for (const d of removed) {
       await tx
         .delete(secretDeliveries)
-        .where(and(eq(secretDeliveries.deploymentId, deploymentId), eq(secretDeliveries.secretId, d.secretId)));
+        .where(
+          and(
+            eq(secretDeliveries.deploymentId, deploymentId),
+            eq(secretDeliveries.secretId, d.secretId),
+          ),
+        );
       await audit(tx, {
         organizationId: org,
         ...actor,
@@ -165,9 +211,17 @@ export const syncDeployment = async (
         data: { secret: d.name, deployment: deploymentId },
       });
     }
-    const status = deployment.status === "failed" ? "failed" : waiting.length ? "waiting" : "ready";
+    const status =
+      deployment.status === "failed"
+        ? "failed"
+        : waiting.length
+          ? "waiting"
+          : "ready";
     const waitingFor: WaitingFor = waiting.length ? { secrets: waiting } : {};
-    await tx.update(deployments).set({ status, waitingFor }).where(eq(deployments.id, deploymentId));
+    await tx
+      .update(deployments)
+      .set({ status, waitingFor })
+      .where(eq(deployments.id, deploymentId));
   });
   return waiting;
 };
@@ -190,7 +244,12 @@ export const liveDeployments = (tx: Tx, agentId: string) =>
       ),
     );
 
-export const syncAgent = async (env: Env, org: OrgId, agentId: string, actor: Actor) => {
+export const syncAgent = async (
+  env: Env,
+  org: OrgId,
+  agentId: string,
+  actor: Actor,
+) => {
   const live = await withOrg(env, org, (tx) => liveDeployments(tx, agentId));
   for (const d of live) await syncDeployment(env, org, d.id, actor);
 };
@@ -200,14 +259,21 @@ export const AGENT_SLUG = /^[a-z][a-z0-9-]{0,62}$/;
 export const deployInput = z.object({
   bundle: z.object({
     mainModule: z.string().min(1),
-    modules: z.record(z.string(), z.string()).refine((m) => Object.keys(m).length > 0, "no modules"),
+    modules: z
+      .record(z.string(), z.string())
+      .refine((m) => Object.keys(m).length > 0, "no modules"),
   }),
   git: z
-    .object({ branch: z.string().min(1).optional(), commit: z.string().min(1).optional() })
+    .object({
+      branch: z.string().min(1).optional(),
+      commit: z.string().min(1).optional(),
+    })
     .default({}),
 });
 
-export type DeployInput = z.infer<typeof deployInput> & { source: "cli" | "github" };
+export type DeployInput = z.infer<typeof deployInput> & {
+  source: "cli" | "github";
+};
 
 export const deploy = async (
   env: Env,
@@ -216,9 +282,14 @@ export const deploy = async (
   input: DeployInput,
   actor: Actor,
 ) => {
-  if (!AGENT_SLUG.test(slug)) throw new HTTPException(400, { message: `agent name must match ${AGENT_SLUG}` });
+  if (!AGENT_SLUG.test(slug))
+    throw new HTTPException(400, {
+      message: `agent name must match ${AGENT_SLUG}`,
+    });
   if (!(input.bundle.mainModule in input.bundle.modules))
-    throw new HTTPException(400, { message: "mainModule is not among the modules" });
+    throw new HTTPException(400, {
+      message: "mainModule is not among the modules",
+    });
   // Agents are created by their first deploy, never in the app (mvp-surface).
   const agent = await withOrg(env, org, async (tx) => {
     const [created] = await tx
@@ -238,7 +309,8 @@ export const deploy = async (
     const [agent] = await tx.select().from(agents).where(eq(agents.slug, slug));
     return agent!;
   });
-  if (agent.archivedAt) throw new HTTPException(409, { message: "agent is archived" });
+  if (agent.archivedAt)
+    throw new HTTPException(409, { message: "agent is archived" });
 
   const id = newId("deployment");
   const target = { organizationId: org, agentId: agent.id, id, scriptName: id };
@@ -249,12 +321,18 @@ export const deploy = async (
     tags: [`org:${org}`, `agent:${agent.id}`],
   });
   const read = manifestSchema.safeParse(
-    await env.RUNTIME.manifest(deploymentTarget(target)).catch((error: unknown) => {
-      throw new HTTPException(422, { message: `the agent's Worker did not serve its manifest: ${String(error)}` });
-    }),
+    await env.RUNTIME.manifest(deploymentTarget(target)).catch(
+      (error: unknown) => {
+        throw new HTTPException(422, {
+          message: `the agent's Worker did not serve its manifest: ${String(error)}`,
+        });
+      },
+    ),
   );
   if (!read.success)
-    throw new HTTPException(422, { message: `the agent's manifest is invalid: ${z.prettifyError(read.error)}` });
+    throw new HTTPException(422, {
+      message: `the agent's manifest is invalid: ${z.prettifyError(read.error)}`,
+    });
   const manifest = read.data;
 
   await withOrg(env, org, async (tx) => {
@@ -312,7 +390,9 @@ export const promote = async (
     const [row] = await tx
       .update(deployments)
       .set({ promotedAt: sql`now()` })
-      .where(and(eq(deployments.id, deploymentId), eq(deployments.agentId, agentId)))
+      .where(
+        and(eq(deployments.id, deploymentId), eq(deployments.agentId, agentId)),
+      )
       .returning({ id: deployments.id });
     if (!row) throw new HTTPException(404, { message: "deployment not found" });
     await audit(tx, {
@@ -326,7 +406,10 @@ export const promote = async (
   });
 };
 
-const view = (d: typeof deployments.$inferSelect, production: string | undefined) => ({
+const view = (
+  d: typeof deployments.$inferSelect,
+  production: string | undefined,
+) => ({
   id: d.id,
   agentId: d.agentId,
   status: d.status,
@@ -350,12 +433,22 @@ const productionId = async (tx: Tx, agentId: string) =>
     await tx
       .select({ id: deployments.id })
       .from(deployments)
-      .where(and(eq(deployments.agentId, agentId), isNotNull(deployments.promotedAt)))
+      .where(
+        and(
+          eq(deployments.agentId, agentId),
+          isNotNull(deployments.promotedAt),
+        ),
+      )
       .orderBy(desc(deployments.promotedAt))
       .limit(1)
   )[0]?.id;
 
-export const getDeployment = (env: Env, org: OrgId, agentId: string, id: string) =>
+export const getDeployment = (
+  env: Env,
+  org: OrgId,
+  agentId: string,
+  id: string,
+) =>
   withOrg(env, org, async (tx) => {
     const [d] = await tx
       .select()
@@ -381,6 +474,9 @@ export const productionDeployment = (env: Env, org: OrgId, agentId: string) =>
   withOrg(env, org, async (tx) => {
     const id = await productionId(tx, agentId);
     if (!id) return null;
-    const [d] = await tx.select().from(deployments).where(eq(deployments.id, id));
+    const [d] = await tx
+      .select()
+      .from(deployments)
+      .where(eq(deployments.id, id));
     return d ?? null;
   });

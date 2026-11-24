@@ -24,7 +24,10 @@ export type ScriptUpload = {
 
 export type Namespace = {
   putScript(name: string, upload: ScriptUpload): Promise<unknown>;
-  putSecret(name: string, secret: { name: string; text: string }): Promise<void>;
+  putSecret(
+    name: string,
+    secret: { name: string; text: string },
+  ): Promise<void>;
   deleteSecret(name: string, secretName: string): Promise<void>;
 };
 
@@ -36,7 +39,11 @@ export const AGENT_COMPATIBILITY = {
 };
 
 const cloudflare = (env: Env): Namespace => {
-  const { CLOUDFLARE_ACCOUNT_ID: account, CLOUDFLARE_API_TOKEN: token, DISPATCH_NAMESPACE: namespace } = env;
+  const {
+    CLOUDFLARE_ACCOUNT_ID: account,
+    CLOUDFLARE_API_TOKEN: token,
+    DISPATCH_NAMESPACE: namespace,
+  } = env;
   if (!account || !token || !namespace)
     throw new Error("no dispatch namespace is configured for deploys");
   const base = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/dispatch/namespaces/${namespace}/scripts`;
@@ -45,7 +52,10 @@ const cloudflare = (env: Env): Namespace => {
       ...init,
       headers: { ...init.headers, authorization: `Bearer ${token}` },
     });
-    const body = await response.json<{ success: boolean; errors?: Array<{ message: string }> }>();
+    const body = await response.json<{
+      success: boolean;
+      errors?: Array<{ message: string }>;
+    }>();
     if (!response.ok || !body.success)
       throw new Error(
         `Cloudflare ${response.status}: ${(body.errors ?? []).map((e) => e.message).join("; ")}`,
@@ -70,7 +80,11 @@ const cloudflare = (env: Env): Namespace => {
         ),
       );
       for (const [file, source] of Object.entries(upload.modules))
-        form.append(file, new Blob([source], { type: "application/javascript+module" }), file);
+        form.append(
+          file,
+          new Blob([source], { type: "application/javascript+module" }),
+          file,
+        );
       return call(`/${name}`, { method: "PUT", body: form });
     },
     putSecret: (name, secret) =>
@@ -80,7 +94,9 @@ const cloudflare = (env: Env): Namespace => {
         body: JSON.stringify({ ...secret, type: "secret_text" }),
       }),
     deleteSecret: (name, secretName) =>
-      call(`/${name}/secrets/${encodeURIComponent(secretName)}`, { method: "DELETE" }),
+      call(`/${name}/secrets/${encodeURIComponent(secretName)}`, {
+        method: "DELETE",
+      }),
   };
 };
 

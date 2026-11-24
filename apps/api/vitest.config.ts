@@ -1,29 +1,120 @@
 import { createRequire } from "node:module";
+import path from "node:path";
 
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
+import { buildSync } from "esbuild";
 import { defineConfig } from "vitest/config";
 
+import {
+  localDatabaseUrl,
+  localRoleUrl,
+} from "../../packages/db/scripts/migrate-lib.ts";
+
+const require = createRequire(import.meta.url);
 // pg require()s pg-protocol, and Vitest resolves that require with the
 // "import" condition, which points at an ES module. Pin it to the CommonJS
-// build pg expects.
-const pgRequire = createRequire(createRequire(import.meta.url).resolve("pg"));
+// build pg expects, and pg-cloudflare to its workerd build.
+const pgRequire = createRequire(require.resolve("pg"));
 
-// Tests run inside the Workers runtime with the API's local bindings (the
-// generated wrangler.jsonc): its Durable Object, R2 bucket and queue. The user
-// Worker is not part of the test runtime, so its service binding answers with
-// a fixed reply.
+const root = import.meta.dirname;
+const dist = path.join(root, "test/dist");
+const url =
+  process.env.TEST_DATABASE_URL ?? localDatabaseUrl("preprocess_api_test");
+
+// The runtime, the local namespace, the outbound Worker and the model stub
+// run beside the API, as in `pnpm dev`; the sample agent is bundled the way
+// `preprocess deploy` bundles one.
+const bundle = (entry: string, out: string) =>
+  buildSync({
+    entryPoints: [path.join(root, entry)],
+    outfile: path.join(dist, out),
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    target: "es2023",
+    conditions: ["workerd", "worker", "browser"],
+    mainFields: ["module", "main"],
+    external: ["cloudflare:*", "node:*"],
+    loader: { ".png": "dataurl" },
+    logLevel: "warning",
+  });
+bundle("../runtime/src/index.ts", "runtime.js");
+bundle("../namespace-local/src/index.ts", "namespace-local.js");
+bundle("../outbound/src/index.ts", "outbound.js");
+bundle("../model-stub/src/index.ts", "model-stub.js");
+bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
+
+const worker = (name: string, extra: object = {}) => ({
+  name,
+  modules: true,
+  scriptPath: path.join(dist, `${name}.js`),
+  compatibilityDate: "2026-07-26",
+  compatibilityFlags: ["nodejs_compat"],
+  ...extra,
+});
+
 export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
+        hyperdrives: {
+          DB: localRoleUrl(url, "preprocess_app"),
+          DB_SYSTEM: localRoleUrl(url, "preprocess_system"),
+        },
         serviceBindings: {
           LOCAL_USER_WORKER: () => Response.json({ worker: "test" }),
+          RUNTIME: "preprocess-runtime-development",
+          LOCAL_NAMESPACE: {
+            name: "preprocess-namespace-development",
+            entrypoint: "Namespace",
+          },
         },
+        workers: [
+          worker("runtime", {
+            name: "preprocess-runtime-development",
+            bindings: {
+              STAGE: "test",
+              MODEL_SERVICE_URL: "http://model-stub.test",
+              MODEL_SERVICE_KEY: "test",
+            },
+            durableObjects: {
+              CASE_RUNTIME: { className: "CaseRuntime", useSQLite: true },
+            },
+            r2Buckets: { RUNS: "runs" },
+            serviceBindings: {
+              LOCAL_NAMESPACE: "preprocess-namespace-development",
+            },
+            outboundService: "model-stub",
+          }),
+          worker("namespace-local", {
+            name: "preprocess-namespace-development",
+            workerLoaders: { LOADER: {} },
+            r2Buckets: { SCRIPTS: "scripts" },
+            serviceBindings: {
+              OUTBOUND: { name: "outbound", entrypoint: "Egress" },
+            },
+          }),
+          worker("outbound", {
+            outboundService: (request: Request) =>
+              new Response(`reached ${new URL(request.url).hostname}`),
+          }),
+          worker("model-stub"),
+        ],
       },
     }),
   ],
   resolve: {
-    alias: { "pg-protocol": pgRequire.resolve("pg-protocol") },
+    alias: {
+      "pg-protocol": pgRequire.resolve("pg-protocol"),
+      "pg-cloudflare": path.join(
+        path.dirname(pgRequire.resolve("pg-cloudflare/package.json")),
+        "dist/index.js",
+      ),
+    },
+  },
+  test: {
+    globalSetup: ["./test/global-setup.ts"],
+    testTimeout: 30_000,
   },
 });

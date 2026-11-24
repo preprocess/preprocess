@@ -3,10 +3,17 @@ import { decide, type DecideInput } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
 import { ocrPage } from "@preprocess/models/ocr";
 import { runMode } from "@preprocess/runmode";
+import { orgId } from "@preprocess/db/client";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 
-import type { Env, Job } from "./env.ts";
+import { orgCaller } from "./caller.ts";
+import { syncAgent } from "./deploy.ts";
+import type { Env, Job, SecretSync } from "./env.ts";
+import { agentRoutes } from "./routes/agents.ts";
+import { devRoutes } from "./routes/dev.ts";
+import { secretRoutes } from "./routes/secrets.ts";
 
 export { Counter } from "./counter.ts";
 
@@ -15,6 +22,8 @@ const app = new Hono<{ Bindings: Env }>();
 app.use("*", cors());
 
 app.onError((error, c) => {
+  if (error instanceof HTTPException)
+    return c.json({ error: error.message }, error.status);
   if (error instanceof ModelError)
     return c.json(
       { error: error.code, message: error.message },
@@ -68,6 +77,12 @@ app.get("/dispatch", async (c) => {
   });
 });
 
+app.use("/v1/orgs/:org/*", orgCaller);
+app.route("/v1/orgs/:org", agentRoutes);
+app.route("/v1/orgs/:org", secretRoutes);
+app.use("/dev/orgs/:org/*", orgCaller);
+app.route("/dev/orgs/:org", devRoutes);
+
 // Smoke routes for the model client until decide and OCR have their real
 // callers (the runtime's decide tool and POST /v1/orgs/{org}/ocr).
 app.post("/models/decide", async (c) =>
@@ -90,10 +105,24 @@ app.post("/models/ocr", async (c) =>
 
 export default {
   fetch: app.fetch,
-  // The queue consumer writes each job's result to R2 under its organization.
-  async queue(batch: MessageBatch<Job>, env: Env) {
+  async queue(batch: MessageBatch<Job | SecretSync>, env: Env) {
     for (const message of batch.messages) {
-      const job = message.body;
+      const body = message.body;
+      if ("kind" in body) {
+        try {
+          await syncAgent(env, orgId(body.organizationId), body.agentId, {
+            actorType: "platform",
+            actorId: "secret-sync",
+          });
+          message.ack();
+        } catch (error) {
+          console.error(error);
+          message.retry({ delaySeconds: Math.min(300, 2 ** message.attempts) });
+        }
+        continue;
+      }
+      // A job's result goes to R2 under its organization.
+      const job = body;
       await env.FILES.put(
         `${job.organizationId}/jobs/${job.id}.json`,
         JSON.stringify({
@@ -106,4 +135,4 @@ export default {
       message.ack();
     }
   },
-} satisfies ExportedHandler<Env, Job>;
+} satisfies ExportedHandler<Env, Job | SecretSync>;

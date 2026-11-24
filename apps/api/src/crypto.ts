@@ -61,11 +61,20 @@ export const orgKey = async (env: Env, tx: Tx, organizationId: string) => {
   const [current] = await tx
     .select()
     .from(orgKeys)
-    .where(and(eq(orgKeys.organizationId, organizationId), isNull(orgKeys.retiredAt)))
+    .where(
+      and(
+        eq(orgKeys.organizationId, organizationId),
+        isNull(orgKeys.retiredAt),
+      ),
+    )
     .orderBy(desc(orgKeys.version))
     .limit(1);
   if (current) {
-    const raw = await open(kek, current.wrappedKey, `${organizationId}|${current.version}`);
+    const raw = await open(
+      kek,
+      current.wrappedKey,
+      `${organizationId}|${current.version}`,
+    );
     return { version: current.version, key: await importKey(raw) };
   }
   const raw = crypto.getRandomValues(new Uint8Array(32));
@@ -87,9 +96,18 @@ export const orgKeyVersion = async (
   const [row] = await tx
     .select()
     .from(orgKeys)
-    .where(and(eq(orgKeys.organizationId, organizationId), eq(orgKeys.version, version)));
+    .where(
+      and(
+        eq(orgKeys.organizationId, organizationId),
+        eq(orgKeys.version, version),
+      ),
+    );
   if (!row) throw new Error(`organization key ${version} is missing`);
-  const raw = await open(await masterKey(env), row.wrappedKey, `${organizationId}|${version}`);
+  const raw = await open(
+    await masterKey(env),
+    row.wrappedKey,
+    `${organizationId}|${version}`,
+  );
   return importKey(raw);
 };
 

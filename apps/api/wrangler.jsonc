@@ -14,12 +14,18 @@
     "USER_WORKER": "hello",
     "MODEL_SERVICE_URL": "https://model-stub.preprocess.localhost",
     "MODEL_SERVICE_KEY": "development",
+    "SECRETS_MASTER_KEY": "cHJlcHJvY2Vzcy1sb2NhbC1tYXN0ZXIta2V5LTMyYnk=",
   },
   "hyperdrive": [
     {
       "binding": "DB",
       "id": "local",
       "localConnectionString": "postgresql://preprocess:preprocess@127.0.0.1:5432/preprocess_development",
+    },
+    {
+      "binding": "DB_SYSTEM",
+      "id": "local-system",
+      "localConnectionString": "postgresql://preprocess_system:preprocess_system@127.0.0.1:5432/preprocess_development",
     },
   ],
   "durable_objects": {
@@ -29,13 +35,26 @@
   "queues": {
     "producers": [
       { "binding": "JOBS", "queue": "preprocess-jobs-development" },
+      {
+        "binding": "SECRET_SYNC",
+        "queue": "preprocess-secret-sync-development",
+      },
     ],
     "consumers": [
       { "queue": "preprocess-jobs-development", "max_batch_timeout": 1 },
+      { "queue": "preprocess-secret-sync-development", "max_batch_timeout": 1 },
     ],
   },
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "preprocess-files-development" },
   ],
-  "services": [{ "binding": "LOCAL_USER_WORKER", "service": "hello" }],
+  "services": [
+    { "binding": "LOCAL_USER_WORKER", "service": "hello" },
+    { "binding": "RUNTIME", "service": "preprocess-runtime-development" },
+    {
+      "binding": "LOCAL_NAMESPACE",
+      "service": "preprocess-namespace-development",
+      "entrypoint": "Namespace",
+    },
+  ],
 }

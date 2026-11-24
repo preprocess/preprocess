@@ -44,11 +44,19 @@ export const orgCaller = createMiddleware<{
   const hashed = await hashKey(key);
   const [row] = await withoutOrg(c.env, "authenticate an API key", (tx) =>
     tx
-      .select({ id: apikey.id, enabled: apikey.enabled, expiresAt: apikey.expiresAt })
+      .select({
+        id: apikey.id,
+        enabled: apikey.enabled,
+        expiresAt: apikey.expiresAt,
+      })
       .from(apikey)
       .where(and(eq(apikey.key, hashed), eq(apikey.referenceId, org))),
   );
-  if (!row || row.enabled === false || (row.expiresAt && row.expiresAt < new Date()))
+  if (
+    !row ||
+    row.enabled === false ||
+    (row.expiresAt && row.expiresAt < new Date())
+  )
     throw new HTTPException(401, { message: "unauthorized" });
   c.set("org", orgId(org));
   c.set("caller", { type: "api_key", keyId: row.id, role: "admin" });

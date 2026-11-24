@@ -30,6 +30,7 @@ export const names = (stage: string) => ({
   api: `preprocess-api-${stage}`,
   namespace: `preprocess-${stage}`,
   queue: `preprocess-jobs-${stage}`,
+  secretSync: `preprocess-secret-sync-${stage}`,
   bucket: `preprocess-files-${stage}`,
   userWorker: "hello",
   runtime: `preprocess-runtime-${stage}`,
@@ -69,3 +70,13 @@ export const localModelService = {
 
 export const localDatabaseUrl =
   "postgresql://preprocess:preprocess@127.0.0.1:5432/preprocess_development";
+
+// The local preprocess_system role (packages/db creates it with this
+// local-only password): RLS bypassed, for API key checks and withoutOrg.
+export const localSystemDatabaseUrl =
+  "postgresql://preprocess_system:preprocess_system@127.0.0.1:5432/preprocess_development";
+
+// Local development's secrets master key. Not a credential: it protects only
+// values typed into a local database. Deployed stages bind Secrets Store.
+export const localSecretsMasterKey =
+  "cHJlcHJvY2Vzcy1sb2NhbC1tYXN0ZXIta2V5LTMyYnk=";

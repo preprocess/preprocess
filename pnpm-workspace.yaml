@@ -9,6 +9,7 @@ catalog:
   # first npm release. `pnpm kit:link` swaps in a local kit checkout.
   '@preprocess/runmode': https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051
   '@preprocess/ui': https://pkg.pr.new/preprocess/kit/@preprocess/ui@7df7051
+  '@hono/zod-openapi': ^1.6.3
   '@cloudflare/vite-plugin': ^1.47.0
   '@cloudflare/vitest-plugin': ^1.9.0
   '@cloudflare/workers-types': ^5.20260722.1

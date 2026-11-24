@@ -10,17 +10,21 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@hono/zod-openapi": "catalog:",
     "@preprocess/db": "workspace:*",
     "@preprocess/models": "workspace:*",
     "@preprocess/runmode": "catalog:",
+    "@preprocess/sdk": "workspace:*",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
-    "pg": "catalog:"
+    "pg": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
     "@cloudflare/workers-types": "catalog:",
     "@types/pg": "catalog:",
+    "esbuild": "^0.25.0",
     "typescript": "^5.9.3",
     "vitest": "catalog:",
     "wrangler": "catalog:"

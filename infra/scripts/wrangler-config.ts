@@ -14,6 +14,8 @@ import {
   LOCAL,
   localDatabaseUrl,
   localModelService,
+  localSecretsMasterKey,
+  localSystemDatabaseUrl,
   names,
   runtimeDurableObjects,
 } from "../src/stages.ts";
@@ -46,9 +48,15 @@ const configs: Record<string, object> = {
       USER_WORKER: local.userWorker,
       MODEL_SERVICE_URL: localModelService.url,
       MODEL_SERVICE_KEY: localModelService.key,
+      SECRETS_MASTER_KEY: localSecretsMasterKey,
     },
     hyperdrive: [
       { binding: "DB", id: "local", localConnectionString: localDatabaseUrl },
+      {
+        binding: "DB_SYSTEM",
+        id: "local-system",
+        localConnectionString: localSystemDatabaseUrl,
+      },
     ],
     durable_objects: {
       bindings: Object.entries(durableObjects).map(([name, class_name]) => ({
@@ -60,13 +68,28 @@ const configs: Record<string, object> = {
       { tag: "v1", new_sqlite_classes: Object.values(durableObjects) },
     ],
     queues: {
-      producers: [{ binding: "JOBS", queue: local.queue }],
-      consumers: [{ queue: local.queue, max_batch_timeout: 1 }],
+      producers: [
+        { binding: "JOBS", queue: local.queue },
+        { binding: "SECRET_SYNC", queue: local.secretSync },
+      ],
+      consumers: [
+        { queue: local.queue, max_batch_timeout: 1 },
+        { queue: local.secretSync, max_batch_timeout: 1 },
+      ],
     },
     r2_buckets: [{ binding: "FILES", bucket_name: local.bucket }],
     // Wrangler supports dispatch namespaces only as remote bindings, so the
-    // local API reaches the user Worker through a service binding.
-    services: [{ binding: "LOCAL_USER_WORKER", service: local.userWorker }],
+    // local API reaches the user Worker through a service binding, and
+    // uploads agent scripts to apps/namespace-local.
+    services: [
+      { binding: "LOCAL_USER_WORKER", service: local.userWorker },
+      { binding: "RUNTIME", service: local.runtime },
+      {
+        binding: "LOCAL_NAMESPACE",
+        service: local.localNamespace,
+        entrypoint: "Namespace",
+      },
+    ],
   },
   "apps/model-stub": {
     $schema: "node_modules/wrangler/config-schema.json",
