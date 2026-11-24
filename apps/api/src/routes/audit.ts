@@ -46,7 +46,12 @@ const Verification = z
     firstBreak: z
       .object({
         seq: z.number(),
-        reason: z.enum(["hash_mismatch", "gap", "anchor_mismatch", "anchor_missing"]),
+        reason: z.enum([
+          "hash_mismatch",
+          "gap",
+          "anchor_mismatch",
+          "anchor_missing",
+        ]),
       })
       .optional(),
   })
@@ -109,7 +114,9 @@ export const auditRoutes = new OpenAPIHono<{
               q.action ? eq(auditEvents.action, q.action) : undefined,
               q.actor ? eq(auditEvents.actorId, q.actor) : undefined,
               q.caseId ? eq(auditEvents.caseId, q.caseId) : undefined,
-              q.from ? gte(auditEvents.occurredAt, new Date(q.from)) : undefined,
+              q.from
+                ? gte(auditEvents.occurredAt, new Date(q.from))
+                : undefined,
               q.to ? lt(auditEvents.occurredAt, new Date(q.to)) : undefined,
             ),
           )
@@ -162,7 +169,10 @@ export const auditRoutes = new OpenAPIHono<{
         return { chain, heads };
       });
       if (!chain.ok)
-        return c.json({ ...chain, headHash: undefined, anchorsChecked: 0 }, 200);
+        return c.json(
+          { ...chain, headHash: undefined, anchorsChecked: 0 },
+          200,
+        );
 
       const days: string[] = [];
       let cursor: string | undefined;
@@ -199,7 +209,10 @@ export const auditRoutes = new OpenAPIHono<{
               ok: false,
               checkedThroughSeq: chain.checkedThroughSeq,
               anchorsChecked,
-              firstBreak: { seq: manifest?.firstSeq ?? 0, reason: "anchor_missing" as const },
+              firstBreak: {
+                seq: manifest?.firstSeq ?? 0,
+                reason: "anchor_missing" as const,
+              },
             },
             200,
           );
@@ -212,7 +225,10 @@ export const auditRoutes = new OpenAPIHono<{
               ok: false,
               checkedThroughSeq: chain.checkedThroughSeq,
               anchorsChecked,
-              firstBreak: { seq: manifest.lastSeq, reason: "anchor_mismatch" as const },
+              firstBreak: {
+                seq: manifest.lastSeq,
+                reason: "anchor_mismatch" as const,
+              },
             },
             200,
           );
@@ -220,7 +236,11 @@ export const auditRoutes = new OpenAPIHono<{
         previous = day;
       }
       return c.json(
-        { ok: true, checkedThroughSeq: chain.checkedThroughSeq, anchorsChecked },
+        {
+          ok: true,
+          checkedThroughSeq: chain.checkedThroughSeq,
+          anchorsChecked,
+        },
         200,
       );
     },

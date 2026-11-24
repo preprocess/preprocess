@@ -49,7 +49,9 @@ export const orgCaller = createMiddleware<{
     if (!result.valid || !result.key)
       throw new HTTPException(401, { message: "Invalid API key." });
     if (result.key.referenceId !== pathOrg)
-      throw new HTTPException(403, { message: "Not a member of this organization." });
+      throw new HTTPException(403, {
+        message: "Not a member of this organization.",
+      });
     caller = { type: "api_key", keyId: result.key.id, role: "admin" };
   } else {
     const session = await withAuth(c.env, request, (auth) =>
@@ -63,11 +65,16 @@ export const orgCaller = createMiddleware<{
         .select({ role: member.role })
         .from(member)
         .where(
-          and(eq(member.organizationId, pathOrg), eq(member.userId, session.user.id)),
+          and(
+            eq(member.organizationId, pathOrg),
+            eq(member.userId, session.user.id),
+          ),
         ),
     );
     if (!membership)
-      throw new HTTPException(403, { message: "Not a member of this organization." });
+      throw new HTTPException(403, {
+        message: "Not a member of this organization.",
+      });
     caller = {
       type: "person",
       userId: session.user.id,
@@ -83,7 +90,9 @@ export const orgCaller = createMiddleware<{
 
 export const requireAdmin = (caller: Caller) => {
   if (caller.role !== "owner" && caller.role !== "admin")
-    throw new HTTPException(403, { message: "Only Owners and Admins can do this." });
+    throw new HTTPException(403, {
+      message: "Only Owners and Admins can do this.",
+    });
 };
 
 // Who, where and from which request, for an audit event in this organization.

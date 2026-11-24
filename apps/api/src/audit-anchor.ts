@@ -112,7 +112,10 @@ const headBefore = async (tx: Tx, org: string, before: Date) => {
     .select({ seq: auditEvents.seq, hash: auditEvents.hash })
     .from(auditEvents)
     .where(
-      and(eq(auditEvents.organizationId, org), lt(auditEvents.occurredAt, before)),
+      and(
+        eq(auditEvents.organizationId, org),
+        lt(auditEvents.occurredAt, before),
+      ),
     )
     .orderBy(desc(auditEvents.seq))
     .limit(1);

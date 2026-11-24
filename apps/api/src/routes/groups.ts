@@ -395,7 +395,9 @@ export const groupRoutes = new OpenAPIHono<{
         const group = await findGroup(tx, id);
         const removed = await tx
           .delete(groupMembers)
-          .where(and(eq(groupMembers.groupId, id), eq(groupMembers.userId, userId)))
+          .where(
+            and(eq(groupMembers.groupId, id), eq(groupMembers.userId, userId)),
+          )
           .returning();
         if (removed.length === 0) return;
         await audit(tx, {
@@ -415,7 +417,9 @@ export const groupRoutes = new OpenAPIHono<{
       path: "/agents/{agent}/grants",
       tags: ["Agent access"],
       request: { params: AgentParam },
-      responses: { 200: json(z.array(Grant), "Groups with access to the agent") },
+      responses: {
+        200: json(z.array(Grant), "Groups with access to the agent"),
+      },
     }),
     async (c) => {
       const agentId = c.req.valid("param").agent;
@@ -478,7 +482,10 @@ export const groupRoutes = new OpenAPIHono<{
           data: { agent: agent.slug, group: group.slug, access },
         });
         const [row] = await grantsOf(tx).where(
-          and(eq(agentGrants.agentId, agentId), eq(agentGrants.groupId, groupId)),
+          and(
+            eq(agentGrants.agentId, agentId),
+            eq(agentGrants.groupId, groupId),
+          ),
         );
         return row!;
       });
@@ -499,7 +506,12 @@ export const groupRoutes = new OpenAPIHono<{
       await withOrg(c.env, c.var.org, async (tx) => {
         const removed = await tx
           .delete(agentGrants)
-          .where(and(eq(agentGrants.agentId, agentId), eq(agentGrants.groupId, groupId)))
+          .where(
+            and(
+              eq(agentGrants.agentId, agentId),
+              eq(agentGrants.groupId, groupId),
+            ),
+          )
           .returning();
         if (removed.length === 0) return;
         await audit(tx, {

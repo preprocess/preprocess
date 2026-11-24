@@ -52,29 +52,33 @@ export const organizationRoutes = new OpenAPIHono<{
       },
     }),
     async (c) => {
-      const { members, memberships } = await withOrg(c.env, c.var.org, async (tx) => ({
-        members: await tx
-          .select({
-            userId: member.userId,
-            role: member.role,
-            joinedAt: member.createdAt,
-            name: user.name,
-            email: user.email,
-          })
-          .from(member)
-          .innerJoin(user, eq(user.id, member.userId))
-          .orderBy(asc(user.name)),
-        memberships: await tx
-          .select({
-            userId: groupMembers.userId,
-            id: groups.id,
-            slug: groups.slug,
-            name: groups.name,
-          })
-          .from(groupMembers)
-          .innerJoin(groups, eq(groups.id, groupMembers.groupId))
-          .orderBy(asc(groups.name)),
-      }));
+      const { members, memberships } = await withOrg(
+        c.env,
+        c.var.org,
+        async (tx) => ({
+          members: await tx
+            .select({
+              userId: member.userId,
+              role: member.role,
+              joinedAt: member.createdAt,
+              name: user.name,
+              email: user.email,
+            })
+            .from(member)
+            .innerJoin(user, eq(user.id, member.userId))
+            .orderBy(asc(user.name)),
+          memberships: await tx
+            .select({
+              userId: groupMembers.userId,
+              id: groups.id,
+              slug: groups.slug,
+              name: groups.name,
+            })
+            .from(groupMembers)
+            .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+            .orderBy(asc(groups.name)),
+        }),
+      );
       return c.json(
         members.map((m) => ({
           ...m,

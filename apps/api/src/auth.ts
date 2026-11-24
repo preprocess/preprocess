@@ -30,7 +30,7 @@ import {
 } from "better-auth/plugins/organization/access";
 import { and, count, eq, gt, sql } from "drizzle-orm";
 
-import { sendInvitationEmail } from "./email.ts";
+import { sendInvitationEmail, sendVerificationEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 
 // Owner, Admin and Member are Better Auth's own roles. The only addition is
@@ -76,6 +76,10 @@ export const requestContext = (request: Request): RequestContext => ({
 export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
   const record = (event: Omit<AuditInput, "ip" | "requestId">) =>
     audit(tx, { ...event, ip: request.ip, requestId: request.requestId });
+  // Better Auth adds the creator as owner (calling afterAddMember) before
+  // afterCreateOrganization, when the chain does not exist yet. The
+  // organization.created event records that owner instead.
+  let creatingOrganization = false;
   const person = (fallback: string) => request.actorId ?? fallback;
 
   return betterAuth({
@@ -84,6 +88,15 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     trustedOrigins: [env.APP_URL],
     database: drizzleAdapter(tx, { provider: "pg", schema: authSchema }),
     emailAndPassword: { enabled: true },
+    // Accepting an invitation needs a verified email (Better Auth's default),
+    // so nobody can sign up with someone else's address and take their seat.
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      async sendVerificationEmail({ user, url }) {
+        await sendVerificationEmail(env, { email: user.email, url });
+      },
+    },
     advanced: {
       ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
       database: {
@@ -182,8 +195,10 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
           });
         },
         organizationHooks: {
-          beforeCreateOrganization: ({ organization: org, user }) =>
-            Promise.resolve({ data: { ...org, createdBy: user.id } }),
+          beforeCreateOrganization: ({ organization: org, user }) => {
+            creatingOrganization = true;
+            return Promise.resolve({ data: { ...org, createdBy: user.id } });
+          },
           async afterCreateOrganization({ organization: org, user }) {
             await startAuditChain(tx, org.id);
             const developers = newId("group");
@@ -202,7 +217,12 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               action: "organization.created",
               targetType: "organization",
               targetId: org.id,
-              data: { name: org.name, slug: org.slug, developersGroup: developers },
+              data: {
+                name: org.name,
+                slug: org.slug,
+                owner: user.id,
+                developersGroup: developers,
+              },
             });
           },
           async afterUpdateOrganization({ organization: org, user }) {
@@ -242,6 +262,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             });
           },
           async afterAddMember({ member, user }) {
+            if (creatingOrganization) return;
             await record({
               organizationId: member.organizationId,
               actorType: request.actorId ? "person" : "platform",

@@ -27,3 +27,21 @@ export const sendInvitationEmail = async (
     ].join("\n"),
   });
 };
+
+export const sendVerificationEmail = async (
+  env: Env,
+  message: { email: string; url: string },
+) => {
+  await env.EMAIL.send({
+    from: env.EMAIL_FROM,
+    to: message.email,
+    subject: "Confirm your email for Preprocess",
+    text: [
+      "Confirm this is your email address to finish setting up Preprocess:",
+      "",
+      message.url,
+      "",
+      "If you did not sign up, you can ignore this email.",
+    ].join("\n"),
+  });
+};
