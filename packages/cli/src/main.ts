@@ -7,8 +7,15 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 
 import { bundle, deploy, describe, gitInfo } from "./deploy.ts";
+import { configPull, groupsPull } from "./pull.ts";
 
 const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <id>] [--api <url>]
+       preprocess config pull [entry] [--agent <name>] [--org <id>] [--api <url>]
+       preprocess groups pull [entry] [--org <id>] [--api <url>]
+
+  deploy       bundle and deploy the agent
+  config pull  write the agent's dashboard overrides into preprocess.config.json
+  groups pull  write the organization's groups into preprocess.config.json
 
   entry     the agent's module (default: src/index.ts)
   --agent   the agent's name (default: package.json name, without its scope)
@@ -28,9 +35,12 @@ export const main = async (argv: string[], env = process.env) => {
       help: { type: "boolean", short: "h" },
     },
   });
-  const [command, entry = "src/index.ts"] = positionals;
-  if (values.help || command !== "deploy")
+  const [command] = positionals;
+  const pull =
+    (command === "config" || command === "groups") && positionals[1] === "pull";
+  if (values.help || (command !== "deploy" && !pull))
     return { code: command ? 1 : 0, out: usage };
+  const entry = positionals[pull ? 2 : 1] ?? "src/index.ts";
 
   const cwd = process.cwd();
   const agent = values.agent ?? packageName(cwd);
@@ -38,13 +48,18 @@ export const main = async (argv: string[], env = process.env) => {
   const api = values.api ?? env.PREPROCESS_API_URL;
   const key = env.PREPROCESS_API_KEY;
   const missing = [
-    !agent && "--agent",
+    !agent && command !== "groups" && "--agent",
     !org && "--org or PREPROCESS_ORG",
     !api && "--api or PREPROCESS_API_URL",
     !key && "PREPROCESS_API_KEY",
   ].filter(Boolean);
-  if (!agent || !org || !api || !key || missing.length)
+  if (!org || !api || !key || missing.length)
     return { code: 1, out: `Missing ${missing.join(", ")}.\n\n${usage}` };
+  const target = { api, org, key, entry: path.resolve(cwd, entry) };
+  if (command === "groups") return { code: 0, ...(await groupsPull(target)) };
+  if (!agent) return { code: 1, out: usage };
+  if (command === "config")
+    return { code: 0, ...(await configPull({ ...target, agent })) };
 
   const deployment = await deploy({
     api,
