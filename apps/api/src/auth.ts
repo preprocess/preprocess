@@ -333,6 +333,9 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
           defaultPrefix: "pp_",
           references: "organization",
           enableMetadata: true,
+          // The plugin's default is 10 requests per key per day, which a CLI
+          // or integration exhausts in minutes.
+          rateLimit: { enabled: false },
         },
       ]),
     ],
