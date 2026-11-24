@@ -159,6 +159,7 @@ const configs: Record<string, object> = {
     r2_buckets: [{ binding: "RUNS", bucket_name: local.runs }],
     services: [
       { binding: "LOCAL_NAMESPACE", service: local.localNamespace },
+      { binding: "MCP_SERVICE", service: local.api, entrypoint: "McpService" },
       { binding: "PLATFORM", service: local.api, entrypoint: "Platform" },
     ],
   },

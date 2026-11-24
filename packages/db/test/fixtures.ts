@@ -37,6 +37,12 @@ import {
   secretGrants,
 } from "../src/schema/deployments.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
+import {
+  mcpAuthorizations,
+  mcpConnections,
+  mcpGrants,
+  mcpServers,
+} from "../src/schema/mcp.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 
 export type Org = Awaited<ReturnType<typeof seedOrganization>>;
@@ -151,6 +157,37 @@ export const seedOrganization = async (name: string) =>
       deploymentId,
       secretId,
       secretVersion: 1,
+    });
+    const serverId = newId("mcpServer");
+    await tx.insert(mcpServers).values({
+      id: serverId,
+      organizationId: org,
+      slug: "crm",
+      url: "https://crm.example.com/mcp",
+      auth: "oauth",
+      createdBy: userId,
+    });
+    await tx
+      .insert(mcpGrants)
+      .values({ organizationId: org, serverId, agentId, grantedBy: userId });
+    await tx.insert(mcpConnections).values({
+      id: newId("mcpConnection"),
+      organizationId: org,
+      serverId,
+      version: 1,
+      keyVersion: 1,
+      ciphertext: new Uint8Array([7, 8, 9]),
+      status: "active",
+      connectedBy: userId,
+    });
+    await tx.insert(mcpAuthorizations).values({
+      id: newId("mcpAuthorization"),
+      organizationId: org,
+      serverId,
+      codeVerifier: "verifier",
+      redirectUri: "https://app.test/v1/mcp/oauth/callback",
+      createdBy: userId,
+      expiresAt: new Date(now.getTime() + 600_000),
     });
     await tx.insert(cases).values({
       id: caseId,
@@ -282,6 +319,10 @@ export const tenantTables = {
   deployment_groups: "organization_id",
   secret_grants: "organization_id",
   secret_deliveries: "organization_id",
+  mcp_servers: "organization_id",
+  mcp_grants: "organization_id",
+  mcp_connections: "organization_id",
+  mcp_authorizations: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

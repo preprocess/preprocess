@@ -29,6 +29,7 @@ bundle("../outbound/src/index.ts", "outbound.js");
 bundle("../model-stub/src/index.ts", "model-stub.js");
 bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/invoice-agent.ts", "invoice-agent.js");
+bundle("test/fixtures/mcp-service.ts", "mcp-service.js");
 
 const worker = (name: string, extra: object = {}) => ({
   name,
@@ -61,6 +62,7 @@ export default defineConfig({
               new Response(`reached ${new URL(request.url).hostname}`),
           }),
           worker("model-stub"),
+          worker("mcp-service"),
           // The API's internal entrypoint, which the runtime reports to. The
           // tests read reports from run capture instead.
           {
@@ -78,6 +80,7 @@ export default { fetch: () => new Response("platform") };`,
         serviceBindings: {
           LOCAL_NAMESPACE: "namespace-local",
           NAMESPACE_ADMIN: { name: "namespace-local", entrypoint: "Namespace" },
+          MCP_SERVICE: { name: "mcp-service", entrypoint: "McpService" },
           PLATFORM: { name: "platform", entrypoint: "Platform" },
         },
       },

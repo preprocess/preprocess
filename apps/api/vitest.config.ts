@@ -7,6 +7,8 @@ import { localDatabaseUrl, localRoleUrl } from "@preprocess/db/migrate";
 import { buildSync } from "esbuild";
 import { defineConfig } from "vitest/config";
 
+import { fakeMcp } from "./test/fake-mcp.ts";
+
 const require = createRequire(import.meta.url);
 // pg require()s pg-protocol, and Vitest resolves that require with the
 // "import" condition, which points at an ES module. Pin it to the CommonJS
@@ -41,6 +43,7 @@ bundle("../namespace-local/src/index.ts", "namespace-local.js");
 bundle("../outbound/src/index.ts", "outbound.js");
 bundle("../model-stub/src/index.ts", "model-stub.js");
 bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
+bundle("test/fixtures/crm-agent.ts", "crm-agent.js");
 
 const worker = (name: string, extra: object = {}) => ({
   name,
@@ -71,6 +74,8 @@ export default defineConfig({
           BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
           AUDIT_SIGNING_KEY: auditKey,
         },
+        // The internet the API reaches: a remote MCP server behind OAuth.
+        outboundService: fakeMcp,
         serviceBindings: {
           LOCAL_USER_WORKER: () => Response.json({ worker: "test" }),
           RUNTIME: "preprocess-runtime-development",
@@ -96,6 +101,11 @@ export default defineConfig({
             r2Buckets: { RUNS: "runs" },
             serviceBindings: {
               LOCAL_NAMESPACE: "preprocess-namespace-development",
+              // The test Worker is the API: its McpService entrypoint.
+              MCP_SERVICE: {
+                name: "vitest-plugin-runner-",
+                entrypoint: "McpService",
+              },
             },
             outboundService: "model-stub",
           }),

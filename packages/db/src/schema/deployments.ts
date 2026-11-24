@@ -41,7 +41,7 @@ export const deploymentSource = pgEnum("deployment_source", ["cli", "github"]);
 
 // The same shape the outbound Worker enforces (apps/outbound).
 export type NetworkRules = { allow: string[]; block: string[] };
-export type WaitingFor = { secrets?: string[] };
+export type WaitingFor = { secrets?: string[]; mcp?: string[] };
 
 export const deployments = pgTable(
   "deployments",

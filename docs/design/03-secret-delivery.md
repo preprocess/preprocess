@@ -5,7 +5,7 @@ Scope: build step 2. Agents never read organization secrets. Values reach only t
 ## Decision
 
 - **Organization secrets are `secret_text` bindings on the deployment's Workers for Platforms script**, set at upload from our encrypted store and re-synced when a value or a grant changes. the original suggestion, confirmed.
-- **MCP OAuth tokens are not bound.** Customer code reaches MCP servers through a platform service binding, `MCP`, whose props (fixed at upload, unforgeable) carry the organization and deployment. The token service attaches the organization's token, refreshes it, and enforces the MCP-server guardrail. Customer code never holds the token. Every connection belongs to the organization; there are no personal connections.
+- **MCP OAuth tokens are not bound.** Customer code reaches MCP servers through an `MCP` capability the runtime passes with each dispatch, as a dynamic dispatch prop (Cloudflare's documented pattern for request-scoped platform capabilities). The capability is an RPC stub of the runtime's `McpBroker` entrypoint, whose own props (the organization, agent and deployment) customer code can neither read nor change. It forwards to the API Worker's token service, which attaches the organization's token, refreshes it, and enforces the MCP-server guardrail. Customer code never holds the token. Every connection belongs to the organization; there are no personal connections.
 - **The runtime Worker (Pi Durable) has no Secrets Store binding.** Plaintext exists only in the deploy and sync jobs (memory, briefly) and inside the customer's script.
 - **The SDK redacts bound secret values** from tool results, hook results, errors and logs before they leave the customer's Worker, so a careless `return { headers }` does not put a key into the model's context, the thread, logs or capture. The docs describe this as defense in depth, not a guarantee: customer code that transforms a value can still leak it.
 
@@ -47,7 +47,7 @@ Reserved binding names (`MCP`, `MODELS`, `PREPROCESS_*`) cannot be secret names.
 
 **Deploy (upload).** The deploy Workflow (API side, has the KEK binding):
 1. Reads the manifest, computes the bound set, records any waiting guardrail.
-2. Decrypts those secrets in memory and uploads the script with `metadata.bindings` containing `{ type: "secret_text", name, text }` for each, plus the `MCP` and `MODELS` service bindings with `props: { organizationId, agentId, deploymentId }`.
+2. Decrypts those secrets in memory and uploads the script with `metadata.bindings` containing `{ type: "secret_text", name, text }` for each. Platform capabilities such as `MCP` are not upload bindings: the runtime passes them per dispatch (see MCP connections).
 3. Writes `secret_deliveries` and one audit event per secret: `secret.delivered { secret, version, deployment }`.
 
 Plaintext is never logged: the Workflow's evlog context carries only names and versions, and its step outputs (which Workflows persist) carry no values: decryption and upload happen in one step that returns only ids.
@@ -75,15 +75,26 @@ Plaintext is never logged: the Workflow's evlog context carries only names and v
 const crm = ctx.mcp("hubspot");                       // the agent's declared server
 const result = await crm.call("search_contacts", { q });
 
-// Platform side: the MCP broker (a WorkerEntrypoint in the API Worker)
+// Runtime: each dispatch carries the capability as a prop
+const MCP = ctx.exports.McpBroker({ props: { organizationId, agentId, deploymentId } });
+env.DISPATCHER.get(script, { props: { MCP } }, { outbound });
+
+// Runtime: the capability, forwarding to the API Worker's token service
 class McpBroker extends WorkerEntrypoint<Env, { organizationId: string; agentId: string; deploymentId: string }> {
-  async call(server: string, tool: string, args: unknown, opts: { caseId: string }): Promise<unknown>;
+  call(server: string, tool: string, args: unknown) { return env.MCP_SERVICE.call(this.ctx.props, server, tool, args); }
+}
+
+// API Worker: the token service, bound only by the runtime
+class McpService extends WorkerEntrypoint<Env> {
+  async call(props, server: string, tool: string, args: unknown): Promise<unknown>;
   // 1. server is declared by the deployment and allowed by the MCP guardrail
   // 2. picks the organization's connection for that server (there are no personal connections)
   // 3. decrypts the token (same envelope scheme as secrets), refreshes it if expired, calls the server
-  // 4. egress goes through the same network rules as the outbound Worker
+  // 4. egress goes through the same network rules as the outbound Worker (open until step 5)
 }
 ```
+
+The runtime holds no Secrets Store binding, so the capability only carries identity; decryption stays in the API Worker. Locally, apps/namespace-local runs the script with the same props through Worker Loader.
 
 ```ts
 export const mcpConnections = pgTable("mcp_connections", {
