@@ -47,5 +47,76 @@ export default agent({
   types the runtime speaks (`GET /manifest`, `POST /tools/:name`). Each
   deployment records the SDK version it was built with.
 
+## Output schema
+
+`schema` declares the case's output as a tree of groups, lists and fields
+(design doc 05). Every function receives `a`, an answers accessor that records
+each path it reads, so the runtime knows what to re-evaluate when an answer
+changes.
+
+```ts
+import { agent, schema as s } from "@preprocess/sdk";
+
+export default agent({
+  instructions: "Code invoices.",
+  secrets: ["ERP_TOKEN"],
+  groups: ["accounts-payable"],
+  schedules: [{ name: "nightly", cron: "0 2 * * *", text: "Reconcile" }],
+  schema: s.group(
+    {
+      vendor: s.select({
+        options: s.source({
+          search: (q, { cursor, env }) => erp(env.ERP_TOKEN).search(q, cursor),
+          get: (ids, { env }) => erp(env.ERP_TOKEN).get(ids),
+        }),
+        review: "required",
+      }),
+      vendorRecord: s.fetched({
+        inputs: (a) => ({ vendor: a.get("vendor") }),
+        fetch: ({ vendor }, { env }) => erp(env.ERP_TOKEN).record(vendor),
+        transform: (row) => ({ currency: row.currency }),
+      }),
+      lines: s.list(
+        s.group({
+          sku: s.text(),
+          glAccount: s.select({
+            options: (a) => glAccountsFor(a.sibling("sku")),
+          }),
+          amount: s.number(),
+        }),
+      ),
+      total: s.number(),
+    },
+    {
+      checks: {
+        totalsMatch: (a) =>
+          a.sum("lines[*].amount") === a.get("total") || {
+            field: "total",
+            message: "Lines do not add up",
+          },
+      },
+    },
+  ),
+  tools: {},
+});
+```
+
+- **Fields.** `text`, `number`, `boolean`, `date`, `select`, `multiselect`,
+  `fetched`, nested with `group` and `list`. Each takes `description`,
+  `visible(a)`, `review` (`"required" | "none"` or a function; groups pass it to
+  their children) and `invalidates` (paths a change makes stale that never read
+  it).
+- **Accessor.** `a.get(path)` returns an answer, or `null` when it is empty or
+  hidden; `a.fetched(path)`, `a.all("lines[*].amount")`, `a.sum(...)` and
+  `a.sibling(name)` (the field beside this one in a list item).
+- **Fetched fields** declare their `inputs`; the fetch runs again only when the
+  inputs change, otherwise the runtime's saved data is reused.
+- **Options** are an array, a function of the answers, or `s.source()` for large
+  lists that are searched and paged, never loaded whole.
+- **Groups.** `ctx.waitOn(group, { reason })` and `ctx.tag(group, message)` in a
+  tool name groups by slug; only slugs listed in `groups` are allowed.
+- **Protocol.** The Worker also answers `POST /schema/evaluate` and
+  `POST /schema/options`; the manifest carries the static tree.
+
 Unlike the rest of this repository, which is under the Elastic License 2.0,
 everything in this directory is MIT licensed (see LICENSE).
