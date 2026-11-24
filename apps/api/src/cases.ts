@@ -21,8 +21,10 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 import { agentRole, canSeeCase, canWorkCase } from "./access.ts";
 import type { Caller } from "./caller.ts";
+import type { Manifest } from "./deploy.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
+import { effectiveSettings } from "./settings.ts";
 import { refuseOverLimit } from "./spend.ts";
 import { notifyLater } from "./notify.ts";
 import { queueWebhooks } from "./webhooks.ts";
@@ -302,6 +304,7 @@ export const startQueuedCase = async (env: Env, message: OutboxMessage) => {
         deploymentId: deployments.id,
         script: deployments.scriptName,
         network: deployments.network,
+        manifest: deployments.manifest,
       })
       .from(cases)
       .innerJoin(deployments, eq(deployments.id, cases.deploymentId))
@@ -322,6 +325,11 @@ export const startQueuedCase = async (env: Env, message: OutboxMessage) => {
       deploymentId: found.deploymentId,
       script: found.script,
       network: found.network,
+      settings: await effectiveSettings(
+        tx,
+        found.agentId,
+        found.manifest as Manifest,
+      ),
       input: { text, files: caseFiles },
       groups: await agentGroups(tx, found.agentId),
     } satisfies StartCase;
