@@ -1,12 +1,7 @@
--- Seed data for local and every preview branch. Idempotent, so it can be
--- re-applied after a reset.
-INSERT INTO organizations (id, name) VALUES
-  ('org_acme', 'Acme Logistics'),
-  ('org_globex', 'Globex Insurance')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO members (id, organization_id, email, role) VALUES
-  ('mem_acme_owner', 'org_acme', 'owner@acme.test', 'owner'),
-  ('mem_acme_admin', 'org_acme', 'admin@acme.test', 'admin'),
-  ('mem_globex_owner', 'org_globex', 'owner@globex.test', 'owner')
-ON CONFLICT (id) DO NOTHING;
+-- Seed data for local development and every preview branch. Idempotent, so it
+-- can be re-applied after a reset.
+--
+-- Organizations, people and their audit chains are created through the API
+-- (Better Auth hashes passwords, and the chain is hashed in code), so this
+-- file holds nothing yet; `pnpm db:seed` also runs the API's seed.
+SELECT 1;
