@@ -1,0 +1,83 @@
+#!/usr/bin/env node
+// The `preprocess` command. The API key comes only from PREPROCESS_API_KEY,
+// so it never lands in shell history or CI logs.
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { parseArgs } from "node:util";
+
+import { bundle, deploy, describe, gitInfo } from "./deploy.ts";
+
+const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <id>] [--api <url>]
+
+  entry     the agent's module (default: src/index.ts)
+  --agent   the agent's name (default: package.json name, without its scope)
+  --org     organization id (default: PREPROCESS_ORG)
+  --api     API origin (default: PREPROCESS_API_URL)
+
+PREPROCESS_API_KEY holds the organization API key.`;
+
+export const main = async (argv: string[], env = process.env) => {
+  const { positionals, values } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      agent: { type: "string" },
+      org: { type: "string" },
+      api: { type: "string" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+  const [command, entry = "src/index.ts"] = positionals;
+  if (values.help || command !== "deploy")
+    return { code: command ? 1 : 0, out: usage };
+
+  const cwd = process.cwd();
+  const agent = values.agent ?? packageName(cwd);
+  const org = values.org ?? env.PREPROCESS_ORG;
+  const api = values.api ?? env.PREPROCESS_API_URL;
+  const key = env.PREPROCESS_API_KEY;
+  const missing = [
+    !agent && "--agent",
+    !org && "--org or PREPROCESS_ORG",
+    !api && "--api or PREPROCESS_API_URL",
+    !key && "PREPROCESS_API_KEY",
+  ].filter(Boolean);
+  if (!agent || !org || !api || !key || missing.length)
+    return { code: 1, out: `Missing ${missing.join(", ")}.\n\n${usage}` };
+
+  const deployment = await deploy({
+    api,
+    org,
+    agent,
+    key,
+    bundle: await bundle(path.resolve(cwd, entry)),
+    git: gitInfo(cwd, env),
+  });
+  return {
+    code: deployment.status === "failed" ? 1 : 0,
+    out: describe(agent, deployment),
+  };
+};
+
+const packageName = (cwd: string) => {
+  try {
+    const { name } = JSON.parse(
+      readFileSync(path.join(cwd, "package.json"), "utf8"),
+    ) as { name?: string };
+    return name?.replace(/^@[^/]+\//, "");
+  } catch {
+    return undefined;
+  }
+};
+
+if (import.meta.main) {
+  try {
+    const { code, out } = await main(process.argv.slice(2));
+    (code ? console.error : console.log)(out);
+    process.exitCode = code;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
+}
