@@ -12,9 +12,16 @@ export const prefixes = {
   apikey: "key",
   group: "grp",
   agent: "agt",
+  deployment: "dep",
   secret: "sec",
   case: "case",
   audit: "aud",
+  file: "file",
+  reviewEvent: "rev",
+  mention: "men",
+  webhook: "whk",
+  delivery: "msg",
+  outbox: "obx",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

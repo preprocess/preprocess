@@ -5,7 +5,8 @@
 // plugin); nothing reaches Cloudflare.
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const run = (args: string[]) => {
@@ -19,6 +20,19 @@ const run = (args: string[]) => {
 };
 
 run(["install", "--frozen-lockfile"]);
+
+// The API's local secrets: a Better Auth secret and the audit signing key,
+// generated once per checkout and never committed.
+const apiVars = path.join(import.meta.dirname, "../apps/api/.dev.vars");
+if (!existsSync(apiVars)) {
+  const auditKey = generateKeyPairSync("ed25519")
+    .privateKey.export({ format: "der", type: "pkcs8" })
+    .toString("base64");
+  writeFileSync(
+    apiVars,
+    `BETTER_AUTH_SECRET=${randomBytes(32).toString("base64")}\nAUDIT_SIGNING_KEY=${auditKey}\n`,
+  );
+}
 run(["--filter", "@preprocess/infra", "wrangler:generate"]);
 run(["db:migrate"]);
 run(["db:seed"]);

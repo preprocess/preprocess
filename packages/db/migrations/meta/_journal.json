@@ -15,6 +15,27 @@
       "when": 1795507092492,
       "tag": "0001_security",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795508285668,
+      "tag": "0002_deployments",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795508709731,
+      "tag": "0003_step3_cases",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795508710676,
+      "tag": "0004_step3_security",
+      "breakpoints": true
     }
   ]
 }

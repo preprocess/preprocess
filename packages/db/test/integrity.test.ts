@@ -6,6 +6,13 @@ import { withOrg, withoutOrg } from "../src/client.ts";
 import { newId } from "../src/ids.ts";
 import { groupMembers, groups } from "../src/schema/access.ts";
 import { member, organization, user } from "../src/schema/auth.ts";
+import {
+  caseMentions,
+  cases,
+  inboxReads,
+  reviewEvents,
+} from "../src/schema/cases.ts";
+import { deploymentGroups, deployments } from "../src/schema/deployments.ts";
 import { failure, seedOrganization } from "./fixtures.ts";
 import type { Org } from "./fixtures.ts";
 
@@ -103,6 +110,119 @@ describe("groups", () => {
         ),
       ),
     ).toMatch(/foreign key/);
+  });
+
+  it("refuse deleting a group mentioned in a case", async () => {
+    const groupId = newId("group");
+    await withOrg(env, a.org, async (tx) => {
+      await tx.insert(groups).values({
+        id: groupId,
+        organizationId: a.org,
+        slug: "legal",
+        name: "Legal",
+      });
+      await tx.insert(caseMentions).values({
+        id: newId("mention"),
+        organizationId: a.org,
+        caseId: a.caseId,
+        groupId,
+        messageId: "msg_legal",
+        by: "agent",
+        message: "Legal, please look",
+      });
+    });
+    expect(
+      await failure(
+        withOrg(env, a.org, (tx) =>
+          tx.delete(groups).where(eq(groups.id, groupId)),
+        ),
+      ),
+    ).toMatch(/mentioned in a case/);
+  });
+});
+
+describe("review events", () => {
+  it("cannot be edited", async () => {
+    expect(
+      await failure(
+        withOrg(env, a.org, (tx) =>
+          tx
+            .update(reviewEvents)
+            .set({ path: "other" })
+            .where(eq(reviewEvents.caseId, a.caseId)),
+        ),
+      ),
+    ).toMatch(/permission denied/);
+  });
+});
+
+describe("inbox reads", () => {
+  it("belong to members of the organization", async () => {
+    expect(
+      await failure(
+        withOrg(env, a.org, (tx) =>
+          tx
+            .insert(inboxReads)
+            .values({ organizationId: a.org, userId: b.userId, itemKey: "x" }),
+        ),
+      ),
+    ).toMatch(/not a member/);
+  });
+});
+
+describe("deployments", () => {
+  it("serve only their own organization's cases", async () => {
+    expect(
+      await failure(
+        withOrg(env, a.org, (tx) =>
+          tx.insert(cases).values({
+            id: newId("case"),
+            organizationId: a.org,
+            agentId: a.agentId,
+            deploymentId: b.deploymentId,
+            status: "queued",
+            source: "api",
+          }),
+        ),
+      ),
+    ).toMatch(/foreign key/);
+  });
+
+  it("cannot be deleted while a case points at them", async () => {
+    expect(
+      await failure(
+        withOrg(env, a.org, (tx) =>
+          tx.delete(deployments).where(eq(deployments.id, a.deploymentId)),
+        ),
+      ),
+    ).toMatch(/foreign key/);
+  });
+
+  it("name only their own organization's groups", async () => {
+    expect(
+      await failure(
+        withOrg(env, a.org, (tx) =>
+          tx.insert(deploymentGroups).values({
+            organizationId: a.org,
+            deploymentId: a.deploymentId,
+            groupId: b.groupId,
+          }),
+        ),
+      ),
+    ).toMatch(/foreign key/);
+  });
+
+  it("promote only production", async () => {
+    expect(
+      await failure(
+        withOrg(env, a.org, (tx) =>
+          tx
+            .update(deployments)
+            .set({ environment: "preview" })
+            .where(eq(deployments.id, a.deploymentId)),
+        ),
+      ),
+    ).toMatch(/deployments_only_production_is_promoted/);
   });
 });
 

@@ -69,6 +69,8 @@ export const agents = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     slug: text().notNull(),
     archivedAt: timestamp({ withTimezone: true }),
+    // Deploys from this branch serve production; others are previews (spec 4).
+    productionBranch: text().notNull().default("main"),
   },
   (t) => [
     unique().on(t.organizationId, t.slug),
