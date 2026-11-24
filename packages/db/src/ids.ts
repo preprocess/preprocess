@@ -12,6 +12,7 @@ export const prefixes = {
   apikey: "key",
   group: "grp",
   agent: "agt",
+  deployment: "dep",
   secret: "sec",
   case: "case",
   audit: "aud",
