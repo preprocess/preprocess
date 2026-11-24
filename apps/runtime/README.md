@@ -17,9 +17,8 @@ call, with the organization's network rules as outbound parameters.
   and timing), tool call and result, and the case's outcome is recorded in the
   object as it happens, then sealed as `preprocess.run` version 1 in the `RUNS`
   bucket at `<org>/agents/<agent>/cases/<case>/run.v1.json`.
-- **RPC**: `startCase` and `getCase` on the default entrypoint. In the
-  `development` stage only, `POST|GET /dev/<org>/<agent>/<case>` does the same
-  over HTTP until the cases API arrives (build step 3).
+- **RPC**: `startCase`, `getCase` and `manifest` on the default entrypoint,
+  called by the API Worker.
 
 Locally, Cloudflare's runtime cannot emulate a dispatch namespace, so
 `apps/namespace-local` stands in for it and `apps/outbound` applies the network

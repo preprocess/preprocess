@@ -21,6 +21,11 @@ import {
   groups,
 } from "../src/schema/access.ts";
 import { caseAssignees, cases } from "../src/schema/cases.ts";
+import {
+  deployments,
+  secretDeliveries,
+  secretGrants,
+} from "../src/schema/deployments.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 
 export type Org = Awaited<ReturnType<typeof seedOrganization>>;
@@ -98,14 +103,39 @@ export const seedOrganization = async (name: string) =>
       masterKeyId: "secrets-master-v1",
       wrappedKey: new Uint8Array([1, 2, 3]),
     });
+    const secretId = newId("secret");
+    const deploymentId = newId("deployment");
     await tx.insert(secrets).values({
-      id: newId("secret"),
+      id: secretId,
       organizationId: org,
       name: "ERP_TOKEN",
       version: 1,
       keyVersion: 1,
       ciphertext: new Uint8Array([4, 5, 6]),
       updatedBy: userId,
+    });
+    await tx.insert(deployments).values({
+      id: deploymentId,
+      organizationId: org,
+      agentId,
+      status: "ready",
+      scriptName: deploymentId,
+      bundleSha256: "0".repeat(64),
+      sdkVersion: "0.1.0",
+      model: "inkling-2-small",
+      reasoning: "medium",
+      manifest: {},
+      source: "cli",
+      createdBy: userId,
+    });
+    await tx
+      .insert(secretGrants)
+      .values({ organizationId: org, secretId, agentId, grantedBy: userId });
+    await tx.insert(secretDeliveries).values({
+      organizationId: org,
+      deploymentId,
+      secretId,
+      secretVersion: 1,
     });
     await tx.insert(cases).values({
       id: caseId,
@@ -149,6 +179,9 @@ export const tenantTables = {
   case_assignees: "organization_id",
   audit_events: "organization_id",
   audit_heads: "organization_id",
+  deployments: "organization_id",
+  secret_grants: "organization_id",
+  secret_deliveries: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

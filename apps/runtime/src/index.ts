@@ -1,6 +1,7 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import type { CaseView } from "./case-runtime.ts";
+import { agentWorker } from "./dispatch.ts";
 import type { Deployment, Env, StartCase } from "./env.ts";
 
 export { CaseRuntime } from "./case-runtime.ts";
@@ -29,32 +30,12 @@ export default class Runtime extends WorkerEntrypoint<Env> {
     return runtimeFor(this.env, c).view();
   }
 
-  // Local development only, until the cases API lands in step 3: start and
-  // read a case by HTTP so a deployed agent can be run end to end.
-  override async fetch(request: Request) {
-    if (this.env.STAGE !== "development")
-      return new Response("not found", { status: 404 });
-    const url = new URL(request.url);
-    const [, dev, org, agent, caseId] = url.pathname.split("/");
-    if (dev !== "dev" || !org || !agent || !caseId)
-      return new Response("not found", { status: 404 });
-    if (request.method === "POST") {
-      const body =
-        await request.json<
-          Omit<StartCase, "organizationId" | "agentId" | "caseId">
-        >();
-      return Response.json(
-        await this.startCase({
-          ...body,
-          organizationId: org,
-          agentId: agent,
-          caseId,
-        }),
-        { status: 202 },
-      );
-    }
-    return Response.json(
-      await this.getCase({ organizationId: org, agentId: agent, caseId }),
-    );
+  // The deployed Worker's manifest, read through the same dispatch path a
+  // case uses. The deploy path calls this to learn what the code declares.
+  async manifest(deployment: Deployment): Promise<unknown> {
+    const response = await agentWorker(this.env, deployment).fetch("/manifest");
+    if (!response.ok)
+      throw new Error(`agent Worker ${deployment.script} answered ${response.status}`);
+    return response.json();
   }
 }
