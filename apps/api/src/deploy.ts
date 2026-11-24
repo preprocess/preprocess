@@ -27,6 +27,11 @@ import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
 import { namespaceFor } from "./namespace.ts";
 import { effectiveNetwork, permits } from "./network.ts";
+import {
+  agentOverrideValues,
+  clearOverrides,
+  overrideWarnings,
+} from "./settings.ts";
 import type { NetworkRules } from "./network.ts";
 
 type Actor = Pick<AuditInput, "actorType" | "actorId" | "ip" | "requestId">;
@@ -426,10 +431,16 @@ export const deploy = async (
     });
   });
   const waiting = await syncDeployment(env, org, id, actor);
-  if (waiting.length === 0 && input.git.branch === agent.productionBranch)
-    await promote(env, org, agent.id, id, actor);
-  return getDeployment(env, org, agent.id, id);
+  const cleared =
+    waiting.length === 0 && input.git.branch === agent.productionBranch
+      ? await promote(env, org, agent.id, id, actor)
+      : [];
+  const deployed = await getDeployment(env, org, agent.id, id);
+  return { ...deployed, warnings: [...deployed.warnings, ...cleared] };
 };
+
+const clearedWarning = (key: string, value: unknown) =>
+  `promotion cleared the dashboard override of ${key} (${JSON.stringify(value)})`;
 
 export const promote = async (
   env: Env,
@@ -458,7 +469,8 @@ export const promote = async (
     throw new HTTPException(409, {
       message: `deployment is waiting for grants: ${waiting.join(", ")}`,
     });
-  await withOrg(env, org, async (tx) => {
+  // Code is the truth again (spec 5): the agent's dashboard overrides go.
+  return withOrg(env, org, async (tx) => {
     const [row] = await tx
       .update(deployments)
       .set({ promotedAt: sql`now()` })
@@ -475,6 +487,15 @@ export const promote = async (
       targetId: deploymentId,
       data: { agent: agentId },
     });
+    const cleared = await clearOverrides(
+      tx,
+      agentId,
+      { organizationId: org, ...actor },
+      deploymentId,
+    );
+    return Object.entries(cleared).map(([key, value]) =>
+      clearedWarning(key, value),
+    );
   });
 };
 
@@ -529,7 +550,17 @@ export const getDeployment = (
       .from(deployments)
       .where(and(eq(deployments.id, id), eq(deployments.agentId, agentId)));
     if (!d) throw new HTTPException(404, { message: "deployment not found" });
-    return view(d, await productionId(tx, agentId));
+    const production = await productionId(tx, agentId);
+    const shown = view(d, production);
+    if (d.environment !== "production" || d.id === production) return shown;
+    const overrides = await agentOverrideValues(tx, agentId);
+    return {
+      ...shown,
+      warnings: [
+        ...shown.warnings,
+        ...overrideWarnings(overrides, d.manifest as Manifest),
+      ],
+    };
   });
 
 export const listDeployments = (env: Env, org: OrgId, agentId: string) =>

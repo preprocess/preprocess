@@ -41,6 +41,10 @@ import {
   guardrailRequests,
   organizationGuardrails,
 } from "../src/schema/guardrails.ts";
+import {
+  agentOverrides,
+  organizationDefaults,
+} from "../src/schema/settings.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
   mcpAuthorizations,
@@ -288,6 +292,17 @@ export const seedOrganization = async (name: string) =>
       rules: { allow: ["erp.example.com"], block: [] },
       updatedBy: userId,
     });
+    await tx.insert(organizationDefaults).values({
+      organizationId: org,
+      values: { reasoning: "high" },
+      updatedBy: userId,
+    });
+    await tx.insert(agentOverrides).values({
+      organizationId: org,
+      agentId,
+      values: { model: "kimi-k3.1-pro" },
+      updatedBy: userId,
+    });
     await tx.insert(guardrailRequests).values({
       id: newId("guardrailRequest"),
       organizationId: org,
@@ -351,6 +366,8 @@ export const tenantTables = {
   organization_guardrails: "organization_id",
   agent_network_rules: "organization_id",
   guardrail_requests: "organization_id",
+  organization_defaults: "organization_id",
+  agent_overrides: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

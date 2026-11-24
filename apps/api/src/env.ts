@@ -1,6 +1,7 @@
 import type { Counter } from "./counter.ts";
 import type { Namespace } from "./namespace.ts";
 import type { OutboxMessage } from "./outbox.ts";
+import type { EffectiveSettings } from "./settings.ts";
 
 export type Job = { organizationId: string; id: string; requestedAt: string };
 
@@ -19,6 +20,9 @@ export type StartCase = CaseKey & {
   deploymentId: string;
   script: string;
   network: { allow: string[]; block: string[] };
+  // The agent's settings after dashboard overrides and organization defaults
+  // (spec 5), applied over the manifest's.
+  settings?: EffectiveSettings;
   input: {
     text: string;
     files?: { id: string; name: string; contentType: string }[];
