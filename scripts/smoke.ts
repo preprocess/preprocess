@@ -27,7 +27,6 @@ for (let attempt = 0; ; attempt++) {
   await new Promise((resolve) => setTimeout(resolve, 2000));
 }
 
-expect((await call("/orgs")).body.includes("org_acme"), "seeded organizations");
 expect(
   (await call("/orgs/org_acme/counter", { method: "POST" })).status === 200,
   "Durable Object",

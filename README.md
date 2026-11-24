@@ -44,7 +44,7 @@ applies migrations, loads the seed, and starts the apps behind
 
 - https://app.preprocess.localhost: the product app. Without WorkOS credentials
   it runs in preview mode, with a one-button sign-in and seeded scenarios.
-- https://api.preprocess.localhost: the API (`/orgs`, `POST /orgs/:org/counter`,
+- https://api.preprocess.localhost: the API (`POST /orgs/:org/counter`,
   `POST /orgs/:org/jobs`, `/dispatch`, `POST /models/chat`).
 
 The first run starts portless's HTTPS proxy on port 443 and trusts its local CA,

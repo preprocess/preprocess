@@ -1,9 +1,6 @@
-import { organizations } from "@preprocess/db";
 import { runMode } from "@preprocess/runmode";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import pg from "pg";
 
 import type { Env, Job } from "./env.ts";
 import { chat } from "./models.ts";
@@ -22,16 +19,6 @@ app.get("/", (c) =>
     model: c.env.MODEL_SERVICE_URL ? "staging" : "stub",
   }),
 );
-
-app.get("/orgs", async (c) => {
-  const client = new pg.Client({ connectionString: c.env.DB.connectionString });
-  await client.connect();
-  try {
-    return c.json(await drizzle(client).select().from(organizations));
-  } finally {
-    c.executionCtx.waitUntil(client.end());
-  }
-});
 
 app.post("/orgs/:org/counter", async (c) => {
   const counter = c.env.COUNTER.getByName(`${c.req.param("org")}:counter`);
