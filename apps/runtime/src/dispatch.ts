@@ -12,9 +12,18 @@ type Exports = {
 // carries the MCP capability for this deployment as the `MCP` prop.
 export const agentWorker = (
   env: Env,
-  deployment: Deployment,
+  deployment: Deployment & { caseId?: string },
   exports?: unknown,
 ): { fetch(path: string, init?: RequestInit): Promise<Response> } => {
+  // Who this call serves, for the Tail Worker's run-log records (apps/tail).
+  const scoped = (init?: RequestInit): RequestInit => {
+    const headers = new Headers(init?.headers);
+    headers.set("x-preprocess-org", deployment.organizationId);
+    headers.set("x-preprocess-agent", deployment.agentId);
+    headers.set("x-preprocess-deployment", deployment.deploymentId);
+    if (deployment.caseId) headers.set("x-preprocess-case", deployment.caseId);
+    return { ...init, headers };
+  };
   const outbound = {
     organizationId: deployment.organizationId,
     network: JSON.stringify(deployment.network),
@@ -37,7 +46,7 @@ export const agentWorker = (
       { outbound },
     );
     return {
-      fetch: (path, init) => worker.fetch(`https://agent${path}`, init),
+      fetch: (path, init) => worker.fetch(`https://agent${path}`, scoped(init)),
     };
   }
   const local = env.LOCAL_NAMESPACE;
@@ -48,7 +57,7 @@ export const agentWorker = (
         deployment.script,
         outbound,
         props,
-        new Request(`https://agent${path}`, init),
+        new Request(`https://agent${path}`, scoped(init)),
       ),
   };
 };

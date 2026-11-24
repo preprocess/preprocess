@@ -7,6 +7,7 @@ import {
   section,
 } from "@earendil-works/pi-durable";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { initLogs, wideEvent } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { decide } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
@@ -33,6 +34,7 @@ import type {
   StartCase,
 } from "./env.ts";
 import { openModels, PROVIDER } from "./models.ts";
+import { runLogEntry } from "./run-log.ts";
 import { COMPACTION, largeSummaries } from "./summaries.ts";
 import {
   type FieldView,
@@ -176,6 +178,26 @@ export class CaseRuntime extends DurableObject<Env> {
       kind,
       JSON.stringify(data),
     );
+    const entry = runLogEntry(kind, data);
+    const meta = this.meta();
+    if (!entry || !meta) return;
+    // Run logs (design doc 09) leave through the API's Platform entrypoint.
+    initLogs("runtime", (records) =>
+      this.env.PLATFORM ? this.env.PLATFORM.logs(records) : Promise.resolve(),
+    );
+    const log = wideEvent(
+      entry.kind,
+      {
+        organizationId: meta.organizationId,
+        agentId: meta.agentId,
+        deploymentId: meta.deploymentId,
+        caseId: meta.caseId,
+      },
+      (promise) => this.ctx.waitUntil(promise),
+    );
+    log.set(entry.fields);
+    if (entry.level !== "info") log.setLevel(entry.level);
+    log.emit(entry.ms === undefined ? undefined : { _durationMs: entry.ms });
   }
 
   private events(): CaptureEvent[] {

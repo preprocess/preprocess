@@ -5,6 +5,7 @@ import {
   createExecutionContext,
   waitOnExecutionContext,
 } from "cloudflare:test";
+import type { LogRecord } from "@preprocess/logs";
 import { env } from "cloudflare:workers";
 import { vi } from "vitest";
 
@@ -12,6 +13,9 @@ import worker from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 
 export const sent: { to: string; subject: string; text: string }[] = [];
+
+// Run-log records the API queued (design doc 09), instead of the local queue.
+export const logged: LogRecord[] = [];
 
 // Email goes to this list instead of the local runtime's file sink.
 // Our cloud by default, where sign-up is open; self-hosted tests unset the region.
@@ -24,6 +28,12 @@ export const testEnv = (overrides: Partial<Env> = {}): Env => ({
       return Promise.resolve({ messageId: `test-${sent.length}` });
     }),
   } as unknown as SendEmail,
+  LOGS: {
+    sendBatch: (messages: { body: LogRecord }[]) => {
+      logged.push(...messages.map((m) => m.body));
+      return Promise.resolve();
+    },
+  } as unknown as Queue<LogRecord>,
   ...overrides,
 });
 
