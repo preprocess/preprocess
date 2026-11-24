@@ -17,7 +17,14 @@ export type CaptureEvent = {
     | "tool.call"
     | "tool.result"
     | "case.completed"
-    | "case.failed";
+    | "case.failed"
+    | "case.event"
+    | "case.wait"
+    | "platform.error"
+    | "schema.answer"
+    | "schema.error"
+    | "decide"
+    | "ocr";
   data: Record<string, unknown>;
 };
 
