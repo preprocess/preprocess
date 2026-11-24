@@ -36,6 +36,7 @@ import {
   secretDeliveries,
   secretGrants,
 } from "../src/schema/deployments.ts";
+import { organizationGuardrails } from "../src/schema/guardrails.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
   mcpAuthorizations,
@@ -272,6 +273,11 @@ export const seedOrganization = async (name: string) =>
       payload: {},
       status: "pending",
     });
+    await tx.insert(organizationGuardrails).values({
+      organizationId: org,
+      spendingLimitMicroUsd: 1_000_000,
+      updatedBy: userId,
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -323,6 +329,7 @@ export const tenantTables = {
   mcp_grants: "organization_id",
   mcp_connections: "organization_id",
   mcp_authorizations: "organization_id",
+  organization_guardrails: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

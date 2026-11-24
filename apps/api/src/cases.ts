@@ -23,6 +23,7 @@ import { agentRole, canSeeCase, canWorkCase } from "./access.ts";
 import type { Caller } from "./caller.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
+import { refuseOverLimit } from "./spend.ts";
 import type { OutboxMessage } from "./outbox.ts";
 
 // Errors in doc 04's shape: { error: { code, message } }.
@@ -181,9 +182,8 @@ export const createCase = async (
       );
     }
 
-    // TODO: spendGate(org) refuses new cases with 402 here. Its
-    // `spending_limit_reached` stop lands with the spending limit's storage in
-    // step 5 (PRE-35), and `credit_exhausted` with Autumn credit in step 9.
+    // `credit_exhausted` joins this gate with Autumn credit in step 9.
+    await refuseOverLimit(tx);
     const caseId = newId("case");
     if (input.files.length) {
       const found = await tx
