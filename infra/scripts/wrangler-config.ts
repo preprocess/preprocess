@@ -16,6 +16,7 @@ import {
   localAppUrl,
   localAuditKeyId,
   localEmailFrom,
+  localGitHub,
   localModelService,
   localRoleDatabaseUrl,
   localSecretsMasterKey,
@@ -55,6 +56,11 @@ const configs: Record<string, object> = {
       APP_URL: localAppUrl,
       EMAIL_FROM: localEmailFrom,
       AUDIT_SIGNING_KEY_ID: localAuditKeyId,
+      GITHUB_APP_ID: localGitHub.appId,
+      GITHUB_APP_SLUG: localGitHub.appSlug,
+      GITHUB_CLIENT_ID: localGitHub.clientId,
+      GITHUB_API_URL: localGitHub.url,
+      GITHUB_URL: localGitHub.url,
     },
     hyperdrive: [
       {
@@ -106,6 +112,7 @@ const configs: Record<string, object> = {
     services: [
       { binding: "LOCAL_USER_WORKER", service: local.userWorker },
       { binding: "RUNTIME", service: local.runtime },
+      { binding: "BUILDER", service: local.builder, entrypoint: "Builder" },
       { binding: "PDF_RENDER", service: local.pdfRender },
       {
         binding: "LOCAL_NAMESPACE",
@@ -113,6 +120,15 @@ const configs: Record<string, object> = {
         entrypoint: "Namespace",
       },
     ],
+  },
+  // Locally the build sandbox runs under Docker (apps/builder/local), because
+  // wrangler's container runtime needs a kernel module some hosts lack.
+  "apps/builder": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.builder,
+    main: "src/index.ts",
+    ...common,
+    vars: { LOCAL_DOCKER_BUILDER: localGitHub.builder },
   },
   "apps/model-stub": {
     $schema: "node_modules/wrangler/config-schema.json",

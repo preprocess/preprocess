@@ -52,6 +52,12 @@ import {
   mcpGrants,
   mcpServers,
 } from "../src/schema/mcp.ts";
+import {
+  githubBuilds,
+  githubInstallations,
+  githubLinks,
+  githubRepositories,
+} from "../src/schema/github.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 
 export type Org = Awaited<ReturnType<typeof seedOrganization>>;
@@ -197,6 +203,42 @@ export const seedOrganization = async (name: string) =>
       redirectUri: "https://app.test/v1/mcp/oauth/callback",
       createdBy: userId,
       expiresAt: new Date(now.getTime() + 600_000),
+    });
+    const installationId = newId("githubInstallation");
+    await tx.insert(githubInstallations).values({
+      id: installationId,
+      organizationId: org,
+      installationId: Math.floor(Math.random() * 2 ** 40),
+      accountLogin: name.toLowerCase(),
+      accountType: "Organization",
+      createdBy: userId,
+    });
+    const repositoryId = newId("githubRepository");
+    await tx.insert(githubRepositories).values({
+      id: repositoryId,
+      organizationId: org,
+      installationId,
+      repositoryId: Math.floor(Math.random() * 2 ** 40),
+      fullName: `${name.toLowerCase()}/agents`,
+      private: true,
+    });
+    const linkId = newId("githubLink");
+    await tx.insert(githubLinks).values({
+      id: linkId,
+      organizationId: org,
+      repositoryId,
+      agentSlug: "stock",
+      createdBy: userId,
+    });
+    await tx.insert(githubBuilds).values({
+      id: newId("githubBuild"),
+      organizationId: org,
+      linkId,
+      agentSlug: "stock",
+      branch: "main",
+      commit: "abc1234",
+      status: "succeeded",
+      deploymentId,
     });
     await tx.insert(cases).values({
       id: caseId,
@@ -363,6 +405,10 @@ export const tenantTables = {
   mcp_grants: "organization_id",
   mcp_connections: "organization_id",
   mcp_authorizations: "organization_id",
+  github_installations: "organization_id",
+  github_repositories: "organization_id",
+  github_links: "organization_id",
+  github_builds: "organization_id",
   organization_guardrails: "organization_id",
   agent_network_rules: "organization_id",
   guardrail_requests: "organization_id",
