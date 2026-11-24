@@ -25,6 +25,10 @@ export const prefixes = {
   webhook: "whk",
   delivery: "msg",
   outbox: "obx",
+  githubInstallation: "ghi",
+  githubRepository: "ghr",
+  githubLink: "ghl",
+  githubBuild: "bld",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

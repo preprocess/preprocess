@@ -1,3 +1,4 @@
+import type { BuildQueue } from "./builds.ts";
 import type { Counter } from "./counter.ts";
 import type { Namespace } from "./namespace.ts";
 import type { OutboxMessage } from "./outbox.ts";
@@ -78,6 +79,30 @@ export type Runtime = {
   getCase(c: CaseKey): Promise<unknown>;
 };
 
+// apps/builder's Builder entrypoint: builds a commit's tarball in a sandbox
+// with the project's own package manager and the CLI's bundle(). It never
+// receives a credential.
+export type BuildRequest = {
+  id: string;
+  archive: ReadableStream<Uint8Array>;
+  directory: string;
+  entry: string;
+  timeoutSeconds: number;
+};
+
+export type BuildResult =
+  | {
+      status: "succeeded";
+      bundle: { mainModule: string; modules: Record<string, string> };
+      log: string;
+    }
+  | { status: "failed" | "timed_out"; log: string };
+
+export type Builder = {
+  build(request: BuildRequest): Promise<BuildResult>;
+  cancel(id: string): Promise<void>;
+};
+
 export type Env = {
   STAGE: string;
   // Set on our cloud, unset on a self-hosted install; read it through
@@ -125,4 +150,20 @@ export type Env = {
   // runtime cannot emulate one, so local dev binds the user Worker directly.
   DISPATCHER?: DispatchNamespace;
   LOCAL_USER_WORKER?: Fetcher;
+  // The GitHub App (docs/design/08-github-app.md). Without these its routes
+  // answer 503. The private key is the App's key converted to PKCS #8 PEM.
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_SLUG?: string;
+  GITHUB_APP_PRIVATE_KEY?: string;
+  GITHUB_WEBHOOK_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  // Default https://api.github.com and https://github.com; the local GitHub
+  // stub in development.
+  GITHUB_API_URL?: string;
+  GITHUB_URL?: string;
+  // Wall-clock limit for one build, in seconds (default 600).
+  GITHUB_BUILD_TIMEOUT_SECONDS?: string;
+  BUILDS: DurableObjectNamespace<BuildQueue>;
+  BUILDER?: Builder;
 };

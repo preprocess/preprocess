@@ -1,4 +1,5 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -7,6 +8,7 @@ import { localDatabaseUrl, localRoleUrl } from "@preprocess/db/migrate";
 import { buildSync } from "esbuild";
 import { defineConfig } from "vitest/config";
 
+import { fakeGithub, GITHUB_API, GITHUB_WEB } from "./test/fake-github.ts";
 import { fakeMcp } from "./test/fake-mcp.ts";
 
 const require = createRequire(import.meta.url);
@@ -44,6 +46,7 @@ bundle("../outbound/src/index.ts", "outbound.js");
 bundle("../model-stub/src/index.ts", "model-stub.js");
 bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/crm-agent.ts", "crm-agent.js");
+bundle("test/fixtures/fake-builder.ts", "fake-builder.js");
 
 const worker = (name: string, extra: object = {}) => ({
   name,
@@ -57,6 +60,9 @@ const worker = (name: string, extra: object = {}) => ({
 const auditKey = generateKeyPairSync("ed25519")
   .privateKey.export({ format: "der", type: "pkcs8" })
   .toString("base64");
+const githubKey = generateKeyPairSync("rsa", { modulusLength: 2048 })
+  .privateKey.export({ format: "pem", type: "pkcs8" })
+  .toString();
 
 export default defineConfig({
   plugins: [
@@ -70,12 +76,26 @@ export default defineConfig({
         bindings: {
           BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
           AUDIT_SIGNING_KEY: auditKey,
+          GITHUB_APP_ID: "1",
+          GITHUB_APP_SLUG: "preprocess-test",
+          GITHUB_APP_PRIVATE_KEY: githubKey,
+          GITHUB_WEBHOOK_SECRET: randomBytes(32).toString("hex"),
+          GITHUB_CLIENT_ID: "Iv1.test",
+          GITHUB_CLIENT_SECRET: "test",
+          GITHUB_API_URL: GITHUB_API,
+          GITHUB_URL: GITHUB_WEB,
+          GITHUB_BUILD_TIMEOUT_SECONDS: "1",
         },
-        // The internet the API reaches: a remote MCP server behind OAuth.
-        outboundService: fakeMcp,
+        // The internet the API reaches: GitHub, and a remote MCP server
+        // behind OAuth.
+        outboundService: (request: Request) =>
+          [GITHUB_API, GITHUB_WEB].includes(new URL(request.url).origin)
+            ? fakeGithub(request)
+            : fakeMcp(request),
         serviceBindings: {
           LOCAL_USER_WORKER: () => Response.json({ worker: "test" }),
           RUNTIME: "preprocess-runtime-development",
+          BUILDER: { name: "fake-builder", entrypoint: "Builder" },
           LOCAL_NAMESPACE: {
             name: "preprocess-namespace-development",
             entrypoint: "Namespace",
@@ -116,6 +136,14 @@ export default defineConfig({
               new Response(`reached ${new URL(request.url).hostname}`),
           }),
           worker("model-stub"),
+          worker("fake-builder", {
+            bindings: {
+              SAMPLE_AGENT: readFileSync(
+                path.join(dist, "sample-agent.js"),
+                "utf8",
+              ),
+            },
+          }),
         ],
       },
     }),
