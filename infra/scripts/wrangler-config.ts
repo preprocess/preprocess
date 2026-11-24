@@ -91,12 +91,15 @@ const configs: Record<string, object> = {
       producers: [
         { binding: "JOBS", queue: local.queue },
         { binding: "CASES", queue: local.casesQueue },
+        { binding: "WEBHOOKS", queue: local.webhooksQueue },
         { binding: "SECRET_SYNC", queue: local.secretSync },
       ],
       consumers: [
         { queue: local.queue, max_batch_timeout: 1 },
         { queue: local.secretSync, max_batch_timeout: 1 },
         { queue: local.casesQueue, max_batch_timeout: 1 },
+        // Retries are timed by the consumer (webhooks.ts) over 24 hours.
+        { queue: local.webhooksQueue, max_batch_timeout: 1, max_retries: 20 },
       ],
     },
     r2_buckets: [
@@ -110,6 +113,7 @@ const configs: Record<string, object> = {
       { binding: "LOCAL_USER_WORKER", service: local.userWorker },
       { binding: "RUNTIME", service: local.runtime },
       { binding: "BUILDER", service: local.builder, entrypoint: "Builder" },
+      { binding: "PDF_RENDER", service: local.pdfRender },
       {
         binding: "LOCAL_NAMESPACE",
         service: local.localNamespace,
@@ -131,6 +135,21 @@ const configs: Record<string, object> = {
     name: local.modelStub,
     main: "src/index.ts",
     ...common,
+  },
+  // Its container builds from the Dockerfile; `wrangler dev` runs it in
+  // Docker.
+  "apps/pdf-render": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.pdfRender,
+    main: "src/index.ts",
+    ...common,
+    containers: [
+      { class_name: "Renderer", image: "./Dockerfile", max_instances: 10 },
+    ],
+    durable_objects: {
+      bindings: [{ name: "RENDERER", class_name: "Renderer" }],
+    },
+    migrations: [{ tag: "v1", new_sqlite_classes: ["Renderer"] }],
   },
   "apps/user-worker": {
     $schema: "node_modules/wrangler/config-schema.json",

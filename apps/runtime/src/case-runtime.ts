@@ -6,6 +6,7 @@ import {
   Harness,
   section,
 } from "@earendil-works/pi-durable";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { ModelError } from "@preprocess/models/client";
 import { decide } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
@@ -82,6 +83,9 @@ type Meta = StartCase & {
   waitingOn: { group: string; reason: string | null } | null;
   answer?: string;
   reason?: string;
+  // Set until the agent first gets the case's input, which a halt at start
+  // can delay to the Rerun that restarts it.
+  unprompted?: true;
 };
 
 const MAX_TURNS = 24;
@@ -259,6 +263,41 @@ export class CaseRuntime extends DurableObject<Env> {
         error: String(error),
       });
     }
+  }
+
+  // The spending limit (design doc 04): asked before each metered model, OCR
+  // or decide call. A refusal halts the case instead of making the call, and
+  // only Rerun restarts it. A halt fires no webhook.
+  private async overLimit() {
+    const meta = this.meta()!;
+    if (meta.status === "halted") return true;
+    if (!this.env.PLATFORM) return false;
+    const verdict = await this.env.PLATFORM.spendGate(meta.organizationId);
+    if (verdict === "ok") return false;
+    const next: Meta = {
+      ...meta,
+      status: "halted",
+      waitingOn: null,
+      reason: verdict,
+    };
+    this.save(next);
+    this.record("case.halted", { reason: verdict });
+    this.post(
+      next,
+      "platform",
+      "event",
+      "Halted: the organization reached its monthly spending limit",
+    );
+    await this.report(next, {
+      type: "status",
+      status: "halted",
+      waitingOn: null,
+      reason: null,
+      answers: null,
+      error: null,
+      haltReason: verdict,
+    });
+    return true;
   }
 
   private applyEffect(meta: Meta, effect: Effect): string | null {
@@ -480,6 +519,11 @@ export class CaseRuntime extends DurableObject<Env> {
           if (options.length === 0)
             return result(`${input.path} has no options`, true);
           const labels = new Map(options.map((o) => [o.id, o.label]));
+          if (await this.overLimit())
+            return result(
+              "decide refused: the organization reached its monthly spending limit",
+              true,
+            );
           try {
             const decided = await decide(modelEndpoint(this.env, "decide"), {
               prompt: input.prompt,
@@ -594,31 +638,67 @@ export class CaseRuntime extends DurableObject<Env> {
       const models = openModels(
         this.env,
         (fn) => (model, modelContext, options) => {
-          const current = ++turn;
-          const started = Date.now();
-          this.record("model.request", {
-            turn: current,
-            model: model.id,
-            context: modelContext,
-          });
-          const events = fn(model, modelContext, options);
-          void events.result().then(
-            (message) =>
-              this.record("model.response", {
-                turn: current,
-                ms: Date.now() - started,
-                stopReason: message.stopReason,
-                usage: message.usage,
-                message,
-              }),
-            (error: unknown) =>
-              this.record("model.error", {
-                turn: current,
-                ms: Date.now() - started,
-                error: String(error),
-              }),
-          );
-          return events;
+          const out = createAssistantMessageEventStream();
+          const stop = (reason: "aborted" | "error", message: string) =>
+            out.push({
+              type: "error",
+              reason,
+              error: {
+                role: "assistant",
+                content: [],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                usage: {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  totalTokens: 0,
+                  cost: {
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                    total: 0,
+                  },
+                },
+                stopReason: reason,
+                errorMessage: message,
+                timestamp: Date.now(),
+              },
+            });
+          void (async () => {
+            if (await this.overLimit())
+              return stop("aborted", "spending_limit_reached");
+            const current = ++turn;
+            const started = Date.now();
+            this.record("model.request", {
+              turn: current,
+              model: model.id,
+              context: modelContext,
+            });
+            const events = fn(model, modelContext, options);
+            void events.result().then(
+              (message) =>
+                this.record("model.response", {
+                  turn: current,
+                  ms: Date.now() - started,
+                  stopReason: message.stopReason,
+                  usage: message.usage,
+                  message,
+                }),
+              (error: unknown) =>
+                this.record("model.error", {
+                  turn: current,
+                  ms: Date.now() - started,
+                  error: String(error),
+                }),
+            );
+            for await (const event of events) out.push(event);
+            out.end(await events.result());
+          })().catch((error: unknown) => stop("error", String(error)));
+          return out;
         },
       );
       return Harness.open(storage, { models, registry, onWake }, context);
@@ -628,17 +708,19 @@ export class CaseRuntime extends DurableObject<Env> {
 
   lifecycle = Lifecycle.install(this).use(this.harness);
 
-  // OCR every file before the first model call when the agent switched it
-  // on; otherwise the agent only learns the files' names.
-  private async filesSection(meta: Meta) {
+  // The case's input for the agent's first run. OCR every file before the
+  // first model call when the agent switched it on; otherwise the agent only
+  // learns the files' names. Null when the spending limit halted the case.
+  private async firstPrompt(meta: Meta) {
     const files = meta.input.files ?? [];
-    if (files.length === 0) return "";
+    if (files.length === 0) return meta.input.text;
     const parts: string[] = [];
     for (const file of files) {
       if (!meta.manifest.ocr || !this.env.PLATFORM) {
         parts.push(`- ${file.name} (${file.contentType})`);
         continue;
       }
+      if (await this.overLimit()) return null;
       try {
         const { markdown } = await this.env.PLATFORM.ocrFile({
           organizationId: meta.organizationId,
@@ -651,7 +733,7 @@ export class CaseRuntime extends DurableObject<Env> {
         parts.push(`- ${file.name} (${file.contentType}; OCR failed)`);
       }
     }
-    return `\n\nFiles:\n${parts.join("\n")}`;
+    return `${meta.input.text}\n\nFiles:\n${parts.join("\n")}`;
   }
 
   async start(start: StartCase): Promise<CaseView> {
@@ -674,6 +756,7 @@ export class CaseRuntime extends DurableObject<Env> {
       run: 1,
       operation: `case:${start.caseId}`,
       waitingOn: null,
+      unprompted: true,
     };
     this.save(meta);
     this.record("case.started", {
@@ -695,10 +778,12 @@ export class CaseRuntime extends DurableObject<Env> {
       error: null,
     });
     await this.schema(meta).evaluate("all");
-    const prompt = `${start.input.text}${await this.filesSection(meta)}`;
     await this.harness.root({
       agent: { model: { provider: PROVIDER, modelId: manifest.model } },
     });
+    const prompt = await this.firstPrompt(meta);
+    if (prompt === null) return this.view();
+    this.prompted();
     await this.harness.submit(prompt, { operationId: meta.operation });
     this.ctx.waitUntil(this.watch());
     return this.view();
@@ -837,11 +922,20 @@ export class CaseRuntime extends DurableObject<Env> {
       answers: null,
       error: null,
     });
-    await this.harness.submit(lines.join("\n"), {
-      operationId: next.operation,
-    });
+    const prompt = meta.unprompted
+      ? await this.firstPrompt(next)
+      : lines.join("\n");
+    if (prompt === null) return this.state();
+    this.prompted();
+    await this.harness.submit(prompt, { operationId: next.operation });
     this.ctx.waitUntil(this.watch());
     return this.state();
+  }
+
+  private prompted() {
+    const meta = this.meta()!;
+    delete meta.unprompted;
+    this.save(meta);
   }
 
   private messageRun(id: string) {

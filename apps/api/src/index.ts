@@ -18,12 +18,16 @@ import { readOutbox, sweepOutbox } from "./outbox.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import { agentRoutes } from "./routes/agents.ts";
 import { caseRoutes } from "./routes/cases.ts";
+import { webhookRoutes } from "./routes/webhooks.ts";
+import { deliverWebhook } from "./webhooks.ts";
 import { auditRoutes } from "./routes/audit.ts";
 import { groupRoutes } from "./routes/groups.ts";
 import { organizationRoutes } from "./routes/organization.ts";
 import { githubCallbacks, githubRoutes } from "./routes/github.ts";
 import { mcpCallback, mcpRoutes } from "./routes/mcp.ts";
 import { secretRoutes } from "./routes/secrets.ts";
+import { guardrailRoutes } from "./routes/guardrails.ts";
+import { spendingRoutes } from "./routes/spending.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
@@ -76,6 +80,9 @@ orgApi.route("/", secretRoutes);
 orgApi.route("/", mcpRoutes);
 orgApi.route("/", caseRoutes);
 orgApi.route("/", githubRoutes);
+orgApi.route("/", spendingRoutes);
+orgApi.route("/", guardrailRoutes);
+orgApi.route("/", webhookRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
@@ -141,6 +148,14 @@ export default {
       for (const message of batch.messages as Message<OutboxMessage>[]) {
         await startQueuedCase(env, message.body);
         message.ack();
+      }
+      return;
+    }
+    if (batch.queue.startsWith("preprocess-webhooks-")) {
+      for (const message of batch.messages as Message<OutboxMessage>[]) {
+        const retryIn = await deliverWebhook(env, message.body);
+        if (retryIn === null) message.ack();
+        else message.retry({ delaySeconds: retryIn });
       }
       return;
     }

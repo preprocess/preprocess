@@ -24,6 +24,7 @@ import type { OrgVariables } from "../caller.ts";
 import { ApiError, createCase } from "../cases.ts";
 import type { Env, WriteResult } from "../env.ts";
 import { ocrFile } from "../ocr.ts";
+import { refuseOverLimit } from "../spend.ts";
 
 type Ctx = Context<{ Bindings: Env; Variables: OrgVariables }>;
 
@@ -320,6 +321,7 @@ export const caseRoutes = new OpenAPIHono<{
       responses: {
         202: json(CaseAccepted, "Accepted; poll the status URL"),
         400: error("Body fails validation"),
+        402: error("The organization has reached its spending limit"),
         404: error("Agent, deployment or file not visible"),
         409: error("No production deployment, or the same key in progress"),
         422: error("Same Idempotency-Key, different request"),
@@ -583,6 +585,7 @@ export const caseRoutes = new OpenAPIHono<{
       request: { params: CaseParam },
       responses: {
         200: json(RoomState, "Running"),
+        402: error("The organization has reached its spending limit"),
         409: error("The case is running, queued or cancelled"),
       },
     }),
@@ -595,7 +598,10 @@ export const caseRoutes = new OpenAPIHono<{
           `The case is ${status}.`,
         );
       // What people changed since the last rerun, for the agent's prompt.
+      // A rerun runs the agent again, so it passes the spend gate first; this
+      // is how a halted case restarts.
       const notes = await withOrg(c.env, c.var.org, async (tx) => {
+        await refuseOverLimit(tx);
         const events = await tx
           .select({
             kind: reviewEvents.kind,
@@ -665,7 +671,7 @@ export const caseRoutes = new OpenAPIHono<{
       method: "post",
       path: "/ocr",
       tags: ["OCR"],
-      summary: "OCR an uploaded page image",
+      summary: "OCR an uploaded PDF or page image",
       request: {
         params: OrgParam,
         ...body(
@@ -704,12 +710,14 @@ export const caseRoutes = new OpenAPIHono<{
           }),
           "The pages as Markdown",
         ),
+        402: error("The organization has reached its spending limit"),
         404: error("No such file"),
-        415: error("Not a page image"),
+        415: error("Not a PDF or page image"),
       },
     }),
     async (c) => {
       const input = c.req.valid("json");
+      await withOrg(c.env, c.var.org, refuseOverLimit);
       return c.json(
         await ocrFile(c.env, c.var.org, input.file, input.grounding),
         200,

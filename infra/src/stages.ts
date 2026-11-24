@@ -32,6 +32,8 @@ export const names = (stage: string) => ({
   queue: `preprocess-jobs-${stage}`,
   // Case starts (design doc 04): the API enqueues after commit and consumes.
   casesQueue: `preprocess-cases-${stage}`,
+  // Webhook deliveries (design doc 06), retried with backoff for 24 hours.
+  webhooksQueue: `preprocess-webhooks-${stage}`,
   secretSync: `preprocess-secret-sync-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
@@ -41,6 +43,8 @@ export const names = (stage: string) => ({
   builder: `preprocess-builder-${stage}`,
   outbound: `preprocess-outbound-${stage}`,
   modelStub: `preprocess-model-stub-${stage}`,
+  // PDF pages to images for OCR, in a sandbox container (design doc 07).
+  pdfRender: `preprocess-pdf-render-${stage}`,
   runs: `preprocess-runs-${stage}`,
   // Local only: stands in for the dispatch namespace, which Cloudflare's local
   // runtime cannot emulate (apps/namespace-local).

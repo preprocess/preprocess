@@ -18,8 +18,10 @@ export type OcrResult = {
   model: string;
 };
 
-// The model takes one page image per request.
+// The model takes one page image per request; PDFs are rendered to page
+// images first, in the sandboxed renderer (apps/pdf-render).
 const images = new Set(["image/png", "image/jpeg", "image/webp"]);
+const PDF = "application/pdf";
 
 const dataUrl = (bytes: Uint8Array, contentType: string) => {
   let binary = "";
@@ -41,29 +43,33 @@ export const ocrFile = async (
       .where(eq(files.id, fileId)),
   );
   if (!file) throw new ApiError(404, "not_found", "No such file.");
-  if (!images.has(file.contentType))
+  if (!images.has(file.contentType) && file.contentType !== PDF)
     throw new ApiError(
       415,
       "unsupported_file",
-      "OCR takes PNG, JPEG or WebP page images.",
+      "OCR takes PDFs and PNG, JPEG or WebP page images.",
     );
   const object = await env.FILES.get(file.r2Key);
   if (!object) throw new ApiError(404, "not_found", "No such file.");
-  const page = await ocrPage(modelEndpoint(env, "ocr"), {
-    image: dataUrl(
-      new Uint8Array(await object.arrayBuffer()),
-      file.contentType,
-    ),
-    grounding,
-  });
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  let pages = [dataUrl(bytes, file.contentType)];
+  if (file.contentType === PDF) {
+    if (!env.PDF_RENDER)
+      throw new ApiError(503, "unavailable", "PDF rendering is not running.");
+    pages = (await env.PDF_RENDER.renderPdf(bytes)).map((png) =>
+      dataUrl(png, "image/png"),
+    );
+  }
+  const endpoint = modelEndpoint(env, "ocr");
+  const results = [];
+  for (const image of pages)
+    results.push(await ocrPage(endpoint, { image, grounding }));
   return {
-    pages: [
-      {
-        index: 0,
-        markdown: page.markdown,
-        ...(page.blocks && { blocks: page.blocks }),
-      },
-    ],
-    model: page.usage.model,
+    pages: results.map((page, index) => ({
+      index,
+      markdown: page.markdown,
+      ...(page.blocks && { blocks: page.blocks }),
+    })),
+    model: results[0]?.usage.model ?? endpoint.model,
   };
 };

@@ -63,7 +63,7 @@ The `installation` webhook (deleted, suspend, unsuspend) and `installation_repos
 
 ## Tables
 
-`github_installations`, `github_repositories`, `github_links` and `github_builds` (migration 0008), tenant tables with RLS like every other. A build's `log` keeps the last 64 KB of the sandbox's output.
+`github_installations`, `github_repositories`, `github_links` and `github_builds` (migration 0010), tenant tables with RLS like every other. A build's `log` keeps the last 64 KB of the sandbox's output.
 
 ## Local development
 

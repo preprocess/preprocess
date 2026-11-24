@@ -23,6 +23,8 @@ import { agentRole, canSeeCase, canWorkCase } from "./access.ts";
 import type { Caller } from "./caller.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
+import { refuseOverLimit } from "./spend.ts";
+import { queueWebhooks } from "./webhooks.ts";
 import type { OutboxMessage } from "./outbox.ts";
 
 // Errors in doc 04's shape: { error: { code, message } }.
@@ -181,9 +183,8 @@ export const createCase = async (
       );
     }
 
-    // TODO: spendGate(org) refuses new cases with 402 here. Its
-    // `spending_limit_reached` stop lands with the spending limit's storage in
-    // step 5 (PRE-35), and `credit_exhausted` with Autumn credit in step 9.
+    // `credit_exhausted` joins this gate with Autumn credit in step 9.
+    await refuseOverLimit(tx);
     const caseId = newId("case");
     if (input.files.length) {
       const found = await tx
@@ -337,11 +338,13 @@ export type CaseEvent = {
 } & (
   | {
       type: "status";
-      status: "running" | "waiting" | "completed" | "failed" | "cancelled";
+      status:
+        "running" | "waiting" | "halted" | "completed" | "failed" | "cancelled";
       waitingOn: string | null;
       reason: string | null;
       answers: Record<string, unknown> | null;
       error: { code: string; message: string } | null;
+      haltReason?: "credit_exhausted" | "spending_limit_reached";
     }
   | {
       type: "mention";
@@ -362,8 +365,9 @@ const groupBySlug = async (tx: Tx, slug: string) => {
 
 // The one writer of the case index: status, the group a case waits on, and
 // mentions for the inbox.
-export const recordCaseEvent = (env: Env, event: CaseEvent) =>
-  withOrg(env, orgId(event.organizationId), async (tx) => {
+export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
+  let webhookRows: string[] = [];
+  await withOrg(env, orgId(event.organizationId), async (tx) => {
     const own = and(
       eq(cases.id, event.caseId),
       eq(cases.agentId, event.agentId),
@@ -383,18 +387,52 @@ export const recordCaseEvent = (env: Env, event: CaseEvent) =>
       });
       return;
     }
-    const waitingOnGroupId = event.waitingOn
-      ? await groupBySlug(tx, event.waitingOn)
+    const group = event.waitingOn
+      ? ((
+          await tx
+            .select({ id: groups.id, slug: groups.slug, name: groups.name })
+            .from(groups)
+            .where(eq(groups.slug, event.waitingOn))
+        )[0] ?? null)
       : null;
+    const [before] = await tx
+      .select({ status: cases.status, group: cases.waitingOnGroupId })
+      .from(cases)
+      .where(own);
+    if (!before) return;
     const done = event.status === "completed" || event.status === "failed";
     await tx
       .update(cases)
       .set({
         status: event.status,
-        waitingOnGroupId,
-        haltReason: null,
+        waitingOnGroupId: group?.id ?? null,
+        haltReason:
+          event.status === "halted" ? (event.haltReason ?? null) : null,
         updatedAt: new Date(),
         completedAt: done ? new Date() : null,
       })
       .where(own);
+    // Webhooks: completion, failure, and every wait on a new group.
+    // Cancellation sends none.
+    const newWait =
+      event.status === "waiting" &&
+      group !== null &&
+      (before.status !== "waiting" || before.group !== group.id);
+    if (!done && !newWait) return;
+    webhookRows = await queueWebhooks(env, tx, event.organizationId, {
+      caseId: event.caseId,
+      agentId: event.agentId,
+      status: event.status as "completed" | "failed" | "waiting",
+      group,
+      reason: event.reason,
+      answers: event.answers,
+      error: event.error,
+    });
   });
+  if (webhookRows.length)
+    await drainOutbox(
+      env,
+      orgId(event.organizationId),
+      webhookRows.map((id) => ({ id, kind: "webhook" as const })),
+    );
+};

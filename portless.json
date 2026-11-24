@@ -12,6 +12,9 @@
     },
     "apps/runtime": {
       "name": "runtime.preprocess"
+    },
+    "apps/pdf-render": {
+      "name": "pdf-render.preprocess"
     }
   }
 }

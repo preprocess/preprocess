@@ -47,6 +47,7 @@ bundle("../model-stub/src/index.ts", "model-stub.js");
 bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/crm-agent.ts", "crm-agent.js");
 bundle("test/fixtures/fake-builder.ts", "fake-builder.js");
+bundle("test/fixtures/network-agent.ts", "network-agent.js");
 
 const worker = (name: string, extra: object = {}) => ({
   name,
@@ -74,6 +75,7 @@ export default defineConfig({
           DB_SYSTEM: localRoleUrl(url, "preprocess_system"),
         },
         bindings: {
+          MODEL_SERVICE_URL: "http://model-stub.test",
           BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
           AUDIT_SIGNING_KEY: auditKey,
           GITHUB_APP_ID: "1",
@@ -96,6 +98,9 @@ export default defineConfig({
           LOCAL_USER_WORKER: () => Response.json({ worker: "test" }),
           RUNTIME: "preprocess-runtime-development",
           BUILDER: { name: "fake-builder", entrypoint: "Builder" },
+          // The sandboxed renderer needs Docker; tests pass a stub as
+          // env.PDF_RENDER instead.
+          PDF_RENDER: () => new Response("pdf-render stub", { status: 501 }),
           LOCAL_NAMESPACE: {
             name: "preprocess-namespace-development",
             entrypoint: "Namespace",

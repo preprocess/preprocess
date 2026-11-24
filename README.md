@@ -52,6 +52,9 @@ applies migrations, loads the seed, and starts the apps behind
   on.
 - https://model-stub.preprocess.localhost: the stub model service the runtime
   calls for `decide` and the API for OCR.
+- https://pdf-render.preprocess.localhost: renders PDF pages for OCR in a
+  container. It needs Docker running; without it, everything else still starts
+  and only PDF OCR fails.
 
 The first run starts portless's HTTPS proxy on port 443 and trusts its local CA,
 so it may ask for `sudo`. Chrome on Linux reads its own NSS store; add the CA
