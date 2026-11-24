@@ -80,8 +80,14 @@ const configs: Record<string, object> = {
       { tag: "v1", new_sqlite_classes: Object.values(durableObjects) },
     ],
     queues: {
-      producers: [{ binding: "JOBS", queue: local.queue }],
-      consumers: [{ queue: local.queue, max_batch_timeout: 1 }],
+      producers: [
+        { binding: "JOBS", queue: local.queue },
+        { binding: "CASES", queue: local.casesQueue },
+      ],
+      consumers: [
+        { queue: local.queue, max_batch_timeout: 1 },
+        { queue: local.casesQueue, max_batch_timeout: 1 },
+      ],
     },
     r2_buckets: [
       { binding: "FILES", bucket_name: local.bucket },
@@ -89,7 +95,12 @@ const configs: Record<string, object> = {
     ],
     // Wrangler supports dispatch namespaces only as remote bindings, so the
     // local API reaches the user Worker through a service binding.
-    services: [{ binding: "LOCAL_USER_WORKER", service: local.userWorker }],
+    // The runtime Worker is not in the deployed stack yet, so only local dev
+    // binds it.
+    services: [
+      { binding: "LOCAL_USER_WORKER", service: local.userWorker },
+      { binding: "RUNTIME", service: local.runtime },
+    ],
   },
   "apps/model-stub": {
     $schema: "node_modules/wrangler/config-schema.json",
@@ -122,7 +133,10 @@ const configs: Record<string, object> = {
       { tag: "v1", new_sqlite_classes: Object.values(runtimeDurableObjects) },
     ],
     r2_buckets: [{ binding: "RUNS", bucket_name: local.runs }],
-    services: [{ binding: "LOCAL_NAMESPACE", service: local.localNamespace }],
+    services: [
+      { binding: "LOCAL_NAMESPACE", service: local.localNamespace },
+      { binding: "PLATFORM", service: local.api, entrypoint: "Platform" },
+    ],
   },
   "apps/outbound": {
     $schema: "node_modules/wrangler/config-schema.json",

@@ -37,8 +37,11 @@ export default defineConfig({
           BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
           AUDIT_SIGNING_KEY: auditKey,
         },
+        // The runtime Worker is not part of the test runtime; tests that
+        // need it pass a stub as env.RUNTIME (test/cases.test.ts).
         serviceBindings: {
           LOCAL_USER_WORKER: () => Response.json({ worker: "test" }),
+          RUNTIME: () => new Response("runtime stub", { status: 501 }),
         },
       },
     }),
