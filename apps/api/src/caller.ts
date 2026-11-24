@@ -1,86 +1,109 @@
-// Who is calling an organization's routes. PLAT-38's Better Auth middleware
-// (step 1) replaces this file with the same exports; until then it accepts
-// only organization-owned API keys (Better Auth's api-key plugin rows, keyed
-// by the SHA-256 of the key), which is what the CLI and the GitHub Action send.
+// Resolves who is calling /v1/orgs/{org}/* and whether they belong to that
+// organization (spec 15: the organization comes from the path, checked against
+// the caller's membership or key, never from a "current organization").
 
-import { orgId, withoutOrg, type OrgId } from "@preprocess/db/client";
-import { apikey } from "@preprocess/db/schema/auth";
+import { orgId, withOrg } from "@preprocess/db/client";
+import type { OrgId } from "@preprocess/db/client";
+import { member } from "@preprocess/db/schema/auth";
 import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 
+import { requestContext, withAuth } from "./auth.ts";
+import type { RequestContext } from "./auth.ts";
 import type { Env } from "./env.ts";
 
+export type OrgRole = "owner" | "admin" | "member";
+
 export type Caller =
-  | { type: "person"; userId: string; role: "owner" | "admin" | "member" }
+  | { type: "person"; userId: string; role: OrgRole }
+  // Organization API keys are created by Admins and act with Admin rights.
   | { type: "api_key"; keyId: string; role: "admin" };
 
 export type OrgVariables = {
   org: OrgId;
   caller: Caller;
-  request: { ip: string | null; requestId: string; actorId: string };
+  request: RequestContext;
 };
 
-const hashKey = async (key: string) => {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(key),
-  );
-  return btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "");
+const bearer = (request: Request) => {
+  const header = request.headers.get("authorization");
+  if (header?.startsWith("Bearer ")) return header.slice(7);
+  return request.headers.get("x-api-key");
 };
 
 export const orgCaller = createMiddleware<{
   Bindings: Env;
   Variables: OrgVariables;
 }>(async (c, next) => {
-  const org = c.req.param("org");
-  const header = c.req.header("authorization") ?? "";
-  const key =
-    /^Bearer\s+(\S+)$/i.exec(header)?.[1] ?? c.req.header("x-api-key");
-  if (!org || !key) throw new HTTPException(401, { message: "unauthorized" });
-  const hashed = await hashKey(key);
-  const [row] = await withoutOrg(c.env, "authenticate an API key", (tx) =>
-    tx
-      .select({
-        id: apikey.id,
-        enabled: apikey.enabled,
-        expiresAt: apikey.expiresAt,
-      })
-      .from(apikey)
-      .where(and(eq(apikey.key, hashed), eq(apikey.referenceId, org))),
-  );
-  if (
-    !row ||
-    row.enabled === false ||
-    (row.expiresAt && row.expiresAt < new Date())
-  )
-    throw new HTTPException(401, { message: "unauthorized" });
-  c.set("org", orgId(org));
-  c.set("caller", { type: "api_key", keyId: row.id, role: "admin" });
-  c.set("request", {
-    ip: c.req.header("cf-connecting-ip") ?? null,
-    requestId: c.req.header("cf-ray") ?? crypto.randomUUID(),
-    actorId: row.id,
-  });
+  const pathOrg = c.req.param("org");
+  if (!pathOrg) throw new HTTPException(404);
+  const request = requestContext(c.req.raw);
+  const key = bearer(c.req.raw);
+
+  let caller: Caller | null = null;
+  if (key) {
+    const result = await withAuth(c.env, request, (auth) =>
+      auth.api.verifyApiKey({ body: { key } }),
+    );
+    if (!result.valid || !result.key)
+      throw new HTTPException(401, { message: "Invalid API key." });
+    if (result.key.referenceId !== pathOrg)
+      throw new HTTPException(403, {
+        message: "Not a member of this organization.",
+      });
+    caller = { type: "api_key", keyId: result.key.id, role: "admin" };
+  } else {
+    const session = await withAuth(c.env, request, (auth) =>
+      auth.api.getSession({ headers: c.req.raw.headers }),
+    );
+    if (!session) throw new HTTPException(401, { message: "Sign in first." });
+    // Reading the membership through withOrg on the path's organization can
+    // only ever see that organization's rows.
+    const [membership] = await withOrg(c.env, orgId(pathOrg), (tx) =>
+      tx
+        .select({ role: member.role })
+        .from(member)
+        .where(
+          and(
+            eq(member.organizationId, pathOrg),
+            eq(member.userId, session.user.id),
+          ),
+        ),
+    );
+    if (!membership)
+      throw new HTTPException(403, {
+        message: "Not a member of this organization.",
+      });
+    caller = {
+      type: "person",
+      userId: session.user.id,
+      role: membership.role as OrgRole,
+    };
+  }
+
+  c.set("org", orgId(pathOrg));
+  c.set("caller", caller);
+  c.set("request", request);
   await next();
 });
 
 export const requireAdmin = (caller: Caller) => {
   if (caller.role !== "owner" && caller.role !== "admin")
-    throw new HTTPException(403, { message: "needs an Admin or Owner" });
+    throw new HTTPException(403, {
+      message: "Only Owners and Admins can do this.",
+    });
 };
+
+// Who, where and from which request, for an audit event in this organization.
+export const eventBase = (vars: OrgVariables) => ({
+  organizationId: vars.org,
+  ...actor(vars.caller),
+  ip: vars.request.ip,
+  requestId: vars.request.requestId,
+});
 
 export const actor = (caller: Caller) =>
   caller.type === "person"
-    ? { actorType: "person" as const, actorId: caller.userId }
-    : { actorType: "api_key" as const, actorId: caller.keyId };
-
-export const eventBase = (v: OrgVariables) => ({
-  organizationId: v.org,
-  ...actor(v.caller),
-  ip: v.request.ip,
-  requestId: v.request.requestId,
-});
+    ? ({ actorType: "person", actorId: caller.userId } as const)
+    : ({ actorType: "api_key", actorId: caller.keyId } as const);

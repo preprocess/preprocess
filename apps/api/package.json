@@ -10,11 +10,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@hono/zod-openapi": "catalog:",
+    "@better-auth/api-key": "1.7.27",
+    "@hono/zod-openapi": "^1.6.3",
     "@preprocess/db": "workspace:*",
     "@preprocess/models": "workspace:*",
     "@preprocess/runmode": "catalog:",
     "@preprocess/sdk": "workspace:*",
+    "better-auth": "1.7.27",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
     "pg": "catalog:",

@@ -27,8 +27,9 @@ A preview stage gets its own API Worker (with the `Counter` Durable Object
 namespace), R2 bucket, queue and consumer, dispatch namespace with the user
 Worker, the stub model service (`apps/model-stub`) the API calls for `decide`
 and OCR unless `MODEL_SERVICE_URL` and `MODEL_SERVICE_KEY` name another,
-Hyperdrive config, and PlanetScale Postgres branch `pr-<number>` forked from the
-database's `main`, with `packages/db/migrations` applied and
+Hyperdrive configs (caching off), an audit R2 bucket, the daily audit-anchor
+cron, an email binding, and PlanetScale Postgres branch `pr-<number>` forked
+from the database's `main`, with `packages/db/migrations` applied and
 `packages/db/seed.sql` imported. Everything is served on workers.dev, so a
 preview needs no DNS. `destroy` removes all of it, the PlanetScale branch
 included. Staging gets the backend once its PlanetScale database exists (build
@@ -85,6 +86,8 @@ secrets:
 | `PLANETSCALE_API_TOKEN_ID`, `PLANETSCALE_API_TOKEN` | PlanetScale service token that can create and delete branches and roles on the preview database |
 | `PLANETSCALE_ORGANIZATION`                          | PlanetScale organization                                                                        |
 | `PLANETSCALE_DATABASE`                              | Postgres database previews branch from                                                          |
+| `BETTER_AUTH_SECRET`, `AUDIT_SIGNING_KEY`           | API secrets: 32 random bytes in base64, and an Ed25519 PKCS #8 private key in base64            |
+| `EMAIL_FROM`, `AUDIT_SIGNING_KEY_ID`                | Invitation sender address, and the id published with the audit public key                       |
 
 To run a stage by hand with the same values exported:
 `pnpm --filter @preprocess/infra preview:deploy pr-<n>` and

@@ -1,68 +1,23 @@
-import { env, exports } from "cloudflare:workers";
-import {
-  verifyAuditChain,
-  readAuditEvents,
-  startAuditChain,
-} from "@preprocess/db/audit";
-import { orgId, withOrg, withoutOrg } from "@preprocess/db/client";
-import { newId } from "@preprocess/db/ids";
-import { apikey, member, organization, user } from "@preprocess/db/schema/auth";
+import { env } from "cloudflare:workers";
+import { readAuditEvents, verifyAuditChain } from "@preprocess/db/audit";
+import { orgId, withOrg, type OrgId } from "@preprocess/db/client";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { Client, createOrganization, signUp, testEnv } from "./helpers.ts";
 // Bundled by vitest.config.ts, as `preprocess deploy` bundles an agent.
 import sampleAgent from "./dist/sample-agent.js?raw";
 
-const api = (exports as unknown as { default: Fetcher }).default;
 const ERP_V1 = "erp-live-7c1f9a";
 const ERP_V2 = "erp-rotated-9d2e4b0c";
 
-const hashKey = async (key: string) =>
-  btoa(
-    String.fromCharCode(
-      ...new Uint8Array(
-        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)),
-      ),
-    ),
-  )
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "");
-
-const seedOrg = async (name: string) => {
-  const org = orgId(newId("organization"));
-  const userId = newId("user");
-  const key = `pp_${crypto.randomUUID()}`;
-  await withoutOrg(env, "test fixture", async (tx) => {
-    const now = new Date();
-    await tx
-      .insert(user)
-      .values({ id: userId, name, email: `${userId}@test.dev` });
-    await tx
-      .insert(organization)
-      .values({ id: org, name, slug: org, createdAt: now, createdBy: userId });
-    await startAuditChain(tx, org);
-    await tx
-      .insert(member)
-      .values({
-        id: newId("member"),
-        organizationId: org,
-        userId,
-        role: "owner",
-        createdAt: now,
-      });
-    await tx.insert(apikey).values({
-      id: newId("apikey"),
-      referenceId: org,
-      key: await hashKey(key),
-      createdAt: now,
-      updatedAt: now,
-    });
-  });
-  return { org, key };
+type Who = { org: OrgId; client: Client };
+const seedOrg = async (name: string): Promise<Who> => {
+  const { client } = await signUp(name);
+  return { org: orgId(await createOrganization(client, name)), client };
 };
 
-let a: Awaited<ReturnType<typeof seedOrg>>;
-let b: Awaited<ReturnType<typeof seedOrg>>;
+let a: Who;
+let b: Who;
 
 beforeAll(async () => {
   a = await seedOrg("Acme");
@@ -70,28 +25,17 @@ beforeAll(async () => {
 });
 
 const call = async <T = unknown>(
-  who: { org: string; key: string },
+  who: Who,
   method: string,
   path: string,
   body?: unknown,
   org = who.org,
 ) => {
-  const response = await api.fetch(
-    `https://api.test${path.replace("{org}", org)}`,
-    {
-      method,
-      headers: {
-        authorization: `Bearer ${who.key}`,
-        "content-type": "application/json",
-      },
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-    },
-  );
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text ? JSON.parse(text) : null) as T,
-  };
+  const response = await who.client.call<T>(path.replace("{org}", org), {
+    method,
+    ...(body !== undefined && { body }),
+  });
+  return { status: response.status, body: response.body };
 };
 
 type Deployment = {
@@ -124,7 +68,7 @@ const deployBody = {
   git: { branch: "main", commit: "abc1234" },
 };
 
-const runCase = async (who: { org: string; key: string }) => {
+const runCase = async (who: Who) => {
   const started = await call<CaseView & { caseId: string }>(
     who,
     "POST",
@@ -154,12 +98,34 @@ const lookupOutput = (view: CaseView) =>
   };
 
 describe("auth", () => {
-  it("refuses calls without a key, and a key on another organization's path", async () => {
-    const none = await api.fetch(`https://api.test/v1/orgs/${a.org}/agents`);
-    expect(none.status).toBe(401);
+  it("refuses calls without a session or key, and another organization's members", async () => {
+    const none = new Client(testEnv());
+    expect((await none.call(`/v1/orgs/${a.org}/agents`)).status).toBe(401);
     expect(
       (await call(b, "GET", "/v1/orgs/{org}/agents", undefined, a.org)).status,
-    ).toBe(401);
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          b,
+          "POST",
+          "/v1/orgs/{org}/agents/stock/deployments",
+          {},
+          a.org,
+        )
+      ).status,
+    ).toBe(403);
+  });
+
+  it("accepts an organization API key, as the deploy command sends it", async () => {
+    const created = await a.client.call<{ key: string }>(
+      "/api/auth/api-key/create",
+      { body: { name: "deploy", organizationId: a.org } },
+    );
+    const keyed = new Client(testEnv(), {
+      authorization: `Bearer ${created.body.key}`,
+    });
+    expect((await keyed.call(`/v1/orgs/${a.org}/agents`)).status).toBe(200);
   });
 });
 

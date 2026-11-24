@@ -1,19 +1,17 @@
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
+import { localDatabaseUrl, localRoleUrl } from "@preprocess/db/migrate";
 import { buildSync } from "esbuild";
 import { defineConfig } from "vitest/config";
-
-import {
-  localDatabaseUrl,
-  localRoleUrl,
-} from "../../packages/db/scripts/migrate-lib.ts";
 
 const require = createRequire(import.meta.url);
 // pg require()s pg-protocol, and Vitest resolves that require with the
 // "import" condition, which points at an ES module. Pin it to the CommonJS
-// build pg expects, and pg-cloudflare to its workerd build.
+// build pg expects. pg also loads its Workers socket from pg-cloudflare's
+// "workerd" export, which Vitest's resolver does not pick.
 const pgRequire = createRequire(require.resolve("pg"));
 
 const root = import.meta.dirname;
@@ -53,6 +51,10 @@ const worker = (name: string, extra: object = {}) => ({
   ...extra,
 });
 
+const auditKey = generateKeyPairSync("ed25519")
+  .privateKey.export({ format: "der", type: "pkcs8" })
+  .toString("base64");
+
 export default defineConfig({
   plugins: [
     cloudflareTest({
@@ -61,6 +63,10 @@ export default defineConfig({
         hyperdrives: {
           DB: localRoleUrl(url, "preprocess_app"),
           DB_SYSTEM: localRoleUrl(url, "preprocess_system"),
+        },
+        bindings: {
+          BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
+          AUDIT_SIGNING_KEY: auditKey,
         },
         serviceBindings: {
           LOCAL_USER_WORKER: () => Response.json({ worker: "test" }),
@@ -115,6 +121,5 @@ export default defineConfig({
   },
   test: {
     globalSetup: ["./test/global-setup.ts"],
-    testTimeout: 30_000,
   },
 });

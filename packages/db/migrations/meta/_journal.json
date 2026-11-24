@@ -19,8 +19,15 @@
     {
       "idx": 2,
       "version": "7",
-      "when": 1795507725118,
+      "when": 1795508285668,
       "tag": "0002_deployments",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795508744602,
+      "tag": "0003_secret_delivery",
       "breakpoints": true
     }
   ]

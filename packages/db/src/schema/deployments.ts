@@ -1,10 +1,12 @@
-// Deployments and the secrets each one receives (build step 2, design doc 03).
-// A deployment pins one upload of an agent's code: its bundle, SDK version,
-// model and reasoning level, and what it declared in its manifest. It is
-// created by `preprocess deploy` or the GitHub App; agents never edit it.
+// Deployments (design doc 01, build step 2). A deployment pins one upload of
+// an agent's code: its Workers for Platforms script, SDK version, network
+// rules and manifest. `preprocess deploy` or the GitHub App creates it; agents
+// never edit it.
 
 import { sql } from "drizzle-orm";
 import {
+  boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -17,11 +19,18 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
-import { agents } from "./access.ts";
+import { agents, groups } from "./access.ts";
 import { secrets } from "./secrets.ts";
 
+// Deploys from the agent's production branch are production; any other
+// branch is a preview (spec 4).
+export const deploymentEnvironment = pgEnum("deployment_environment", [
+  "production",
+  "preview",
+]);
+
 // waiting: built, but it asks for more than a guardrail allows (spec 5), so
-// it cannot be promoted until an Admin approves.
+// it cannot serve until an Admin approves.
 export const deploymentStatus = pgEnum("deployment_status", [
   "ready",
   "waiting",
@@ -30,6 +39,8 @@ export const deploymentStatus = pgEnum("deployment_status", [
 
 export const deploymentSource = pgEnum("deployment_source", ["cli", "github"]);
 
+// The same shape the outbound Worker enforces (apps/outbound).
+export type NetworkRules = { allow: string[]; block: string[] };
 export type WaitingFor = { secrets?: string[] };
 
 export const deployments = pgTable(
@@ -38,13 +49,16 @@ export const deployments = pgTable(
     id: text().primaryKey(),
     organizationId: text().notNull(),
     agentId: text().notNull(),
+    environment: deploymentEnvironment().notNull(),
     status: deploymentStatus().notNull(),
-    // The Workers for Platforms script in the stage's dispatch namespace.
+    // The script in the stage's dispatch namespace.
     scriptName: text().notNull(),
     bundleSha256: text().notNull(),
     sdkVersion: text().notNull(),
-    model: text().notNull(),
-    reasoning: text().notNull(),
+    network: jsonb()
+      .$type<NetworkRules>()
+      .notNull()
+      .default({ allow: [], block: [] }),
     manifest: jsonb().notNull(),
     waitingFor: jsonb().$type<WaitingFor>().notNull().default({}),
     gitBranch: text(),
@@ -58,6 +72,7 @@ export const deployments = pgTable(
   },
   (t) => [
     unique("deployments_org_id_unique").on(t.organizationId, t.id),
+    unique("deployments_script_name_unique").on(t.scriptName),
     index().on(t.organizationId, t.agentId, t.createdAt),
     index()
       .on(t.organizationId, t.agentId, t.promotedAt)
@@ -65,6 +80,36 @@ export const deployments = pgTable(
     foreignKey({
       columns: [t.organizationId, t.agentId],
       foreignColumns: [agents.organizationId, agents.id],
+    }).onDelete("cascade"),
+    check(
+      "deployments_only_production_is_promoted",
+      sql`${t.promotedAt} IS NULL OR ${t.environment} = 'production'`,
+    ),
+  ],
+);
+
+// Groups named in a deployment's code, to wait on, tag or approve. The deploy
+// fails if one has no access to the agent, and the API refuses deleting a
+// group, or its grant, that a live deployment names (doc 01).
+export const deploymentGroups = pgTable(
+  "deployment_groups",
+  {
+    organizationId: text().notNull(),
+    deploymentId: text().notNull(),
+    groupId: text().notNull(),
+    // Approvers must stay operators on the agent.
+    approves: boolean().notNull().default(false),
+  },
+  (t) => [
+    primaryKey({ columns: [t.deploymentId, t.groupId] }),
+    index().on(t.organizationId, t.groupId),
+    foreignKey({
+      columns: [t.organizationId, t.deploymentId],
+      foreignColumns: [deployments.organizationId, deployments.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.organizationId, t.groupId],
+      foreignColumns: [groups.organizationId, groups.id],
     }).onDelete("cascade"),
   ],
 );

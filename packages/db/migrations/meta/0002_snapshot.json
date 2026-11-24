@@ -1,5 +1,5 @@
 {
-  "id": "d1597992-5f06-4301-9760-829da2dd1380",
+  "id": "e13f5ef6-409f-49bd-94d6-7ee312a8399a",
   "prevId": "30d82ce7-eef2-4de5-92dd-74ba17c54fb5",
   "version": "7",
   "dialect": "postgresql",
@@ -1655,6 +1655,15 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
+        "cases_organization_id_deployment_id_deployments_organization_id_id_fk": {
+          "name": "cases_organization_id_deployment_id_deployments_organization_id_id_fk",
+          "tableFrom": "cases",
+          "tableTo": "deployments",
+          "columnsFrom": ["organization_id", "deployment_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "cases_organization_id_waiting_on_group_id_groups_organization_id_id_fk": {
           "name": "cases_organization_id_waiting_on_group_id_groups_organization_id_id_fk",
           "tableFrom": "cases",
@@ -1682,6 +1691,90 @@
       },
       "isRLSEnabled": false
     },
+    "public.deployment_groups": {
+      "name": "deployment_groups",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deployment_id": {
+          "name": "deployment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "group_id": {
+          "name": "group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approves": {
+          "name": "approves",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "deployment_groups_organization_id_group_id_index": {
+          "name": "deployment_groups_organization_id_group_id_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "deployment_groups_organization_id_deployment_id_deployments_organization_id_id_fk": {
+          "name": "deployment_groups_organization_id_deployment_id_deployments_organization_id_id_fk",
+          "tableFrom": "deployment_groups",
+          "tableTo": "deployments",
+          "columnsFrom": ["organization_id", "deployment_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "deployment_groups_organization_id_group_id_groups_organization_id_id_fk": {
+          "name": "deployment_groups_organization_id_group_id_groups_organization_id_id_fk",
+          "tableFrom": "deployment_groups",
+          "tableTo": "groups",
+          "columnsFrom": ["organization_id", "group_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "deployment_groups_deployment_id_group_id_pk": {
+          "name": "deployment_groups_deployment_id_group_id_pk",
+          "columns": ["deployment_id", "group_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.deployments": {
       "name": "deployments",
       "schema": "",
@@ -1701,6 +1794,13 @@
         "agent_id": {
           "name": "agent_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment": {
+          "name": "environment",
+          "type": "deployment_environment",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
         },
@@ -1729,17 +1829,12 @@
           "primaryKey": false,
           "notNull": true
         },
-        "model": {
-          "name": "model",
-          "type": "text",
+        "network": {
+          "name": "network",
+          "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
-        },
-        "reasoning": {
-          "name": "reasoning",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'{\"allow\":[],\"block\":[]}'::jsonb"
         },
         "manifest": {
           "name": "manifest",
@@ -1867,190 +1962,20 @@
           "name": "deployments_org_id_unique",
           "nullsNotDistinct": false,
           "columns": ["organization_id", "id"]
+        },
+        "deployments_script_name_unique": {
+          "name": "deployments_script_name_unique",
+          "nullsNotDistinct": false,
+          "columns": ["script_name"]
         }
       },
       "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.secret_deliveries": {
-      "name": "secret_deliveries",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "deployment_id": {
-          "name": "deployment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "secret_id": {
-          "name": "secret_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "secret_version": {
-          "name": "secret_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "delivered_at": {
-          "name": "delivered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+      "checkConstraints": {
+        "deployments_only_production_is_promoted": {
+          "name": "deployments_only_production_is_promoted",
+          "value": "\"deployments\".\"promoted_at\" IS NULL OR \"deployments\".\"environment\" = 'production'"
         }
       },
-      "indexes": {
-        "secret_deliveries_organization_id_secret_id_index": {
-          "name": "secret_deliveries_organization_id_secret_id_index",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "secret_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "secret_deliveries_organization_id_deployment_id_deployments_organization_id_id_fk": {
-          "name": "secret_deliveries_organization_id_deployment_id_deployments_organization_id_id_fk",
-          "tableFrom": "secret_deliveries",
-          "tableTo": "deployments",
-          "columnsFrom": ["organization_id", "deployment_id"],
-          "columnsTo": ["organization_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "secret_deliveries_organization_id_secret_id_secrets_organization_id_id_fk": {
-          "name": "secret_deliveries_organization_id_secret_id_secrets_organization_id_id_fk",
-          "tableFrom": "secret_deliveries",
-          "tableTo": "secrets",
-          "columnsFrom": ["organization_id", "secret_id"],
-          "columnsTo": ["organization_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "secret_deliveries_deployment_id_secret_id_pk": {
-          "name": "secret_deliveries_deployment_id_secret_id_pk",
-          "columns": ["deployment_id", "secret_id"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.secret_grants": {
-      "name": "secret_grants",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "secret_id": {
-          "name": "secret_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "granted_at": {
-          "name": "granted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "secret_grants_organization_id_agent_id_index": {
-          "name": "secret_grants_organization_id_agent_id_index",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "secret_grants_organization_id_secret_id_secrets_organization_id_id_fk": {
-          "name": "secret_grants_organization_id_secret_id_secrets_organization_id_id_fk",
-          "tableFrom": "secret_grants",
-          "tableTo": "secrets",
-          "columnsFrom": ["organization_id", "secret_id"],
-          "columnsTo": ["organization_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "secret_grants_organization_id_agent_id_agents_organization_id_id_fk": {
-          "name": "secret_grants_organization_id_agent_id_agents_organization_id_id_fk",
-          "tableFrom": "secret_grants",
-          "tableTo": "agents",
-          "columnsFrom": ["organization_id", "agent_id"],
-          "columnsTo": ["organization_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "secret_grants_secret_id_agent_id_pk": {
-          "name": "secret_grants_secret_id_agent_id_pk",
-          "columns": ["secret_id", "agent_id"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.org_keys": {
@@ -2190,11 +2115,6 @@
           "name": "secrets_organizationId_name_unique",
           "nullsNotDistinct": false,
           "columns": ["organization_id", "name"]
-        },
-        "secrets_org_id_unique": {
-          "name": "secrets_org_id_unique",
-          "nullsNotDistinct": false,
-          "columns": ["organization_id", "id"]
         }
       },
       "policies": {},
@@ -2240,6 +2160,11 @@
       "name": "halt_reason",
       "schema": "public",
       "values": ["credit_exhausted", "spending_limit_reached"]
+    },
+    "public.deployment_environment": {
+      "name": "deployment_environment",
+      "schema": "public",
+      "values": ["production", "preview"]
     },
     "public.deployment_source": {
       "name": "deployment_source",

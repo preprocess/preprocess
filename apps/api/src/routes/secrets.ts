@@ -21,7 +21,12 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
-import { eventBase, requireAdmin, type OrgVariables } from "../caller.ts";
+import {
+  actor,
+  eventBase,
+  requireAdmin,
+  type OrgVariables,
+} from "../caller.ts";
 import { encrypt, orgKey } from "../crypto.ts";
 import { liveDeployments } from "../deploy.ts";
 import type { Env } from "../env.ts";
@@ -95,15 +100,22 @@ secretRoutes.openapi(
         })
         .from(secretGrants)
         .innerJoin(agents, eq(agents.id, secretGrants.agentId));
+      const held = await tx
+        .select({
+          secretId: secretDeliveries.secretId,
+          secretVersion: secretDeliveries.secretVersion,
+          deploymentId: secretDeliveries.deploymentId,
+          agentId: deployments.agentId,
+        })
+        .from(secretDeliveries)
+        .innerJoin(
+          deployments,
+          eq(deployments.id, secretDeliveries.deploymentId),
+        );
       const live = new Set<string>();
-      for (const agentId of new Set(grants.map((g) => g.agentId)))
+      for (const agentId of new Set(held.map((h) => h.agentId)))
         for (const d of await liveDeployments(tx, agentId)) live.add(d.id);
-      const deliveries = live.size
-        ? await tx
-            .select()
-            .from(secretDeliveries)
-            .where(inArray(secretDeliveries.deploymentId, [...live]))
-        : [];
+      const deliveries = held.filter((h) => live.has(h.deploymentId));
       return rows.map((s) => {
         const bound = deliveries.filter((d) => d.secretId === s.id);
         return {
@@ -176,7 +188,7 @@ secretRoutes.openapi(
           version,
           keyVersion,
           ciphertext,
-          updatedBy: c.var.request.actorId,
+          updatedBy: actor(c.var.caller).actorId,
         })
         .onConflictDoUpdate({
           target: secrets.id,
@@ -184,7 +196,7 @@ secretRoutes.openapi(
             version,
             keyVersion,
             ciphertext,
-            updatedBy: c.var.request.actorId,
+            updatedBy: actor(c.var.caller).actorId,
             updatedAt: new Date(),
           },
         });
@@ -287,7 +299,7 @@ const grantChange =
             organizationId: c.var.org,
             secretId: secret.id,
             agentId: agent.id,
-            grantedBy: c.var.request.actorId,
+            grantedBy: actor(c.var.caller).actorId,
           })
           .onConflictDoNothing();
       else

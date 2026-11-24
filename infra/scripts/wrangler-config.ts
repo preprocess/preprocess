@@ -9,13 +9,16 @@ import path from "node:path";
 import { format, resolveConfig } from "prettier";
 
 import {
+  apiCrons,
   compatibility,
   durableObjects,
   LOCAL,
-  localDatabaseUrl,
+  localAppUrl,
+  localAuditKeyId,
+  localEmailFrom,
   localModelService,
+  localRoleDatabaseUrl,
   localSecretsMasterKey,
-  localSystemDatabaseUrl,
   names,
   runtimeDurableObjects,
 } from "../src/stages.ts";
@@ -49,15 +52,26 @@ const configs: Record<string, object> = {
       MODEL_SERVICE_URL: localModelService.url,
       MODEL_SERVICE_KEY: localModelService.key,
       SECRETS_MASTER_KEY: localSecretsMasterKey,
+      APP_URL: localAppUrl,
+      EMAIL_FROM: localEmailFrom,
+      AUDIT_SIGNING_KEY_ID: localAuditKeyId,
     },
     hyperdrive: [
-      { binding: "DB", id: "local", localConnectionString: localDatabaseUrl },
+      {
+        binding: "DB",
+        id: "local-app",
+        localConnectionString: localRoleDatabaseUrl("preprocess_app"),
+      },
       {
         binding: "DB_SYSTEM",
         id: "local-system",
-        localConnectionString: localSystemDatabaseUrl,
+        localConnectionString: localRoleDatabaseUrl("preprocess_system"),
       },
     ],
+    triggers: { crons: apiCrons },
+    // The local runtime's send_email writes each message to a file and logs
+    // its path: the development mail sink.
+    send_email: [{ name: "EMAIL" }],
     durable_objects: {
       bindings: Object.entries(durableObjects).map(([name, class_name]) => ({
         name,
@@ -77,7 +91,10 @@ const configs: Record<string, object> = {
         { queue: local.secretSync, max_batch_timeout: 1 },
       ],
     },
-    r2_buckets: [{ binding: "FILES", bucket_name: local.bucket }],
+    r2_buckets: [
+      { binding: "FILES", bucket_name: local.bucket },
+      { binding: "AUDIT", bucket_name: local.auditBucket },
+    ],
     // Wrangler supports dispatch namespaces only as remote bindings, so the
     // local API reaches the user Worker through a service binding, and
     // uploads agent scripts to apps/namespace-local.

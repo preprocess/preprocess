@@ -344,8 +344,8 @@ export const deploy = async (
       scriptName: id,
       bundleSha256: await sha256(JSON.stringify(input.bundle)),
       sdkVersion: manifest.sdk.version,
-      model: manifest.model,
-      reasoning: manifest.reasoning,
+      environment:
+        input.git.branch === agent.productionBranch ? "production" : "preview",
       manifest,
       gitBranch: input.git.branch ?? null,
       gitCommit: input.git.commit ?? null,
@@ -380,6 +380,20 @@ export const promote = async (
   deploymentId: string,
   actor: Actor,
 ) => {
+  const [target] = await withOrg(env, org, (tx) =>
+    tx
+      .select({ environment: deployments.environment })
+      .from(deployments)
+      .where(
+        and(eq(deployments.id, deploymentId), eq(deployments.agentId, agentId)),
+      ),
+  );
+  if (!target)
+    throw new HTTPException(404, { message: "deployment not found" });
+  if (target.environment !== "production")
+    throw new HTTPException(409, {
+      message: "only a deployment from the production branch can be promoted",
+    });
   // An older deployment never brings back a revoked grant or an old value.
   const waiting = await syncDeployment(env, org, deploymentId, actor);
   if (waiting.length)
@@ -416,8 +430,9 @@ const view = (
   production: d.id === production,
   waitingFor: d.waitingFor,
   sdkVersion: d.sdkVersion,
-  model: d.model,
-  reasoning: d.reasoning,
+  environment: d.environment,
+  model: (d.manifest as Manifest).model,
+  reasoning: (d.manifest as Manifest).reasoning,
   git: { branch: d.gitBranch, commit: d.gitCommit },
   source: d.source,
   tools: (d.manifest as Manifest).tools.map((t) => t.name),
