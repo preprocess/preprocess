@@ -29,12 +29,12 @@ export const openModels = (env: Env, observe: (fn: Stream) => Stream) => {
     api: "openai-completions",
     provider: PROVIDER,
     baseUrl,
-    reasoning: false,
+    reasoning: true,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 262144,
     maxTokens: 8192,
-    compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
+    compat: { supportsDeveloperRole: false, supportsReasoningEffort: true },
   }));
   const registry = createModels();
   registry.setProvider(

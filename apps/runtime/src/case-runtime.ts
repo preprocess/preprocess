@@ -26,6 +26,7 @@ import {
 import { agentWorker } from "./dispatch.ts";
 import type { CaseEvent, CaseStatus, Env, GroupRef, StartCase } from "./env.ts";
 import { openModels, PROVIDER } from "./models.ts";
+import { COMPACTION, largeSummaries } from "./summaries.ts";
 import {
   type FieldView,
   SCHEMA_TABLES,
@@ -676,6 +677,9 @@ export class CaseRuntime extends DurableObject<Env> {
             this.record("model.request", {
               turn: current,
               model: model.id,
+              reasoning:
+                (options as { reasoning?: string } | undefined)?.reasoning ??
+                options?.reasoningEffort,
               context: modelContext,
             });
             const events = fn(model, modelContext, options);
@@ -701,7 +705,19 @@ export class CaseRuntime extends DurableObject<Env> {
           return out;
         },
       );
-      return Harness.open(storage, { models, registry, onWake }, context);
+      registry.install(
+        largeSummaries(
+          models,
+          meta.manifest.model,
+          meta.manifest.reasoning,
+          (data) => this.record("context.summary", data),
+        ),
+      );
+      return Harness.open(
+        storage,
+        { models, registry, onWake, settings: { compaction: COMPACTION } },
+        context,
+      );
     },
     defaults: { maxTurns: MAX_TURNS },
   });
@@ -779,7 +795,10 @@ export class CaseRuntime extends DurableObject<Env> {
     });
     await this.schema(meta).evaluate("all");
     await this.harness.root({
-      agent: { model: { provider: PROVIDER, modelId: manifest.model } },
+      agent: {
+        model: { provider: PROVIDER, modelId: manifest.model },
+        thinkingLevel: manifest.reasoning,
+      },
     });
     const prompt = await this.firstPrompt(meta);
     if (prompt === null) return this.view();
