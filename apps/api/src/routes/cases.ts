@@ -665,7 +665,7 @@ export const caseRoutes = new OpenAPIHono<{
       method: "post",
       path: "/ocr",
       tags: ["OCR"],
-      summary: "OCR an uploaded page image",
+      summary: "OCR an uploaded PDF or page image",
       request: {
         params: OrgParam,
         ...body(
@@ -705,7 +705,7 @@ export const caseRoutes = new OpenAPIHono<{
           "The pages as Markdown",
         ),
         404: error("No such file"),
-        415: error("Not a page image"),
+        415: error("Not a PDF or page image"),
       },
     }),
     async (c) => {

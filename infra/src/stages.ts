@@ -39,6 +39,8 @@ export const names = (stage: string) => ({
   runtime: `preprocess-runtime-${stage}`,
   outbound: `preprocess-outbound-${stage}`,
   modelStub: `preprocess-model-stub-${stage}`,
+  // PDF pages to images for OCR, in a sandbox container (design doc 07).
+  pdfRender: `preprocess-pdf-render-${stage}`,
   runs: `preprocess-runs-${stage}`,
   // Local only: stands in for the dispatch namespace, which Cloudflare's local
   // runtime cannot emulate (apps/namespace-local).
