@@ -28,7 +28,7 @@ export type ToolManifest = {
   sideEffects: boolean;
 };
 
-export type Manifest = {
+type ManifestV1 = {
   protocol: typeof PROTOCOL;
   sdk: { name: "@preprocess/sdk"; version: string };
   instructions: string;
@@ -45,7 +45,11 @@ export type ToolCall = {
   callId: string;
 };
 
-export type ToolResult = { output: unknown; isError: boolean };
+export type ToolResult = {
+  output: unknown;
+  isError: boolean;
+  effects?: Effect[];
+};
 
 // The platform's MCP token service, bound to every deployment as `MCP` with
 // the organization, agent and deployment fixed in its props. Customer code
@@ -63,3 +67,135 @@ export type McpBinding = {
     opts: { caseId: string },
   ): Promise<unknown>;
 };
+
+// ---------------------------------------------------------------------------
+// Schema engine (design doc 05). Additive to protocol 1: a manifest without
+// `schema` is an agent with no output schema, and the runtime treats a
+// missing field as empty.
+
+// Dotted, with list indices: "vendor", "lines[2].glAccount".
+export type Path = string;
+
+export type FieldKind =
+  | "text"
+  | "number"
+  | "boolean"
+  | "date"
+  | "select"
+  | "multiselect"
+  | "group"
+  | "list"
+  | "fetched";
+
+export type SchemaOption = {
+  id: string;
+  label: string;
+  description?: string;
+  data?: unknown;
+};
+
+export type ReviewRequirement = "required" | "none";
+
+// The static tree, serialised into the manifest. The functions stay in the
+// agent's Worker; `dynamic` says which parts need /schema/evaluate.
+export type SchemaNode = {
+  kind: FieldKind;
+  description?: string;
+  // Static review requirement; dynamic when dynamic.review is true.
+  review?: ReviewRequirement;
+  // Inline options known without evaluation (select, multiselect).
+  options?: SchemaOption[];
+  // select or multiselect whose options come from s.source(): searched and
+  // paged through /schema/options, never sent whole.
+  source?: { search: boolean; get: boolean; page: boolean };
+  invalidates?: Path[];
+  dynamic: {
+    visible: boolean;
+    options: boolean;
+    review: boolean;
+    fetch: boolean;
+  };
+  // group: its fields in order; list: the item shape.
+  fields?: Record<string, SchemaNode>;
+  item?: SchemaNode;
+};
+
+export type SchemaManifest = {
+  root: SchemaNode;
+  checks: string[];
+};
+
+// Schedules are declared in code and listed and paused through the API
+// (design doc 04).
+export type Schedule = {
+  name: string;
+  cron: string;
+  timezone: string;
+  text: string;
+  previews: boolean;
+};
+
+export type Manifest = ManifestV1 & {
+  schema?: SchemaManifest;
+  // Group slugs the code waits on or tags; checked at deploy (doc 06).
+  groups?: string[];
+  schedules?: Schedule[];
+  // OCR every uploaded file before the run (doc 04).
+  ocr?: boolean;
+};
+
+// POST /schema/evaluate (runtime → agent Worker)
+export type EvaluateRequest = {
+  caseId: string;
+  answers: Record<Path, unknown>;
+  fetched: Record<Path, { key: string; data: unknown }>;
+  targets: Path[] | "all";
+};
+
+export type FieldEval = {
+  visible: boolean;
+  options?:
+    | { kind: "inline"; items: SchemaOption[] }
+    | { kind: "source"; count?: number };
+  review: ReviewRequirement;
+  // Every path read while evaluating this field (a.get, a.fetched, a.sum).
+  reads: Path[];
+  fetch?: { key: string; data: unknown };
+  value?: unknown;
+  error?: string;
+};
+
+export type CheckResult = {
+  name: string;
+  ok: boolean;
+  field?: Path;
+  message?: string;
+};
+
+export type EvaluateResponse = {
+  fields: Record<Path, FieldEval>;
+  checks: CheckResult[];
+};
+
+// POST /schema/options (search and paging on a source)
+export type OptionsRequest = {
+  caseId: string;
+  path: Path;
+  answers: Record<Path, unknown>;
+  query?: string;
+  cursor?: string;
+  ids?: string[];
+  limit: number;
+};
+
+export type OptionsResponse = {
+  items: SchemaOption[];
+  cursor?: string;
+  total?: number;
+};
+
+// What a tool asks the platform to do besides returning output (doc 06).
+// Code names groups by slug, never people.
+export type Effect =
+  | { type: "wait"; group: string; reason: string | null }
+  | { type: "tag"; group: string; message: string };
