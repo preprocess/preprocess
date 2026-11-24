@@ -20,13 +20,23 @@ import {
   groupMembers,
   groups,
 } from "../src/schema/access.ts";
-import { caseAssignees, cases } from "../src/schema/cases.ts";
+import {
+  caseAssignees,
+  caseMentions,
+  cases,
+  files,
+  idempotencyKeys,
+  inboxReads,
+  outbox,
+  reviewEvents,
+} from "../src/schema/cases.ts";
 import {
   deploymentGroups,
   deployments,
   secretDeliveries,
   secretGrants,
 } from "../src/schema/deployments.ts";
+import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 
 export type Org = Awaited<ReturnType<typeof seedOrganization>>;
@@ -157,6 +167,74 @@ export const seedOrganization = async (name: string) =>
       userId,
       assignedBy: userId,
     });
+    await tx.insert(idempotencyKeys).values({
+      organizationId: org,
+      operation: "cases.create",
+      key: "key-1",
+      fingerprint: new Uint8Array([7]),
+      caseId,
+      expiresAt: new Date(now.getTime() + 86_400_000),
+    });
+    await tx.insert(files).values({
+      id: newId("file"),
+      organizationId: org,
+      caseId,
+      name: "invoice.pdf",
+      contentType: "application/pdf",
+      size: 3,
+      sha256: new Uint8Array([8]),
+      r2Key: `${org}/files/invoice.pdf`,
+      createdBy: userId,
+    });
+    await tx.insert(reviewEvents).values({
+      id: newId("reviewEvent"),
+      organizationId: org,
+      caseId,
+      userId,
+      kind: "field.edited",
+      path: "vendor",
+      before: null,
+      after: "acme",
+    });
+    await tx.insert(caseMentions).values({
+      id: newId("mention"),
+      organizationId: org,
+      caseId,
+      groupId,
+      messageId: "msg_1",
+      by: "agent",
+      message: "Please check the vendor",
+    });
+    await tx.insert(inboxReads).values({
+      organizationId: org,
+      userId,
+      itemKey: `waiting:${caseId}:1`,
+    });
+    await tx.insert(outbox).values({
+      id: newId("outbox"),
+      organizationId: org,
+      kind: "case.start",
+      payload: { caseId },
+    });
+    const endpointId = newId("webhook");
+    await tx.insert(webhookEndpoints).values({
+      id: endpointId,
+      organizationId: org,
+      url: "https://hooks.example.com/preprocess",
+      events: ["case.completed"],
+      keyVersion: 1,
+      signingSecret: new Uint8Array([9]),
+      createdBy: userId,
+    });
+    await tx.insert(webhookDeliveries).values({
+      id: newId("delivery"),
+      organizationId: org,
+      endpointId,
+      eventType: "case.completed",
+      caseId,
+      payload: {},
+      status: "pending",
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -190,6 +268,14 @@ export const tenantTables = {
   secrets: "organization_id",
   cases: "organization_id",
   case_assignees: "organization_id",
+  idempotency_keys: "organization_id",
+  files: "organization_id",
+  review_events: "organization_id",
+  case_mentions: "organization_id",
+  inbox_reads: "organization_id",
+  outbox: "organization_id",
+  webhook_endpoints: "organization_id",
+  webhook_deliveries: "organization_id",
   audit_events: "organization_id",
   audit_heads: "organization_id",
   deployments: "organization_id",
