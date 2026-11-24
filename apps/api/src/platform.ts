@@ -9,6 +9,8 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { recordCaseEvent } from "./cases.ts";
 import type { CaseEvent } from "./cases.ts";
 import type { Env } from "./env.ts";
+import { recordEvalEvent } from "./evals.ts";
+import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
 import { ocrFile } from "./ocr.ts";
 import { spendGate } from "./spend.ts";
@@ -16,6 +18,11 @@ import { spendGate } from "./spend.ts";
 export class Platform extends WorkerEntrypoint<Env> {
   caseEvent(event: CaseEvent) {
     return recordCaseEvent(this.env, event);
+  }
+
+  // An eval case settling (design doc 09); it never reaches the case index.
+  evalEvent(event: EvalEvent) {
+    return recordEvalEvent(this.env, event);
   }
 
   // The runtime calls this before each metered model, OCR or decide call and

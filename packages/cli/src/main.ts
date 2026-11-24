@@ -7,6 +7,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 
 import { bundle, deploy, describe, gitInfo } from "./deploy.ts";
+import { evalsList, evalsRun } from "./evals.ts";
 import { logs } from "./logs.ts";
 import { configPull, groupsPull } from "./pull.ts";
 
@@ -15,12 +16,17 @@ const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <id>] [-
        preprocess groups pull [entry] [--org <id>] [--api <url>]
        preprocess logs [--agent <id>] [--case <id>] [--deployment <id>]
                        [--level <level>] [--search <text>] [--limit <n>]
+       preprocess evals list [--agent <name>]
+       preprocess evals run <suite> [--deployment <id>] [--model <id>]...
 
   deploy       bundle and deploy the agent
   config pull  write the agent's dashboard overrides into preprocess.config.json
   groups pull  write the organization's groups into preprocess.config.json
   logs         print run logs, newest first: a case's, or the agent's,
                deployment's or organization's (Developers and Admins)
+  evals list   list the agent's eval suites
+  evals run    run a suite against a deployment (production by default),
+               one run per --model, and wait for the results
 
   entry     the agent's module (default: src/index.ts)
   --agent   the agent's name (default: package.json name, without its scope)
@@ -40,6 +46,7 @@ export const main = async (argv: string[], env = process.env) => {
       level: { type: "string" },
       search: { type: "string" },
       limit: { type: "string" },
+      model: { type: "string", multiple: true },
       org: { type: "string" },
       api: { type: "string" },
       help: { type: "boolean", short: "h" },
@@ -48,8 +55,37 @@ export const main = async (argv: string[], env = process.env) => {
   const [command] = positionals;
   const pull =
     (command === "config" || command === "groups") && positionals[1] === "pull";
-  if (values.help || (command !== "deploy" && command !== "logs" && !pull))
+  const evals =
+    command === "evals" &&
+    (positionals[1] === "list" ||
+      (positionals[1] === "run" && !!positionals[2]));
+  if (
+    values.help ||
+    (command !== "deploy" && command !== "logs" && !pull && !evals)
+  )
     return { code: command ? 1 : 0, out: usage };
+  if (evals) {
+    const org = values.org ?? env.PREPROCESS_ORG;
+    const api = values.api ?? env.PREPROCESS_API_URL;
+    const key = env.PREPROCESS_API_KEY;
+    const agent = values.agent ?? packageName(process.cwd());
+    if (!org || !api || !key)
+      return {
+        code: 1,
+        out: `Missing --org, --api or PREPROCESS_API_KEY.\n\n${usage}`,
+      };
+    if (positionals[1] === "run")
+      return evalsRun({
+        api,
+        org,
+        key,
+        suite: positionals[2]!,
+        deployment: values.deployment,
+        models: values.model,
+      });
+    if (!agent) return { code: 1, out: `Missing --agent.\n\n${usage}` };
+    return { code: 0, ...(await evalsList({ api, org, key, agent })) };
+  }
   if (command === "logs") {
     const org = values.org ?? env.PREPROCESS_ORG;
     const api = values.api ?? env.PREPROCESS_API_URL;

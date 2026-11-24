@@ -28,6 +28,7 @@ export type OutboxMessage = {
 const queues: Partial<Record<OutboxKind, (env: Env) => Queue<OutboxMessage>>> =
   {
     "case.start": (env) => env.CASES,
+    "eval.start": (env) => env.CASES,
     webhook: (env) => env.WEBHOOKS,
     "secret.sync": (env) => env.SECRET_SYNC,
   };

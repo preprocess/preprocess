@@ -80,6 +80,22 @@ export type StartCase = Deployment & {
   // overrides and organization defaults over the code's values. Null means
   // the runtime's own behavior.
   settings?: Settings;
+  // Set for an eval case (design doc 09): a replay of a completed case whose
+  // capture holds the results its side-effect tools return.
+  eval?: { runId: string; sourceCaseId: string; captureKey: string };
+};
+
+// What an eval case reports once it settles, instead of case events: no
+// inbox, webhooks or email.
+export type EvalEvent = CaseKey & {
+  runId: string;
+  sourceCaseId: string;
+  status: CaseStatus;
+  waitingOn: string | null;
+  reason: string | null;
+  answers: Record<string, unknown> | null;
+  costMicroUsd: number;
+  captureKey: string;
 };
 
 export type Settings = {
@@ -112,6 +128,8 @@ export type CaseEvent = CaseKey &
         answers: Record<string, unknown> | null;
         error: { code: string; message: string } | null;
         haltReason?: Exclude<SpendVerdict, "ok">;
+        // On completion: what an eval suite keeps of the case (doc 09).
+        completed?: { input: StartCase["input"]; captureKey: string };
       }
     | {
         type: "mention";
@@ -124,6 +142,7 @@ export type CaseEvent = CaseKey &
 
 export type Platform = {
   caseEvent(event: CaseEvent): Promise<void>;
+  evalEvent(event: EvalEvent): Promise<void>;
   // The spending limit (design doc 04), asked before each metered model, OCR
   // or decide call.
   spendGate(organizationId: string): Promise<SpendVerdict>;

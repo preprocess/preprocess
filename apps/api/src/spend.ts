@@ -5,6 +5,7 @@
 
 import type { Tx } from "@preprocess/db/client";
 import { cases } from "@preprocess/db/schema/cases";
+import { evalRuns } from "@preprocess/db/schema/evals";
 import { organizationGuardrails } from "@preprocess/db/schema/guardrails";
 import { gte, sum } from "drizzle-orm";
 
@@ -17,14 +18,26 @@ export const monthStart = (now: Date) =>
   new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
 // Metered use of our hosted service this month, in micro-USD: the cost of the
-// organization's cases created this month, every deployment included. A
-// self-hosted install's own serving URLs never add cost to a case.
-export const monthSpend = async (tx: Tx, now = new Date()) => {
-  const [row] = await tx
+// organization's cases and eval runs created this month, every deployment
+// included. A self-hosted install's own serving URLs never add cost.
+export const monthSpendParts = async (tx: Tx, now = new Date()) => {
+  const [caseRow] = await tx
     .select({ total: sum(cases.costMicroUsd) })
     .from(cases)
     .where(gte(cases.createdAt, monthStart(now)));
-  return Number(row?.total ?? 0);
+  const [evalRow] = await tx
+    .select({ total: sum(evalRuns.costMicroUsd) })
+    .from(evalRuns)
+    .where(gte(evalRuns.createdAt, monthStart(now)));
+  return {
+    cases: Number(caseRow?.total ?? 0),
+    evals: Number(evalRow?.total ?? 0),
+  };
+};
+
+export const monthSpend = async (tx: Tx, now = new Date()) => {
+  const parts = await monthSpendParts(tx, now);
+  return parts.cases + parts.evals;
 };
 
 export const spendingLimit = async (tx: Tx) => {
