@@ -70,7 +70,7 @@ export const cases = pgTable(
     foreignKey({
       columns: [t.organizationId, t.waitingOnGroupId],
       foreignColumns: [groups.organizationId, groups.id],
-    }).onDelete("restrict"),
+    }),
     check(
       "cases_halt_reason_only_when_halted",
       sql`(${t.status} = 'halted') = (${t.haltReason} IS NOT NULL)`,

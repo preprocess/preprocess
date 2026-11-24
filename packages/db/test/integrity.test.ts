@@ -124,15 +124,9 @@ describe("roles", () => {
 describe("deleting an organization", () => {
   it("removes its tenant rows and keeps its audit chain", async () => {
     const doomed = await seedOrganization("Doomed");
-    await withoutOrg(env, "test fixture", async (tx) => {
-      await tx.execute(
-        sql`delete from case_assignees where organization_id = ${doomed.org}`,
-      );
-      await tx.execute(
-        sql`delete from cases where organization_id = ${doomed.org}`,
-      );
-      await tx.delete(organization).where(eq(organization.id, doomed.org));
-    });
+    await withoutOrg(env, "test fixture", (tx) =>
+      tx.delete(organization).where(eq(organization.id, doomed.org)),
+    );
     const left = await withoutOrg(env, "test check", (tx) =>
       tx.execute<{ groups: number; events: number }>(sql`
         select (select count(*)::int from groups where organization_id = ${doomed.org}) as groups,

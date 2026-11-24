@@ -1,6 +1,6 @@
 {
-  "id": "b02678dc-027f-4c31-ae63-0b9be0f1ae9b",
-  "prevId": "318d2422-4bd1-4a74-869f-cd7cb718c8dc",
+  "id": "30d82ce7-eef2-4de5-92dd-74ba17c54fb5",
+  "prevId": "1a0ade37-b789-4c9c-b2b3-777078417fd7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -87,7 +87,7 @@
           "tableTo": "groups",
           "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -1655,7 +1655,7 @@
           "tableTo": "groups",
           "columnsTo": ["organization_id", "id"],
           "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},

@@ -78,6 +78,9 @@ export const agents = pgTable(
 
 export const agentAccess = pgEnum("agent_access", ["operator", "viewer"]);
 
+// A group with a grant cannot be deleted. The foreign key is NO ACTION rather
+// than RESTRICT so deleting an organization, which cascades to agents and
+// groups in one statement, is checked only once both are gone.
 export const agentGrants = pgTable(
   "agent_grants",
   {
@@ -98,6 +101,6 @@ export const agentGrants = pgTable(
     foreignKey({
       columns: [t.organizationId, t.groupId],
       foreignColumns: [groups.organizationId, groups.id],
-    }).onDelete("restrict"),
+    }),
   ],
 );
