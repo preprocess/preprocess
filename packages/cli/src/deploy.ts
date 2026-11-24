@@ -17,7 +17,12 @@ export type Deployment = {
   status: "ready" | "waiting" | "failed";
   environment: "production" | "preview";
   production: boolean;
-  waitingFor: { secrets?: string[]; mcp?: string[] };
+  waitingFor: {
+    secrets?: string[];
+    mcp?: string[];
+    network?: string[];
+    groups?: string[];
+  };
   sdkVersion: string;
   tools: string[];
   warnings?: string[];
@@ -136,6 +141,8 @@ const status = (agent: string, d: Deployment) => {
     const grants = [
       ...(d.waitingFor.secrets ?? []).map((s) => `secret ${s}`),
       ...(d.waitingFor.mcp ?? []).map((m) => `MCP server ${m}`),
+      ...(d.waitingFor.network ?? []).map((h) => `network access to ${h}`),
+      ...(d.waitingFor.groups ?? []).map((g) => `access for group ${g}`),
     ];
     return `${agent}: deployment ${d.id} is waiting for grants: ${grants.join(", ")}`;
   }
