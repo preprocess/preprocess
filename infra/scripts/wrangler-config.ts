@@ -94,6 +94,7 @@ const configs: Record<string, object> = {
         { binding: "WEBHOOKS", queue: local.webhooksQueue },
         { binding: "EMAILS", queue: local.emailsQueue },
         { binding: "SECRET_SYNC", queue: local.secretSync },
+        { binding: "LOGS", queue: local.logsQueue },
       ],
       consumers: [
         { queue: local.queue, max_batch_timeout: 1 },
@@ -102,12 +103,14 @@ const configs: Record<string, object> = {
         // Retries are timed by the consumer (webhooks.ts) over 24 hours.
         { queue: local.webhooksQueue, max_batch_timeout: 1, max_retries: 20 },
         { queue: local.emailsQueue, max_batch_timeout: 1 },
+        { queue: local.logsQueue, max_batch_timeout: 1, max_batch_size: 100 },
       ],
     },
     kv_namespaces: [{ binding: "EMAILS_SENT", id: local.emailsSent }],
     r2_buckets: [
       { binding: "FILES", bucket_name: local.bucket },
       { binding: "AUDIT", bucket_name: local.auditBucket },
+      { binding: "LOG_BUCKET", bucket_name: local.logs },
     ],
     // Wrangler supports dispatch namespaces only as remote bindings, so the
     // local API reaches the user Worker through a service binding, and
@@ -191,6 +194,15 @@ const configs: Record<string, object> = {
     main: "src/index.ts",
     ...common,
   },
+  "apps/tail": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.tail,
+    main: "src/index.ts",
+    ...common,
+    services: [
+      { binding: "PLATFORM", service: local.api, entrypoint: "Platform" },
+    ],
+  },
   "apps/namespace-local": {
     $schema: "node_modules/wrangler/config-schema.json",
     name: local.localNamespace,
@@ -200,6 +212,7 @@ const configs: Record<string, object> = {
     r2_buckets: [{ binding: "SCRIPTS", bucket_name: local.localScripts }],
     services: [
       { binding: "OUTBOUND", service: local.outbound, entrypoint: "Egress" },
+      { binding: "TAIL", service: local.tail },
     ],
   },
 };

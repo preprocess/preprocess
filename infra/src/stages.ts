@@ -38,6 +38,9 @@ export const names = (stage: string) => ({
   emailsQueue: `preprocess-emails-${stage}`,
   emailsSent: `preprocess-emails-sent-${stage}`,
   secretSync: `preprocess-secret-sync-${stage}`,
+  // Run logs (design doc 09): every producer's records, consumed by the API.
+  logsQueue: `preprocess-logs-${stage}`,
+  logs: `preprocess-logs-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
   userWorker: "hello",
@@ -45,6 +48,8 @@ export const names = (stage: string) => ({
   // The GitHub build sandbox (apps/builder).
   builder: `preprocess-builder-${stage}`,
   outbound: `preprocess-outbound-${stage}`,
+  // The Tail Worker on every agent script (design doc 09).
+  tail: `preprocess-tail-${stage}`,
   modelStub: `preprocess-model-stub-${stage}`,
   // PDF pages to images for OCR, in a sandbox container (design doc 07).
   pdfRender: `preprocess-pdf-render-${stage}`,
@@ -92,6 +97,9 @@ export const durableObjects = {
   COUNTER: "Counter",
   // One per organization, agent and branch: GitHub builds run one at a time.
   BUILDS: "BuildQueue",
+  // One per organization and agent, and one per preview deployment with
+  // schedules (design doc 04).
+  SCHEDULER: "Scheduler",
 } as const;
 
 // Durable Object classes the runtime Worker exports: one Pi Durable case

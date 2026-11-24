@@ -45,6 +45,14 @@ import {
   agentOverrides,
   organizationDefaults,
 } from "../src/schema/settings.ts";
+import { logSummaries } from "../src/schema/logs.ts";
+import {
+  evalResults,
+  evalRuns,
+  evalSuiteCases,
+  evalSuites,
+} from "../src/schema/evals.ts";
+import { otelExports } from "../src/schema/otel.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
   mcpAuthorizations,
@@ -354,6 +362,55 @@ export const seedOrganization = async (name: string) =>
       requestedByType: "person",
       requestedBy: userId,
     });
+    await tx.insert(logSummaries).values({
+      organizationId: org,
+      subjectKind: "case",
+      subjectId: caseId,
+      events: 1,
+      firstAt: new Date(),
+      lastAt: new Date(),
+    });
+    await tx.insert(otelExports).values({
+      organizationId: org,
+      endpoint: "https://otel.example.com",
+      keyVersion: 1,
+      headersCiphertext: new Uint8Array([1]),
+      updatedBy: userId,
+    });
+    const suiteId = newId("evalSuite");
+    const runId = newId("evalRun");
+    await tx.insert(evalSuites).values({
+      id: suiteId,
+      organizationId: org,
+      agentId,
+      name: "Completed cases",
+      kind: "automatic",
+      cap: 100,
+      createdBy: userId,
+    });
+    await tx.insert(evalSuiteCases).values({
+      organizationId: org,
+      suiteId,
+      caseId,
+      input: { text: "hello" },
+      captureKey: "run.json",
+    });
+    await tx.insert(evalRuns).values({
+      id: runId,
+      organizationId: org,
+      suiteId,
+      deploymentId,
+      model: "stub",
+      trigger: "manual",
+      status: "running",
+      createdBy: userId,
+    });
+    await tx.insert(evalResults).values({
+      organizationId: org,
+      runId,
+      caseId,
+      status: "running",
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -414,6 +471,12 @@ export const tenantTables = {
   guardrail_requests: "organization_id",
   organization_defaults: "organization_id",
   agent_overrides: "organization_id",
+  log_summaries: "organization_id",
+  otel_exports: "organization_id",
+  eval_suites: "organization_id",
+  eval_suite_cases: "organization_id",
+  eval_runs: "organization_id",
+  eval_results: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

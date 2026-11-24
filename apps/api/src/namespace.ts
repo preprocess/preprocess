@@ -74,6 +74,10 @@ const cloudflare = (env: Env): Namespace => {
               compatibility_flags: AGENT_COMPATIBILITY.flags,
               bindings: upload.bindings,
               tags: upload.tags,
+              // Console output and exceptions become run logs (doc 09).
+              ...(env.TAIL_WORKER && {
+                tail_consumers: [{ service: env.TAIL_WORKER }],
+              }),
             }),
           ],
           { type: "application/json" },

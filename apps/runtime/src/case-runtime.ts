@@ -7,6 +7,7 @@ import {
   section,
 } from "@earendil-works/pi-durable";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { initLogs, wideEvent } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { decide } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
@@ -24,8 +25,18 @@ import {
   type Usage,
 } from "./capture.ts";
 import { agentWorker } from "./dispatch.ts";
-import type { CaseEvent, CaseStatus, Env, GroupRef, StartCase } from "./env.ts";
+import type {
+  CaseEvent,
+  CaseStatus,
+  Env,
+  EvalEvent,
+  GroupRef,
+  Settings,
+  StartCase,
+} from "./env.ts";
 import { openModels, PROVIDER } from "./models.ts";
+import { runLogEntry } from "./run-log.ts";
+import { COMPACTION, largeSummaries } from "./summaries.ts";
 import {
   type FieldView,
   SCHEMA_TABLES,
@@ -86,9 +97,92 @@ type Meta = StartCase & {
   // Set until the agent first gets the case's input, which a halt at start
   // can delay to the Rerun that restarts it.
   unprompted?: true;
+  // An eval case's side-effect tool results, from the source case's capture.
+  replay?: Replay[];
+  // When the current run passes timeoutSeconds, as epoch milliseconds.
+  deadline?: number;
+};
+
+type Replay = { name: string; input: string; result: ToolResult };
+
+// Object keys sorted, so equal inputs compare equal however they were built.
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_, v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : v,
+  );
+
+// The side-effect results a replayed case may reuse: each tool call's input
+// with the result it got, in the order they ran.
+const replayFrom = (
+  capture: RunCapture,
+  sideEffects: Set<string>,
+): Replay[] => {
+  const calls = new Map<string, { name: string; input: unknown }>();
+  const replay: Replay[] = [];
+  for (const event of capture.events) {
+    const data = event.data as {
+      callId?: string;
+      name?: string;
+      input?: unknown;
+      output?: ToolResult["output"];
+      isError?: boolean;
+      effects?: ToolResult["effects"];
+    };
+    if (!data.callId || !data.name || !sideEffects.has(data.name)) continue;
+    if (event.kind === "tool.call")
+      calls.set(data.callId, { name: data.name, input: data.input });
+    if (event.kind !== "tool.result") continue;
+    const call = calls.get(data.callId);
+    if (!call) continue;
+    replay.push({
+      name: call.name,
+      input: canonical(call.input),
+      result: {
+        output: data.output ?? "",
+        isError: data.isError ?? false,
+        ...(data.effects && { effects: data.effects }),
+      },
+    });
+  }
+  return replay;
 };
 
 const MAX_TURNS = 24;
+
+// The settings the platform resolved for this case apply over the code's
+// values; a null keeps the code's value, or the runtime's own behavior.
+const withSettings = (manifest: Manifest, settings?: Settings): Manifest => {
+  if (!settings) return manifest;
+  return {
+    ...manifest,
+    model: settings.model as Manifest["model"],
+    reasoning: settings.reasoning as Manifest["reasoning"],
+    ocr: settings.ocr,
+    ...(settings.timeoutSeconds !== null && {
+      timeoutSeconds: settings.timeoutSeconds,
+    }),
+    ...(settings.toolRetries !== null && {
+      toolRetries: settings.toolRetries,
+    }),
+    // TODO: nothing reads sandboxImage until tools run in a sandbox.
+    ...(settings.sandboxImage !== null && {
+      sandboxImage: settings.sandboxImage,
+    }),
+    evals: { ...manifest.evals, onPush: settings.evals.onPush },
+    ...(manifest.schedules && {
+      schedules: manifest.schedules.map((s) => ({
+        ...s,
+        previews: settings.schedules[s.name]?.previews ?? s.previews,
+      })),
+    }),
+  };
+};
 
 const text = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -140,6 +234,26 @@ export class CaseRuntime extends DurableObject<Env> {
       kind,
       JSON.stringify(data),
     );
+    const entry = runLogEntry(kind, data);
+    const meta = this.meta();
+    if (!entry || !meta) return;
+    // Run logs (design doc 09) leave through the API's Platform entrypoint.
+    initLogs("runtime", (records) =>
+      this.env.PLATFORM ? this.env.PLATFORM.logs(records) : Promise.resolve(),
+    );
+    const log = wideEvent(
+      entry.kind,
+      {
+        organizationId: meta.organizationId,
+        agentId: meta.agentId,
+        deploymentId: meta.deploymentId,
+        caseId: meta.caseId,
+      },
+      (promise) => this.ctx.waitUntil(promise),
+    );
+    log.set(entry.fields);
+    if (entry.level !== "info") log.setLevel(entry.level);
+    log.emit(entry.ms === undefined ? undefined : { _durationMs: entry.ms });
   }
 
   private events(): CaptureEvent[] {
@@ -256,6 +370,11 @@ export class CaseRuntime extends DurableObject<Env> {
     this.record("case.event", full);
     if (!this.env.PLATFORM) return;
     try {
+      if (meta.eval) {
+        if (full.type === "status")
+          await this.env.PLATFORM.evalEvent(this.evalEvent(meta, full));
+        return;
+      }
       await this.env.PLATFORM.caseEvent(full);
     } catch (error) {
       this.record("platform.error", {
@@ -263,6 +382,25 @@ export class CaseRuntime extends DurableObject<Env> {
         error: String(error),
       });
     }
+  }
+
+  private evalEvent(
+    meta: Meta,
+    event: Extract<CaseEvent, { type: "status" }>,
+  ): EvalEvent {
+    return {
+      organizationId: meta.organizationId,
+      agentId: meta.agentId,
+      caseId: meta.caseId,
+      runId: meta.eval!.runId,
+      sourceCaseId: meta.eval!.sourceCaseId,
+      status: event.status,
+      waitingOn: event.waitingOn,
+      reason: event.error?.message ?? event.haltReason ?? event.reason,
+      answers: event.answers,
+      costMicroUsd: this.usage(this.events()).costMicroUsd,
+      captureKey: captureKey(meta),
+    };
   }
 
   // The spending limit (design doc 04): asked before each metered model, OCR
@@ -301,6 +439,9 @@ export class CaseRuntime extends DurableObject<Env> {
   }
 
   private applyEffect(meta: Meta, effect: Effect): string | null {
+    // Approvals are PLAT-40's (step 4); until then the call stays unrun.
+    if (effect.type === "approval")
+      return "this call needs approval, which this runtime cannot ask for yet";
     const group = this.groups(meta).find((g) => g.slug === effect.group);
     if (!group) return `group ${effect.group} has no access to this agent`;
     if (effect.type === "wait") {
@@ -328,6 +469,22 @@ export class CaseRuntime extends DurableObject<Env> {
       }),
     );
     return null;
+  }
+
+  // Takes the first unused recorded result for this tool and input, so a
+  // tool called twice with the same input gets both results in order.
+  private replay(name: string, input: unknown): ToolResult {
+    const meta = this.meta()!;
+    const replay = meta.replay ?? [];
+    const key = canonical(input);
+    const index = replay.findIndex((r) => r.name === name && r.input === key);
+    if (index === -1)
+      return {
+        output: `${name} has side effects and is not available in evals: the original case made no call with this input`,
+        isError: true,
+      };
+    this.save({ ...meta, replay: replay.filter((_, i) => i !== index) });
+    return replay[index]!.result;
   }
 
   private platformTools(meta: Meta) {
@@ -574,28 +731,63 @@ export class CaseRuntime extends DurableObject<Env> {
           execute: async (input, api) => {
             const callId = String(api.taskId);
             this.record("tool.call", { callId, name: tool.name, input });
-            const started = Date.now();
-            const response = await worker.fetch(`/tools/${tool.name}`, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                input,
-                case: { id: meta.caseId },
+            // A call that failed runs again up to toolRetries times, but
+            // never one with side effects: it may have half happened.
+            const retries = tool.sideEffects
+              ? 0
+              : (meta.manifest.toolRetries ?? 0);
+            // An eval case never repeats a side effect (design doc 09): it
+            // gets the source case's result for the same input, or an error.
+            const replayed =
+              tool.sideEffects && meta.eval
+                ? this.replay(tool.name, input)
+                : null;
+            let result: ToolResult;
+            if (replayed) {
+              result = replayed;
+              this.record("tool.result", {
                 callId,
-              }),
-            });
-            const result: ToolResult = response.ok
-              ? await response.json<ToolResult>()
-              : {
-                  output: `agent Worker answered ${response.status}`,
-                  isError: true,
-                };
-            this.record("tool.result", {
-              callId,
-              name: tool.name,
-              ms: Date.now() - started,
-              ...result,
-            });
+                name: tool.name,
+                ms: 0,
+                replayed: true,
+                ...result,
+              });
+            } else
+              for (let attempt = 0; ; attempt++) {
+                const started = Date.now();
+                result = await worker
+                  .fetch(`/tools/${tool.name}`, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      input,
+                      case: { id: meta.caseId },
+                      callId,
+                    }),
+                  })
+                  .then(async (response) =>
+                    response.ok
+                      ? await response.json<ToolResult>()
+                      : {
+                          output: `agent Worker answered ${response.status}`,
+                          isError: true,
+                          threw: true as const,
+                        },
+                  )
+                  .catch((error: unknown) => ({
+                    output: `agent Worker failed: ${String(error)}`,
+                    isError: true,
+                    threw: true as const,
+                  }));
+                this.record("tool.result", {
+                  callId,
+                  name: tool.name,
+                  ms: Date.now() - started,
+                  ...(attempt > 0 && { attempt }),
+                  ...result,
+                });
+                if (!result.threw || attempt >= retries) break;
+              }
             const problems = (result.effects ?? [])
               .map((effect) => this.applyEffect(this.meta()!, effect))
               .filter((p): p is string => p !== null);
@@ -676,6 +868,9 @@ export class CaseRuntime extends DurableObject<Env> {
             this.record("model.request", {
               turn: current,
               model: model.id,
+              reasoning:
+                (options as { reasoning?: string } | undefined)?.reasoning ??
+                options?.reasoningEffort,
               context: modelContext,
             });
             const events = fn(model, modelContext, options);
@@ -701,7 +896,19 @@ export class CaseRuntime extends DurableObject<Env> {
           return out;
         },
       );
-      return Harness.open(storage, { models, registry, onWake }, context);
+      registry.install(
+        largeSummaries(
+          models,
+          meta.manifest.model,
+          meta.manifest.reasoning,
+          (data) => this.record("context.summary", data),
+        ),
+      );
+      return Harness.open(
+        storage,
+        { models, registry, onWake, settings: { compaction: COMPACTION } },
+        context,
+      );
     },
     defaults: { maxTurns: MAX_TURNS },
   });
@@ -736,6 +943,15 @@ export class CaseRuntime extends DurableObject<Env> {
     return `${meta.input.text}\n\nFiles:\n${parts.join("\n")}`;
   }
 
+  private async sourceReplay(key: string, manifest: Manifest) {
+    const object = await this.env.RUNS.get(key);
+    if (!object) return [];
+    return replayFrom(
+      await object.json<RunCapture>(),
+      new Set(manifest.tools.filter((t) => t.sideEffects).map((t) => t.name)),
+    );
+  }
+
   async start(start: StartCase): Promise<CaseView> {
     this.expectName(start);
     if (this.meta()) return this.view();
@@ -744,7 +960,10 @@ export class CaseRuntime extends DurableObject<Env> {
       throw new Error(
         `agent Worker ${start.script} answered ${response.status}`,
       );
-    const manifest = await response.json<Manifest>();
+    const manifest = withSettings(
+      await response.json<Manifest>(),
+      start.settings,
+    );
     if (manifest.protocol !== PROTOCOL)
       throw new Error(
         `agent protocol ${String(manifest.protocol)} is not supported`,
@@ -757,6 +976,9 @@ export class CaseRuntime extends DurableObject<Env> {
       operation: `case:${start.caseId}`,
       waitingOn: null,
       unprompted: true,
+      ...(start.eval && {
+        replay: await this.sourceReplay(start.eval.captureKey, manifest),
+      }),
     };
     this.save(meta);
     this.record("case.started", {
@@ -779,11 +1001,15 @@ export class CaseRuntime extends DurableObject<Env> {
     });
     await this.schema(meta).evaluate("all");
     await this.harness.root({
-      agent: { model: { provider: PROVIDER, modelId: manifest.model } },
+      agent: {
+        model: { provider: PROVIDER, modelId: manifest.model },
+        thinkingLevel: manifest.reasoning,
+      },
     });
     const prompt = await this.firstPrompt(meta);
     if (prompt === null) return this.view();
     this.prompted();
+    await this.armTimeout();
     await this.harness.submit(prompt, { operationId: meta.operation });
     this.ctx.waitUntil(this.watch());
     return this.view();
@@ -841,6 +1067,9 @@ export class CaseRuntime extends DurableObject<Env> {
         status === "failed"
           ? { code: "run_failed", message: next.reason ?? "unanswered" }
           : null,
+      ...(status === "completed" && {
+        completed: { input: next.input, captureKey: captureKey(next) },
+      }),
     });
   }
 
@@ -880,6 +1109,7 @@ export class CaseRuntime extends DurableObject<Env> {
       waitingOn: null,
     };
     delete next.reason;
+    delete next.deadline;
     this.save(next);
     const schema = this.schema(next);
     await schema.evaluate("all");
@@ -927,9 +1157,48 @@ export class CaseRuntime extends DurableObject<Env> {
       : lines.join("\n");
     if (prompt === null) return this.state();
     this.prompted();
+    await this.armTimeout();
     await this.harness.submit(prompt, { operationId: next.operation });
     this.ctx.waitUntil(this.watch());
     return this.state();
+  }
+
+  // timeoutSeconds is each run's wall clock, from the agent's first prompt.
+  private async armTimeout() {
+    const meta = this.meta()!;
+    const seconds = meta.manifest.timeoutSeconds;
+    if (!seconds) return;
+    meta.deadline = Date.now() + seconds * 1000;
+    this.save(meta);
+    await this.ctx.storage.setAlarm(meta.deadline);
+  }
+
+  override async alarm() {
+    const meta = this.meta();
+    if (meta?.status !== "running" || meta.deadline === undefined) return;
+    if (Date.now() < meta.deadline) {
+      await this.ctx.storage.setAlarm(meta.deadline);
+      return;
+    }
+    const seconds = meta.manifest.timeoutSeconds ?? 0;
+    const next: Meta = { ...meta, status: "failed", reason: "timeout" };
+    delete next.deadline;
+    this.save(next);
+    this.record("case.failed", { reason: "timeout" });
+    this.post(next, "platform", "event", `Timed out after ${seconds}s`);
+    await this.harness.abort().catch(() => false);
+    await this.seal(next);
+    await this.report(next, {
+      type: "status",
+      status: "failed",
+      waitingOn: null,
+      reason: null,
+      answers: null,
+      error: {
+        code: "timeout",
+        message: `The run passed its ${seconds} second limit`,
+      },
+    });
   }
 
   private prompted() {

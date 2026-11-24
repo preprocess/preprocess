@@ -1,4 +1,7 @@
+import { initLogs } from "@preprocess/logs";
+import type { LogRecord } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
+import { evlog, type EvlogVariables } from "evlog/hono";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { runMode } from "@preprocess/runmode";
 import { orgId } from "@preprocess/db/client";
@@ -29,11 +32,19 @@ import { githubCallbacks, githubRoutes } from "./routes/github.ts";
 import { mcpCallback, mcpRoutes } from "./routes/mcp.ts";
 import { secretRoutes } from "./routes/secrets.ts";
 import { guardrailRoutes } from "./routes/guardrails.ts";
+import { scheduleRoutes } from "./routes/schedules.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { spendingRoutes } from "./routes/spending.ts";
+import { ingestLogs, sendLogs } from "./logs.ts";
+import { startQueuedEval } from "./evals.ts";
+import { exportLogs, type OtelRetry } from "./otel.ts";
+import { logRoutes } from "./routes/logs.ts";
+import { otelRoutes } from "./routes/otel.ts";
+import { evalRoutes } from "./routes/evals.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
+export { Scheduler } from "./scheduler.ts";
 export { McpService } from "./mcp.ts";
 export { Platform } from "./platform.ts";
 
@@ -73,8 +84,22 @@ app.on(["GET", "POST"], "/api/auth/*", (c) =>
 // The public half of the audit signing key, for checking manifests.
 app.get("/v1/audit/keys", async (c) => c.json(await publicKeys(c.env)));
 
-const orgApi = new OpenAPIHono<{ Bindings: Env; Variables: OrgVariables }>();
+const orgApi = new OpenAPIHono<{
+  Bindings: Env;
+  Variables: OrgVariables & EvlogVariables["Variables"];
+}>();
+// One wide event per request (design doc 09). It joins the organization's
+// run log only once the caller is known to belong to it.
+orgApi.use(async (c, next) => {
+  initLogs("api", (records) => sendLogs(c.env, records));
+  await next();
+});
+orgApi.use(evlog());
 orgApi.use(orgCaller);
+orgApi.use(async (c, next) => {
+  c.get("log").set({ organizationId: c.var.org });
+  await next();
+});
 orgApi.route("/", organizationRoutes);
 orgApi.route("/", groupRoutes);
 orgApi.route("/", auditRoutes);
@@ -86,8 +111,12 @@ orgApi.route("/", githubRoutes);
 orgApi.route("/", spendingRoutes);
 orgApi.route("/", guardrailRoutes);
 orgApi.route("/", settingsRoutes);
+orgApi.route("/", scheduleRoutes);
 orgApi.route("/", webhookRoutes);
 orgApi.route("/", inboxRoutes);
+orgApi.route("/", logRoutes);
+orgApi.route("/", otelRoutes);
+orgApi.route("/", evalRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
@@ -147,11 +176,29 @@ export default {
     ctx.waitUntil(anchorAll(env, new Date(controller.scheduledTime)));
     ctx.waitUntil(deleteExpiredIdempotencyKeys(env));
   },
-  async queue(batch: MessageBatch<Job | OutboxMessage>, env: Env) {
+  async queue(
+    batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,
+    env: Env,
+  ) {
+    if (batch.queue.startsWith("preprocess-logs-")) {
+      // A failed store write retries the whole batch; a failed export
+      // retries only the export.
+      const bodies = batch.messages.map((m) => m.body as LogRecord | OtelRetry);
+      const fresh = bodies.filter((b): b is LogRecord => !("otelRetry" in b));
+      if (fresh.length) await ingestLogs(env, fresh);
+      await exportLogs(env, [
+        ...fresh.map((record) => ({ otelRetry: 0, record })),
+        ...bodies.filter((b): b is OtelRetry => "otelRetry" in b),
+      ]);
+      batch.ackAll();
+      return;
+    }
     if (batch.queue.startsWith("preprocess-cases-")) {
       // A start that throws is retried by the queue.
       for (const message of batch.messages as Message<OutboxMessage>[]) {
-        await startQueuedCase(env, message.body);
+        if (message.body.kind === "eval.start")
+          await startQueuedEval(env, message.body);
+        else await startQueuedCase(env, message.body);
         message.ack();
       }
       return;
@@ -213,4 +260,4 @@ export default {
       message.ack();
     }
   },
-} satisfies ExportedHandler<Env, Job | OutboxMessage>;
+} satisfies ExportedHandler<Env, Job | OutboxMessage | LogRecord>;

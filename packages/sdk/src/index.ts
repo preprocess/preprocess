@@ -7,6 +7,7 @@ import {
   RESERVED_BINDINGS,
   RESERVED_PREFIX,
   SECRET_NAME,
+  type Approvals,
   type Effect,
   type EvaluateRequest,
   type Manifest,
@@ -22,11 +23,16 @@ import {
 } from "./protocol.ts";
 import { redact, redactConsole, redactText, type Secrets } from "./redact.ts";
 import {
+  approvalRule,
   evaluate,
+  fieldApprovals,
   options,
   OptionsError,
   schemaProblems,
   serialise,
+  type Answers,
+  type Approval,
+  type Field,
   type Group,
 } from "./schema.ts";
 
@@ -40,6 +46,7 @@ export type {
 export { schema } from "./schema.ts";
 export type {
   Answers,
+  Approval,
   Check,
   Field,
   FieldOptions,
@@ -72,6 +79,7 @@ export type Tool<S extends string = string> = {
   description: string;
   input: z.ZodType;
   sideEffects: boolean;
+  approval?: Approval<unknown>;
   run(input: unknown, ctx: ToolContext<S>): unknown;
 };
 
@@ -83,11 +91,16 @@ export const tool = <
   input: I;
   // A tool that changes something outside the case (sends, pays, writes).
   sideEffects?: boolean;
+  // A person approves each call first; `when` sees the call's input.
+  approval?: Approval<z.output<I>>;
   run(input: z.output<I>, ctx: ToolContext<S>): unknown;
 }): Tool<S> => ({
   description: definition.description,
   input: definition.input,
   sideEffects: definition.sideEffects ?? false,
+  ...(definition.approval !== undefined && {
+    approval: definition.approval as Approval<unknown>,
+  }),
   run: (input, ctx) => definition.run(input as z.output<I>, ctx),
 });
 
@@ -108,6 +121,9 @@ export type AgentDefinition<S extends string> = {
   toolRetries?: number;
   sandboxImage?: string;
   evals?: { onPush?: boolean };
+  // A person approves the case before it completes; `when` sees the final
+  // answers and needs a schema.
+  approval?: Approval<Answers>;
 };
 
 export type ScheduleDefinition = Omit<Schedule, "timezone" | "previews"> & {
@@ -191,7 +207,79 @@ const check = (definition: AgentDefinition<string>) => {
     problems.push("toolRetries must be a whole number");
   if (definition.sandboxImage !== undefined && !definition.sandboxImage.trim())
     problems.push("sandboxImage must not be empty");
+  if (!problems.length) problems.push(...approvalProblems(definition));
   if (problems.length) throw new Error(`Invalid agent: ${problems.join("; ")}`);
+};
+
+const approvalShapeOk = (approval: unknown) =>
+  approval === true ||
+  (typeof approval === "object" &&
+    approval !== null &&
+    ((approval as { group?: unknown }).group === undefined ||
+      typeof (approval as { group?: unknown }).group === "string") &&
+    ((approval as { when?: unknown }).when === undefined ||
+      typeof (approval as { when?: unknown }).when === "function"));
+
+const approvalsOf = (
+  definition: AgentDefinition<string>,
+): Approvals | undefined => {
+  const agent =
+    definition.approval === undefined
+      ? null
+      : approvalRule(definition.approval);
+  const fields = definition.schema ? fieldApprovals(definition.schema) : [];
+  const tools = Object.entries(definition.tools).flatMap(([name, t]) =>
+    t.approval === undefined
+      ? []
+      : [{ name, ...approvalRule(t.approval as Approval<never>) }],
+  );
+  if (!agent && !fields.length && !tools.length) return undefined;
+  const groups = [agent, ...fields, ...tools].flatMap((rule) =>
+    rule?.group ? [rule.group] : [],
+  );
+  return { groups: [...new Set(groups)].sort(), agent, fields, tools };
+};
+
+const approvalProblems = (definition: AgentDefinition<string>) => {
+  const problems: string[] = [];
+  const shapes: Array<[string, unknown]> = [
+    ["approval", definition.approval],
+    ...Object.entries(definition.tools).map(([name, t]): [string, unknown] => [
+      `tool ${name} approval`,
+      t.approval,
+    ]),
+  ];
+  const visit = (node: Record<string, Field> | undefined, path: string) => {
+    for (const [name, value] of Object.entries(node ?? {})) {
+      const here = path ? `${path}.${name}` : name;
+      shapes.push([`field ${here} approval`, value.approval]);
+      visit(value.fields, here);
+      if (value.item) {
+        shapes.push([`field ${here}[] approval`, value.item.approval]);
+        visit(value.item.fields, `${here}[]`);
+      }
+    }
+  };
+  if (definition.schema) {
+    shapes.push(["schema approval", definition.schema.approval]);
+    visit(definition.schema.fields, "");
+  }
+  for (const [label, approval] of shapes)
+    if (approval !== undefined && !approvalShapeOk(approval))
+      problems.push(
+        `${label} must be true or { group?: string, when?: function }`,
+      );
+  if (problems.length) return problems;
+  const approvals = approvalsOf(definition);
+  if (!approvals) return problems;
+  for (const group of approvals.groups)
+    if (!(definition.groups ?? []).includes(group))
+      problems.push(
+        `approval group ${group} is not declared in this agent's groups list`,
+      );
+  if (approvals.agent?.conditional && !definition.schema)
+    problems.push("approval.when needs a schema: it reads the final answers");
+  return problems;
 };
 
 // Set by bundle() from preprocess.config.json; absent when another bundler
@@ -280,6 +368,7 @@ export const agent = <const S extends string = never>(
     typeof __PREPROCESS_CONFIG__ === "undefined" ? {} : __PREPROCESS_CONFIG__,
   );
   check(definition);
+  const approvals = approvalsOf(definition);
   const manifest: Manifest = {
     protocol: PROTOCOL,
     sdk: { name: "@preprocess/sdk", version: SDK_VERSION },
@@ -317,6 +406,7 @@ export const agent = <const S extends string = never>(
       sandboxImage: definition.sandboxImage,
     }),
     ...(definition.evals && { evals: { ...definition.evals } }),
+    ...(approvals && { approvals }),
     declared,
     ...(warnings.length && { warnings }),
   };
@@ -353,6 +443,32 @@ export const agent = <const S extends string = never>(
     const parsed = definitionTool.input.safeParse(call.input);
     if (!parsed.success)
       return { output: z.prettifyError(parsed.error), isError: true };
+    // An approval that applies stops the call until a person approves it;
+    // a `when` that throws counts as applying.
+    const approval = definitionTool.approval;
+    if (approval !== undefined && call.approved !== true) {
+      let applies = true;
+      try {
+        applies =
+          approval === true ||
+          !approval.when ||
+          Boolean(approval.when(parsed.data));
+      } catch {
+        applies = true;
+      }
+      if (applies)
+        return {
+          output: null,
+          isError: false,
+          effects: [
+            {
+              type: "approval",
+              group: approvalRule(approval).group,
+              reason: `${name} needs approval before it runs`,
+            },
+          ],
+        };
+    }
     const secrets = bound(env);
     const effects: Effect[] = [];
     const ctx: ToolContext<S> = {
@@ -393,7 +509,11 @@ export const agent = <const S extends string = never>(
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { output: redactText(message, secrets), isError: true };
+      return {
+        output: redactText(message, secrets),
+        isError: true,
+        threw: true,
+      };
     }
   };
 
@@ -420,7 +540,10 @@ export const agent = <const S extends string = never>(
         const ctx = { env: exposed(secrets), caseId: body.caseId };
         if (url.pathname === "/schema/evaluate")
           return Response.json(
-            redact(await evaluate(root, body, ctx), secrets),
+            redact(
+              await evaluate(root, body, ctx, definition.approval),
+              secrets,
+            ),
           );
         try {
           return Response.json(redact(await options(root, body, ctx), secrets));

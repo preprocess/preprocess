@@ -135,6 +135,66 @@ const backend = (
       title: n.emailsSent,
     });
 
+    // Run logs (design doc 09). The API's LOGS consumer writes them. With
+    // LOG_CATALOG_TOKEN set (R2 Data Catalog, R2 storage and R2 SQL access),
+    // they go to a Pipelines stream whose sink writes an Iceberg table the
+    // API queries with R2 SQL. Without it the API keeps NDJSON objects in
+    // the same bucket, as it does locally.
+    const logsQueue = yield* Cloudflare.Queues.Queue("Logs", {
+      name: n.logsQueue,
+    });
+    const logsBucket = yield* Cloudflare.R2.Bucket("Logs", {
+      name: n.logs,
+      locationHint: regionConfig(region).r2LocationHint,
+    });
+    const logCatalogToken = yield* Config.Redacted("LOG_CATALOG_TOKEN").pipe(
+      Config.withDefault(undefined),
+    );
+    let logSql = {};
+    if (logCatalogToken) {
+      const catalog = yield* Cloudflare.Basin.Catalog("LogCatalog", {
+        bucket: logsBucket,
+        token: logCatalogToken,
+      });
+      const stream = yield* Cloudflare.Basin.Stream("LogStream", {
+        schema: {
+          fields: [
+            { name: "id", type: "string", required: true },
+            { name: "at", type: "string", required: true },
+            { name: "organizationId", type: "string", required: true },
+            { name: "agentId", type: "string" },
+            { name: "deploymentId", type: "string" },
+            { name: "caseId", type: "string" },
+            { name: "source", type: "string", required: true },
+            { name: "level", type: "string", required: true },
+            { name: "kind", type: "string", required: true },
+            { name: "message", type: "string", required: true },
+            { name: "durationMs", type: "float64" },
+            { name: "traceId", type: "string" },
+            { name: "spanId", type: "string" },
+            { name: "error", type: "string" },
+            { name: "data", type: "string", required: true },
+          ],
+        },
+      });
+      const sink = yield* Cloudflare.Basin.Sink("LogSink", {
+        type: "r2_data_catalog",
+        catalog,
+        table: { namespace: "logs", name: "run_logs" },
+        token: logCatalogToken,
+        rollingPolicy: { intervalSeconds: 60 },
+      });
+      yield* Cloudflare.Basin.Pipeline("LogPipeline", {
+        sql: Output.interpolate`INSERT INTO ${sink.name} SELECT * FROM ${stream.name}`,
+      });
+      logSql = {
+        LOG_STORE: "sql",
+        LOG_STREAM: stream,
+        LOG_SQL_BUCKET: n.logs,
+        LOG_SQL_TOKEN: logCatalogToken,
+      };
+    }
+
     // The daily signed audit manifests (doc 02), locked for a year. Preview
     // stages skip the lock so destroying the stage can empty the bucket.
     const auditBucket = yield* Cloudflare.R2.Bucket("Audit", {
@@ -223,6 +283,7 @@ const backend = (
         ),
         COUNTER: Cloudflare.DurableObject("Counter"),
         BUILDS: Cloudflare.DurableObject("BuildQueue"),
+        SCHEDULER: Cloudflare.DurableObject("Scheduler"),
         BUILDER: Cloudflare.WorkerEntrypoint(builder, "Builder"),
         // The GitHub App, unconfigured (its routes answer 503) until these
         // are set.
@@ -249,6 +310,10 @@ const backend = (
         WEBHOOKS: webhooksQueue,
         EMAILS: emailsQueue,
         EMAILS_SENT: emailsSent,
+        LOGS: logsQueue,
+        LOG_BUCKET: logsBucket,
+        TAIL_WORKER: n.tail,
+        ...logSql,
         FILES: files,
         DISPATCHER: namespace,
       },
@@ -267,6 +332,19 @@ const backend = (
       queueId: emailsQueue.queueId,
       scriptName: api.workerName,
       settings: { maxWaitTimeMs: 1000 },
+    });
+    // Tail consumer of every agent script: console output and exceptions
+    // become run logs (design doc 09).
+    yield* Cloudflare.Worker("Tail", {
+      ...worker,
+      name: n.tail,
+      main: at("apps/tail/src/index.ts"),
+      env: { PLATFORM: Cloudflare.WorkerEntrypoint(api, "Platform") },
+    });
+    yield* Cloudflare.Queues.Consumer("LogsConsumer", {
+      queueId: logsQueue.queueId,
+      scriptName: api.workerName,
+      settings: { maxWaitTimeMs: 5000, batchSize: 100 },
     });
     // The consumer times each retry itself, over 24 hours (doc 06).
     yield* Cloudflare.Queues.Consumer("WebhooksConsumer", {

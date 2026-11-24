@@ -30,6 +30,8 @@ export const prefixes = {
   githubLink: "ghl",
   githubBuild: "bld",
   guardrailRequest: "grq",
+  evalSuite: "evs",
+  evalRun: "evr",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

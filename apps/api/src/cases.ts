@@ -24,6 +24,7 @@ import type { Caller } from "./caller.ts";
 import type { Manifest } from "./deploy.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
+import { joinAutomaticSuite } from "./evals.ts";
 import { effectiveSettings } from "./settings.ts";
 import { refuseOverLimit } from "./spend.ts";
 import { notifyLater } from "./notify.ts";
@@ -32,11 +33,13 @@ import type { OutboxKind, OutboxMessage } from "./outbox.ts";
 
 // Errors in doc 04's shape: { error: { code, message } }.
 export class ApiError extends HTTPException {
+  readonly code: string;
   constructor(status: ContentfulStatusCode, code: string, message: string) {
     super(status, {
       message,
       res: Response.json({ error: { code, message } }, { status }),
     });
+    this.code = code;
   }
 }
 
@@ -354,6 +357,7 @@ export type CaseEvent = {
       answers: Record<string, unknown> | null;
       error: { code: string; message: string } | null;
       haltReason?: "credit_exhausted" | "spending_limit_reached";
+      completed?: { input: StartCase["input"]; captureKey: string };
     }
   | {
       type: "mention";
@@ -423,6 +427,14 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
     if (!before) return;
     const now = new Date();
     const done = event.status === "completed" || event.status === "failed";
+    // Every completed case joins its agent's automatic eval suite (doc 09).
+    if (event.status === "completed" && event.completed)
+      await joinAutomaticSuite(tx, event.organizationId, event.agentId, {
+        caseId: event.caseId,
+        input: event.completed.input,
+        answers: event.answers,
+        captureKey: event.completed.captureKey,
+      });
     const newWait =
       event.status === "waiting" &&
       group !== null &&
