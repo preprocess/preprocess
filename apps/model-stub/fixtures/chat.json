@@ -1,0 +1,25 @@
+[
+  {
+    "name": "stock-check",
+    "match": "Check stock for SKU A1",
+    "turns": [
+      {
+        "toolCalls": [{ "name": "lookup_stock", "arguments": { "sku": "A1" } }]
+      },
+      {
+        "toolCalls": [
+          {
+            "name": "carrier_status",
+            "arguments": { "url": "https://example.com/track/A1" }
+          }
+        ]
+      },
+      {
+        "toolCalls": [
+          { "name": "find_contact", "arguments": { "q": "Acme buyer" } }
+        ]
+      },
+      { "content": "SKU A1 checked. Results: {{results}}" }
+    ]
+  }
+]

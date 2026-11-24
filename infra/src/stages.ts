@@ -33,7 +33,14 @@ export const names = (stage: string) => ({
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
   userWorker: "hello",
+  runtime: `preprocess-runtime-${stage}`,
+  outbound: `preprocess-outbound-${stage}`,
   modelStub: `preprocess-model-stub-${stage}`,
+  runs: `preprocess-runs-${stage}`,
+  // Local only: stands in for the dispatch namespace, which Cloudflare's local
+  // runtime cannot emulate (apps/namespace-local).
+  localNamespace: `preprocess-namespace-${stage}`,
+  localScripts: `preprocess-scripts-${stage}`,
   branch: stage,
 });
 
@@ -56,6 +63,10 @@ export const apiCrons = ["20 0 * * *"];
 
 // Durable Object classes the API Worker exports.
 export const durableObjects = { COUNTER: "Counter" } as const;
+
+// Durable Object classes the runtime Worker exports: one Pi Durable case
+// runtime per organization, agent and case.
+export const runtimeDurableObjects = { CASE_RUNTIME: "CaseRuntime" } as const;
 
 // Locally the API calls apps/model-stub through its portless URL, the same
 // code path as a real model service. The stub accepts any bearer token.

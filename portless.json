@@ -9,6 +9,9 @@
     },
     "apps/model-stub": {
       "name": "model-stub.preprocess"
+    },
+    "apps/runtime": {
+      "name": "runtime.preprocess"
     }
   }
 }
