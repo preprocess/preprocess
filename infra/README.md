@@ -70,6 +70,9 @@ with the URLs, updated on each push. When the pull request closes it destroys
 the stage and updates the comment. Pull requests from forks get no secrets and
 no preview.
 
+Previews are off until the repository variable `PREPROCESS_REGION` is set:
+without it the job reports skipped. Set it together with the secrets below.
+
 Repository variable `PREPROCESS_REGION` (for example `us`), and repository
 secrets:
 
