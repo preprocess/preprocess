@@ -35,7 +35,9 @@ export default class Runtime extends WorkerEntrypoint<Env> {
   async manifest(deployment: Deployment): Promise<unknown> {
     const response = await agentWorker(this.env, deployment).fetch("/manifest");
     if (!response.ok)
-      throw new Error(`agent Worker ${deployment.script} answered ${response.status}`);
+      throw new Error(
+        `agent Worker ${deployment.script} answered ${response.status}`,
+      );
     return response.json();
   }
 }
