@@ -53,8 +53,10 @@ import { Route as SettingsAccountIndexRouteImport } from "./routes/settings/acco
 import { Route as SettingsOrganizationIndexRouteImport } from "./routes/settings/organization/index";
 import { Route as SettingsOrganizationApiKeysRouteImport } from "./routes/settings/organization/api-keys";
 import { Route as SettingsOrganizationAuditLogsRouteImport } from "./routes/settings/organization/audit-logs";
+import { Route as SettingsOrganizationDefaultsRouteImport } from "./routes/settings/organization/defaults";
 import { Route as SettingsOrganizationDevelopersRouteImport } from "./routes/settings/organization/developers";
 import { Route as SettingsOrganizationGithubRouteImport } from "./routes/settings/organization/github";
+import { Route as SettingsOrganizationGuardrailsRouteImport } from "./routes/settings/organization/guardrails";
 import { Route as SettingsOrganizationIntegrationsRouteImport } from "./routes/settings/organization/integrations";
 import { Route as SettingsOrganizationMembersRouteImport } from "./routes/settings/organization/members";
 import { Route as SettingsOrganizationGroupsIndexRouteImport } from "./routes/settings/organization/groups/index";
@@ -287,6 +289,12 @@ const SettingsOrganizationAuditLogsRoute =
     path: "/audit-logs",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationDefaultsRoute =
+  SettingsOrganizationDefaultsRouteImport.update({
+    id: "/defaults",
+    path: "/defaults",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const SettingsOrganizationDevelopersRoute =
   SettingsOrganizationDevelopersRouteImport.update({
     id: "/developers",
@@ -297,6 +305,12 @@ const SettingsOrganizationGithubRoute =
   SettingsOrganizationGithubRouteImport.update({
     id: "/github",
     path: "/github",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
+const SettingsOrganizationGuardrailsRoute =
+  SettingsOrganizationGuardrailsRouteImport.update({
+    id: "/guardrails",
+    path: "/guardrails",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
 const SettingsOrganizationIntegrationsRoute =
@@ -366,8 +380,10 @@ export interface FileRoutesByFullPath {
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
+  "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
+  "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
@@ -415,8 +431,10 @@ export interface FileRoutesByTo {
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
+  "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
+  "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
   "/agents/$agentId": typeof AgentsAgentIdIndexRoute;
@@ -468,8 +486,10 @@ export interface FileRoutesById {
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
+  "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
+  "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
@@ -522,8 +542,10 @@ export interface FileRouteTypes {
     | "/cases/$agentId/$caseId"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/defaults"
     | "/settings/organization/developers"
     | "/settings/organization/github"
+    | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
     | "/settings/organization/members"
     | "/agents/$agentId/"
@@ -571,8 +593,10 @@ export interface FileRouteTypes {
     | "/cases/$agentId/$caseId"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/defaults"
     | "/settings/organization/developers"
     | "/settings/organization/github"
+    | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
     | "/settings/organization/members"
     | "/agents/$agentId"
@@ -623,8 +647,10 @@ export interface FileRouteTypes {
     | "/cases/$agentId/$caseId"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/defaults"
     | "/settings/organization/developers"
     | "/settings/organization/github"
+    | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
     | "/settings/organization/members"
     | "/agents/$agentId/"
@@ -971,6 +997,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationAuditLogsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/defaults": {
+      id: "/settings/organization/defaults";
+      path: "/defaults";
+      fullPath: "/settings/organization/defaults";
+      preLoaderRoute: typeof SettingsOrganizationDefaultsRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/settings/organization/developers": {
       id: "/settings/organization/developers";
       path: "/developers";
@@ -983,6 +1016,13 @@ declare module "@tanstack/react-router" {
       path: "/github";
       fullPath: "/settings/organization/github";
       preLoaderRoute: typeof SettingsOrganizationGithubRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
+    "/settings/organization/guardrails": {
+      id: "/settings/organization/guardrails";
+      path: "/guardrails";
+      fullPath: "/settings/organization/guardrails";
+      preLoaderRoute: typeof SettingsOrganizationGuardrailsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
     "/settings/organization/integrations": {
@@ -1031,8 +1071,10 @@ const SettingsAccountRouteWithChildren = SettingsAccountRoute._addFileChildren(
 interface SettingsOrganizationRouteChildren {
   SettingsOrganizationApiKeysRoute: typeof SettingsOrganizationApiKeysRoute;
   SettingsOrganizationAuditLogsRoute: typeof SettingsOrganizationAuditLogsRoute;
+  SettingsOrganizationDefaultsRoute: typeof SettingsOrganizationDefaultsRoute;
   SettingsOrganizationDevelopersRoute: typeof SettingsOrganizationDevelopersRoute;
   SettingsOrganizationGithubRoute: typeof SettingsOrganizationGithubRoute;
+  SettingsOrganizationGuardrailsRoute: typeof SettingsOrganizationGuardrailsRoute;
   SettingsOrganizationIntegrationsRoute: typeof SettingsOrganizationIntegrationsRoute;
   SettingsOrganizationMembersRoute: typeof SettingsOrganizationMembersRoute;
   SettingsOrganizationIndexRoute: typeof SettingsOrganizationIndexRoute;
@@ -1042,8 +1084,10 @@ interface SettingsOrganizationRouteChildren {
 const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationApiKeysRoute: SettingsOrganizationApiKeysRoute,
   SettingsOrganizationAuditLogsRoute: SettingsOrganizationAuditLogsRoute,
+  SettingsOrganizationDefaultsRoute: SettingsOrganizationDefaultsRoute,
   SettingsOrganizationDevelopersRoute: SettingsOrganizationDevelopersRoute,
   SettingsOrganizationGithubRoute: SettingsOrganizationGithubRoute,
+  SettingsOrganizationGuardrailsRoute: SettingsOrganizationGuardrailsRoute,
   SettingsOrganizationIntegrationsRoute: SettingsOrganizationIntegrationsRoute,
   SettingsOrganizationMembersRoute: SettingsOrganizationMembersRoute,
   SettingsOrganizationIndexRoute: SettingsOrganizationIndexRoute,

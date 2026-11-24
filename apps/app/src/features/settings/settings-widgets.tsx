@@ -7,34 +7,9 @@ import {
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import type { ReactNode } from "react";
 
-export const ORGANIZATION_SETTINGS_TABS = [
-  { action: "general", slug: "", label: "General" },
-  { action: "members", slug: "members", label: "Members" },
-  { action: "groups", slug: "groups", label: "Groups" },
-  { action: "audit-logs", slug: "audit-logs", label: "Audit log" },
-] as const;
-
 /** Settings sections stacked on one page. */
 export function SettingsStacked({ children }: { children: ReactNode }) {
   return <div className="flex flex-col gap-10">{children}</div>;
-}
-
-export function settingsTabIndexFromPath(
-  pathname: string,
-  basePath: string,
-  tabs: readonly { slug: string }[],
-): number {
-  const path = pathname.replace(/\/+$/, "");
-  const base = basePath.replace(/\/+$/, "");
-  if (path === base) return 0;
-  const rest = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
-  const index = tabs.findIndex((tab) => tab.slug === rest);
-  return index === -1 ? 0 : index;
-}
-
-export function settingsTabHref(basePath: string, slug: string): string {
-  const base = basePath.replace(/\/+$/, "");
-  return slug ? `${base}/${slug}` : `${base}/`;
 }
 
 export function SettingsChrome({ children }: { children: ReactNode }) {
