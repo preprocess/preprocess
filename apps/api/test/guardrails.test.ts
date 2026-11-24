@@ -11,13 +11,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import type { Env } from "../src/env.ts";
 import { loosens, narrow, NO_HOST, opening, permits } from "../src/network.ts";
-import {
-  addMember,
-  Client,
-  createOrganization,
-  signUp,
-  testEnv,
-} from "./helpers.ts";
+import type { Client } from "./helpers.ts";
+import { addMember, createOrganization, signUp, testEnv } from "./helpers.ts";
 
 const environment: Env = testEnv({
   SECRET_SYNC: {

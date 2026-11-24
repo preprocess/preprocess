@@ -26,6 +26,8 @@ import type { AuditInput } from "@preprocess/db/audit";
 import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
 import { namespaceFor } from "./namespace.ts";
+import { effectiveNetwork, permits } from "./network.ts";
+import type { NetworkRules } from "./network.ts";
 
 type Actor = Pick<AuditInput, "actorType" | "actorId" | "ip" | "requestId">;
 
@@ -74,21 +76,18 @@ const manifestSchema = z
 
 export type Manifest = z.infer<typeof manifestSchema>;
 
-// Network rules are an organization guardrail set in step 5; until then
-// agent code may reach any host.
-export const NETWORK = { allow: [] as string[], block: [] as string[] };
-
 export const deploymentTarget = (d: {
   organizationId: string;
   agentId: string;
   id: string;
   scriptName: string;
+  network: NetworkRules;
 }) => ({
   organizationId: d.organizationId,
   agentId: d.agentId,
   deploymentId: d.id,
   script: d.scriptName,
-  network: NETWORK,
+  network: d.network,
 });
 
 const sha256 = async (text: string) =>
@@ -156,44 +155,53 @@ export const syncDeployment = async (
   deploymentId: string,
   actor: Actor,
 ): Promise<string[]> => {
-  const { deployment, bound, waiting, waitingMcp, delivered } = await withOrg(
-    env,
-    org,
-    async (tx) => {
-      const [deployment] = await tx
-        .select()
-        .from(deployments)
-        .where(eq(deployments.id, deploymentId));
-      if (!deployment)
-        throw new HTTPException(404, { message: "deployment not found" });
-      const declared = (deployment.manifest as Manifest).secrets;
-      const delivered = await tx
-        .select({
-          secretId: secretDeliveries.secretId,
-          version: secretDeliveries.secretVersion,
-          name: secrets.name,
-        })
-        .from(secretDeliveries)
-        .innerJoin(secrets, eq(secrets.id, secretDeliveries.secretId))
-        .where(eq(secretDeliveries.deploymentId, deploymentId));
-      const declaredMcp = (deployment.manifest as Manifest).mcp;
-      const granted = declaredMcp.length
-        ? await tx
-            .select({ slug: mcpServers.slug })
-            .from(mcpGrants)
-            .innerJoin(mcpServers, eq(mcpServers.id, mcpGrants.serverId))
-            .where(eq(mcpGrants.agentId, deployment.agentId))
-        : [];
-      return {
-        deployment,
-        delivered,
-        waitingMcp: declaredMcp.filter(
-          (slug) => !granted.some((g) => g.slug === slug),
-        ),
-        ...(await boundSecrets(env, tx, org, deployment.agentId, declared)),
-      };
-    },
-  );
+  const {
+    deployment,
+    bound,
+    waiting,
+    waitingMcp,
+    network,
+    waitingNetwork,
+    delivered,
+  } = await withOrg(env, org, async (tx) => {
+    const [deployment] = await tx
+      .select()
+      .from(deployments)
+      .where(eq(deployments.id, deploymentId));
+    if (!deployment)
+      throw new HTTPException(404, { message: "deployment not found" });
+    const declared = (deployment.manifest as Manifest).secrets;
+    const delivered = await tx
+      .select({
+        secretId: secretDeliveries.secretId,
+        version: secretDeliveries.secretVersion,
+        name: secrets.name,
+      })
+      .from(secretDeliveries)
+      .innerJoin(secrets, eq(secrets.id, secretDeliveries.secretId))
+      .where(eq(secretDeliveries.deploymentId, deploymentId));
+    const declaredMcp = (deployment.manifest as Manifest).mcp;
+    const granted = declaredMcp.length
+      ? await tx
+          .select({ slug: mcpServers.slug })
+          .from(mcpGrants)
+          .innerJoin(mcpServers, eq(mcpServers.id, mcpGrants.serverId))
+          .where(eq(mcpGrants.agentId, deployment.agentId))
+      : [];
+    const network = await effectiveNetwork(tx, deployment.agentId);
+    return {
+      deployment,
+      delivered,
+      network,
+      waitingNetwork: ((deployment.manifest as Manifest).network ?? []).filter(
+        (host) => !permits(network, host),
+      ),
+      waitingMcp: declaredMcp.filter(
+        (slug) => !granted.some((g) => g.slug === slug),
+      ),
+      ...(await boundSecrets(env, tx, org, deployment.agentId, declared)),
+    };
+  });
   const namespace = namespaceFor(env);
   const current = new Map(delivered.map((d) => [d.secretId, d.version]));
   const changed = bound.filter((b) => current.get(b.secretId) !== b.version);
@@ -251,19 +259,24 @@ export const syncDeployment = async (
     const status =
       deployment.status === "failed"
         ? "failed"
-        : waiting.length || waitingMcp.length
+        : waiting.length || waitingMcp.length || waitingNetwork.length
           ? "waiting"
           : "ready";
     const waitingFor: WaitingFor = {
       ...(waiting.length && { secrets: waiting }),
       ...(waitingMcp.length && { mcp: waitingMcp }),
+      ...(waitingNetwork.length && { network: waitingNetwork }),
     };
     await tx
       .update(deployments)
-      .set({ status, waitingFor })
+      .set({ status, waitingFor, network })
       .where(eq(deployments.id, deploymentId));
   });
-  return [...waiting, ...waitingMcp.map((slug) => `MCP server ${slug}`)];
+  return [
+    ...waiting,
+    ...waitingMcp.map((slug) => `MCP server ${slug}`),
+    ...waitingNetwork.map((host) => `network access to ${host}`),
+  ];
 };
 
 // Live scripts (doc 03): the production deployment and the newest deployment
@@ -361,13 +374,18 @@ export const deploy = async (
     tags: [`org:${org}`, `agent:${agent.id}`],
   });
   const read = manifestSchema.safeParse(
-    await env.RUNTIME.manifest(deploymentTarget(target)).catch(
-      (error: unknown) => {
-        throw new HTTPException(422, {
-          message: `the agent's Worker did not serve its manifest: ${String(error)}`,
-        });
-      },
-    ),
+    await env.RUNTIME.manifest(
+      deploymentTarget({
+        ...target,
+        network: await withOrg(env, org, (tx) =>
+          effectiveNetwork(tx, agent.id),
+        ),
+      }),
+    ).catch((error: unknown) => {
+      throw new HTTPException(422, {
+        message: `the agent's Worker did not serve its manifest: ${String(error)}`,
+      });
+    }),
   );
   if (!read.success)
     throw new HTTPException(422, {

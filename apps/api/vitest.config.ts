@@ -44,6 +44,7 @@ bundle("../outbound/src/index.ts", "outbound.js");
 bundle("../model-stub/src/index.ts", "model-stub.js");
 bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/crm-agent.ts", "crm-agent.js");
+bundle("test/fixtures/network-agent.ts", "network-agent.js");
 
 const worker = (name: string, extra: object = {}) => ({
   name,
