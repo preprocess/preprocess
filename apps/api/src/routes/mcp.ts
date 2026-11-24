@@ -35,8 +35,7 @@ import {
   tokenRequest,
   Unauthorized,
 } from "../mcp.ts";
-import { AGENT_SLUG } from "../deploy.ts";
-import { drainOutbox, syncLater } from "../outbox.ts";
+import { AGENT_SLUG, syncAgents } from "../deploy.ts";
 
 type Ctx = { Bindings: Env; Variables: OrgVariables };
 export const mcpRoutes = new OpenAPIHono<Ctx>();
@@ -257,7 +256,7 @@ const grantChange =
     const { server: slug, agent: agentSlug } = c.req.param() as z.infer<
       typeof GrantParams
     >;
-    const sync = await withOrg(c.env, c.var.org, async (tx) => {
+    await withOrg(c.env, c.var.org, async (tx) => {
       const [server] = await tx
         .select()
         .from(mcpServers)
@@ -297,9 +296,8 @@ const grantChange =
         data: { server: slug, agent: agent.id },
       });
       // Live deployments recompute what they wait for.
-      return syncLater(tx, c.var.org, [agent.id]);
+      await syncAgents(tx, c.var.org, [agent.id]);
     });
-    await drainOutbox(c.env, c.var.org, sync);
     return c.body(null, 204);
   };
 

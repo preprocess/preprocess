@@ -1,8 +1,9 @@
-import { env, exports } from "cloudflare:workers";
+import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import type { CaseView } from "../src/case-runtime.ts";
 import type { CaseKey, Settings, StartCase } from "../src/env.ts";
+import { deploy } from "./deploy.ts";
 // Bundled by vitest.config.ts, as the deploy command uploads it.
 import failingAgent from "./dist/failing-agent.js?raw";
 
@@ -37,18 +38,15 @@ const run = async (
   caseId: string,
   overrides: Partial<Settings>,
 ) => {
-  const script = `${organizationId}--failing--dep_1`;
-  await env.NAMESPACE_ADMIN.putScript(script, {
-    mainModule: "agent.js",
-    modules: { "agent.js": failingAgent },
-    bindings: [],
-    tags: [`org:${organizationId}`],
-  });
+  const { bundleHash } = await deploy(
+    { organizationId, agentId: "agt_failing", deploymentId: "dep_1" },
+    failingAgent,
+  );
   const key = { organizationId, agentId: "agt_failing", caseId };
   await runtime.startCase({
     ...key,
     deploymentId: "dep_1",
-    script,
+    bundleHash,
     network: { allow: [], block: [] },
     input: { text: "Check stock for SKU A1 and its carrier status." },
     settings: settings(overrides),

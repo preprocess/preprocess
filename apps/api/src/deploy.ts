@@ -1,18 +1,17 @@
-// Deploys and secret delivery (spec 4, design doc 03). A deploy uploads the
-// agent's bundle as its own Workers for Platforms script, reads what the code
-// declares, binds the secrets the agent is granted, records the deployment,
-// and promotes it when it came from the production branch. Secret values are
-// decrypted only here, in memory, and go only to the agent's script.
+// Deploys and secret delivery (spec 4, design doc 03). A deploy stores the
+// agent's bundle for the runtime to load as a Dynamic Worker, reads what the
+// code declares, records the deployment and what it waits for, and promotes it
+// when it came from the production branch. Secret values are decrypted only
+// here, in memory, when the runtime loads the code, and go only to it.
 
 import type { OrgId, Tx } from "@preprocess/db/client";
-import { withOrg } from "@preprocess/db/client";
+import { orgId, withOrg } from "@preprocess/db/client";
 import { audit } from "@preprocess/db/audit";
 import { newId } from "@preprocess/db/ids";
 import { agentGrants, agents, groups } from "@preprocess/db/schema/access";
 import {
   deploymentGroups,
   deployments,
-  secretDeliveries,
   secretGrants,
   type WaitingFor,
 } from "@preprocess/db/schema/deployments";
@@ -26,7 +25,6 @@ import { z } from "zod";
 import type { AuditInput } from "@preprocess/db/audit";
 import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
-import { namespaceFor } from "./namespace.ts";
 import { effectiveNetwork, permits } from "./network.ts";
 import { nextFire, schedulerName } from "./scheduler.ts";
 import {
@@ -101,41 +99,21 @@ export const deploymentTarget = (d: {
   organizationId: string;
   agentId: string;
   id: string;
-  scriptName: string;
+  bundleSha256: string;
   network: NetworkRules;
 }) => ({
   organizationId: d.organizationId,
   agentId: d.agentId,
   deploymentId: d.id,
-  script: d.scriptName,
+  bundleHash: d.bundleSha256,
   network: d.network,
 });
 
-const sha256 = async (text: string) =>
-  Array.from(
-    new Uint8Array(
-      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)),
-    ),
-    (b) => b.toString(16).padStart(2, "0"),
-  ).join("");
-
-type Binding = {
-  secretId: string;
-  name: string;
-  version: number;
-  value: string;
-};
-
-// Bound set = declared ∩ granted (doc 03), with current values.
-const boundSecrets = async (
-  env: Env,
-  tx: Tx,
-  organizationId: string,
-  agentId: string,
-  declared: string[],
-): Promise<{ bound: Binding[]; waiting: string[] }> => {
+// Bound set = declared ∩ granted (doc 03), with each secret's version and
+// ciphertext; values are decrypted only for a load.
+const boundSecrets = async (tx: Tx, agentId: string, declared: string[]) => {
   if (declared.length === 0) return { bound: [], waiting: [] };
-  const rows = await tx
+  const bound = await tx
     .select({
       secretId: secrets.id,
       name: secrets.name,
@@ -147,24 +125,90 @@ const boundSecrets = async (
     .innerJoin(secrets, eq(secrets.id, secretGrants.secretId))
     .where(
       and(eq(secretGrants.agentId, agentId), inArray(secrets.name, declared)),
-    );
-  const bound: Binding[] = [];
-  for (const row of rows) {
-    const key = await orgKeyVersion(env, tx, organizationId, row.keyVersion);
-    bound.push({
-      secretId: row.secretId,
-      name: row.name,
-      version: row.version,
-      value: await decrypt(
-        key,
-        row.ciphertext,
-        `${organizationId}|${row.secretId}|${row.version}`,
-      ),
-    });
-  }
+    )
+    .orderBy(secrets.name);
   const granted = new Set(bound.map((b) => b.name));
   return { bound, waiting: declared.filter((name) => !granted.has(name)) };
 };
+
+export type DeploymentRef = {
+  organizationId: string;
+  agentId: string;
+  deploymentId: string;
+};
+
+// What one deployment's code receives right now. A deployment the deploy
+// path has not recorded yet (its manifest read) receives nothing.
+const deliverable = async (tx: Tx, d: DeploymentRef) => {
+  const [row] = await tx
+    .select({ manifest: deployments.manifest })
+    .from(deployments)
+    .where(
+      and(
+        eq(deployments.id, d.deploymentId),
+        eq(deployments.agentId, d.agentId),
+      ),
+    );
+  if (!row) return [];
+  return (await boundSecrets(tx, d.agentId, (row.manifest as Manifest).secrets))
+    .bound;
+};
+
+// Names the set of secrets and versions a deployment's code receives, so a
+// change to any value or grant changes it (doc 03). The runtime asks for it
+// on every call and loads a fresh isolate when it moves.
+const versionOf = async (bound: { secretId: string; version: number }[]) => {
+  if (bound.length === 0) return "none";
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      bound.map((b) => `${b.secretId}:${b.version}`).join("\n"),
+    ),
+  );
+  return Array.from(new Uint8Array(digest).slice(0, 8), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+};
+
+export const secretsVersion = (env: Env, d: DeploymentRef) =>
+  withOrg(env, orgId(d.organizationId), async (tx) =>
+    versionOf(await deliverable(tx, d)),
+  );
+
+// The values themselves, for the isolate the runtime is loading. Each one
+// delivered is audited (spec 12: which deployment received a secret).
+export const secretValues = (env: Env, d: DeploymentRef) =>
+  withOrg(env, orgId(d.organizationId), async (tx) => {
+    const bound = await deliverable(tx, d);
+    const values: Record<string, string> = {};
+    for (const row of bound) {
+      const key = await orgKeyVersion(
+        env,
+        tx,
+        d.organizationId,
+        row.keyVersion,
+      );
+      values[row.name] = await decrypt(
+        key,
+        row.ciphertext,
+        `${d.organizationId}|${row.secretId}|${row.version}`,
+      );
+      await audit(tx, {
+        organizationId: d.organizationId,
+        actorType: "platform",
+        actorId: "runtime",
+        action: "secret.delivered",
+        targetType: "secret",
+        targetId: row.secretId,
+        data: {
+          secret: row.name,
+          version: row.version,
+          deployment: d.deploymentId,
+        },
+      });
+    }
+    return { version: await versionOf(bound), values };
+  });
 
 // The groups a deployment's code names (design doc 06), and those without
 // access to the agent: no grant on it and not Developers. A group without
@@ -235,156 +279,77 @@ export const groupInUse = async (tx: Tx, groupId: string, agentId?: string) => {
   return false;
 };
 
-// Brings one deployment's script in line with current grants and values:
-// sets new or changed values, removes revoked ones, records deliveries and
-// audits each (spec 12: which deployment received a secret). Returns what
-// it still waits for.
+// Brings one deployment's record in line with current grants: what it waits
+// for, its network rules and the groups its code names. Secrets need nothing
+// here: the runtime reads them when it loads the code (doc 03). Returns what
+// the deployment still waits for.
 export const syncDeployment = async (
-  env: Env,
+  tx: Tx,
   org: OrgId,
   deploymentId: string,
-  actor: Actor,
 ): Promise<string[]> => {
-  const {
-    deployment,
-    bound,
-    waiting,
-    waitingMcp,
-    network,
-    waitingNetwork,
-    waitingGroups,
-    delivered,
-  } = await withOrg(env, org, async (tx) => {
-    const [deployment] = await tx
-      .select()
-      .from(deployments)
-      .where(eq(deployments.id, deploymentId));
-    if (!deployment)
-      throw new HTTPException(404, { message: "deployment not found" });
-    const declared = (deployment.manifest as Manifest).secrets;
-    const delivered = await tx
-      .select({
-        secretId: secretDeliveries.secretId,
-        version: secretDeliveries.secretVersion,
-        name: secrets.name,
-      })
-      .from(secretDeliveries)
-      .innerJoin(secrets, eq(secrets.id, secretDeliveries.secretId))
-      .where(eq(secretDeliveries.deploymentId, deploymentId));
-    const declaredMcp = (deployment.manifest as Manifest).mcp;
-    const granted = declaredMcp.length
-      ? await tx
-          .select({ slug: mcpServers.slug })
-          .from(mcpGrants)
-          .innerJoin(mcpServers, eq(mcpServers.id, mcpGrants.serverId))
-          .where(eq(mcpGrants.agentId, deployment.agentId))
-      : [];
-    const network = await effectiveNetwork(tx, deployment.agentId);
-    const { named, waitingGroups } = await namedGroups(
-      tx,
-      deployment.agentId,
-      deployment.manifest as Manifest,
-    );
-    await tx
-      .delete(deploymentGroups)
-      .where(eq(deploymentGroups.deploymentId, deploymentId));
-    if (named.length)
-      await tx.insert(deploymentGroups).values(
-        named.map((g) => ({
-          organizationId: org,
-          deploymentId,
-          groupId: g.id,
-          approves: g.approves,
-        })),
-      );
-    return {
-      deployment,
-      delivered,
-      network,
-      waitingGroups,
-      waitingNetwork: ((deployment.manifest as Manifest).network ?? []).filter(
-        (host) => !permits(network, host),
-      ),
-      waitingMcp: declaredMcp.filter(
-        (slug) => !granted.some((g) => g.slug === slug),
-      ),
-      ...(await boundSecrets(env, tx, org, deployment.agentId, declared)),
-    };
-  });
-  const namespace = namespaceFor(env);
-  const current = new Map(delivered.map((d) => [d.secretId, d.version]));
-  const changed = bound.filter((b) => current.get(b.secretId) !== b.version);
-  const removed = delivered.filter(
-    (d) => !bound.some((b) => b.secretId === d.secretId),
+  const [deployment] = await tx
+    .select()
+    .from(deployments)
+    .where(eq(deployments.id, deploymentId));
+  if (!deployment)
+    throw new HTTPException(404, { message: "deployment not found" });
+  const manifest = deployment.manifest as Manifest;
+  const { waiting } = await boundSecrets(
+    tx,
+    deployment.agentId,
+    manifest.secrets,
   );
-  for (const b of changed)
-    await namespace.putSecret(deployment.scriptName, {
-      name: b.name,
-      text: b.value,
-    });
-  for (const d of removed)
-    await namespace.deleteSecret(deployment.scriptName, d.name);
-  await withOrg(env, org, async (tx) => {
-    for (const b of changed) {
-      await tx
-        .insert(secretDeliveries)
-        .values({
-          organizationId: org,
-          deploymentId,
-          secretId: b.secretId,
-          secretVersion: b.version,
-        })
-        .onConflictDoUpdate({
-          target: [secretDeliveries.deploymentId, secretDeliveries.secretId],
-          set: { secretVersion: b.version, deliveredAt: sql`now()` },
-        });
-      await audit(tx, {
+  const granted = manifest.mcp.length
+    ? await tx
+        .select({ slug: mcpServers.slug })
+        .from(mcpGrants)
+        .innerJoin(mcpServers, eq(mcpServers.id, mcpGrants.serverId))
+        .where(eq(mcpGrants.agentId, deployment.agentId))
+    : [];
+  const waitingMcp = manifest.mcp.filter(
+    (slug) => !granted.some((g) => g.slug === slug),
+  );
+  const network = await effectiveNetwork(tx, deployment.agentId);
+  const waitingNetwork = (manifest.network ?? []).filter(
+    (host) => !permits(network, host),
+  );
+  const { named, waitingGroups } = await namedGroups(
+    tx,
+    deployment.agentId,
+    manifest,
+  );
+  await tx
+    .delete(deploymentGroups)
+    .where(eq(deploymentGroups.deploymentId, deploymentId));
+  if (named.length)
+    await tx.insert(deploymentGroups).values(
+      named.map((g) => ({
         organizationId: org,
-        ...actor,
-        action: "secret.delivered",
-        targetType: "secret",
-        targetId: b.secretId,
-        data: { secret: b.name, version: b.version, deployment: deploymentId },
-      });
-    }
-    for (const d of removed) {
-      await tx
-        .delete(secretDeliveries)
-        .where(
-          and(
-            eq(secretDeliveries.deploymentId, deploymentId),
-            eq(secretDeliveries.secretId, d.secretId),
-          ),
-        );
-      await audit(tx, {
-        organizationId: org,
-        ...actor,
-        action: "secret.withdrawn",
-        targetType: "secret",
-        targetId: d.secretId,
-        data: { secret: d.name, deployment: deploymentId },
-      });
-    }
-    const status =
-      deployment.status === "failed"
-        ? "failed"
-        : waiting.length ||
-            waitingMcp.length ||
-            waitingNetwork.length ||
-            waitingGroups.length
-          ? "waiting"
-          : "ready";
-    const waitingFor: WaitingFor = {
-      ...(waiting.length && { secrets: waiting }),
-      ...(waitingMcp.length && { mcp: waitingMcp }),
-      ...(waitingNetwork.length && { network: waitingNetwork }),
-      ...(waitingGroups.length && { groups: waitingGroups }),
-    };
-    await tx
-      .update(deployments)
-      .set({ status, waitingFor, network })
-      .where(eq(deployments.id, deploymentId));
-  });
+        deploymentId,
+        groupId: g.id,
+        approves: g.approves,
+      })),
+    );
+  const status =
+    deployment.status === "failed"
+      ? "failed"
+      : waiting.length ||
+          waitingMcp.length ||
+          waitingNetwork.length ||
+          waitingGroups.length
+        ? "waiting"
+        : "ready";
+  const waitingFor: WaitingFor = {
+    ...(waiting.length && { secrets: waiting }),
+    ...(waitingMcp.length && { mcp: waitingMcp }),
+    ...(waitingNetwork.length && { network: waitingNetwork }),
+    ...(waitingGroups.length && { groups: waitingGroups }),
+  };
+  await tx
+    .update(deployments)
+    .set({ status, waitingFor, network })
+    .where(eq(deployments.id, deploymentId));
   return [
     ...waiting,
     ...waitingMcp.map((slug) => `MCP server ${slug}`),
@@ -393,8 +358,9 @@ export const syncDeployment = async (
   ];
 };
 
-// Live scripts (doc 03): the production deployment and the newest deployment
-// of every other branch. Older ones are resynced when promoted again.
+// Live deployments (doc 03): the production deployment and the newest
+// deployment of every other branch. Older ones are rechecked when promoted
+// again.
 export const liveDeployments = (tx: Tx, agentId: string) =>
   tx
     .select({ id: deployments.id })
@@ -411,14 +377,13 @@ export const liveDeployments = (tx: Tx, agentId: string) =>
       ),
     );
 
-export const syncAgent = async (
-  env: Env,
-  org: OrgId,
-  agentId: string,
-  actor: Actor,
-) => {
-  const live = await withOrg(env, org, (tx) => liveDeployments(tx, agentId));
-  for (const d of live) await syncDeployment(env, org, d.id, actor);
+// Inside the transaction that changes what agents' code may receive (a grant,
+// network rules, a group's access): their live deployments recheck what they
+// wait for before it commits.
+export const syncAgents = async (tx: Tx, org: OrgId, agentIds: string[]) => {
+  for (const agentId of new Set(agentIds))
+    for (const d of await liveDeployments(tx, agentId))
+      await syncDeployment(tx, org, d.id);
 };
 
 export const AGENT_SLUG = /^[a-z][a-z0-9-]{0,62}$/;
@@ -480,13 +445,11 @@ export const deploy = async (
     throw new HTTPException(409, { message: "agent is archived" });
 
   const id = newId("deployment");
-  const target = { organizationId: org, agentId: agent.id, id, scriptName: id };
-  await namespaceFor(env).putScript(id, {
-    mainModule: input.bundle.mainModule,
-    modules: input.bundle.modules,
-    bindings: [],
-    tags: [`org:${org}`, `agent:${agent.id}`],
-  });
+  const bundleSha256 = await env.RUNTIME.putBundle(
+    { organizationId: org, agentId: agent.id, deploymentId: id },
+    input.bundle,
+  );
+  const target = { organizationId: org, agentId: agent.id, id, bundleSha256 };
   const read = manifestSchema.safeParse(
     await env.RUNTIME.manifest(
       deploymentTarget({
@@ -534,8 +497,7 @@ export const deploy = async (
       organizationId: org,
       agentId: agent.id,
       status: "ready",
-      scriptName: id,
-      bundleSha256: await sha256(JSON.stringify(input.bundle)),
+      bundleSha256,
       sdkVersion: manifest.sdk.version,
       environment:
         input.git.branch === agent.productionBranch ? "production" : "preview",
@@ -560,7 +522,7 @@ export const deploy = async (
       },
     });
   });
-  const waiting = await syncDeployment(env, org, id, actor);
+  const waiting = await withOrg(env, org, (tx) => syncDeployment(tx, org, id));
   const production = input.git.branch === agent.productionBranch;
   // A preview runs its own scheduler; each fire checks the deployment is
   // still live and the schedule may run on previews.
@@ -607,7 +569,9 @@ export const promote = async (
       message: "only a deployment from the production branch can be promoted",
     });
   // An older deployment never brings back a revoked grant or an old value.
-  const waiting = await syncDeployment(env, org, deploymentId, actor);
+  const waiting = await withOrg(env, org, (tx) =>
+    syncDeployment(tx, org, deploymentId),
+  );
   if (waiting.length)
     throw new HTTPException(409, {
       message: `deployment is waiting for grants: ${waiting.join(", ")}`,

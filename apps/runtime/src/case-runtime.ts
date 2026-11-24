@@ -222,7 +222,7 @@ export class CaseRuntime extends DurableObject<Env> {
     return new SchemaState(
       this.ctx.storage.sql,
       meta.manifest,
-      () => agentWorker(this.env, meta),
+      () => agentWorker(this.env, meta, this.ctx),
       meta.caseId,
     );
   }
@@ -721,7 +721,7 @@ export class CaseRuntime extends DurableObject<Env> {
     harness: ({ storage, context, onWake }) => {
       const meta = this.meta();
       if (!meta) throw new Error("case has not started");
-      const worker = agentWorker(this.env, meta, this.ctx.exports);
+      const worker = agentWorker(this.env, meta, this.ctx);
       const tools = meta.manifest.tools.map((tool) =>
         defineTool({
           name: tool.name,
@@ -955,10 +955,12 @@ export class CaseRuntime extends DurableObject<Env> {
   async start(start: StartCase): Promise<CaseView> {
     this.expectName(start);
     if (this.meta()) return this.view();
-    const response = await agentWorker(this.env, start).fetch("/manifest");
+    const response = await agentWorker(this.env, start, this.ctx).fetch(
+      "/manifest",
+    );
     if (!response.ok)
       throw new Error(
-        `agent Worker ${start.script} answered ${response.status}`,
+        `agent code of ${start.deploymentId} answered ${response.status}`,
       );
     const manifest = withSettings(
       await response.json<Manifest>(),
@@ -983,7 +985,7 @@ export class CaseRuntime extends DurableObject<Env> {
     this.save(meta);
     this.record("case.started", {
       deploymentId: start.deploymentId,
-      script: start.script,
+      bundleHash: start.bundleHash,
       sdk: manifest.sdk,
       model: manifest.model,
       reasoning: manifest.reasoning,

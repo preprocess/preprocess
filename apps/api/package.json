@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --inspector-port 9241 -c wrangler.jsonc -c ../user-worker/wrangler.jsonc -c ../builder/wrangler.jsonc",
+    "dev": "wrangler dev --inspector-port 9241 -c wrangler.jsonc -c ../builder/wrangler.jsonc",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

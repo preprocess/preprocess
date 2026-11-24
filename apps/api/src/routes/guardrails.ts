@@ -24,6 +24,7 @@ import { desc, eq } from "drizzle-orm";
 import { actor, eventBase, requireAdmin, requireDeveloper } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
+import { syncAgents } from "../deploy.ts";
 import type { Env } from "../env.ts";
 import {
   agentNetwork,
@@ -36,7 +37,6 @@ import {
   permits,
 } from "../network.ts";
 import type { NetworkRules } from "../network.ts";
-import { drainOutbox, syncLater } from "../outbox.ts";
 import { setSpendingLimit, toMicro } from "./spending.ts";
 
 const OrgParam = z.object({ org: z.string() });
@@ -328,7 +328,6 @@ const decide = async (
   approve: boolean,
 ) => {
   requireAdmin(vars.caller);
-  let sync: Awaited<ReturnType<typeof syncLater>> = [];
   const body = await withOrg(env, vars.org, async (tx) => {
     const [request] = await requestRows(tx).where(eq(guardrailRequests.id, id));
     if (!request) throw new ApiError(404, "not_found", "No such request.");
@@ -339,7 +338,7 @@ const decide = async (
         `The request was already ${request.status}.`,
       );
     if (approve)
-      sync = await syncLater(
+      await syncAgents(
         tx,
         vars.org,
         await applyChange(tx, vars, request.agentId, request.change),
@@ -362,7 +361,6 @@ const decide = async (
     });
     return toRequest({ ...request, status, decidedBy, decidedAt });
   });
-  await drainOutbox(env, vars.org, sync);
   return body;
 };
 
@@ -415,14 +413,13 @@ export const guardrailRoutes = new OpenAPIHono<{
     async (c) => {
       requireAdmin(c.var.caller);
       const rules = c.req.valid("json");
-      const sync = await withOrg(c.env, c.var.org, async (tx) =>
-        syncLater(
+      await withOrg(c.env, c.var.org, async (tx) =>
+        syncAgents(
           tx,
           c.var.org,
           await setOrganizationNetwork(tx, c.var, rules),
         ),
       );
-      await drainOutbox(c.env, c.var.org, sync);
       return c.json(rules, 200);
     },
   )
@@ -465,19 +462,19 @@ export const guardrailRoutes = new OpenAPIHono<{
     async (c) => {
       requireAdmin(c.var.caller);
       const rules = c.req.valid("json");
-      const { body, sync } = await withOrg(c.env, c.var.org, async (tx) => {
+      const body = await withOrg(c.env, c.var.org, async (tx) => {
         const agent = await findAgent(tx, c.req.valid("param").agent);
-        const ids = await setAgentNetwork(tx, c.var, agent.id, rules);
+        await syncAgents(
+          tx,
+          c.var.org,
+          await setAgentNetwork(tx, c.var, agent.id, rules),
+        );
         return {
-          sync: await syncLater(tx, c.var.org, ids),
-          body: {
-            organization: await organizationNetwork(tx),
-            agent: rules,
-            effective: await effectiveNetwork(tx, agent.id),
-          },
+          organization: await organizationNetwork(tx),
+          agent: rules,
+          effective: await effectiveNetwork(tx, agent.id),
         };
       });
-      await drainOutbox(c.env, c.var.org, sync);
       return c.json(body, 200);
     },
   )
@@ -493,15 +490,14 @@ export const guardrailRoutes = new OpenAPIHono<{
     }),
     async (c) => {
       requireAdmin(c.var.caller);
-      const sync = await withOrg(c.env, c.var.org, async (tx) => {
+      await withOrg(c.env, c.var.org, async (tx) => {
         const agent = await findAgent(tx, c.req.valid("param").agent);
-        return syncLater(
+        await syncAgents(
           tx,
           c.var.org,
           await setAgentNetwork(tx, c.var, agent.id, null),
         );
       });
-      await drainOutbox(c.env, c.var.org, sync);
       return c.body(null, 204);
     },
   )

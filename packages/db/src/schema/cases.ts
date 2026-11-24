@@ -239,7 +239,6 @@ export const outboxKind = pgEnum("outbox_kind", [
   "case.start",
   "webhook",
   "email",
-  "secret.sync",
   "eval.start",
 ]);
 

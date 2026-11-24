@@ -9,8 +9,8 @@ const require = createRequire(import.meta.url);
 const root = import.meta.dirname;
 const dist = path.join(root, "test/dist");
 
-// The local namespace and outbound Workers run beside the runtime, as in
-// `pnpm dev`; the sample agent is bundled the way `preprocess deploy` will.
+// The sample agents are bundled the way `preprocess deploy` bundles them, and
+// the tests store them in BUNDLES as a deploy does.
 const bundle = (entry: string, out: string) =>
   buildSync({
     entryPoints: [path.join(root, entry)],
@@ -24,8 +24,6 @@ const bundle = (entry: string, out: string) =>
     external: ["cloudflare:*", "node:*"],
     logLevel: "warning",
   });
-bundle("../namespace-local/src/index.ts", "namespace-local.js");
-bundle("../outbound/src/index.ts", "outbound.js");
 bundle("../model-stub/src/index.ts", "model-stub.js");
 bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/invoice-agent.ts", "invoice-agent.js");
@@ -47,22 +45,31 @@ export default defineConfig({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
         bindings: { MODEL_SERVICE_URL: "http://model-stub.test" },
-        // Every fetch the runtime makes goes to the model service.
-        outboundService: "model-stub",
+        // The runtime's fetches: the model service, and the internet the
+        // agent's code reaches past the network rules.
+        outboundService: "internet",
         workers: [
-          worker("namespace-local", {
-            workerLoaders: { LOADER: {} },
-            r2Buckets: { SCRIPTS: "scripts" },
-            serviceBindings: {
-              OUTBOUND: { name: "outbound", entrypoint: "Egress" },
-            },
-          }),
-          worker("outbound", {
-            // The internet, as the agent's code sees it past the rules.
-            outboundService: (request: Request) =>
-              new Response(`reached ${new URL(request.url).hostname}`),
-          }),
+          {
+            name: "internet",
+            modules: true,
+            compatibilityDate: "2026-07-26",
+            serviceBindings: { MODEL: "model-stub" },
+            script: `export default {
+  fetch(request, env) {
+    const host = new URL(request.url).hostname;
+    if (host === "model-stub.test") return env.MODEL.fetch(request);
+    return new Response("reached " + host);
+  },
+};`,
+          },
           worker("model-stub"),
+          // apps/tail's place: the tests read run logs from capture instead.
+          {
+            name: "tail",
+            modules: true,
+            compatibilityDate: "2026-07-26",
+            script: "export default { tail() {} };",
+          },
           worker("mcp-service"),
           // The API's internal entrypoint, which the runtime reports to. The
           // tests read reports from run capture instead.
@@ -72,7 +79,15 @@ export default defineConfig({
             compatibilityDate: "2026-07-26",
             script: `import { WorkerEntrypoint } from "cloudflare:workers";
 const allowed = new Map();
+// What \`deploy\` in test/deploy.ts gives each deployment, under a version that
+// moves on every change, as the API's secrets version does.
+const secrets = new Map();
+let versions = 0;
+const ref = (d) => d.organizationId + ":" + d.agentId + ":" + d.deploymentId;
 export class Platform extends WorkerEntrypoint {
+  async setSecrets(d, values) { secrets.set(ref(d), { version: "v" + ++versions, values }); }
+  async secretsVersion(d) { return secrets.get(ref(d))?.version ?? "none"; }
+  async secretValues(d) { return secrets.get(ref(d)) ?? { version: "none", values: {} }; }
   async caseEvent() {}
   // Tests cap an organization at n more passes of the spending gate.
   async limitSpend(organizationId, n) { allowed.set(organizationId, n); }
@@ -89,8 +104,7 @@ export default { fetch: () => new Response("platform") };`,
           },
         ],
         serviceBindings: {
-          LOCAL_NAMESPACE: "namespace-local",
-          NAMESPACE_ADMIN: { name: "namespace-local", entrypoint: "Namespace" },
+          TAIL: "tail",
           MCP_SERVICE: { name: "mcp-service", entrypoint: "McpService" },
           PLATFORM: { name: "platform", entrypoint: "Platform" },
         },

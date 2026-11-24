@@ -1,10 +1,8 @@
-import type { Namespace } from "../../namespace-local/src/index.ts";
 import type { Env as RuntimeEnv } from "../src/env.ts";
 
 declare global {
   namespace Cloudflare {
-    interface Env extends RuntimeEnv {
-      NAMESPACE_ADMIN: Service<Namespace>;
-    }
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- merges the runtime's bindings into the test Env
+    interface Env extends RuntimeEnv {}
   }
 }
