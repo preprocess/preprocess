@@ -25,6 +25,7 @@ import type { Caller } from "./caller.ts";
 import type { Manifest } from "./deploy.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
+import { joinAutomaticSuite } from "./evals.ts";
 import { effectiveSettings } from "./settings.ts";
 import { refuseOverLimit } from "./spend.ts";
 import { queueWebhooks } from "./webhooks.ts";
@@ -375,6 +376,7 @@ export type CaseEvent = {
       // Set when the case waits on an approval, whose own event sends the
       // webhook.
       approvalId?: string;
+      completed?: { input: StartCase["input"]; captureKey: string };
     }
   | { type: "approval"; approval: Approval }
   | {
@@ -482,6 +484,14 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
       .where(own);
     if (!before) return;
     const done = event.status === "completed" || event.status === "failed";
+    // Every completed case joins its agent's automatic eval suite (doc 09).
+    if (event.status === "completed" && event.completed)
+      await joinAutomaticSuite(tx, event.organizationId, event.agentId, {
+        caseId: event.caseId,
+        input: event.completed.input,
+        answers: event.answers,
+        captureKey: event.completed.captureKey,
+      });
     await tx
       .update(cases)
       .set({

@@ -34,6 +34,8 @@ export type StartCase = CaseKey & {
     files?: { id: string; name: string; contentType: string }[];
   };
   groups?: GroupRef[];
+  // An eval case (design doc 09): a replay of a suite case's source case.
+  eval?: { runId: string; sourceCaseId: string; captureKey: string };
 };
 
 // apps/runtime's default entrypoint. Answers and
