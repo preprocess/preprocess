@@ -31,11 +31,13 @@ import type { OutboxMessage } from "./outbox.ts";
 
 // Errors in doc 04's shape: { error: { code, message } }.
 export class ApiError extends HTTPException {
+  readonly code: string;
   constructor(status: ContentfulStatusCode, code: string, message: string) {
     super(status, {
       message,
       res: Response.json({ error: { code, message } }, { status }),
     });
+    this.code = code;
   }
 }
 

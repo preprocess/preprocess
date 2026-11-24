@@ -27,11 +27,13 @@ import { githubCallbacks, githubRoutes } from "./routes/github.ts";
 import { mcpCallback, mcpRoutes } from "./routes/mcp.ts";
 import { secretRoutes } from "./routes/secrets.ts";
 import { guardrailRoutes } from "./routes/guardrails.ts";
+import { scheduleRoutes } from "./routes/schedules.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { spendingRoutes } from "./routes/spending.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
+export { Scheduler } from "./scheduler.ts";
 export { McpService } from "./mcp.ts";
 export { Platform } from "./platform.ts";
 
@@ -84,6 +86,7 @@ orgApi.route("/", githubRoutes);
 orgApi.route("/", spendingRoutes);
 orgApi.route("/", guardrailRoutes);
 orgApi.route("/", settingsRoutes);
+orgApi.route("/", scheduleRoutes);
 orgApi.route("/", webhookRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();

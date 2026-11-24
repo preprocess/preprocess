@@ -42,10 +42,14 @@
     "bindings": [
       { "name": "COUNTER", "class_name": "Counter" },
       { "name": "BUILDS", "class_name": "BuildQueue" },
+      { "name": "SCHEDULER", "class_name": "Scheduler" },
     ],
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["Counter", "BuildQueue"] },
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Counter", "BuildQueue", "Scheduler"],
+    },
   ],
   "queues": {
     "producers": [
