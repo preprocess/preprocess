@@ -25,6 +25,7 @@ import { groupRoutes } from "./routes/groups.ts";
 import { organizationRoutes } from "./routes/organization.ts";
 import { mcpCallback, mcpRoutes } from "./routes/mcp.ts";
 import { secretRoutes } from "./routes/secrets.ts";
+import { guardrailRoutes } from "./routes/guardrails.ts";
 import { spendingRoutes } from "./routes/spending.ts";
 
 export { Counter } from "./counter.ts";
@@ -77,6 +78,7 @@ orgApi.route("/", secretRoutes);
 orgApi.route("/", mcpRoutes);
 orgApi.route("/", caseRoutes);
 orgApi.route("/", spendingRoutes);
+orgApi.route("/", guardrailRoutes);
 orgApi.route("/", webhookRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
