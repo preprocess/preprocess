@@ -1,7 +1,7 @@
 // Deployments (design doc 01, build step 2). A deployment pins one upload of
-// an agent's code: its Workers for Platforms script, SDK version, network
-// rules and manifest. `preprocess deploy` or the GitHub App creates it; agents
-// never edit it.
+// an agent's code: its bundle in R2 (loaded as a Dynamic Worker, doc 03), SDK
+// version, network rules and manifest. `preprocess deploy` or the GitHub App
+// creates it; agents never edit it.
 
 import { sql } from "drizzle-orm";
 import {
@@ -9,7 +9,6 @@ import {
   check,
   foreignKey,
   index,
-  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -56,8 +55,8 @@ export const deployments = pgTable(
     agentId: text().notNull(),
     environment: deploymentEnvironment().notNull(),
     status: deploymentStatus().notNull(),
-    // The script in the stage's dispatch namespace.
-    scriptName: text().notNull(),
+    // The SHA-256 of the bundle object in R2: the runtime checks every load
+    // against it (doc 03).
     bundleSha256: text().notNull(),
     sdkVersion: text().notNull(),
     network: jsonb()
@@ -77,7 +76,6 @@ export const deployments = pgTable(
   },
   (t) => [
     unique("deployments_org_id_unique").on(t.organizationId, t.id),
-    unique("deployments_script_name_unique").on(t.scriptName),
     index().on(t.organizationId, t.agentId, t.createdAt),
     index()
       .on(t.organizationId, t.agentId, t.promotedAt)
@@ -141,31 +139,6 @@ export const secretGrants = pgTable(
     foreignKey({
       columns: [t.organizationId, t.agentId],
       foreignColumns: [agents.organizationId, agents.id],
-    }).onDelete("cascade"),
-  ],
-);
-
-// What each script actually holds, for the "delivered to n of m" status and
-// for audit (spec 12: which deployment received a secret).
-export const secretDeliveries = pgTable(
-  "secret_deliveries",
-  {
-    organizationId: text().notNull(),
-    deploymentId: text().notNull(),
-    secretId: text().notNull(),
-    secretVersion: integer().notNull(),
-    deliveredAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.deploymentId, t.secretId] }),
-    index().on(t.organizationId, t.secretId),
-    foreignKey({
-      columns: [t.organizationId, t.deploymentId],
-      foreignColumns: [deployments.organizationId, deployments.id],
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [t.organizationId, t.secretId],
-      foreignColumns: [secrets.organizationId, secrets.id],
     }).onDelete("cascade"),
   ],
 );

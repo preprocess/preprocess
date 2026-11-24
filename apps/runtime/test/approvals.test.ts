@@ -1,8 +1,9 @@
-import { env, exports } from "cloudflare:workers";
+import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import type { CaseState, CaseView } from "../src/case-runtime.ts";
 import type { CaseKey, StartCase } from "../src/env.ts";
+import { deploy } from "./deploy.ts";
 // Bundled by vitest.config.ts, as the deploy command uploads it.
 import approvalAgent from "./dist/approval-agent.js?raw";
 
@@ -30,18 +31,15 @@ const settle = async (c: CaseKey) => {
 };
 
 const start = async (organizationId: string) => {
-  const script = `${organizationId}--approve--dep_1`;
-  await env.NAMESPACE_ADMIN.putScript(script, {
-    mainModule: "agent.js",
-    modules: { "agent.js": approvalAgent },
-    bindings: [],
-    tags: [`org:${organizationId}`],
-  });
+  const { bundleHash } = await deploy(
+    { organizationId, agentId: "agt_approve", deploymentId: "dep_1" },
+    approvalAgent,
+  );
   const key = { organizationId, agentId: "agt_approve", caseId: "case_1" };
   await runtime.startCase({
     ...key,
     deploymentId: "dep_1",
-    script,
+    bundleHash,
     network: { allow: [], block: [] },
     input: { text: "Check stock for SKU A1 and its carrier status." },
   });

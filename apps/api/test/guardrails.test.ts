@@ -14,12 +14,7 @@ import { loosens, narrow, NO_HOST, opening, permits } from "../src/network.ts";
 import type { Client } from "./helpers.ts";
 import { addMember, createOrganization, signUp, testEnv } from "./helpers.ts";
 
-const environment: Env = testEnv({
-  SECRET_SYNC: {
-    send: () => Promise.resolve(),
-    sendBatch: () => Promise.resolve(),
-  } as unknown as Queue,
-});
+const environment: Env = testEnv();
 
 type Rules = { allow: string[]; block: string[] };
 type Request = { id: string; status: string; agent: string | null };

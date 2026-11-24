@@ -1,5 +1,5 @@
 {
-  "id": "eaa90795-a02c-422f-ba9c-389bba27de97",
+  "id": "a44ea909-0696-4527-af03-51c1d2c5a400",
   "prevId": "e38853d3-b500-48fd-8ac1-14ea4d8f281b",
   "version": "7",
   "dialect": "postgresql",
@@ -1404,165 +1404,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.case_approvals": {
-      "name": "case_approvals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "case_id": {
-          "name": "case_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "level": {
-          "name": "level",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target": {
-          "name": "target",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "group_id": {
-          "name": "group_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_at": {
-          "name": "requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "case_approvals_organization_id_status_group_id_index": {
-          "name": "case_approvals_organization_id_status_group_id_index",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "group_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "case_approvals_organization_id_case_id_index": {
-          "name": "case_approvals_organization_id_case_id_index",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "case_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "case_approvals_organization_id_case_id_cases_organization_id_id_fk": {
-          "name": "case_approvals_organization_id_case_id_cases_organization_id_id_fk",
-          "tableFrom": "case_approvals",
-          "tableTo": "cases",
-          "columnsFrom": ["organization_id", "case_id"],
-          "columnsTo": ["organization_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "case_approvals_organization_id_group_id_groups_organization_id_id_fk": {
-          "name": "case_approvals_organization_id_group_id_groups_organization_id_id_fk",
-          "tableFrom": "case_approvals",
-          "tableTo": "groups",
-          "columnsFrom": ["organization_id", "group_id"],
-          "columnsTo": ["organization_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.case_assignees": {
       "name": "case_assignees",
       "schema": "",
@@ -2557,12 +2398,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "script_name": {
-          "name": "script_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "bundle_sha256": {
           "name": "bundle_sha256",
           "type": "text",
@@ -2708,11 +2543,6 @@
           "name": "deployments_org_id_unique",
           "nullsNotDistinct": false,
           "columns": ["organization_id", "id"]
-        },
-        "deployments_script_name_unique": {
-          "name": "deployments_script_name_unique",
-          "nullsNotDistinct": false,
-          "columns": ["script_name"]
         }
       },
       "policies": {},
@@ -2722,96 +2552,6 @@
           "value": "\"deployments\".\"promoted_at\" IS NULL OR \"deployments\".\"environment\" = 'production'"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.secret_deliveries": {
-      "name": "secret_deliveries",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "deployment_id": {
-          "name": "deployment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "secret_id": {
-          "name": "secret_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "secret_version": {
-          "name": "secret_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "delivered_at": {
-          "name": "delivered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "secret_deliveries_organization_id_secret_id_index": {
-          "name": "secret_deliveries_organization_id_secret_id_index",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "secret_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "secret_deliveries_organization_id_deployment_id_deployments_organization_id_id_fk": {
-          "name": "secret_deliveries_organization_id_deployment_id_deployments_organization_id_id_fk",
-          "tableFrom": "secret_deliveries",
-          "tableTo": "deployments",
-          "columnsFrom": ["organization_id", "deployment_id"],
-          "columnsTo": ["organization_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "secret_deliveries_organization_id_secret_id_secrets_organization_id_id_fk": {
-          "name": "secret_deliveries_organization_id_secret_id_secrets_organization_id_id_fk",
-          "tableFrom": "secret_deliveries",
-          "tableTo": "secrets",
-          "columnsFrom": ["organization_id", "secret_id"],
-          "columnsTo": ["organization_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "secret_deliveries_deployment_id_secret_id_pk": {
-          "name": "secret_deliveries_deployment_id_secret_id_pk",
-          "columns": ["deployment_id", "secret_id"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.secret_grants": {
@@ -5203,7 +4943,7 @@
     "public.outbox_kind": {
       "name": "outbox_kind",
       "schema": "public",
-      "values": ["case.start", "webhook", "email", "secret.sync", "eval.start"]
+      "values": ["case.start", "webhook", "email", "eval.start"]
     },
     "public.deployment_environment": {
       "name": "deployment_environment",

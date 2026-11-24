@@ -5,8 +5,8 @@
 //   verified.
 // - Preview stages (pr-<number>) also get the backend, isolated per stage: the
 //   API Worker with its Durable Object, R2 bucket, queue and consumer, a
-//   dispatch namespace with the user Worker, and a PlanetScale branch
-//   (migrated and seeded) behind Hyperdrive, the stub model service
+//   PlanetScale branch (migrated and seeded) behind Hyperdrive, the
+//   stub model service
 //   (apps/model-stub) the API calls for decide and OCR, and the GitHub build
 //   sandbox (apps/builder, a Container). Destroying the stage removes all of
 //   it.
@@ -104,17 +104,6 @@ const backend = (
     const dbSystem = yield* Cloudflare.Hyperdrive.Connection("DbSystem", {
       origin: role.origin,
       caching: { disabled: true },
-    });
-
-    const namespace = yield* Cloudflare.WorkersForPlatforms.DispatchNamespace(
-      "Namespace",
-      { name: n.namespace },
-    );
-    yield* Cloudflare.Worker("UserWorker", {
-      ...worker,
-      name: n.userWorker,
-      namespace,
-      main: at("apps/user-worker/src/index.ts"),
     });
 
     const files = yield* Cloudflare.R2.Bucket("Files", {
@@ -247,7 +236,6 @@ const backend = (
       env: {
         STAGE: stage,
         PREPROCESS_REGION: region,
-        USER_WORKER: n.userWorker,
         ...(modelServiceUrl
           ? {
               MODEL_SERVICE_URL: modelServiceUrl,
@@ -304,10 +292,8 @@ const backend = (
         WEBHOOKS: webhooksQueue,
         LOGS: logsQueue,
         LOG_BUCKET: logsBucket,
-        TAIL_WORKER: n.tail,
         ...logSql,
         FILES: files,
-        DISPATCHER: namespace,
       },
     });
     yield* Cloudflare.Queues.Consumer("JobsConsumer", {
@@ -320,8 +306,8 @@ const backend = (
       scriptName: api.workerName,
       settings: { maxWaitTimeMs: 1000 },
     });
-    // Tail consumer of every agent script: console output and exceptions
-    // become run logs (design doc 09).
+    // Tail Worker of agent code: console output and exceptions become run
+    // logs (design doc 09). The runtime attaches it to each Dynamic Worker.
     yield* Cloudflare.Worker("Tail", {
       ...worker,
       name: n.tail,
@@ -344,7 +330,6 @@ const backend = (
       api: api.url,
       modelStub: modelStub.url,
       branch: branch.name,
-      namespace: n.namespace,
     };
   });
 

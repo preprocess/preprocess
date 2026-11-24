@@ -24,17 +24,18 @@ deliberately and read its changelog first.
 | `development` | Never deployed; the names `pnpm dev` uses locally           |
 
 A preview stage gets its own API Worker (with the `Counter` Durable Object
-namespace), R2 bucket, queue and consumer, dispatch namespace with the user
-Worker, the stub model service (`apps/model-stub`) the API calls for `decide`
-and OCR unless `MODEL_SERVICE_URL` and `MODEL_SERVICE_KEY` name another,
-Hyperdrive configs (caching off), an audit R2 bucket, the daily audit-anchor
-cron, an email binding, and PlanetScale Postgres branch `pr-<number>` forked
-from the database's `main`, with `packages/db/migrations` applied and
-`packages/db/seed.sql` imported. Everything is served on workers.dev, so a
-preview needs no DNS. `destroy` removes all of it, the PlanetScale branch
-included. Staging gets the backend once its PlanetScale database exists (build
-step 1). Production deployment config for our cloud is private and is not part
-of this repository; a self-hosted install deploys its own stages.
+namespace), R2 bucket, queue and consumer, the Tail Worker for agent code's
+console output, the stub model service (`apps/model-stub`) the API calls for
+`decide` and OCR unless `MODEL_SERVICE_URL` and `MODEL_SERVICE_KEY` name
+another, Hyperdrive configs (caching off), an audit R2 bucket, the daily
+audit-anchor cron, an email binding, and PlanetScale Postgres branch
+`pr-<number>` forked from the database's `main`, with `packages/db/migrations`
+applied and `packages/db/seed.sql` imported. Everything is served on
+workers.dev, so a preview needs no DNS. `destroy` removes all of it, the
+PlanetScale branch included. Staging gets the backend once its PlanetScale
+database exists (build step 1). Production deployment config for our cloud is
+private and is not part of this repository; a self-hosted install deploys its
+own stages.
 
 The app's WorkOS secrets are required on staging and optional on previews, where
 sign-in stays unavailable until Better Auth replaces WorkOS.
@@ -81,7 +82,7 @@ secrets:
 
 | Secret                                              | Value                                                                                           |
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`                              | Can edit Workers scripts, Workers for Platforms, R2, Queues, Hyperdrive and the Secrets Store   |
+| `CLOUDFLARE_API_TOKEN`                              | Can edit Workers scripts, R2, Queues, Hyperdrive and the Secrets Store                          |
 | `CLOUDFLARE_ACCOUNT_ID`                             | Cloudflare account id                                                                           |
 | `PLANETSCALE_API_TOKEN_ID`, `PLANETSCALE_API_TOKEN` | PlanetScale service token that can create and delete branches and roles on the preview database |
 | `PLANETSCALE_ORGANIZATION`                          | PlanetScale organization                                                                        |

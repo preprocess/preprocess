@@ -3,14 +3,10 @@
 // guardrail only an Admin or Owner loosens.
 
 import { audit } from "@preprocess/db/audit";
-import { withOrg } from "@preprocess/db/client";
+import { withOrg, type Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { agents } from "@preprocess/db/schema/access";
-import {
-  deployments,
-  secretDeliveries,
-  secretGrants,
-} from "@preprocess/db/schema/deployments";
+import { deployments, secretGrants } from "@preprocess/db/schema/deployments";
 import { secrets } from "@preprocess/db/schema/secrets";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import {
@@ -18,7 +14,7 @@ import {
   RESERVED_PREFIX,
   SECRET_NAME,
 } from "@preprocess/sdk/protocol";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import {
@@ -28,9 +24,8 @@ import {
   type OrgVariables,
 } from "../caller.ts";
 import { encrypt, orgKey } from "../crypto.ts";
-import { liveDeployments } from "../deploy.ts";
+import { liveDeployments, syncAgents, type Manifest } from "../deploy.ts";
 import type { Env } from "../env.ts";
-import { drainOutbox, syncLater } from "../outbox.ts";
 
 export const secretRoutes = new OpenAPIHono<{
   Bindings: Env;
@@ -45,16 +40,39 @@ const Secret = z
     agents: z
       .array(z.string())
       .openapi({ description: "Slugs of the agents granted this secret" }),
-    delivered: z
-      .number()
-      .openapi({ description: "Live deployments holding the current version" }),
+    delivered: z.number().openapi({
+      description:
+        "Live deployments receiving the current version: all of them, since agent code reads secrets when it loads",
+    }),
     live: z
       .number()
-      .openapi({ description: "Live deployments the secret is bound to" }),
+      .openapi({ description: "Live deployments whose code receives it" }),
   })
   .openapi("Secret");
 
 const SecretParams = z.object({ org: z.string(), name: z.string() });
+
+// The live deployments of these agents with the secrets their code declares:
+// a granted secret a live deployment declares reaches its code (doc 03).
+const liveDeclaring = async (tx: Tx, agentIds: string[]) => {
+  const ids: string[] = [];
+  for (const agentId of new Set(agentIds))
+    for (const d of await liveDeployments(tx, agentId)) ids.push(d.id);
+  if (ids.length === 0) return [];
+  const rows = await tx
+    .select({
+      id: deployments.id,
+      agentId: deployments.agentId,
+      manifest: deployments.manifest,
+    })
+    .from(deployments)
+    .where(inArray(deployments.id, ids));
+  return rows.map((d) => ({
+    id: d.id,
+    agentId: d.agentId,
+    secrets: (d.manifest as Manifest).secrets,
+  }));
+};
 const GrantParams = SecretParams.extend({ agent: z.string() });
 
 const checkName = (name: string) => {
@@ -92,31 +110,24 @@ secretRoutes.openapi(
         })
         .from(secretGrants)
         .innerJoin(agents, eq(agents.id, secretGrants.agentId));
-      const held = await tx
-        .select({
-          secretId: secretDeliveries.secretId,
-          secretVersion: secretDeliveries.secretVersion,
-          deploymentId: secretDeliveries.deploymentId,
-          agentId: deployments.agentId,
-        })
-        .from(secretDeliveries)
-        .innerJoin(
-          deployments,
-          eq(deployments.id, secretDeliveries.deploymentId),
-        );
-      const live = new Set<string>();
-      for (const agentId of new Set(held.map((h) => h.agentId)))
-        for (const d of await liveDeployments(tx, agentId)) live.add(d.id);
-      const deliveries = held.filter((h) => live.has(h.deploymentId));
+      const live = await liveDeclaring(
+        tx,
+        grants.map((g) => g.agentId),
+      );
       return rows.map((s) => {
-        const bound = deliveries.filter((d) => d.secretId === s.id);
+        const granted = grants.filter((g) => g.secretId === s.id);
+        const receiving = live.filter(
+          (d) =>
+            d.secrets.includes(s.name) &&
+            granted.some((g) => g.agentId === d.agentId),
+        ).length;
         return {
           name: s.name,
           version: s.version,
           updatedAt: s.updatedAt.toISOString(),
-          agents: grants.filter((g) => g.secretId === s.id).map((g) => g.slug),
-          delivered: bound.filter((d) => d.secretVersion === s.version).length,
-          live: bound.length,
+          agents: granted.map((g) => g.slug),
+          delivered: receiving,
+          live: receiving,
         };
       });
     });
@@ -199,20 +210,9 @@ secretRoutes.openapi(
         targetId: id,
         data: { secret: name, version },
       });
-      const granted = await tx
-        .select({ agentId: secretGrants.agentId })
-        .from(secretGrants)
-        .where(eq(secretGrants.secretId, id));
-      return {
-        version,
-        sync: await syncLater(
-          tx,
-          c.var.org,
-          granted.map((g) => g.agentId),
-        ),
-      };
+      // Agent code reads the new value on its next call (doc 03).
+      return { version };
     });
-    await drainOutbox(c.env, c.var.org, result.sync);
     return c.json({ name, version: result.version }, 200);
   },
 );
@@ -236,28 +236,18 @@ secretRoutes.openapi(
         .for("update");
       if (!secret)
         throw new HTTPException(404, { message: "secret not found" });
-      const holders = await tx
-        .select({
-          deploymentId: secretDeliveries.deploymentId,
-          agentId: deployments.agentId,
-        })
-        .from(secretDeliveries)
-        .innerJoin(
-          deployments,
-          eq(deployments.id, secretDeliveries.deploymentId),
+      const granted = await tx
+        .select({ agentId: secretGrants.agentId })
+        .from(secretGrants)
+        .where(eq(secretGrants.secretId, secret.id));
+      const live = (
+        await liveDeclaring(
+          tx,
+          granted.map((g) => g.agentId),
         )
-        .where(eq(secretDeliveries.secretId, secret.id));
-      const live: string[] = [];
-      for (const agentId of new Set(holders.map((h) => h.agentId))) {
-        const ids = new Set(
-          (await liveDeployments(tx, agentId)).map((d) => d.id),
-        );
-        live.push(
-          ...holders
-            .filter((h) => ids.has(h.deploymentId))
-            .map((h) => h.deploymentId),
-        );
-      }
+      )
+        .filter((d) => d.secrets.includes(secret.name))
+        .map((d) => d.id);
       if (live.length)
         throw new HTTPException(409, {
           message: `live deployments hold this secret: ${live.join(", ")}`,
@@ -280,7 +270,7 @@ const grantChange =
   async (c: Parameters<Parameters<typeof secretRoutes.openapi>[1]>[0]) => {
     requireAdmin(c.var.caller);
     const { name, agent: slug } = c.req.param() as z.infer<typeof GrantParams>;
-    const sync = await withOrg(c.env, c.var.org, async (tx) => {
+    await withOrg(c.env, c.var.org, async (tx) => {
       const [secret] = await tx
         .select()
         .from(secrets)
@@ -317,9 +307,10 @@ const grantChange =
         targetId: secret.id,
         data: { secret: name, agent: agent.id },
       });
-      return syncLater(tx, c.var.org, [agent.id]);
+      // Live deployments recompute what they wait for; the code itself sees
+      // the change on its next call (doc 03).
+      await syncAgents(tx, c.var.org, [agent.id]);
     });
-    await drainOutbox(c.env, c.var.org, sync);
     return c.body(null, 204);
   };
 
@@ -331,7 +322,9 @@ secretRoutes.openapi(
       "Let an agent's code receive this secret (loosens a guardrail; Admin or Owner)",
     request: { params: GrantParams },
     responses: {
-      204: { description: "Granted; live deployments are resynced" },
+      204: {
+        description: "Granted; live deployments receive it on their next call",
+      },
     },
   }),
   grantChange(true),
@@ -341,8 +334,7 @@ secretRoutes.openapi(
   createRoute({
     method: "delete",
     path: "/secrets/{name}/agents/{agent}",
-    summary:
-      "Stop an agent's code receiving this secret; bindings are removed from live deployments",
+    summary: "Stop an agent's code receiving this secret, from its next call",
     request: { params: GrantParams },
     responses: { 204: { description: "Revoked" } },
   }),

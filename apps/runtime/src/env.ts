@@ -9,11 +9,12 @@ export type Env = {
   MODEL_SERVICE_KEY?: string;
   CASE_RUNTIME: DurableObjectNamespace<CaseRuntime>;
   RUNS: R2Bucket;
-  // Deployed stages bind the stage's dispatch namespace. Cloudflare's local
-  // runtime cannot emulate one, so local dev and tests bind
-  // apps/namespace-local instead.
-  DISPATCHER?: DispatchNamespace;
-  LOCAL_NAMESPACE?: LocalNamespace;
+  // Agent code (design doc 03): each deployment's bundle in BUNDLES, loaded
+  // as a Dynamic Worker. TAIL (apps/tail) turns its console output and
+  // exceptions into run logs.
+  LOADER: WorkerLoader;
+  BUNDLES: R2Bucket;
+  TAIL?: Fetcher;
   // The API Worker's MCP token service (design doc 03). The runtime hands
   // each dispatch an McpBroker capability that calls it.
   MCP_SERVICE?: McpService;
@@ -41,23 +42,14 @@ export type McpService = {
   ): Promise<unknown>;
 };
 
-// apps/namespace-local: dispatch with props, as a dispatch namespace does.
-export type LocalNamespace = {
-  dispatch(
-    script: string,
-    outbound: { organizationId: string; network: string },
-    props: Record<string, unknown>,
-    request: Request,
-  ): Promise<Response>;
-};
-
 // What the runtime needs to know about the deployment a case runs on. The
 // platform's deployment record supplies it; agent code never does.
 export type Deployment = {
   organizationId: string;
   agentId: string;
   deploymentId: string;
-  script: string;
+  // The SHA-256 the deploy recorded for the bundle; every load checks it.
+  bundleHash: string;
   network: NetworkRules;
 };
 
@@ -156,4 +148,16 @@ export type Platform = {
   }): Promise<{ markdown: string }>;
   // Run-log records (design doc 09), queued for the API's consumer.
   logs(records: LogRecord[]): Promise<void>;
+  // The secrets a deployment's code receives (design doc 03): the version
+  // names the current set, asked on every call; the values are read only
+  // when an isolate loads.
+  secretsVersion(d: DeploymentRef): Promise<string>;
+  secretValues(
+    d: DeploymentRef,
+  ): Promise<{ version: string; values: Record<string, string> }>;
 };
+
+export type DeploymentRef = Pick<
+  Deployment,
+  "organizationId" | "agentId" | "deploymentId"
+>;

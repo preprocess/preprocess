@@ -1,13 +1,20 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import type { CaseState, CaseView, ReviewNote } from "./case-runtime.ts";
-import { agentWorker } from "./dispatch.ts";
-import type { CaseKey, Deployment, Env, StartCase } from "./env.ts";
+import { agentWorker, storeBundle, type Bundle } from "./dispatch.ts";
+import type {
+  CaseKey,
+  Deployment,
+  DeploymentRef,
+  Env,
+  StartCase,
+} from "./env.ts";
 import type { WriteResult } from "./schema-state.ts";
 
 export { CaseRuntime } from "./case-runtime.ts";
 export { McpBroker } from "./mcp.ts";
 export type { Approval } from "./approvals.ts";
+export { Outbound } from "./outbound.ts";
 export type { CaseState, CaseView, ReviewNote, WriteResult };
 
 type Edit = { path: string; version: number; userId: string };
@@ -108,13 +115,21 @@ export default class Runtime extends WorkerEntrypoint<Env> {
     return runtimeFor(this.env, c).decide(c);
   }
 
+  // A new deployment's code (design doc 03): stored where the loader reads
+  // it, returning the SHA-256 every load is checked against.
+  putBundle(deployment: DeploymentRef, bundle: Bundle): Promise<string> {
+    return storeBundle(this.env, deployment, bundle);
+  }
+
   // The deployed Worker's manifest, read through the same dispatch path a
   // case uses. The deploy path calls this to learn what the code declares.
   async manifest(deployment: Deployment): Promise<unknown> {
-    const response = await agentWorker(this.env, deployment).fetch("/manifest");
+    const response = await agentWorker(this.env, deployment, this.ctx).fetch(
+      "/manifest",
+    );
     if (!response.ok)
       throw new Error(
-        `agent Worker ${deployment.script} answered ${response.status}`,
+        `agent code of ${deployment.deploymentId} answered ${response.status}`,
       );
     return response.json();
   }

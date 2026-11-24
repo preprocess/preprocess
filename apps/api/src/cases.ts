@@ -305,7 +305,7 @@ export const startQueuedCase = async (env: Env, message: OutboxMessage) => {
         agentId: cases.agentId,
         status: cases.status,
         deploymentId: deployments.id,
-        script: deployments.scriptName,
+        bundleSha256: deployments.bundleSha256,
         network: deployments.network,
         manifest: deployments.manifest,
       })
@@ -326,7 +326,7 @@ export const startQueuedCase = async (env: Env, message: OutboxMessage) => {
       agentId: found.agentId,
       caseId,
       deploymentId: found.deploymentId,
-      script: found.script,
+      bundleHash: found.bundleSha256,
       network: found.network,
       settings: await effectiveSettings(
         tx,

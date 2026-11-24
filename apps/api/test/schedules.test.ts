@@ -67,7 +67,8 @@ const stub = (previewId?: string) =>
   env.SCHEDULER.getByName(schedulerName(org, agentId, previewId));
 
 // Makes a schedule due by moving its next fire time into the past, then runs
-// the alarm as the runtime would.
+// the alarm as the runtime would. The alarm is set far ahead so workerd never
+// fires it on its own while the test runs it: only runDurableObjectAlarm does.
 const fire = async (name: string, at: string, previewId?: string) => {
   const object = stub(previewId);
   await runInDurableObject(object, async (_: Scheduler, state) => {
@@ -75,9 +76,9 @@ const fire = async (name: string, at: string, previewId?: string) => {
       (await state.storage.get<Record<string, { next: string }>>("runs"))!;
     runs[name]!.next = at;
     await state.storage.put("runs", runs);
-    await state.storage.setAlarm(Date.parse(at));
+    await state.storage.setAlarm(Date.parse("2100-01-01T00:00:00.000Z"));
   });
-  await runDurableObjectAlarm(object);
+  expect(await runDurableObjectAlarm(object)).toBe(true);
 };
 
 const scheduled = (name: string) =>

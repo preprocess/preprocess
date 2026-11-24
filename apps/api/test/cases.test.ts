@@ -59,6 +59,7 @@ let roomState: Awaited<ReturnType<Runtime["caseState"]>> = {
 const runtime: Runtime = {
   manifest: () => Promise.reject(new Error("unused")),
   getCase: () => Promise.reject(new Error("unused")),
+  putBundle: () => Promise.reject(new Error("unused")),
   startCase: (start) => {
     started.push(start);
     return Promise.resolve({});
@@ -143,7 +144,6 @@ beforeAll(async () => {
       agentId,
       environment: "production",
       status: "ready",
-      scriptName: `${org}--invoices--${deploymentId}`,
       bundleSha256: "00",
       sdkVersion: "0.1.0",
       manifest: {},
