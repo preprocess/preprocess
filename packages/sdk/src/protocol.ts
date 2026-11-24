@@ -142,6 +142,38 @@ export type Manifest = ManifestV1 & {
   schedules?: Schedule[];
   // OCR every uploaded file before the run (doc 04).
   ocr?: boolean;
+  // Hosts the code may reach, in the outbound Worker's pattern syntax.
+  network?: string[];
+  timeoutSeconds?: number;
+  toolRetries?: number;
+  sandboxImage?: string;
+  evals?: { onPush?: boolean };
+  // The setting keys the code or preprocess.config.json set; every other
+  // setting is the SDK's default (model, reasoning) or unset.
+  declared?: string[];
+  // Build warnings: an inline value preprocess.config.json overrides, or a
+  // group its groups list leaves out.
+  warnings?: string[];
+};
+
+// preprocess.config.json beside the agent: settings that win over the
+// inline ones, and the organization's groups (`preprocess config pull`,
+// `preprocess groups pull`). bundle() injects it as __PREPROCESS_CONFIG__.
+export type ProjectSettings = {
+  model?: Model;
+  reasoning?: Reasoning;
+  ocr?: boolean;
+  network?: string[];
+  timeoutSeconds?: number;
+  toolRetries?: number;
+  sandboxImage?: string;
+  evals?: { onPush?: boolean };
+  schedules?: Record<string, { previews?: boolean }>;
+};
+
+export type ProjectConfig = {
+  settings?: ProjectSettings;
+  groups?: { slug: string; name: string; description?: string }[];
 };
 
 // POST /schema/evaluate (runtime → agent Worker)
