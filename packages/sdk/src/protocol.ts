@@ -43,6 +43,8 @@ export type ToolCall = {
   input: unknown;
   case: { id: string };
   callId: string;
+  // Set when a person approved this exact call after an approval effect.
+  approved?: true;
 };
 
 export type ToolResult = {
@@ -148,6 +150,7 @@ export type Manifest = ManifestV1 & {
   toolRetries?: number;
   sandboxImage?: string;
   evals?: { onPush?: boolean };
+  approvals?: Approvals;
   // The setting keys the code or preprocess.config.json set; every other
   // setting is the SDK's default (model, reasoning) or unset.
   declared?: string[];
@@ -186,6 +189,8 @@ export type EvaluateRequest = {
 
 export type FieldEval = {
   visible: boolean;
+  // Set when the field is visible and an approval covering it applies.
+  approval?: { group: string | null };
   options?:
     | { kind: "inline"; items: SchemaOption[] }
     | { kind: "source"; count?: number };
@@ -207,6 +212,8 @@ export type CheckResult = {
 export type EvaluateResponse = {
   fields: Record<Path, FieldEval>;
   checks: CheckResult[];
+  // Set when the agent's approval before completion applies.
+  approval?: { group: string | null };
 };
 
 // POST /schema/options (search and paging on a source)
@@ -230,4 +237,26 @@ export type OptionsResponse = {
 // Code names groups by slug, never people.
 export type Effect =
   | { type: "wait"; group: string; reason: string | null }
-  | { type: "tag"; group: string; message: string };
+  | { type: "tag"; group: string; message: string }
+  // The tool did not run: a person must approve the call first. The runtime
+  // re-sends the identical call with approved: true once one does.
+  | { type: "approval"; group: string | null; reason: string | null };
+
+// ---------------------------------------------------------------------------
+// Approvals (step 4). Additive to protocol 1. A null group is any operator.
+// `conditional` is true when the code's `when` decides per case, call or
+// answers; the runtime then asks the agent's Worker (/schema/evaluate for the
+// agent and fields, the tool call itself for tools).
+export type ApprovalRule = { group: string | null; conditional: boolean };
+
+export type Approvals = {
+  // Every group an approval names, for the deployment's approving groups.
+  groups: string[];
+  // Approval before the case completes.
+  agent: ApprovalRule | null;
+  // Schema fields by path; list items are written "lines[].amount". A rule
+  // on a group or list covers its whole subtree and is not inherited.
+  fields: Array<ApprovalRule & { path: Path }>;
+  // Approval before each call of the tool.
+  tools: Array<ApprovalRule & { name: string }>;
+};

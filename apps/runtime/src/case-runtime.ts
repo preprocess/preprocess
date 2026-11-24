@@ -359,6 +359,9 @@ export class CaseRuntime extends DurableObject<Env> {
   }
 
   private applyEffect(meta: Meta, effect: Effect): string | null {
+    // Approvals are PLAT-40's (step 4); until then the call stays unrun.
+    if (effect.type === "approval")
+      return "this call needs approval, which this runtime cannot ask for yet";
     const group = this.groups(meta).find((g) => g.slug === effect.group);
     if (!group) return `group ${effect.group} has no access to this agent`;
     if (effect.type === "wait") {
