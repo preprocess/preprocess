@@ -51,9 +51,13 @@ export const migrate = async (
       DECLARE r text;
       BEGIN
         FOREACH r IN ARRAY ARRAY['preprocess_app', 'preprocess_system', 'preprocess_audit_purge'] LOOP
-          IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) THEN
+          -- Test suites migrate their databases in parallel on one server,
+          -- so two of them can both find a role missing and race to create it.
+          BEGIN
             EXECUTE format('CREATE ROLE %I', r);
-          END IF;
+          EXCEPTION WHEN duplicate_object OR unique_violation THEN
+            NULL;
+          END;
           EXECUTE format('ALTER ROLE %I LOGIN PASSWORD %L', r, r);
         END LOOP;
         ALTER ROLE preprocess_system BYPASSRLS;
