@@ -16,3 +16,4 @@ apps/app/src/components/hairline/
 pnpm-lock.yaml
 pnpm-workspace.yaml
 .kit/
+apps/runtime/test/dist/

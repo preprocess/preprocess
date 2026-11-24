@@ -6,6 +6,9 @@
     },
     "apps/api": {
       "name": "api.preprocess"
+    },
+    "apps/runtime": {
+      "name": "runtime.preprocess"
     }
   }
 }

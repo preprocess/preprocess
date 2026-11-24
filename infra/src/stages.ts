@@ -32,6 +32,14 @@ export const names = (stage: string) => ({
   queue: `preprocess-jobs-${stage}`,
   bucket: `preprocess-files-${stage}`,
   userWorker: "hello",
+  runtime: `preprocess-runtime-${stage}`,
+  outbound: `preprocess-outbound-${stage}`,
+  modelStub: `preprocess-model-stub-${stage}`,
+  runs: `preprocess-runs-${stage}`,
+  // Local only: stands in for the dispatch namespace, which Cloudflare's local
+  // runtime cannot emulate (apps/namespace-local).
+  localNamespace: `preprocess-namespace-${stage}`,
+  localScripts: `preprocess-scripts-${stage}`,
   branch: stage,
 });
 
@@ -47,6 +55,14 @@ export const appSecrets = [
 
 // Durable Object classes the API Worker exports.
 export const durableObjects = { COUNTER: "Counter" } as const;
+
+// Durable Object classes the runtime Worker exports: one Pi Durable case
+// runtime per organization, agent and case.
+export const runtimeDurableObjects = { CASE_RUNTIME: "CaseRuntime" } as const;
+
+// The model service the runtime calls. Locally and in previews this is the
+// stub (apps/model-stub); the URL is the only thing that selects it (doc 07).
+export const localModelService = "http://127.0.0.1:8790";
 
 export const localDatabaseUrl =
   "postgresql://preprocess:preprocess@127.0.0.1:5432/preprocess_development";

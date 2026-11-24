@@ -1,0 +1,28 @@
+{
+  "name": "@preprocess/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev -c wrangler.jsonc -c ../namespace-local/wrangler.jsonc -c ../outbound/wrangler.jsonc",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/pi-durable": "1.6.0",
+    "@earendil-works/pi-schema": "1.6.0",
+    "@preprocess/sdk": "workspace:*",
+    "agents": "0.34.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@cloudflare/workers-types": "catalog:",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3",
+    "vitest": "catalog:",
+    "wrangler": "catalog:",
+    "zod": "catalog:"
+  }
+}
