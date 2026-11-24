@@ -6,9 +6,10 @@
 // - Preview stages (pr-<number>) also get the backend, isolated per stage: the
 //   API Worker with its Durable Object, R2 bucket, queue and consumer, a
 //   dispatch namespace with the user Worker, and a PlanetScale branch
-//   (migrated and seeded) behind Hyperdrive, and the stub model service
-//   (apps/model-stub) the API calls for decide and OCR. Destroying the stage
-//   removes all of it.
+//   (migrated and seeded) behind Hyperdrive, the stub model service
+//   (apps/model-stub) the API calls for decide and OCR, and the GitHub build
+//   sandbox (apps/builder, a Container). Destroying the stage removes all of
+//   it.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -27,6 +28,8 @@ import {
   apiCrons,
   apiSecrets,
   appSecrets,
+  githubSecrets,
+  githubVars,
   compatibility,
   isPreviewStage,
   isStage,
@@ -152,6 +155,26 @@ const backend = (
       main: at("apps/model-stub/src/index.ts"),
       workersDev: true,
     });
+    // The GitHub build sandbox: one container per build, started by the
+    // BuildSandbox Durable Object from this image (docs/design/08).
+    const buildImage = Cloudflare.Container("BuildImage", {
+      schedulingPolicy: "durable_object",
+      context: root,
+      dockerfile: at("apps/builder/Dockerfile"),
+      instanceType: "standard-1",
+      maxInstances: 5,
+    });
+    const builder = yield* Cloudflare.Worker("Builder", {
+      ...worker,
+      name: n.builder,
+      main: at("apps/builder/src/index.ts"),
+      env: {
+        SANDBOX: Cloudflare.DurableObject("BuildSandbox", {
+          containers: [buildImage],
+        }),
+      },
+    });
+
     const modelServiceUrl = yield* Config.String("MODEL_SERVICE_URL").pipe(
       Config.withDefault(""),
     );
@@ -193,6 +216,28 @@ const backend = (
           apiSecrets.map((name) => [name, Config.Redacted(name)]),
         ),
         COUNTER: Cloudflare.DurableObject("Counter"),
+        BUILDS: Cloudflare.DurableObject("BuildQueue"),
+        BUILDER: Cloudflare.WorkerEntrypoint(builder, "Builder"),
+        // The GitHub App, unconfigured (its routes answer 503) until these
+        // are set.
+        ...Object.fromEntries(
+          githubVars.map(
+            (name) =>
+              [
+                name,
+                Config.String(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
+        ...Object.fromEntries(
+          githubSecrets.map(
+            (name) =>
+              [
+                name,
+                Config.Redacted(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
         JOBS: jobs,
         CASES: casesQueue,
         WEBHOOKS: webhooksQueue,
