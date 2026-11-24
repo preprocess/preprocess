@@ -2,11 +2,20 @@ import { ModelError } from "@preprocess/models/client";
 import { decide, type DecideInput } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
 import { ocrPage } from "@preprocess/models/ocr";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { runMode } from "@preprocess/runmode";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 
+import { anchorAll, publicKeys } from "./audit-anchor.ts";
+import { handleAuthRequest } from "./auth.ts";
+import { orgCaller } from "./caller.ts";
+import type { OrgVariables } from "./caller.ts";
 import type { Env, Job } from "./env.ts";
+import { auditRoutes } from "./routes/audit.ts";
+import { groupRoutes } from "./routes/groups.ts";
+import { organizationRoutes } from "./routes/organization.ts";
 
 export { Counter } from "./counter.ts";
 
@@ -15,6 +24,8 @@ const app = new Hono<{ Bindings: Env }>();
 app.use("*", cors());
 
 app.onError((error, c) => {
+  if (error instanceof HTTPException)
+    return c.json({ error: error.message || "error" }, error.status);
   if (error instanceof ModelError)
     return c.json(
       { error: error.code, message: error.message },
@@ -32,6 +43,29 @@ app.get("/", (c) =>
     modelService: c.env.MODEL_SERVICE_URL ? "configured" : "none",
   }),
 );
+
+// Better Auth: sign-up, sign-in, sessions, organizations, members,
+// invitations and API keys. The app serves these on its own origin.
+app.on(["GET", "POST"], "/api/auth/*", (c) =>
+  handleAuthRequest(c.env, c.req.raw),
+);
+
+// The public half of the audit signing key, for checking manifests.
+app.get("/v1/audit/keys", async (c) => c.json(await publicKeys(c.env)));
+
+const orgApi = new OpenAPIHono<{ Bindings: Env; Variables: OrgVariables }>();
+orgApi.use(orgCaller);
+orgApi.route("/", organizationRoutes);
+orgApi.route("/", groupRoutes);
+orgApi.route("/", auditRoutes);
+
+const v1 = new OpenAPIHono<{ Bindings: Env }>();
+v1.route("/orgs/:org", orgApi);
+v1.doc31("/openapi.json", {
+  openapi: "3.1.0",
+  info: { title: "Preprocess API", version: "1" },
+});
+app.route("/v1", v1);
 
 app.post("/orgs/:org/counter", async (c) => {
   const counter = c.env.COUNTER.getByName(`${c.req.param("org")}:counter`);
@@ -90,6 +124,10 @@ app.post("/models/ocr", async (c) =>
 
 export default {
   fetch: app.fetch,
+  // 00:20 UTC: sign and store yesterday's audit chain for every organization.
+  scheduled(controller, env, ctx) {
+    ctx.waitUntil(anchorAll(env, new Date(controller.scheduledTime)));
+  },
   // The queue consumer writes each job's result to R2 under its organization.
   async queue(batch: MessageBatch<Job>, env: Env) {
     for (const message of batch.messages) {

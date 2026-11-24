@@ -31,6 +31,7 @@ export const names = (stage: string) => ({
   namespace: `preprocess-${stage}`,
   queue: `preprocess-jobs-${stage}`,
   bucket: `preprocess-files-${stage}`,
+  auditBucket: `preprocess-audit-${stage}`,
   userWorker: "hello",
   runtime: `preprocess-runtime-${stage}`,
   outbound: `preprocess-outbound-${stage}`,
@@ -53,6 +54,13 @@ export const appSecrets = [
   "WORKOS_REDIRECT_URI",
 ] as const;
 
+// The API's secrets, read from the deploy environment and bound as
+// secret_text. Locally `pnpm dev` writes generated values to apps/api/.dev.vars.
+export const apiSecrets = ["BETTER_AUTH_SECRET", "AUDIT_SIGNING_KEY"] as const;
+
+// 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
+export const apiCrons = ["20 0 * * *"];
+
 // Durable Object classes the API Worker exports.
 export const durableObjects = { COUNTER: "Counter" } as const;
 
@@ -69,3 +77,20 @@ export const localModelService = {
 
 export const localDatabaseUrl =
   "postgresql://preprocess:preprocess@127.0.0.1:5432/preprocess_development";
+
+// The API's two Postgres roles on the local server (packages/db/README.md).
+// These passwords exist only locally.
+export const localRoleDatabaseUrl = (
+  role: "preprocess_app" | "preprocess_system",
+) => {
+  const url = new URL(localDatabaseUrl);
+  url.username = role;
+  url.password = role;
+  return url.href;
+};
+
+// The app's local origin. It serves Better Auth and /v1 from the API Worker,
+// so cookies stay first-party.
+export const localAppUrl = "https://app.preprocess.localhost";
+export const localEmailFrom = "Preprocess <invitations@preprocess.localhost>";
+export const localAuditKeyId = "audit-ed25519-development";
