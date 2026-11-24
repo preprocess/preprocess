@@ -64,7 +64,9 @@ type SystemOneResponse = {
   answers: Record<string,
     | { type: "choice"; choice: string; probabilities: Record<string, number> }
     | { type: "noul"; noul: number }                     // probability of yes
-    | { type: "score"; score: number; legend: string[]; probabilities: number[] }>;
+    | { type: "score"; score: number; legend: Record<string, unknown>; probabilities: Record<string, number> }>;
+  // choice and score answers also carry `confidence` (0 uniform, 1 certain), and usage carries output_tokens,
+  // as in Baseten's reference; packages/models/src/contract.ts is the authoritative schema.
   usage: { input_tokens: number };
 };
 ```
@@ -112,7 +114,7 @@ The stub validates requests as strictly as the real service, so code cannot come
 
 **`/v1/chat/completions` for OCR.**
 
-1. **Fixtures by image hash.** `fixtures/ocr/<sha256>.md`, optionally with `.blocks.json`, holds the Markdown and blocks for the sample documents in the seed data.
+1. **Fixtures by image hash.** `fixtures/ocr/<sha256>.json` holds the Markdown and, optionally, the blocks for a sample document in the seed data; the sample images live in `fixtures/ocr/samples/`.
 2. **Otherwise a placeholder:** `# Stub OCR\n\nPage text is not available without the OCR model (image <sha256 prefix>).`, and one `text` block covering the page in grounding mode.
 
 **Controls for tests and seeded failure states**, available only in the stub:
@@ -135,4 +137,4 @@ The stub has no state, no database and no GPU, and it is only deployed to local,
 
 None. To verify:
 
-- The exact grounding output format of LightOn OCR 3 4B (how blocks and boxes appear in the content) is taken from the model-serving research's reading of the model card and has not been run. The OCR client's parser and the stub's `.blocks.json` fixtures should be checked against a real response once a GPU is available.
+- The exact grounding output format of LightOn OCR 3 4B (how blocks and boxes appear in the content) is taken from the model-serving research's reading of the model card and has not been run. The OCR client's parser (`parseGrounding` in `packages/models/src/ocr.ts`) and the stub's fixtures should be checked against a real response once a GPU is available.
