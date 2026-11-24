@@ -48,7 +48,7 @@ import {
 } from "../settings/kit";
 import {
   SettingsChrome,
-  SettingsSectionTabs,
+  SettingsPageHeader,
 } from "../settings/settings-widgets";
 import type {
   GroupAgentAccess,
@@ -227,30 +227,20 @@ function CreateGroupDialog({
 
 // ─── One group ───────────────────────────────────────────────────────────────
 
-export const GROUP_TABS = [
-  { id: "members", label: "Members" },
-  { id: "access", label: "Agent access" },
-] as const;
-
-export type GroupTab = (typeof GROUP_TABS)[number]["id"];
-
 /**
- * A group on its own page, outside Organization settings' tabs: a way back
- * to Groups, its name, and a tab each for its members, the access it holds
- * on each agent.
+ * A group on its own page: a way back to Groups, its name, then its members,
+ * the access it holds on each agent, and its identity-provider mapping, one
+ * after another. Synced groups take their members from the provider, so only
+ * groups managed here add or remove people.
  */
 export function GroupDetailView({
   group,
-  tab,
-  onTabChange,
   onAddMember,
   onRemoveMember,
   onAccessChange,
   onDelete,
 }: Readonly<{
   group: GroupDetail;
-  tab: GroupTab;
-  onTabChange: (tab: GroupTab) => void;
   onAddMember: (personId: string) => Promise<unknown>;
   onRemoveMember: (personId: string) => Promise<unknown>;
   onAccessChange: (
@@ -259,11 +249,6 @@ export function GroupDetailView({
   ) => Promise<unknown>;
   onDelete: () => Promise<unknown>;
 }>) {
-  const selectedIndex = Math.max(
-    0,
-    GROUP_TABS.findIndex((item) => item.id === tab),
-  );
-
   return (
     <SettingsChrome>
       <div className="flex flex-col gap-12">
@@ -276,28 +261,17 @@ export function GroupDetailView({
             <ArrowLeft aria-hidden="true" className="size-3.5" />
             Groups
           </Link>
-          <SettingsSectionTabs
-            idPrefix="group-tabs"
-            labels={GROUP_TABS.map((item) => item.label)}
-            onSelect={(index) => {
-              const next = GROUP_TABS[index];
-              if (next) onTabChange(next.id);
-            }}
-            selectedIndex={selectedIndex}
-            title={group.name}
-          />
+          <SettingsPageHeader title={group.name} />
         </div>
-        {tab === "members" ? (
-          <GroupMembers
-            group={group}
-            onAddMember={onAddMember}
-            onDelete={onDelete}
-            onRemoveMember={onRemoveMember}
-          />
-        ) : null}
-        {tab === "access" ? (
-          <GroupAccess group={group} onAccessChange={onAccessChange} />
-        ) : null}
+        <GroupMembers
+          group={group}
+          onAddMember={onAddMember}
+          onRemoveMember={onRemoveMember}
+        />
+        <GroupAccess group={group} onAccessChange={onAccessChange} />
+        {group.source.kind === "directory" || group.managesAgents ? null : (
+          <GroupDelete group={group} onDelete={onDelete} />
+        )}
       </div>
     </SettingsChrome>
   );
@@ -307,17 +281,14 @@ function GroupMembers({
   group,
   onAddMember,
   onRemoveMember,
-  onDelete,
 }: Readonly<{
   group: GroupDetail;
   onAddMember: (personId: string) => Promise<unknown>;
   onRemoveMember: (personId: string) => Promise<unknown>;
-  onDelete: () => Promise<unknown>;
 }>) {
   const synced = group.source.kind === "directory";
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<OrgPerson | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   return (
     <>
@@ -341,6 +312,7 @@ function GroupMembers({
             ? `${plural(group.members.length, "member", "members")}, kept in sync with ${group.source.provider}. Change who's in it there.`
             : `${plural(group.members.length, "member", "members")}, managed here.`
         }
+        title="Members"
       >
         {group.members.length === 0 ? (
           <SettingsEmpty
@@ -378,26 +350,6 @@ function GroupMembers({
         )}
       </SettingsSection>
 
-      {synced || group.managesAgents ? null : (
-        <SettingsSection title="Delete group">
-          <SettingsRows>
-            <SettingsRow
-              description="Removes its members' access through this group. People stay in the organization."
-              label={`Delete ${group.name}`}
-            >
-              <Button
-                onClick={() => setDeleting(true)}
-                size="compact"
-                type="button"
-                variant="secondary"
-              >
-                Delete
-              </Button>
-            </SettingsRow>
-          </SettingsRows>
-        </SettingsSection>
-      )}
-
       <AddMemberDialog
         candidates={group.candidates}
         onAdd={onAddMember}
@@ -420,6 +372,32 @@ function GroupMembers({
         successLabel="Removed"
         title={removing ? `Remove ${removing.name}?` : "Remove member"}
       />
+    </>
+  );
+}
+
+function GroupDelete({
+  group,
+  onDelete,
+}: Readonly<{ group: GroupDetail; onDelete: () => Promise<unknown> }>) {
+  const [deleting, setDeleting] = useState(false);
+  return (
+    <SettingsSection title="Delete group">
+      <SettingsRows>
+        <SettingsRow
+          description="Removes its members' access through this group. People stay in the organization."
+          label={`Delete ${group.name}`}
+        >
+          <Button
+            onClick={() => setDeleting(true)}
+            size="compact"
+            type="button"
+            variant="secondary"
+          >
+            Delete
+          </Button>
+        </SettingsRow>
+      </SettingsRows>
       <SettingsConfirmDialog
         confirmLabel="Delete group"
         description={`Every agent grant ${group.name} holds is removed with it.`}
@@ -430,7 +408,7 @@ function GroupMembers({
         successLabel="Deleted"
         title={`Delete ${group.name}?`}
       />
-    </>
+    </SettingsSection>
   );
 }
 
@@ -449,8 +427,9 @@ function GroupAccess({
       description={
         group.managesAgents
           ? "Developers manage every agent: its code, settings, and access."
-          : "Operators work an agent's cases; viewers can only see them. The same access shows on each agent's Access tab."
+          : "Operators work an agent's cases; viewers can only see them. The same access shows on each agent's Access page."
       }
+      title="Agent access"
     >
       {group.agents.length === 0 ? (
         <SettingsEmpty

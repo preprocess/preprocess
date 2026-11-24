@@ -42,10 +42,14 @@
     "bindings": [
       { "name": "COUNTER", "class_name": "Counter" },
       { "name": "BUILDS", "class_name": "BuildQueue" },
+      { "name": "SCHEDULER", "class_name": "Scheduler" },
     ],
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["Counter", "BuildQueue"] },
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Counter", "BuildQueue", "Scheduler"],
+    },
   ],
   "queues": {
     "producers": [
@@ -56,6 +60,7 @@
         "binding": "SECRET_SYNC",
         "queue": "preprocess-secret-sync-development",
       },
+      { "binding": "LOGS", "queue": "preprocess-logs-development" },
     ],
     "consumers": [
       { "queue": "preprocess-jobs-development", "max_batch_timeout": 1 },
@@ -66,11 +71,17 @@
         "max_batch_timeout": 1,
         "max_retries": 20,
       },
+      {
+        "queue": "preprocess-logs-development",
+        "max_batch_timeout": 1,
+        "max_batch_size": 100,
+      },
     ],
   },
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "preprocess-files-development" },
     { "binding": "AUDIT", "bucket_name": "preprocess-audit-development" },
+    { "binding": "LOG_BUCKET", "bucket_name": "preprocess-logs-development" },
   ],
   "services": [
     { "binding": "LOCAL_USER_WORKER", "service": "hello" },

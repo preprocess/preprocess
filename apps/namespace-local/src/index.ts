@@ -27,6 +27,8 @@ type Env = {
   OUTBOUND: Fetcher & {
     fetchAs(params: OutboundParams, request: Request): Promise<Response>;
   };
+  // apps/tail, attached to every script as a tail consumer is on Cloudflare.
+  TAIL?: Fetcher;
 };
 
 const metaKey = (name: string) => `scripts/${name}.json`;
@@ -133,6 +135,7 @@ export default class extends WorkerEntrypoint<Env> {
           stored.bindings.map((b) => [b.name, bindingValue(b)]),
         ),
         globalOutbound: exports.Outbound({ props: outbound }),
+        tails: this.env.TAIL ? [this.env.TAIL] : [],
       }),
     );
     return worker.getEntrypoint(undefined, { props }).fetch(request);

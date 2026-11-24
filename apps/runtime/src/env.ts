@@ -1,3 +1,5 @@
+import type { LogRecord } from "@preprocess/logs";
+
 import type { CaseRuntime } from "./case-runtime.ts";
 
 export type Env = {
@@ -74,6 +76,21 @@ export type StartCase = Deployment & {
   caseId: string;
   input: { text: string; files?: CaseFile[] };
   groups?: GroupRef[];
+  // The agent's effective settings (apps/api/src/settings.ts): dashboard
+  // overrides and organization defaults over the code's values. Null means
+  // the runtime's own behavior.
+  settings?: Settings;
+};
+
+export type Settings = {
+  model: string;
+  reasoning: string;
+  ocr: boolean;
+  timeoutSeconds: number | null;
+  toolRetries: number | null;
+  sandboxImage: string | null;
+  evals: { onPush: boolean };
+  schedules: Record<string, { previews: boolean }>;
 };
 
 export type CaseKey = Pick<Deployment, "organizationId" | "agentId"> & {
@@ -114,4 +131,6 @@ export type Platform = {
     organizationId: string;
     fileId: string;
   }): Promise<{ markdown: string }>;
+  // Run-log records (design doc 09), queued for the API's consumer.
+  logs(records: LogRecord[]): Promise<void>;
 };

@@ -85,6 +85,20 @@
       "when": 1795514993309,
       "tag": "0011_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795516041942,
+      "tag": "0013_log_summaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795517084983,
+      "tag": "0014_otel_exports",
+      "breakpoints": true
     }
   ]
 }

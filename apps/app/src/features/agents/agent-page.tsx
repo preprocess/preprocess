@@ -27,28 +27,19 @@ import {
 } from "@preprocess/ui/components/select";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
-  Brain,
-  ChartLine,
   Check,
-  Code,
   Copy,
-  Gauge,
-  Home,
   Pencil,
   Play,
   RotateCcw,
   Rocket,
-  Settings,
-  ThumbsUp,
-  Users,
 } from "@preprocess/ui/lib/icons";
 import { SizeProvider } from "@preprocess/ui/lib/size-context";
 import { cn } from "@preprocess/ui/lib/utils";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { PageHeader } from "../../components/page-header";
-import { ViewTabs, type ViewTab } from "../agent-cases/case-room-tabs";
 import {
   CASE_STATUSES,
   formatCost,
@@ -82,66 +73,38 @@ import {
   type ReasoningLevel,
 } from "./agent-store";
 import type { OrgAgentDetail } from "./list-org-agents";
-
-/** The agent page's tabs. Settings stacks the per-agent layers on
- *  organization settings: sandbox image, secrets, and network. */
-export const AGENT_TABS = [
-  { id: "", label: "Overview", icon: Home },
-  { id: "observability", label: "Observability", icon: Gauge },
-  { id: "feedback", label: "Feedback", icon: ThumbsUp },
-  { id: "memories", label: "Memories", icon: Brain },
-  { id: "evaluations", label: "Evaluations", icon: ChartLine },
-  { id: "configuration", label: "Configuration", icon: Code },
-  { id: "deployments", label: "Deployments", icon: Rocket },
-  { id: "access", label: "Access", icon: Users },
-  { id: "settings", label: "Settings", icon: Settings },
-] as const satisfies readonly ViewTab<string>[];
-
-export type AgentTab = (typeof AGENT_TABS)[number]["id"];
+import {
+  AgentSectionCrumb,
+  AgentSectionNav,
+  type AgentSection,
+  type SectionAnchor,
+} from "./agent-shell";
 
 const countFormat = new Intl.NumberFormat();
 
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
 /**
- * An agent's management page, after Vercel's project pages: the agent and
- * its production deployment in the header, a tab per area, and the tab's
- * settings-width content below.
+ * An agent's management page (spec 14a): the breadcrumb and actions in the
+ * header, the agent's section sidebar beside the content, and the section's
+ * settings-width content. A detail page (a deployment, an eval suite or run)
+ * keeps its section selected and adds itself to the breadcrumb.
  */
 export function AgentPage({
   agent,
   tab,
+  detail,
+  anchors,
   children,
-}: Readonly<{ agent: OrgAgentDetail; tab: AgentTab; children: ReactNode }>) {
-  const navigate = useNavigate();
-  const params = { agentId: agent.id };
-  const openTab = (id: AgentTab) => {
-    switch (id) {
-      case "":
-        return void navigate({ to: "/agents/$agentId", params });
-      case "deployments":
-        return void navigate({ to: "/agents/$agentId/deployments", params });
-      case "observability":
-        return void navigate({ to: "/agents/$agentId/observability", params });
-      case "configuration":
-        return void navigate({ to: "/agents/$agentId/configuration", params });
-      case "memories":
-        return void navigate({ to: "/agents/$agentId/memories", params });
-      case "evaluations":
-        return void navigate({ to: "/agents/$agentId/evaluations", params });
-      case "feedback":
-        return void navigate({ to: "/agents/$agentId/feedback", params });
-      case "access":
-        return void navigate({ to: "/agents/$agentId/access", params });
-      case "settings":
-        return void navigate({ to: "/agents/$agentId/settings", params });
-      default: {
-        const _exhaustive: never = id;
-        return _exhaustive;
-      }
-    }
-  };
-
+}: Readonly<{
+  agent: OrgAgentDetail;
+  tab: AgentSection;
+  /** The detail page's own crumb, after its section's. */
+  detail?: string;
+  /** Jump links under the current section, to element ids on the page. */
+  anchors?: readonly SectionAnchor[];
+  children: ReactNode;
+}>) {
   return (
     <div
       className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
@@ -162,39 +125,49 @@ export function AgentPage({
       >
         <Breadcrumb className="flex min-w-0 items-center">
           <BreadcrumbList className="min-w-0 flex-nowrap">
-            <BreadcrumbItem className="shrink-0">
+            <BreadcrumbItem className="hidden shrink-0 md:inline-flex">
               <BreadcrumbLink render={<Link to="/agents" />}>
                 Agents
               </BreadcrumbLink>
             </BreadcrumbItem>
-            <BreadcrumbSeparator>/</BreadcrumbSeparator>
-            <BreadcrumbItem className="min-w-0">
-              <BreadcrumbPage className="truncate">{agent.name}</BreadcrumbPage>
+            <BreadcrumbSeparator className="hidden md:inline-flex">
+              /
+            </BreadcrumbSeparator>
+            <BreadcrumbItem className="min-w-0 shrink">
+              <BreadcrumbLink
+                className="truncate"
+                render={
+                  <Link params={{ agentId: agent.id }} to="/agents/$agentId" />
+                }
+              >
+                {agent.name}
+              </BreadcrumbLink>
             </BreadcrumbItem>
+            <BreadcrumbSeparator>/</BreadcrumbSeparator>
+            <AgentSectionCrumb
+              agentId={agent.id}
+              linked={detail !== undefined}
+              section={tab}
+            />
+            {detail !== undefined ? (
+              <>
+                <BreadcrumbSeparator>/</BreadcrumbSeparator>
+                <BreadcrumbItem className="min-w-0">
+                  <BreadcrumbPage className="truncate">{detail}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </>
+            ) : null}
           </BreadcrumbList>
         </Breadcrumb>
-        {agent.deploymentId ? (
-          <Badge className="shrink-0" size="sm">
-            {shortDeploymentId(agent.deploymentId)}
-          </Badge>
-        ) : null}
       </PageHeader>
-      {/* The agent's tabs sit in their own row under the header, like the
-          case room's views. */}
-      <div className="flex shrink-0 items-center overflow-hidden px-1.5 py-2">
-        <ViewTabs
-          idPrefix="agent-tabs"
-          label="Agent sections"
-          onSelect={(id) => openTab(id)}
-          selectedId={tab}
-          tabs={AGENT_TABS}
-        />
+      <div className="flex min-h-0 flex-1">
+        <AgentSectionNav agent={agent} anchors={anchors} section={tab} />
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-6 py-8">
+            {children}
+          </div>
+        </ScrollArea>
       </div>
-      <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-6 py-8">
-          {children}
-        </div>
-      </ScrollArea>
     </div>
   );
 }
