@@ -32,6 +32,7 @@ export const names = (stage: string) => ({
   queue: `preprocess-jobs-${stage}`,
   // Case starts (design doc 04): the API enqueues after commit and consumes.
   casesQueue: `preprocess-cases-${stage}`,
+  secretSync: `preprocess-secret-sync-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
   userWorker: "hello",
@@ -97,3 +98,7 @@ export const localRoleDatabaseUrl = (
 export const localAppUrl = "https://app.preprocess.localhost";
 export const localEmailFrom = "Preprocess <invitations@preprocess.localhost>";
 export const localAuditKeyId = "audit-ed25519-development";
+
+// values typed into a local database. Deployed stages bind Secrets Store.
+export const localSecretsMasterKey =
+  "cHJlcHJvY2Vzcy1sb2NhbC1tYXN0ZXIta2V5LTMyYnk=";

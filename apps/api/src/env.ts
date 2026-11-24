@@ -1,7 +1,16 @@
 import type { Counter } from "./counter.ts";
+import type { Namespace } from "./namespace.ts";
 import type { OutboxMessage } from "./outbox.ts";
 
 export type Job = { organizationId: string; id: string; requestedAt: string };
+
+// Re-delivers an agent's secrets to its live scripts after a value or grant
+// changes (design doc 03). Retried with backoff until it succeeds.
+export type SecretSync = {
+  kind: "secret.sync";
+  organizationId: string;
+  agentId: string;
+};
 
 type CaseKey = { organizationId: string; agentId: string; caseId: string };
 type Edit = CaseKey & { path: string; version: number; userId: string };
@@ -25,7 +34,7 @@ export type StartCase = CaseKey & {
   groups?: GroupRef[];
 };
 
-// What the API calls on apps/runtime's Runtime entrypoint. Answers and
+// apps/runtime's default entrypoint. Answers and
 // capture carry arbitrary JSON, so results are read loosely here.
 export type WriteResult =
   | {
@@ -46,7 +55,7 @@ export type CaseRoomState = {
   [key: string]: unknown;
 };
 
-export type RuntimeService = {
+export type Runtime = {
   startCase(start: StartCase): Promise<unknown>;
   caseState(c: CaseKey): Promise<CaseRoomState>;
   rerun(c: CaseKey & { notes?: unknown[] }): Promise<CaseRoomState>;
@@ -71,6 +80,10 @@ export type RuntimeService = {
     c: CaseKey & { userId: string; text: string },
   ): Promise<{ id: string; mentioned: string[] }>;
   cancelCase(c: CaseKey): Promise<CaseRoomState>;
+  manifest(
+    deployment: Omit<StartCase, "caseId" | "input" | "groups">,
+  ): Promise<unknown>;
+  getCase(c: CaseKey): Promise<unknown>;
 };
 
 export type Env = {
@@ -102,10 +115,18 @@ export type Env = {
   JOBS: Queue<Job>;
   // Case starts from the outbox (outbox.ts).
   CASES: Queue<OutboxMessage>;
-  // apps/runtime's Runtime entrypoint. Bound locally; the deployed stack does
-  // not run the runtime yet.
-  RUNTIME?: RuntimeService;
+  SECRET_SYNC: Queue<SecretSync>;
   FILES: R2Bucket;
+  RUNTIME: Runtime;
+  // 32 random bytes, base64: Secrets Store on our cloud, a local variable in
+  // development and tests. Only this Worker binds it (design doc 01).
+  SECRETS_MASTER_KEY: string | SecretsStoreSecret;
+  // Deploys upload into the stage's dispatch namespace through Cloudflare's
+  // API. Locally, apps/namespace-local takes the same calls instead.
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
+  DISPATCH_NAMESPACE?: string;
+  LOCAL_NAMESPACE?: Namespace;
   // Deployed stages bind the stage's dispatch namespace. Cloudflare's local
   // runtime cannot emulate one, so local dev binds the user Worker directly.
   DISPATCHER?: DispatchNamespace;

@@ -21,12 +21,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { recordCaseEvent, startQueuedCase } from "../src/cases.ts";
-import type {
-  Env,
-  RuntimeService,
-  StartCase,
-  WriteResult,
-} from "../src/env.ts";
+import type { Env, Runtime, StartCase, WriteResult } from "../src/env.ts";
 import type { OutboxMessage } from "../src/outbox.ts";
 import { sweepOutbox } from "../src/outbox.ts";
 import {
@@ -49,7 +44,9 @@ let nextWrite: WriteResult = {
   stale: ["currency"],
 };
 
-const runtime: RuntimeService = {
+const runtime: Runtime = {
+  manifest: () => Promise.reject(new Error("unused")),
+  getCase: () => Promise.reject(new Error("unused")),
   startCase: (start) => {
     started.push(start);
     return Promise.resolve({});

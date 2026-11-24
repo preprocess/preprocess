@@ -1,6 +1,7 @@
 import { ModelError } from "@preprocess/models/client";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { runMode } from "@preprocess/runmode";
+import { orgId } from "@preprocess/db/client";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
@@ -10,14 +11,18 @@ import { handleAuthRequest } from "./auth.ts";
 import { orgCaller } from "./caller.ts";
 import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
+import { syncAgent } from "./deploy.ts";
+import type { Env, Job, SecretSync } from "./env.ts";
 import { deleteExpiredIdempotencyKeys } from "./idempotency.ts";
-import type { Env, Job } from "./env.ts";
 import { sweepOutbox } from "./outbox.ts";
 import type { OutboxMessage } from "./outbox.ts";
+import { agentRoutes } from "./routes/agents.ts";
 import { caseRoutes } from "./routes/cases.ts";
 import { auditRoutes } from "./routes/audit.ts";
+import { devRoutes } from "./routes/dev.ts";
 import { groupRoutes } from "./routes/groups.ts";
 import { organizationRoutes } from "./routes/organization.ts";
+import { secretRoutes } from "./routes/secrets.ts";
 
 export { Counter } from "./counter.ts";
 export { Platform } from "./platform.ts";
@@ -63,6 +68,8 @@ orgApi.use(orgCaller);
 orgApi.route("/", organizationRoutes);
 orgApi.route("/", groupRoutes);
 orgApi.route("/", auditRoutes);
+orgApi.route("/", agentRoutes);
+orgApi.route("/", secretRoutes);
 orgApi.route("/", caseRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
@@ -108,6 +115,9 @@ app.get("/dispatch", async (c) => {
   });
 });
 
+app.use("/dev/orgs/:org/*", orgCaller);
+app.route("/dev/orgs/:org", devRoutes);
+
 export default {
   fetch: app.fetch,
   scheduled(controller, env, ctx) {
@@ -121,7 +131,7 @@ export default {
     ctx.waitUntil(anchorAll(env, new Date(controller.scheduledTime)));
     ctx.waitUntil(deleteExpiredIdempotencyKeys(env));
   },
-  async queue(batch: MessageBatch<Job | OutboxMessage>, env: Env) {
+  async queue(batch: MessageBatch<Job | SecretSync | OutboxMessage>, env: Env) {
     if (batch.queue.startsWith("preprocess-cases-")) {
       // A start that throws is retried by the queue.
       for (const message of batch.messages as Message<OutboxMessage>[]) {
@@ -130,9 +140,23 @@ export default {
       }
       return;
     }
-    // The jobs consumer writes each job's result to R2 under its organization.
-    for (const message of batch.messages as Message<Job>[]) {
-      const job = message.body;
+    for (const message of batch.messages as Message<Job | SecretSync>[]) {
+      const body = message.body;
+      if ("kind" in body) {
+        try {
+          await syncAgent(env, orgId(body.organizationId), body.agentId, {
+            actorType: "platform",
+            actorId: "secret-sync",
+          });
+          message.ack();
+        } catch (error) {
+          console.error(error);
+          message.retry({ delaySeconds: Math.min(300, 2 ** message.attempts) });
+        }
+        continue;
+      }
+      // A job's result goes to R2 under its organization.
+      const job = body;
       await env.FILES.put(
         `${job.organizationId}/jobs/${job.id}.json`,
         JSON.stringify({
@@ -145,4 +169,4 @@ export default {
       message.ack();
     }
   },
-} satisfies ExportedHandler<Env, Job | OutboxMessage>;
+} satisfies ExportedHandler<Env, Job | SecretSync | OutboxMessage>;

@@ -181,6 +181,9 @@ export const createCase = async (
       );
     }
 
+    // TODO: spendGate(org) refuses new cases with 402 here. Its
+    // `spending_limit_reached` stop lands with the spending limit's storage in
+    // step 5 (PRE-35), and `credit_exhausted` with Autumn credit in step 9.
     const caseId = newId("case");
     if (input.files.length) {
       const found = await tx

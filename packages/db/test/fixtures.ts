@@ -30,7 +30,12 @@ import {
   outbox,
   reviewEvents,
 } from "../src/schema/cases.ts";
-import { deploymentGroups, deployments } from "../src/schema/deployments.ts";
+import {
+  deploymentGroups,
+  deployments,
+  secretDeliveries,
+  secretGrants,
+} from "../src/schema/deployments.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 
@@ -109,8 +114,9 @@ export const seedOrganization = async (name: string) =>
       masterKeyId: "secrets-master-v1",
       wrappedKey: new Uint8Array([1, 2, 3]),
     });
+    const secretId = newId("secret");
     await tx.insert(secrets).values({
-      id: newId("secret"),
+      id: secretId,
       organizationId: org,
       name: "ERP_TOKEN",
       version: 1,
@@ -137,6 +143,15 @@ export const seedOrganization = async (name: string) =>
     await tx
       .insert(deploymentGroups)
       .values({ organizationId: org, deploymentId, groupId, approves: true });
+    await tx
+      .insert(secretGrants)
+      .values({ organizationId: org, secretId, agentId, grantedBy: userId });
+    await tx.insert(secretDeliveries).values({
+      organizationId: org,
+      deploymentId,
+      secretId,
+      secretVersion: 1,
+    });
     await tx.insert(cases).values({
       id: caseId,
       organizationId: org,
@@ -265,6 +280,8 @@ export const tenantTables = {
   audit_heads: "organization_id",
   deployments: "organization_id",
   deployment_groups: "organization_id",
+  secret_grants: "organization_id",
+  secret_deliveries: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

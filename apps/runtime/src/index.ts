@@ -1,7 +1,8 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import type { CaseState, CaseView, ReviewNote } from "./case-runtime.ts";
-import type { CaseKey, Env, StartCase } from "./env.ts";
+import { agentWorker } from "./dispatch.ts";
+import type { CaseKey, Deployment, Env, StartCase } from "./env.ts";
 import type { WriteResult } from "./schema-state.ts";
 
 export { CaseRuntime } from "./case-runtime.ts";
@@ -86,6 +87,17 @@ export default class Runtime extends WorkerEntrypoint<Env> {
 
   cancelCase(c: CaseKey) {
     return runtimeFor(this.env, c).cancel();
+  }
+
+  // The deployed Worker's manifest, read through the same dispatch path a
+  // case uses. The deploy path calls this to learn what the code declares.
+  async manifest(deployment: Deployment): Promise<unknown> {
+    const response = await agentWorker(this.env, deployment).fetch("/manifest");
+    if (!response.ok)
+      throw new Error(
+        `agent Worker ${deployment.script} answered ${response.status}`,
+      );
+    return response.json();
   }
 
   // Local development only, until the cases API serves it: start and read a
