@@ -122,6 +122,9 @@ const backend = (
     const casesQueue = yield* Cloudflare.Queues.Queue("Cases", {
       name: n.casesQueue,
     });
+    const webhooksQueue = yield* Cloudflare.Queues.Queue("Webhooks", {
+      name: n.webhooksQueue,
+    });
 
     // The daily signed audit manifests (doc 02), locked for a year. Preview
     // stages skip the lock so destroying the stage can empty the bucket.
@@ -192,6 +195,7 @@ const backend = (
         COUNTER: Cloudflare.DurableObject("Counter"),
         JOBS: jobs,
         CASES: casesQueue,
+        WEBHOOKS: webhooksQueue,
         FILES: files,
         DISPATCHER: namespace,
       },
@@ -205,6 +209,12 @@ const backend = (
       queueId: casesQueue.queueId,
       scriptName: api.workerName,
       settings: { maxWaitTimeMs: 1000 },
+    });
+    // The consumer times each retry itself, over 24 hours (doc 06).
+    yield* Cloudflare.Queues.Consumer("WebhooksConsumer", {
+      queueId: webhooksQueue.queueId,
+      scriptName: api.workerName,
+      settings: { maxWaitTimeMs: 1000, maxRetries: 20 },
     });
 
     return {

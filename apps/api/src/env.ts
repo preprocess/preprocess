@@ -107,6 +107,8 @@ export type Env = {
   JOBS: Queue<Job>;
   // Case starts from the outbox (outbox.ts).
   CASES: Queue<OutboxMessage>;
+  // Webhook deliveries from the outbox (webhooks.ts).
+  WEBHOOKS: Queue<OutboxMessage>;
   // Re-delivers an agent's secrets and MCP grants to its live scripts after
   // a value or grant changes (design doc 03), from the outbox.
   SECRET_SYNC: Queue<OutboxMessage>;
