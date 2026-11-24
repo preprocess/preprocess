@@ -2,29 +2,37 @@
   "name": "@preprocess/db",
   "version": "0.1.0",
   "private": true,
-  "description": "Drizzle schema, migrations and seed data.",
+  "description": "Drizzle schema, migrations, the tenant data layer and the audit chain.",
   "author": "Preprocess, Inc.",
   "license": "Elastic-2.0",
   "type": "module",
   "exports": {
-    ".": "./src/schema.ts"
+    "./client": "./src/client.ts",
+    "./audit": "./src/audit.ts",
+    "./ids": "./src/ids.ts",
+    "./schema/*": "./src/schema/*.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
-    "pg": "catalog:"
+    "pg": "catalog:",
+    "typeid-js": "catalog:"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@cloudflare/workers-types": "catalog:",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "drizzle-kit": "catalog:",
     "tsx": "catalog:",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "catalog:"
   }
 }

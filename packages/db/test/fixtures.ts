@@ -1,0 +1,167 @@
+// Two organizations with a row in every tenant table, written through
+// DB_SYSTEM (which bypasses RLS), so tests can check what withOrg sees.
+
+import { env } from "cloudflare:workers";
+import { sql } from "drizzle-orm";
+
+import { orgId, withoutOrg } from "../src/client.ts";
+import { audit, startAuditChain } from "../src/audit.ts";
+import { newId } from "../src/ids.ts";
+import {
+  user,
+  organization,
+  member,
+  invitation,
+  apikey,
+} from "../src/schema/auth.ts";
+import {
+  agentGrants,
+  agents,
+  groupMembers,
+  groups,
+} from "../src/schema/access.ts";
+import { caseAssignees, cases } from "../src/schema/cases.ts";
+import { orgKeys, secrets } from "../src/schema/secrets.ts";
+
+export type Org = Awaited<ReturnType<typeof seedOrganization>>;
+
+export const seedOrganization = async (name: string) =>
+  withoutOrg(env, "test fixture", async (tx) => {
+    const now = new Date();
+    const org = orgId(newId("organization"));
+    const userId = newId("user");
+    const groupId = newId("group");
+    const developersId = newId("group");
+    const agentId = newId("agent");
+    const caseId = newId("case");
+    await tx.insert(user).values({
+      id: userId,
+      name: `${name} owner`,
+      email: `${userId}@${name.toLowerCase()}.test`,
+    });
+    await tx.insert(organization).values({
+      id: org,
+      name,
+      slug: org,
+      createdAt: now,
+      createdBy: userId,
+    });
+    await startAuditChain(tx, org);
+    await tx.insert(member).values({
+      id: newId("member"),
+      organizationId: org,
+      userId,
+      role: "owner",
+      createdAt: now,
+    });
+    await tx.insert(invitation).values({
+      id: newId("invitation"),
+      organizationId: org,
+      email: `invitee@${name.toLowerCase()}.test`,
+      role: "member",
+      expiresAt: new Date(now.getTime() + 86_400_000),
+      inviterId: userId,
+    });
+    await tx.insert(apikey).values({
+      id: newId("apikey"),
+      referenceId: org,
+      key: `hashed-${org}`,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await tx.insert(groups).values([
+      {
+        id: developersId,
+        organizationId: org,
+        slug: "developers",
+        name: "Developers",
+        isDevelopers: true,
+      },
+      { id: groupId, organizationId: org, slug: "ap-team", name: "AP team" },
+    ]);
+    await tx
+      .insert(groupMembers)
+      .values({ organizationId: org, groupId, userId });
+    await tx
+      .insert(agents)
+      .values({ id: agentId, organizationId: org, slug: "invoices" });
+    await tx.insert(agentGrants).values({
+      organizationId: org,
+      agentId,
+      groupId,
+      access: "operator",
+      grantedBy: userId,
+    });
+    await tx.insert(orgKeys).values({
+      organizationId: org,
+      version: 1,
+      masterKeyId: "secrets-master-v1",
+      wrappedKey: new Uint8Array([1, 2, 3]),
+    });
+    await tx.insert(secrets).values({
+      id: newId("secret"),
+      organizationId: org,
+      name: "ERP_TOKEN",
+      version: 1,
+      keyVersion: 1,
+      ciphertext: new Uint8Array([4, 5, 6]),
+      updatedBy: userId,
+    });
+    await tx.insert(cases).values({
+      id: caseId,
+      organizationId: org,
+      agentId,
+      deploymentId: "dep_test",
+      status: "waiting",
+      waitingOnGroupId: groupId,
+      source: "api",
+    });
+    await tx.insert(caseAssignees).values({
+      organizationId: org,
+      caseId,
+      userId,
+      assignedBy: userId,
+    });
+    await audit(tx, {
+      organizationId: org,
+      actorType: "person",
+      actorId: userId,
+      action: "organization.created",
+      targetType: "organization",
+      targetId: org,
+    });
+    return { org, userId, groupId, developersId, agentId, caseId };
+  });
+
+// Every table that holds tenant rows, with its organization column.
+export const tenantTables = {
+  organization: "id",
+  member: "organization_id",
+  invitation: "organization_id",
+  apikey: "reference_id",
+  groups: "organization_id",
+  group_members: "organization_id",
+  agents: "organization_id",
+  agent_grants: "organization_id",
+  org_keys: "organization_id",
+  secrets: "organization_id",
+  cases: "organization_id",
+  case_assignees: "organization_id",
+  audit_events: "organization_id",
+  audit_heads: "organization_id",
+} as const;
+
+export const ident = (name: string) =>
+  sql.raw(`"${name.replaceAll('"', '""')}"`);
+
+// Drizzle wraps driver errors ("Failed query: …"); tests match Postgres's own
+// message, which it keeps as the cause.
+export const failure = async (work: Promise<unknown>): Promise<string> => {
+  try {
+    await work;
+  } catch (error) {
+    const cause = (error as { cause?: unknown }).cause;
+    return cause instanceof Error ? cause.message : (error as Error).message;
+  }
+  return "did not fail";
+};

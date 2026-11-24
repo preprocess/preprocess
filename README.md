@@ -46,7 +46,7 @@ applies migrations, loads the seed, and starts the apps behind
 
 - https://app.preprocess.localhost: the product app. Without WorkOS credentials
   it runs in preview mode, with a one-button sign-in and seeded scenarios.
-- https://api.preprocess.localhost: the API (`/orgs`, `POST /orgs/:org/counter`,
+- https://api.preprocess.localhost: the API (`POST /orgs/:org/counter`,
   `POST /orgs/:org/jobs`, `/dispatch`, `POST /models/decide`,
   `POST /models/ocr`).
 - https://model-stub.preprocess.localhost: the stub model service the API calls

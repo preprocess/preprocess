@@ -1,13 +1,10 @@
-import { organizations } from "@preprocess/db";
 import { ModelError } from "@preprocess/models/client";
 import { decide, type DecideInput } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
 import { ocrPage } from "@preprocess/models/ocr";
 import { runMode } from "@preprocess/runmode";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import pg from "pg";
 
 import type { Env, Job } from "./env.ts";
 
@@ -35,16 +32,6 @@ app.get("/", (c) =>
     modelService: c.env.MODEL_SERVICE_URL ? "configured" : "none",
   }),
 );
-
-app.get("/orgs", async (c) => {
-  const client = new pg.Client({ connectionString: c.env.DB.connectionString });
-  await client.connect();
-  try {
-    return c.json(await drizzle(client).select().from(organizations));
-  } finally {
-    c.executionCtx.waitUntil(client.end());
-  }
-});
 
 app.post("/orgs/:org/counter", async (c) => {
   const counter = c.env.COUNTER.getByName(`${c.req.param("org")}:counter`);
