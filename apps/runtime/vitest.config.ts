@@ -70,8 +70,18 @@ export default defineConfig({
             modules: true,
             compatibilityDate: "2026-07-26",
             script: `import { WorkerEntrypoint } from "cloudflare:workers";
+const allowed = new Map();
 export class Platform extends WorkerEntrypoint {
   async caseEvent() {}
+  // Tests cap an organization at n more passes of the spending gate.
+  async limitSpend(organizationId, n) { allowed.set(organizationId, n); }
+  async spendGate(organizationId) {
+    const n = allowed.get(organizationId);
+    if (n === undefined) return "ok";
+    if (n <= 0) return "spending_limit_reached";
+    allowed.set(organizationId, n - 1);
+    return "ok";
+  }
   async ocrFile() { throw new Error("no OCR in the runtime tests"); }
 }
 export default { fetch: () => new Response("platform") };`,

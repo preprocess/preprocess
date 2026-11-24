@@ -81,7 +81,9 @@ export type CaseKey = Pick<Deployment, "organizationId" | "agentId"> & {
 };
 
 export type CaseStatus =
-  "running" | "waiting" | "completed" | "failed" | "cancelled";
+  "running" | "waiting" | "halted" | "completed" | "failed" | "cancelled";
+
+export type SpendVerdict = "ok" | "spending_limit_reached";
 
 export type CaseEvent = CaseKey &
   (
@@ -92,6 +94,7 @@ export type CaseEvent = CaseKey &
         reason: string | null;
         answers: Record<string, unknown> | null;
         error: { code: string; message: string } | null;
+        haltReason?: Exclude<SpendVerdict, "ok">;
       }
     | {
         type: "mention";
@@ -104,6 +107,9 @@ export type CaseEvent = CaseKey &
 
 export type Platform = {
   caseEvent(event: CaseEvent): Promise<void>;
+  // The spending limit (design doc 04), asked before each metered model, OCR
+  // or decide call.
+  spendGate(organizationId: string): Promise<SpendVerdict>;
   ocrFile(file: {
     organizationId: string;
     fileId: string;
