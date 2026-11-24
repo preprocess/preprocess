@@ -1,0 +1,10 @@
+{
+  "description": "An invoice from Acme picks the vendor acme.",
+  "question": "pick",
+  "stateIncludes": "Acme",
+  "answer": {
+    "type": "choice",
+    "choice": "acme",
+    "probability": 0.93
+  }
+}

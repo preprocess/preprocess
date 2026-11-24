@@ -13,6 +13,7 @@ import {
   durableObjects,
   LOCAL,
   localDatabaseUrl,
+  localModelService,
   names,
 } from "../src/stages.ts";
 
@@ -39,7 +40,12 @@ const configs: Record<string, object> = {
     name: local.api,
     main: "src/index.ts",
     ...common,
-    vars: { STAGE: LOCAL, USER_WORKER: local.userWorker },
+    vars: {
+      STAGE: LOCAL,
+      USER_WORKER: local.userWorker,
+      MODEL_SERVICE_URL: localModelService.url,
+      MODEL_SERVICE_KEY: localModelService.key,
+    },
     hyperdrive: [
       { binding: "DB", id: "local", localConnectionString: localDatabaseUrl },
     ],
@@ -60,6 +66,12 @@ const configs: Record<string, object> = {
     // Wrangler supports dispatch namespaces only as remote bindings, so the
     // local API reaches the user Worker through a service binding.
     services: [{ binding: "LOCAL_USER_WORKER", service: local.userWorker }],
+  },
+  "apps/model-stub": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.modelStub,
+    main: "src/index.ts",
+    ...common,
   },
   "apps/user-worker": {
     $schema: "node_modules/wrangler/config-schema.json",

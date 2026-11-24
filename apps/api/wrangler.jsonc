@@ -9,7 +9,12 @@
   "compatibility_date": "2026-07-26",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "vars": { "STAGE": "development", "USER_WORKER": "hello" },
+  "vars": {
+    "STAGE": "development",
+    "USER_WORKER": "hello",
+    "MODEL_SERVICE_URL": "https://model-stub.preprocess.localhost",
+    "MODEL_SERVICE_KEY": "development",
+  },
   "hyperdrive": [
     {
       "binding": "DB",
