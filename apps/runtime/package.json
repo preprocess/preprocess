@@ -14,7 +14,8 @@
     "@earendil-works/pi-durable": "1.6.0",
     "@earendil-works/pi-schema": "1.6.0",
     "@preprocess/sdk": "workspace:*",
-    "agents": "0.34.0"
+    "agents": "0.34.0",
+    "@preprocess/models": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",

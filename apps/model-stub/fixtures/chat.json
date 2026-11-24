@@ -4,22 +4,124 @@
     "match": "Check stock for SKU A1",
     "turns": [
       {
-        "toolCalls": [{ "name": "lookup_stock", "arguments": { "sku": "A1" } }]
-      },
-      {
         "toolCalls": [
           {
-            "name": "carrier_status",
-            "arguments": { "url": "https://example.com/track/A1" }
+            "name": "lookup_stock",
+            "arguments": {
+              "sku": "A1"
+            }
           }
         ]
       },
       {
         "toolCalls": [
-          { "name": "find_contact", "arguments": { "q": "Acme buyer" } }
+          {
+            "name": "carrier_status",
+            "arguments": {
+              "url": "https://example.com/track/A1"
+            }
+          }
         ]
       },
-      { "content": "SKU A1 checked. Results: {{results}}" }
+      {
+        "toolCalls": [
+          {
+            "name": "find_contact",
+            "arguments": {
+              "q": "Acme buyer"
+            }
+          }
+        ]
+      },
+      {
+        "content": "SKU A1 checked. Results: {{results}}"
+      }
+    ]
+  },
+  {
+    "name": "invoice-schema",
+    "match": "Invoice 1042 from Acme",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "decide",
+            "arguments": {
+              "path": "vendor",
+              "prompt": "Which vendor sent this invoice?"
+            }
+          }
+        ]
+      },
+      {
+        "toolCalls": [
+          {
+            "name": "schema_answer",
+            "arguments": {
+              "answers": [
+                {
+                  "path": "vendor",
+                  "value": "acme"
+                },
+                {
+                  "path": "amount",
+                  "value": 1285
+                },
+                {
+                  "path": "currency",
+                  "value": "USD"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "toolCalls": [
+          {
+            "name": "tag_group",
+            "arguments": {
+              "group": "accounts-payable",
+              "message": "Please check the vendor on invoice 1042."
+            }
+          }
+        ]
+      },
+      {
+        "toolCalls": [
+          {
+            "name": "flag_vendor",
+            "arguments": {
+              "reason": "Vendor needs a check"
+            }
+          }
+        ]
+      },
+      {
+        "content": "Invoice 1042 filled in and handed to accounts payable."
+      },
+      {
+        "toolCalls": [
+          {
+            "name": "schema_answer",
+            "arguments": {
+              "answers": [
+                {
+                  "path": "vendor",
+                  "value": "acme"
+                },
+                {
+                  "path": "currency",
+                  "value": "EUR"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "content": "Rerun done: I still read Acme as the vendor."
+      }
     ]
   }
 ]
