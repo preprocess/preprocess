@@ -249,6 +249,7 @@ describe("schema manifest", () => {
       "secrets",
       "mcp",
       "tools",
+      "declared",
     ]);
     const evaluateResponse = await plain.fetch(
       new Request("https://agent/schema/evaluate", {

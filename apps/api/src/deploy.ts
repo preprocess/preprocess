@@ -29,23 +29,48 @@ import { namespaceFor } from "./namespace.ts";
 
 type Actor = Pick<AuditInput, "actorType" | "actorId" | "ip" | "requestId">;
 
-const manifestSchema = z.object({
-  protocol: z.literal(PROTOCOL),
-  sdk: z.object({ name: z.literal("@preprocess/sdk"), version: z.string() }),
-  instructions: z.string(),
-  model: z.enum(MODELS),
-  reasoning: z.enum(REASONING),
-  secrets: z.array(z.string()),
-  mcp: z.array(z.string()),
-  tools: z.array(
-    z.object({
-      name: z.string(),
-      description: z.string(),
-      inputSchema: z.record(z.string(), z.unknown()),
-      sideEffects: z.boolean(),
-    }),
-  ),
-});
+const manifestSchema = z
+  .object({
+    protocol: z.literal(PROTOCOL),
+    sdk: z.object({ name: z.literal("@preprocess/sdk"), version: z.string() }),
+    instructions: z.string(),
+    model: z.enum(MODELS),
+    reasoning: z.enum(REASONING),
+    secrets: z.array(z.string()),
+    mcp: z.array(z.string()),
+    tools: z.array(
+      z.object({
+        name: z.string(),
+        description: z.string(),
+        inputSchema: z.record(z.string(), z.unknown()),
+        sideEffects: z.boolean(),
+      }),
+    ),
+    // Optional in protocol 1; kept so settings can tell the code's values from
+    // defaults and dashboard overrides.
+    groups: z.array(z.string()).optional(),
+    schedules: z
+      .array(
+        z.object({
+          name: z.string(),
+          cron: z.string(),
+          timezone: z.string(),
+          text: z.string(),
+          previews: z.boolean(),
+        }),
+      )
+      .optional(),
+    ocr: z.boolean().optional(),
+    network: z.array(z.string()).optional(),
+    timeoutSeconds: z.number().int().positive().optional(),
+    toolRetries: z.number().int().nonnegative().optional(),
+    sandboxImage: z.string().optional(),
+    evals: z.object({ onPush: z.boolean().optional() }).optional(),
+    declared: z.array(z.string()).optional(),
+    warnings: z.array(z.string()).optional(),
+  })
+  // Keys this list does not name yet (the schema tree) are stored as sent.
+  .loose();
 
 export type Manifest = z.infer<typeof manifestSchema>;
 
@@ -452,6 +477,7 @@ const view = (
   source: d.source,
   tools: (d.manifest as Manifest).tools.map((t) => t.name),
   secrets: (d.manifest as Manifest).secrets,
+  warnings: (d.manifest as Manifest).warnings ?? [],
   createdAt: d.createdAt.toISOString(),
   promotedAt: d.promotedAt?.toISOString() ?? null,
 });

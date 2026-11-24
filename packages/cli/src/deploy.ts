@@ -4,6 +4,8 @@
 // is granted, and promotes deploys from the agent's production branch.
 
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import { build } from "esbuild";
 
@@ -18,6 +20,35 @@ export type Deployment = {
   waitingFor: { secrets?: string[]; mcp?: string[] };
   sdkVersion: string;
   tools: string[];
+  warnings?: string[];
+};
+
+export const CONFIG_FILE = "preprocess.config.json";
+
+// The project's preprocess.config.json: beside the nearest package.json
+// above the entry, else beside the entry.
+export const configPath = (entry: string) => {
+  const start = path.dirname(path.resolve(entry));
+  for (let dir = start; ; dir = path.dirname(dir)) {
+    if (existsSync(path.join(dir, "package.json"))) {
+      const file = path.join(dir, CONFIG_FILE);
+      if (existsSync(file)) return file;
+      break;
+    }
+    if (path.dirname(dir) === dir) break;
+  }
+  const beside = path.join(start, CONFIG_FILE);
+  return existsSync(beside) ? beside : undefined;
+};
+
+const readConfig = (entry: string): unknown => {
+  const file = configPath(entry);
+  if (!file) return {};
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    throw new Error(`${file} is not valid JSON: ${String(error)}`);
+  }
 };
 
 // The same target the platform runs agent code on: a Workers module.
@@ -32,6 +63,8 @@ export const bundle = async (entry: string): Promise<Bundle> => {
     conditions: ["workerd", "worker", "browser"],
     mainFields: ["module", "main"],
     external: ["cloudflare:*", "node:*"],
+    // The SDK's agent() applies it over the inline settings.
+    define: { __PREPROCESS_CONFIG__: JSON.stringify(readConfig(entry)) },
     logLevel: "silent",
   });
   const [output] = result.outputFiles;
@@ -97,7 +130,7 @@ export const deploy = async (options: DeployOptions): Promise<Deployment> => {
   return JSON.parse(text) as Deployment;
 };
 
-export const describe = (agent: string, d: Deployment) => {
+const status = (agent: string, d: Deployment) => {
   if (d.status === "failed") return `${agent}: deployment ${d.id} failed`;
   if (d.status === "waiting") {
     const grants = [
@@ -108,3 +141,8 @@ export const describe = (agent: string, d: Deployment) => {
   }
   return `${agent}: deployment ${d.id} is ready (${d.production ? "serving production" : d.environment})`;
 };
+
+export const describe = (agent: string, d: Deployment) =>
+  [status(agent, d), ...(d.warnings ?? []).map((w) => `warning: ${w}`)].join(
+    "\n",
+  );

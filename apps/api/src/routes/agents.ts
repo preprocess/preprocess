@@ -41,6 +41,10 @@ const Deployment = z
     source: z.enum(["cli", "github"]),
     tools: z.array(z.string()),
     secrets: z.array(z.string()),
+    warnings: z.array(z.string()).openapi({
+      description:
+        "Build warnings from the agent's code and preprocess.config.json",
+    }),
     createdAt: z.string(),
     promotedAt: z.string().nullable(),
   })
