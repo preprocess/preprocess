@@ -10,10 +10,19 @@ import sampleAgent from "./dist/sample-agent.js?raw";
 const ERP_V1 = "erp-live-7c1f9a";
 const ERP_V2 = "erp-rotated-9d2e4b0c";
 
+// Each organization calls with an API key, as `preprocess deploy` does.
 type Who = { org: OrgId; client: Client };
 const seedOrg = async (name: string): Promise<Who> => {
   const { client } = await signUp(name);
-  return { org: orgId(await createOrganization(client, name)), client };
+  const org = orgId(await createOrganization(client, name));
+  const created = await client.call<{ key: string }>(
+    "/api/auth/api-key/create",
+    { body: { name: "deploy", organizationId: org } },
+  );
+  const keyed = new Client(testEnv(), {
+    authorization: `Bearer ${created.body.key}`,
+  });
+  return { org, client: keyed };
 };
 
 let a: Who;
@@ -98,7 +107,7 @@ const lookupOutput = (view: CaseView) =>
   };
 
 describe("auth", () => {
-  it("refuses calls without a session or key, and another organization's members", async () => {
+  it("refuses calls without a key, and a key on another organization's path", async () => {
     const none = new Client(testEnv());
     expect((await none.call(`/v1/orgs/${a.org}/agents`)).status).toBe(401);
     expect(
@@ -115,17 +124,6 @@ describe("auth", () => {
         )
       ).status,
     ).toBe(403);
-  });
-
-  it("accepts an organization API key, as the deploy command sends it", async () => {
-    const created = await a.client.call<{ key: string }>(
-      "/api/auth/api-key/create",
-      { body: { name: "deploy", organizationId: a.org } },
-    );
-    const keyed = new Client(testEnv(), {
-      authorization: `Bearer ${created.body.key}`,
-    });
-    expect((await keyed.call(`/v1/orgs/${a.org}/agents`)).status).toBe(200);
   });
 });
 
