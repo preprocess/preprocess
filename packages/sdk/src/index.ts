@@ -509,7 +509,11 @@ export const agent = <const S extends string = never>(
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { output: redactText(message, secrets), isError: true };
+      return {
+        output: redactText(message, secrets),
+        isError: true,
+        threw: true,
+      };
     }
   };
 
