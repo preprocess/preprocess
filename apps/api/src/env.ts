@@ -4,14 +4,6 @@ import type { OutboxMessage } from "./outbox.ts";
 
 export type Job = { organizationId: string; id: string; requestedAt: string };
 
-// Re-delivers an agent's secrets to its live scripts after a value or grant
-// changes (design doc 03). Retried with backoff until it succeeds.
-export type SecretSync = {
-  kind: "secret.sync";
-  organizationId: string;
-  agentId: string;
-};
-
 type CaseKey = { organizationId: string; agentId: string; caseId: string };
 type Edit = CaseKey & { path: string; version: number; userId: string };
 
@@ -115,7 +107,9 @@ export type Env = {
   JOBS: Queue<Job>;
   // Case starts from the outbox (outbox.ts).
   CASES: Queue<OutboxMessage>;
-  SECRET_SYNC: Queue<SecretSync>;
+  // Re-delivers an agent's secrets and MCP grants to its live scripts after
+  // a value or grant changes (design doc 03), from the outbox.
+  SECRET_SYNC: Queue<OutboxMessage>;
   FILES: R2Bucket;
   RUNTIME: Runtime;
   // 32 random bytes, base64: Secrets Store on our cloud, a local variable in

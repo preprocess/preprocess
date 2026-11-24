@@ -30,6 +30,7 @@ import {
 import { encrypt, orgKey } from "../crypto.ts";
 import { liveDeployments } from "../deploy.ts";
 import type { Env } from "../env.ts";
+import { drainOutbox, syncLater } from "../outbox.ts";
 
 export const secretRoutes = new OpenAPIHono<{
   Bindings: Env;
@@ -66,15 +67,6 @@ const checkName = (name: string) => {
       message: `secret names match ${SECRET_NAME} and avoid MCP, MODELS and PREPROCESS_*`,
     });
 };
-
-const enqueue = (env: Env, organizationId: string, agentIds: string[]) =>
-  agentIds.length
-    ? env.SECRET_SYNC.sendBatch(
-        agentIds.map((agentId) => ({
-          body: { kind: "secret.sync" as const, organizationId, agentId },
-        })),
-      )
-    : Promise.resolve();
 
 secretRoutes.openapi(
   createRoute({
@@ -211,9 +203,16 @@ secretRoutes.openapi(
         .select({ agentId: secretGrants.agentId })
         .from(secretGrants)
         .where(eq(secretGrants.secretId, id));
-      return { version, agentIds: granted.map((g) => g.agentId) };
+      return {
+        version,
+        sync: await syncLater(
+          tx,
+          c.var.org,
+          granted.map((g) => g.agentId),
+        ),
+      };
     });
-    await enqueue(c.env, c.var.org, result.agentIds);
+    await drainOutbox(c.env, c.var.org, result.sync);
     return c.json({ name, version: result.version }, 200);
   },
 );
@@ -281,7 +280,7 @@ const grantChange =
   async (c: Parameters<Parameters<typeof secretRoutes.openapi>[1]>[0]) => {
     requireAdmin(c.var.caller);
     const { name, agent: slug } = c.req.param() as z.infer<typeof GrantParams>;
-    const agentId = await withOrg(c.env, c.var.org, async (tx) => {
+    const sync = await withOrg(c.env, c.var.org, async (tx) => {
       const [secret] = await tx
         .select()
         .from(secrets)
@@ -318,9 +317,9 @@ const grantChange =
         targetId: secret.id,
         data: { secret: name, agent: agent.id },
       });
-      return agent.id;
+      return syncLater(tx, c.var.org, [agent.id]);
     });
-    await enqueue(c.env, c.var.org, [agentId]);
+    await drainOutbox(c.env, c.var.org, sync);
     return c.body(null, 204);
   };
 
