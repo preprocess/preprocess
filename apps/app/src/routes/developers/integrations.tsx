@@ -11,10 +11,7 @@ import {
   getPlatformSettings,
   saveOrgMcpServer,
 } from "../../features/developers/platform-store";
-import {
-  DeveloperSettingsAction,
-  DeveloperSettingsPage,
-} from "../../features/settings/settings-widgets";
+import { DeveloperSettingsPage } from "../../features/settings/settings-widgets";
 
 export const Route = createFileRoute("/developers/integrations")({
   loader: async () => ({
@@ -24,7 +21,7 @@ export const Route = createFileRoute("/developers/integrations")({
   component: DevelopersIntegrationsPage,
 });
 
-/** Everything agents connect to outside Preprocess: data sources and MCP servers. */
+/** What agents connect to outside Preprocess: MCP servers. */
 function DevelopersIntegrationsPage() {
   const { servers, usage } = Route.useLoaderData();
   const router = useRouter();
@@ -32,7 +29,6 @@ function DevelopersIntegrationsPage() {
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
       <DeveloperSettingsPage title="Integrations">
-        <DeveloperSettingsAction action="integrations" />
         <OrgMcpSection
           onDelete={async (id) => {
             await deleteOrgMcpServer(id);

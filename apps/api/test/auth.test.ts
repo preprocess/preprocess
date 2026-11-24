@@ -185,4 +185,27 @@ describe("API keys", () => {
     for (let call = 0; call < 15; call++)
       expect((await keyed.call(`/v1/orgs/${org}/groups`)).status).toBe(200);
   });
+
+  it("are the recorded actor for what they do, not the person who made them", async () => {
+    const { client, userId } = await signUp("Keyholder");
+    const org = await createOrganization(client, "Keyed audit");
+    const created = await client.call<{ id: string; key: string }>(
+      "/api/auth/api-key/create",
+      { body: { name: "deploy", organizationId: org } },
+    );
+    const keyed = new Client(testEnv(), { "x-api-key": created.body.key });
+    expect(
+      (await keyed.call(`/v1/orgs/${org}/groups`, { body: { name: "Ops" } }))
+        .status,
+    ).toBe(201);
+    const audit = await client.call<{
+      events: { action: string; actorType: string; actorId: string }[];
+    }>(`/v1/orgs/${org}/audit-events`);
+    const event = audit.body.events.find((e) => e.action === "group.created");
+    expect(event).toMatchObject({
+      actorType: "api_key",
+      actorId: created.body.id,
+    });
+    expect(event?.actorId).not.toBe(userId);
+  });
 });

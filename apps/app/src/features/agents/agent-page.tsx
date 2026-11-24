@@ -55,7 +55,6 @@ import {
   type CaseStatus,
 } from "../agent-cases/case";
 import { CaseStatusIcon } from "../agent-cases/case-status-icon";
-import { grantableGroupNames } from "../groups/group-store";
 import {
   SettingsCard,
   SettingsConfirmDialog,
@@ -73,7 +72,7 @@ import {
 } from "../settings/kit";
 import { MemoryList } from "./agent-knowledge";
 import { RunCaseDialog, deploymentTestCommand } from "./deployment-actions";
-import type { AgentAccessLevel } from "./agent-seed";
+import { SEED_GROUPS, type AgentAccessLevel } from "./agent-seed";
 import {
   DEFAULT_PRODUCTION_BRANCH,
   deploymentEnvironment,
@@ -818,7 +817,7 @@ export function AgentAccess({
         title="Groups"
       >
         <SettingsRows>
-          {grantableGroupNames().map((group) => {
+          {SEED_GROUPS.map((group) => {
             const level = levelOf(group);
             const covered =
               agent.everyone !== null &&

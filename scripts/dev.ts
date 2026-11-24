@@ -37,13 +37,6 @@ run(["--filter", "@preprocess/infra", "wrangler:generate"]);
 run(["db:migrate"]);
 run(["db:seed"]);
 
-// Without WorkOS credentials the app runs in preview mode: a one-button
-// sign-in and the seeded scenarios (apps/app/README.md).
-const workos =
-  process.env.WORKOS_CLIENT_ID ??
-  existsSync(path.join(import.meta.dirname, "../apps/app/.dev.vars"));
-if (!workos) process.env.PREPROCESS_PREVIEW ??= "true";
-
 const apps = spawn("pnpm", ["exec", "portless"], { stdio: "inherit" });
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => apps.kill(signal));

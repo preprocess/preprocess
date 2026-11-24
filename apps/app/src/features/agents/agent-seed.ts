@@ -4,7 +4,7 @@
 export type AgentAccessLevel = "operator" | "viewer";
 
 export type AgentGrant = {
-  /** The organization role (mirrored as a WorkOS group) the grant is for. */
+  /** The organization group the grant is for. */
   readonly group: string;
   readonly level: AgentAccessLevel;
 };
@@ -19,6 +19,17 @@ export type AgentSeed = {
   /** Operators first, then viewers. */
   readonly access: readonly AgentGrant[];
 };
+
+/** The groups the seeded agents grant access to, until agents load from the API. */
+export const SEED_GROUPS = [
+  "Compliance",
+  "Engineering",
+  "Finance",
+  "Legal",
+  "Operations",
+  "Sales",
+  "Support",
+] as const;
 
 export const AGENT_SEED: readonly AgentSeed[] = [
   {

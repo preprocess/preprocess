@@ -44,16 +44,6 @@ export const names = (stage: string) => ({
   branch: stage,
 });
 
-// The app's WorkOS AuthKit secrets, read from the deploy environment and bound
-// as secret_text. Required on staging; optional on previews,
-// where sign-in stays unavailable until Better Auth replaces WorkOS (step 1).
-export const appSecrets = [
-  "WORKOS_CLIENT_ID",
-  "WORKOS_API_KEY",
-  "WORKOS_COOKIE_PASSWORD",
-  "WORKOS_REDIRECT_URI",
-] as const;
-
 // The API's secrets, read from the deploy environment and bound as
 // secret_text. Locally `pnpm dev` writes generated values to apps/api/.dev.vars.
 export const apiSecrets = ["BETTER_AUTH_SECRET", "AUDIT_SIGNING_KEY"] as const;

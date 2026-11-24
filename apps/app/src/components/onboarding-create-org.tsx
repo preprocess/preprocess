@@ -8,11 +8,10 @@ import {
   type LoadingButtonHandle,
 } from "@preprocess/ui/components/loading-button";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
-import { useServerFn } from "@tanstack/react-start";
-import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import { useRef, useState, type FormEvent } from "react";
 
-import { createOrganization } from "../features/onboarding/create-organization";
+import { useAuth } from "../features/auth/auth-context";
+import { createOrganization } from "../features/organizations/user-organizations";
 import { validateOrganizationName } from "../server/organization-name";
 import { PreprocessMark } from "./preprocess-mark";
 
@@ -22,8 +21,7 @@ function validateOrgName(value: string) {
 }
 
 function OnboardingCreateOrg({ email }: Readonly<{ email: string }>) {
-  const createOrg = useServerFn(createOrganization);
-  const { switchToOrganization } = useAuth();
+  const { signOut } = useAuth();
   const nameFieldRef = useRef<InlineValidationHandle>(null);
   const continueRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState("");
@@ -43,13 +41,8 @@ function OnboardingCreateOrg({ email }: Readonly<{ email: string }>) {
     }
 
     try {
-      // Server returns JSON only — Start RPC rejects bare redirect Responses.
-      const { organizationId } = await createOrg({ data: { name } });
-      const switched = await switchToOrganization(organizationId);
-      if (switched && "error" in switched && switched.error) {
-        throw new Error(switched.error);
-      }
-      // Let LoadingButton show success, then hard-navigate for a fresh auth load.
+      await createOrganization(name);
+      // Let LoadingButton show success, then hard-navigate for a fresh load.
       window.setTimeout(() => {
         window.location.assign("/");
       }, 1100);
@@ -68,7 +61,6 @@ function OnboardingCreateOrg({ email }: Readonly<{ email: string }>) {
       className="flex h-svh items-center justify-center overflow-hidden bg-background"
       data-testid="onboarding-create-org"
     >
-      {/* Mirror AuthKit `.ak-Content` panel from authkit/workos-authkit.css */}
       <div className="w-[min(calc(100%-48px),360px)] bg-surface-3 p-8 shadow-surface-3">
         <header className="mb-7 flex flex-col items-start gap-2">
           <PreprocessMark className="mb-3 size-7" title="Preprocess" />
@@ -121,12 +113,13 @@ function OnboardingCreateOrg({ email }: Readonly<{ email: string }>) {
 
         <p className="mt-6 text-center text-body text-muted-foreground">
           Signed in as {email}.{" "}
-          <a
+          <button
             className="text-foreground underline-offset-4 hover:underline"
-            href="/api/auth/sign-out"
+            onClick={() => void signOut()}
+            type="button"
           >
             Use a different account
-          </a>
+          </button>
         </p>
       </div>
     </div>

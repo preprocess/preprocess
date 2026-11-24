@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from "./routes/index";
 import { Route as InboxRouteImport } from "./routes/inbox";
 import { Route as OnboardingRouteImport } from "./routes/onboarding";
 import { Route as SettingsRouteImport } from "./routes/settings";
+import { Route as SignInRouteImport } from "./routes/sign-in";
+import { Route as SignUpRouteImport } from "./routes/sign-up";
 import { Route as AgentsIndexRouteImport } from "./routes/agents/index";
 import { Route as AgentsAgentIdRouteImport } from "./routes/agents/$agentId";
 import { Route as CasesIndexRouteImport } from "./routes/cases/index";
@@ -26,8 +28,10 @@ import { Route as DevelopersObservabilityRouteImport } from "./routes/developers
 import { Route as DevelopersSandboxesRouteImport } from "./routes/developers/sandboxes";
 import { Route as DevelopersSecretsRouteImport } from "./routes/developers/secrets";
 import { Route as DevelopersWebhooksRouteImport } from "./routes/developers/webhooks";
+import { Route as InvitationsInvitationIdRouteImport } from "./routes/invitations/$invitationId";
 import { Route as SettingsAccountRouteImport } from "./routes/settings/account";
 import { Route as SettingsOrganizationRouteImport } from "./routes/settings/organization";
+import { Route as V1SplatRouteImport } from "./routes/v1/$";
 import { Route as AgentsAgentIdIndexRouteImport } from "./routes/agents/$agentId/index";
 import { Route as AgentsAgentIdAccessRouteImport } from "./routes/agents/$agentId/access";
 import { Route as AgentsAgentIdConfigurationRouteImport } from "./routes/agents/$agentId/configuration";
@@ -42,29 +46,17 @@ import { Route as AgentsAgentIdSandboxRouteImport } from "./routes/agents/$agent
 import { Route as AgentsAgentIdSecretsRouteImport } from "./routes/agents/$agentId/secrets";
 import { Route as AgentsAgentIdSettingsRouteImport } from "./routes/agents/$agentId/settings";
 import { Route as AgentsAgentIdVariablesRouteImport } from "./routes/agents/$agentId/variables";
-import { Route as ApiAuthCallbackRouteImport } from "./routes/api/auth/callback";
-import { Route as ApiAuthSignInRouteImport } from "./routes/api/auth/sign-in";
-import { Route as ApiAuthSignOutRouteImport } from "./routes/api/auth/sign-out";
-import { Route as ApiAuthSignUpRouteImport } from "./routes/api/auth/sign-up";
+import { Route as ApiAuthSplatRouteImport } from "./routes/api/auth/$";
 import { Route as ApiDevScenarioRouteImport } from "./routes/api/dev/scenario";
 import { Route as CasesAgentIdCaseIdRouteImport } from "./routes/cases/$agentId.$caseId";
 import { Route as SettingsAccountIndexRouteImport } from "./routes/settings/account/index";
-import { Route as SettingsAccountApiKeysRouteImport } from "./routes/settings/account/api-keys";
-import { Route as SettingsAccountSecurityRouteImport } from "./routes/settings/account/security";
-import { Route as SettingsAccountSessionsRouteImport } from "./routes/settings/account/sessions";
 import { Route as SettingsOrganizationIndexRouteImport } from "./routes/settings/organization/index";
 import { Route as SettingsOrganizationApiKeysRouteImport } from "./routes/settings/organization/api-keys";
 import { Route as SettingsOrganizationAuditLogsRouteImport } from "./routes/settings/organization/audit-logs";
-import { Route as SettingsOrganizationAuthenticationRouteImport } from "./routes/settings/organization/authentication";
-import { Route as SettingsOrganizationBillingRouteImport } from "./routes/settings/organization/billing";
 import { Route as SettingsOrganizationDevelopersRouteImport } from "./routes/settings/organization/developers";
-import { Route as SettingsOrganizationDirectoryRouteImport } from "./routes/settings/organization/directory";
-import { Route as SettingsOrganizationDomainsRouteImport } from "./routes/settings/organization/domains";
 import { Route as SettingsOrganizationGithubRouteImport } from "./routes/settings/organization/github";
 import { Route as SettingsOrganizationIntegrationsRouteImport } from "./routes/settings/organization/integrations";
-import { Route as SettingsOrganizationLoginRouteImport } from "./routes/settings/organization/login";
 import { Route as SettingsOrganizationMembersRouteImport } from "./routes/settings/organization/members";
-import { Route as SettingsOrganizationSsoRouteImport } from "./routes/settings/organization/sso";
 import { Route as SettingsOrganizationGroupsIndexRouteImport } from "./routes/settings/organization/groups/index";
 import { Route as SettingsOrganizationGroupsGroupIdRouteImport } from "./routes/settings/organization_/groups/$groupId";
 
@@ -86,6 +78,16 @@ const OnboardingRoute = OnboardingRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: "/settings",
   path: "/settings",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const SignInRoute = SignInRouteImport.update({
+  id: "/sign-in",
+  path: "/sign-in",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const SignUpRoute = SignUpRouteImport.update({
+  id: "/sign-up",
+  path: "/sign-up",
   getParentRoute: () => rootRouteImport,
 } as any);
 const AgentsIndexRoute = AgentsIndexRouteImport.update({
@@ -153,6 +155,11 @@ const DevelopersWebhooksRoute = DevelopersWebhooksRouteImport.update({
   path: "/developers/webhooks",
   getParentRoute: () => rootRouteImport,
 } as any);
+const InvitationsInvitationIdRoute = InvitationsInvitationIdRouteImport.update({
+  id: "/invitations/$invitationId",
+  path: "/invitations/$invitationId",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const SettingsAccountRoute = SettingsAccountRouteImport.update({
   id: "/account",
   path: "/account",
@@ -162,6 +169,11 @@ const SettingsOrganizationRoute = SettingsOrganizationRouteImport.update({
   id: "/organization",
   path: "/organization",
   getParentRoute: () => SettingsRoute,
+} as any);
+const V1SplatRoute = V1SplatRouteImport.update({
+  id: "/v1/$",
+  path: "/v1/$",
+  getParentRoute: () => rootRouteImport,
 } as any);
 const AgentsAgentIdIndexRoute = AgentsAgentIdIndexRouteImport.update({
   id: "/",
@@ -237,24 +249,9 @@ const AgentsAgentIdVariablesRoute = AgentsAgentIdVariablesRouteImport.update({
   path: "/variables",
   getParentRoute: () => AgentsAgentIdRoute,
 } as any);
-const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
-  id: "/api/auth/callback",
-  path: "/api/auth/callback",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const ApiAuthSignInRoute = ApiAuthSignInRouteImport.update({
-  id: "/api/auth/sign-in",
-  path: "/api/auth/sign-in",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const ApiAuthSignOutRoute = ApiAuthSignOutRouteImport.update({
-  id: "/api/auth/sign-out",
-  path: "/api/auth/sign-out",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const ApiAuthSignUpRoute = ApiAuthSignUpRouteImport.update({
-  id: "/api/auth/sign-up",
-  path: "/api/auth/sign-up",
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: "/api/auth/$",
+  path: "/api/auth/$",
   getParentRoute: () => rootRouteImport,
 } as any);
 const ApiDevScenarioRoute = ApiDevScenarioRouteImport.update({
@@ -270,21 +267,6 @@ const CasesAgentIdCaseIdRoute = CasesAgentIdCaseIdRouteImport.update({
 const SettingsAccountIndexRoute = SettingsAccountIndexRouteImport.update({
   id: "/",
   path: "/",
-  getParentRoute: () => SettingsAccountRoute,
-} as any);
-const SettingsAccountApiKeysRoute = SettingsAccountApiKeysRouteImport.update({
-  id: "/api-keys",
-  path: "/api-keys",
-  getParentRoute: () => SettingsAccountRoute,
-} as any);
-const SettingsAccountSecurityRoute = SettingsAccountSecurityRouteImport.update({
-  id: "/security",
-  path: "/security",
-  getParentRoute: () => SettingsAccountRoute,
-} as any);
-const SettingsAccountSessionsRoute = SettingsAccountSessionsRouteImport.update({
-  id: "/sessions",
-  path: "/sessions",
   getParentRoute: () => SettingsAccountRoute,
 } as any);
 const SettingsOrganizationIndexRoute =
@@ -305,34 +287,10 @@ const SettingsOrganizationAuditLogsRoute =
     path: "/audit-logs",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
-const SettingsOrganizationAuthenticationRoute =
-  SettingsOrganizationAuthenticationRouteImport.update({
-    id: "/authentication",
-    path: "/authentication",
-    getParentRoute: () => SettingsOrganizationRoute,
-  } as any);
-const SettingsOrganizationBillingRoute =
-  SettingsOrganizationBillingRouteImport.update({
-    id: "/billing",
-    path: "/billing",
-    getParentRoute: () => SettingsOrganizationRoute,
-  } as any);
 const SettingsOrganizationDevelopersRoute =
   SettingsOrganizationDevelopersRouteImport.update({
     id: "/developers",
     path: "/developers",
-    getParentRoute: () => SettingsOrganizationRoute,
-  } as any);
-const SettingsOrganizationDirectoryRoute =
-  SettingsOrganizationDirectoryRouteImport.update({
-    id: "/directory",
-    path: "/directory",
-    getParentRoute: () => SettingsOrganizationRoute,
-  } as any);
-const SettingsOrganizationDomainsRoute =
-  SettingsOrganizationDomainsRouteImport.update({
-    id: "/domains",
-    path: "/domains",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
 const SettingsOrganizationGithubRoute =
@@ -347,23 +305,12 @@ const SettingsOrganizationIntegrationsRoute =
     path: "/integrations",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
-const SettingsOrganizationLoginRoute =
-  SettingsOrganizationLoginRouteImport.update({
-    id: "/login",
-    path: "/login",
-    getParentRoute: () => SettingsOrganizationRoute,
-  } as any);
 const SettingsOrganizationMembersRoute =
   SettingsOrganizationMembersRouteImport.update({
     id: "/members",
     path: "/members",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
-const SettingsOrganizationSsoRoute = SettingsOrganizationSsoRouteImport.update({
-  id: "/sso",
-  path: "/sso",
-  getParentRoute: () => SettingsOrganizationRoute,
-} as any);
 const SettingsOrganizationGroupsIndexRoute =
   SettingsOrganizationGroupsIndexRouteImport.update({
     id: "/groups/",
@@ -382,6 +329,8 @@ export interface FileRoutesByFullPath {
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
+  "/sign-in": typeof SignInRoute;
+  "/sign-up": typeof SignUpRoute;
   "/agents/$agentId": typeof AgentsAgentIdRouteWithChildren;
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
@@ -393,8 +342,10 @@ export interface FileRoutesByFullPath {
   "/developers/sandboxes": typeof DevelopersSandboxesRoute;
   "/developers/secrets": typeof DevelopersSecretsRoute;
   "/developers/webhooks": typeof DevelopersWebhooksRoute;
+  "/invitations/$invitationId": typeof InvitationsInvitationIdRoute;
   "/settings/account": typeof SettingsAccountRouteWithChildren;
   "/settings/organization": typeof SettingsOrganizationRouteWithChildren;
+  "/v1/$": typeof V1SplatRoute;
   "/agents/": typeof AgentsIndexRoute;
   "/cases/": typeof CasesIndexRoute;
   "/agents/$agentId/access": typeof AgentsAgentIdAccessRoute;
@@ -410,27 +361,15 @@ export interface FileRoutesByFullPath {
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
-  "/api/auth/callback": typeof ApiAuthCallbackRoute;
-  "/api/auth/sign-in": typeof ApiAuthSignInRoute;
-  "/api/auth/sign-out": typeof ApiAuthSignOutRoute;
-  "/api/auth/sign-up": typeof ApiAuthSignUpRoute;
+  "/api/auth/$": typeof ApiAuthSplatRoute;
   "/api/dev/scenario": typeof ApiDevScenarioRoute;
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
-  "/settings/account/api-keys": typeof SettingsAccountApiKeysRoute;
-  "/settings/account/security": typeof SettingsAccountSecurityRoute;
-  "/settings/account/sessions": typeof SettingsAccountSessionsRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
-  "/settings/organization/authentication": typeof SettingsOrganizationAuthenticationRoute;
-  "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
-  "/settings/organization/directory": typeof SettingsOrganizationDirectoryRoute;
-  "/settings/organization/domains": typeof SettingsOrganizationDomainsRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
-  "/settings/organization/login": typeof SettingsOrganizationLoginRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
-  "/settings/organization/sso": typeof SettingsOrganizationSsoRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -442,6 +381,8 @@ export interface FileRoutesByTo {
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
+  "/sign-in": typeof SignInRoute;
+  "/sign-up": typeof SignUpRoute;
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
@@ -452,6 +393,8 @@ export interface FileRoutesByTo {
   "/developers/sandboxes": typeof DevelopersSandboxesRoute;
   "/developers/secrets": typeof DevelopersSecretsRoute;
   "/developers/webhooks": typeof DevelopersWebhooksRoute;
+  "/invitations/$invitationId": typeof InvitationsInvitationIdRoute;
+  "/v1/$": typeof V1SplatRoute;
   "/agents": typeof AgentsIndexRoute;
   "/cases": typeof CasesIndexRoute;
   "/agents/$agentId/access": typeof AgentsAgentIdAccessRoute;
@@ -467,27 +410,15 @@ export interface FileRoutesByTo {
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
-  "/api/auth/callback": typeof ApiAuthCallbackRoute;
-  "/api/auth/sign-in": typeof ApiAuthSignInRoute;
-  "/api/auth/sign-out": typeof ApiAuthSignOutRoute;
-  "/api/auth/sign-up": typeof ApiAuthSignUpRoute;
+  "/api/auth/$": typeof ApiAuthSplatRoute;
   "/api/dev/scenario": typeof ApiDevScenarioRoute;
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
-  "/settings/account/api-keys": typeof SettingsAccountApiKeysRoute;
-  "/settings/account/security": typeof SettingsAccountSecurityRoute;
-  "/settings/account/sessions": typeof SettingsAccountSessionsRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
-  "/settings/organization/authentication": typeof SettingsOrganizationAuthenticationRoute;
-  "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
-  "/settings/organization/directory": typeof SettingsOrganizationDirectoryRoute;
-  "/settings/organization/domains": typeof SettingsOrganizationDomainsRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
-  "/settings/organization/login": typeof SettingsOrganizationLoginRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
-  "/settings/organization/sso": typeof SettingsOrganizationSsoRoute;
   "/agents/$agentId": typeof AgentsAgentIdIndexRoute;
   "/settings/account": typeof SettingsAccountIndexRoute;
   "/settings/organization": typeof SettingsOrganizationIndexRoute;
@@ -500,6 +431,8 @@ export interface FileRoutesById {
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
+  "/sign-in": typeof SignInRoute;
+  "/sign-up": typeof SignUpRoute;
   "/agents/$agentId": typeof AgentsAgentIdRouteWithChildren;
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
@@ -511,8 +444,10 @@ export interface FileRoutesById {
   "/developers/sandboxes": typeof DevelopersSandboxesRoute;
   "/developers/secrets": typeof DevelopersSecretsRoute;
   "/developers/webhooks": typeof DevelopersWebhooksRoute;
+  "/invitations/$invitationId": typeof InvitationsInvitationIdRoute;
   "/settings/account": typeof SettingsAccountRouteWithChildren;
   "/settings/organization": typeof SettingsOrganizationRouteWithChildren;
+  "/v1/$": typeof V1SplatRoute;
   "/agents/": typeof AgentsIndexRoute;
   "/cases/": typeof CasesIndexRoute;
   "/agents/$agentId/access": typeof AgentsAgentIdAccessRoute;
@@ -528,27 +463,15 @@ export interface FileRoutesById {
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
-  "/api/auth/callback": typeof ApiAuthCallbackRoute;
-  "/api/auth/sign-in": typeof ApiAuthSignInRoute;
-  "/api/auth/sign-out": typeof ApiAuthSignOutRoute;
-  "/api/auth/sign-up": typeof ApiAuthSignUpRoute;
+  "/api/auth/$": typeof ApiAuthSplatRoute;
   "/api/dev/scenario": typeof ApiDevScenarioRoute;
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
-  "/settings/account/api-keys": typeof SettingsAccountApiKeysRoute;
-  "/settings/account/security": typeof SettingsAccountSecurityRoute;
-  "/settings/account/sessions": typeof SettingsAccountSessionsRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
-  "/settings/organization/authentication": typeof SettingsOrganizationAuthenticationRoute;
-  "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
-  "/settings/organization/directory": typeof SettingsOrganizationDirectoryRoute;
-  "/settings/organization/domains": typeof SettingsOrganizationDomainsRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
-  "/settings/organization/login": typeof SettingsOrganizationLoginRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
-  "/settings/organization/sso": typeof SettingsOrganizationSsoRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -562,6 +485,8 @@ export interface FileRouteTypes {
     | "/inbox"
     | "/onboarding"
     | "/settings"
+    | "/sign-in"
+    | "/sign-up"
     | "/agents/$agentId"
     | "/developers/api"
     | "/developers/api-keys"
@@ -573,8 +498,10 @@ export interface FileRouteTypes {
     | "/developers/sandboxes"
     | "/developers/secrets"
     | "/developers/webhooks"
+    | "/invitations/$invitationId"
     | "/settings/account"
     | "/settings/organization"
+    | "/v1/$"
     | "/agents/"
     | "/cases/"
     | "/agents/$agentId/access"
@@ -590,27 +517,15 @@ export interface FileRouteTypes {
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
     | "/agents/$agentId/variables"
-    | "/api/auth/callback"
-    | "/api/auth/sign-in"
-    | "/api/auth/sign-out"
-    | "/api/auth/sign-up"
+    | "/api/auth/$"
     | "/api/dev/scenario"
     | "/cases/$agentId/$caseId"
-    | "/settings/account/api-keys"
-    | "/settings/account/security"
-    | "/settings/account/sessions"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
-    | "/settings/organization/authentication"
-    | "/settings/organization/billing"
     | "/settings/organization/developers"
-    | "/settings/organization/directory"
-    | "/settings/organization/domains"
     | "/settings/organization/github"
     | "/settings/organization/integrations"
-    | "/settings/organization/login"
     | "/settings/organization/members"
-    | "/settings/organization/sso"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -622,6 +537,8 @@ export interface FileRouteTypes {
     | "/inbox"
     | "/onboarding"
     | "/settings"
+    | "/sign-in"
+    | "/sign-up"
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
@@ -632,6 +549,8 @@ export interface FileRouteTypes {
     | "/developers/sandboxes"
     | "/developers/secrets"
     | "/developers/webhooks"
+    | "/invitations/$invitationId"
+    | "/v1/$"
     | "/agents"
     | "/cases"
     | "/agents/$agentId/access"
@@ -647,27 +566,15 @@ export interface FileRouteTypes {
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
     | "/agents/$agentId/variables"
-    | "/api/auth/callback"
-    | "/api/auth/sign-in"
-    | "/api/auth/sign-out"
-    | "/api/auth/sign-up"
+    | "/api/auth/$"
     | "/api/dev/scenario"
     | "/cases/$agentId/$caseId"
-    | "/settings/account/api-keys"
-    | "/settings/account/security"
-    | "/settings/account/sessions"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
-    | "/settings/organization/authentication"
-    | "/settings/organization/billing"
     | "/settings/organization/developers"
-    | "/settings/organization/directory"
-    | "/settings/organization/domains"
     | "/settings/organization/github"
     | "/settings/organization/integrations"
-    | "/settings/organization/login"
     | "/settings/organization/members"
-    | "/settings/organization/sso"
     | "/agents/$agentId"
     | "/settings/account"
     | "/settings/organization"
@@ -679,6 +586,8 @@ export interface FileRouteTypes {
     | "/inbox"
     | "/onboarding"
     | "/settings"
+    | "/sign-in"
+    | "/sign-up"
     | "/agents/$agentId"
     | "/developers/api"
     | "/developers/api-keys"
@@ -690,8 +599,10 @@ export interface FileRouteTypes {
     | "/developers/sandboxes"
     | "/developers/secrets"
     | "/developers/webhooks"
+    | "/invitations/$invitationId"
     | "/settings/account"
     | "/settings/organization"
+    | "/v1/$"
     | "/agents/"
     | "/cases/"
     | "/agents/$agentId/access"
@@ -707,27 +618,15 @@ export interface FileRouteTypes {
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
     | "/agents/$agentId/variables"
-    | "/api/auth/callback"
-    | "/api/auth/sign-in"
-    | "/api/auth/sign-out"
-    | "/api/auth/sign-up"
+    | "/api/auth/$"
     | "/api/dev/scenario"
     | "/cases/$agentId/$caseId"
-    | "/settings/account/api-keys"
-    | "/settings/account/security"
-    | "/settings/account/sessions"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
-    | "/settings/organization/authentication"
-    | "/settings/organization/billing"
     | "/settings/organization/developers"
-    | "/settings/organization/directory"
-    | "/settings/organization/domains"
     | "/settings/organization/github"
     | "/settings/organization/integrations"
-    | "/settings/organization/login"
     | "/settings/organization/members"
-    | "/settings/organization/sso"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -740,6 +639,8 @@ export interface RootRouteChildren {
   InboxRoute: typeof InboxRoute;
   OnboardingRoute: typeof OnboardingRoute;
   SettingsRoute: typeof SettingsRouteWithChildren;
+  SignInRoute: typeof SignInRoute;
+  SignUpRoute: typeof SignUpRoute;
   AgentsAgentIdRoute: typeof AgentsAgentIdRouteWithChildren;
   DevelopersApiRoute: typeof DevelopersApiRoute;
   DevelopersApiKeysRoute: typeof DevelopersApiKeysRoute;
@@ -751,12 +652,11 @@ export interface RootRouteChildren {
   DevelopersSandboxesRoute: typeof DevelopersSandboxesRoute;
   DevelopersSecretsRoute: typeof DevelopersSecretsRoute;
   DevelopersWebhooksRoute: typeof DevelopersWebhooksRoute;
+  InvitationsInvitationIdRoute: typeof InvitationsInvitationIdRoute;
+  V1SplatRoute: typeof V1SplatRoute;
   AgentsIndexRoute: typeof AgentsIndexRoute;
   CasesIndexRoute: typeof CasesIndexRoute;
-  ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute;
-  ApiAuthSignInRoute: typeof ApiAuthSignInRoute;
-  ApiAuthSignOutRoute: typeof ApiAuthSignOutRoute;
-  ApiAuthSignUpRoute: typeof ApiAuthSignUpRoute;
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute;
   ApiDevScenarioRoute: typeof ApiDevScenarioRoute;
   CasesAgentIdCaseIdRoute: typeof CasesAgentIdCaseIdRoute;
 }
@@ -789,6 +689,20 @@ declare module "@tanstack/react-router" {
       path: "/settings";
       fullPath: "/settings";
       preLoaderRoute: typeof SettingsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/sign-in": {
+      id: "/sign-in";
+      path: "/sign-in";
+      fullPath: "/sign-in";
+      preLoaderRoute: typeof SignInRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/sign-up": {
+      id: "/sign-up";
+      path: "/sign-up";
+      fullPath: "/sign-up";
+      preLoaderRoute: typeof SignUpRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/agents/": {
@@ -882,6 +796,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof DevelopersWebhooksRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/invitations/$invitationId": {
+      id: "/invitations/$invitationId";
+      path: "/invitations/$invitationId";
+      fullPath: "/invitations/$invitationId";
+      preLoaderRoute: typeof InvitationsInvitationIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/settings/account": {
       id: "/settings/account";
       path: "/account";
@@ -895,6 +816,13 @@ declare module "@tanstack/react-router" {
       fullPath: "/settings/organization";
       preLoaderRoute: typeof SettingsOrganizationRouteImport;
       parentRoute: typeof SettingsRoute;
+    };
+    "/v1/$": {
+      id: "/v1/$";
+      path: "/v1/$";
+      fullPath: "/v1/$";
+      preLoaderRoute: typeof V1SplatRouteImport;
+      parentRoute: typeof rootRouteImport;
     };
     "/agents/$agentId/": {
       id: "/agents/$agentId/";
@@ -994,32 +922,11 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AgentsAgentIdVariablesRouteImport;
       parentRoute: typeof AgentsAgentIdRoute;
     };
-    "/api/auth/callback": {
-      id: "/api/auth/callback";
-      path: "/api/auth/callback";
-      fullPath: "/api/auth/callback";
-      preLoaderRoute: typeof ApiAuthCallbackRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/api/auth/sign-in": {
-      id: "/api/auth/sign-in";
-      path: "/api/auth/sign-in";
-      fullPath: "/api/auth/sign-in";
-      preLoaderRoute: typeof ApiAuthSignInRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/api/auth/sign-out": {
-      id: "/api/auth/sign-out";
-      path: "/api/auth/sign-out";
-      fullPath: "/api/auth/sign-out";
-      preLoaderRoute: typeof ApiAuthSignOutRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/api/auth/sign-up": {
-      id: "/api/auth/sign-up";
-      path: "/api/auth/sign-up";
-      fullPath: "/api/auth/sign-up";
-      preLoaderRoute: typeof ApiAuthSignUpRouteImport;
+    "/api/auth/$": {
+      id: "/api/auth/$";
+      path: "/api/auth/$";
+      fullPath: "/api/auth/$";
+      preLoaderRoute: typeof ApiAuthSplatRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/api/dev/scenario": {
@@ -1043,27 +950,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsAccountIndexRouteImport;
       parentRoute: typeof SettingsAccountRoute;
     };
-    "/settings/account/api-keys": {
-      id: "/settings/account/api-keys";
-      path: "/api-keys";
-      fullPath: "/settings/account/api-keys";
-      preLoaderRoute: typeof SettingsAccountApiKeysRouteImport;
-      parentRoute: typeof SettingsAccountRoute;
-    };
-    "/settings/account/security": {
-      id: "/settings/account/security";
-      path: "/security";
-      fullPath: "/settings/account/security";
-      preLoaderRoute: typeof SettingsAccountSecurityRouteImport;
-      parentRoute: typeof SettingsAccountRoute;
-    };
-    "/settings/account/sessions": {
-      id: "/settings/account/sessions";
-      path: "/sessions";
-      fullPath: "/settings/account/sessions";
-      preLoaderRoute: typeof SettingsAccountSessionsRouteImport;
-      parentRoute: typeof SettingsAccountRoute;
-    };
     "/settings/organization/": {
       id: "/settings/organization/";
       path: "/";
@@ -1085,39 +971,11 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationAuditLogsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
-    "/settings/organization/authentication": {
-      id: "/settings/organization/authentication";
-      path: "/authentication";
-      fullPath: "/settings/organization/authentication";
-      preLoaderRoute: typeof SettingsOrganizationAuthenticationRouteImport;
-      parentRoute: typeof SettingsOrganizationRoute;
-    };
-    "/settings/organization/billing": {
-      id: "/settings/organization/billing";
-      path: "/billing";
-      fullPath: "/settings/organization/billing";
-      preLoaderRoute: typeof SettingsOrganizationBillingRouteImport;
-      parentRoute: typeof SettingsOrganizationRoute;
-    };
     "/settings/organization/developers": {
       id: "/settings/organization/developers";
       path: "/developers";
       fullPath: "/settings/organization/developers";
       preLoaderRoute: typeof SettingsOrganizationDevelopersRouteImport;
-      parentRoute: typeof SettingsOrganizationRoute;
-    };
-    "/settings/organization/directory": {
-      id: "/settings/organization/directory";
-      path: "/directory";
-      fullPath: "/settings/organization/directory";
-      preLoaderRoute: typeof SettingsOrganizationDirectoryRouteImport;
-      parentRoute: typeof SettingsOrganizationRoute;
-    };
-    "/settings/organization/domains": {
-      id: "/settings/organization/domains";
-      path: "/domains";
-      fullPath: "/settings/organization/domains";
-      preLoaderRoute: typeof SettingsOrganizationDomainsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
     "/settings/organization/github": {
@@ -1134,25 +992,11 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationIntegrationsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
-    "/settings/organization/login": {
-      id: "/settings/organization/login";
-      path: "/login";
-      fullPath: "/settings/organization/login";
-      preLoaderRoute: typeof SettingsOrganizationLoginRouteImport;
-      parentRoute: typeof SettingsOrganizationRoute;
-    };
     "/settings/organization/members": {
       id: "/settings/organization/members";
       path: "/members";
       fullPath: "/settings/organization/members";
       preLoaderRoute: typeof SettingsOrganizationMembersRouteImport;
-      parentRoute: typeof SettingsOrganizationRoute;
-    };
-    "/settings/organization/sso": {
-      id: "/settings/organization/sso";
-      path: "/sso";
-      fullPath: "/settings/organization/sso";
-      preLoaderRoute: typeof SettingsOrganizationSsoRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
     "/settings/organization/groups/": {
@@ -1173,16 +1017,10 @@ declare module "@tanstack/react-router" {
 }
 
 interface SettingsAccountRouteChildren {
-  SettingsAccountApiKeysRoute: typeof SettingsAccountApiKeysRoute;
-  SettingsAccountSecurityRoute: typeof SettingsAccountSecurityRoute;
-  SettingsAccountSessionsRoute: typeof SettingsAccountSessionsRoute;
   SettingsAccountIndexRoute: typeof SettingsAccountIndexRoute;
 }
 
 const SettingsAccountRouteChildren: SettingsAccountRouteChildren = {
-  SettingsAccountApiKeysRoute: SettingsAccountApiKeysRoute,
-  SettingsAccountSecurityRoute: SettingsAccountSecurityRoute,
-  SettingsAccountSessionsRoute: SettingsAccountSessionsRoute,
   SettingsAccountIndexRoute: SettingsAccountIndexRoute,
 };
 
@@ -1193,16 +1031,10 @@ const SettingsAccountRouteWithChildren = SettingsAccountRoute._addFileChildren(
 interface SettingsOrganizationRouteChildren {
   SettingsOrganizationApiKeysRoute: typeof SettingsOrganizationApiKeysRoute;
   SettingsOrganizationAuditLogsRoute: typeof SettingsOrganizationAuditLogsRoute;
-  SettingsOrganizationAuthenticationRoute: typeof SettingsOrganizationAuthenticationRoute;
-  SettingsOrganizationBillingRoute: typeof SettingsOrganizationBillingRoute;
   SettingsOrganizationDevelopersRoute: typeof SettingsOrganizationDevelopersRoute;
-  SettingsOrganizationDirectoryRoute: typeof SettingsOrganizationDirectoryRoute;
-  SettingsOrganizationDomainsRoute: typeof SettingsOrganizationDomainsRoute;
   SettingsOrganizationGithubRoute: typeof SettingsOrganizationGithubRoute;
   SettingsOrganizationIntegrationsRoute: typeof SettingsOrganizationIntegrationsRoute;
-  SettingsOrganizationLoginRoute: typeof SettingsOrganizationLoginRoute;
   SettingsOrganizationMembersRoute: typeof SettingsOrganizationMembersRoute;
-  SettingsOrganizationSsoRoute: typeof SettingsOrganizationSsoRoute;
   SettingsOrganizationIndexRoute: typeof SettingsOrganizationIndexRoute;
   SettingsOrganizationGroupsIndexRoute: typeof SettingsOrganizationGroupsIndexRoute;
 }
@@ -1210,17 +1042,10 @@ interface SettingsOrganizationRouteChildren {
 const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationApiKeysRoute: SettingsOrganizationApiKeysRoute,
   SettingsOrganizationAuditLogsRoute: SettingsOrganizationAuditLogsRoute,
-  SettingsOrganizationAuthenticationRoute:
-    SettingsOrganizationAuthenticationRoute,
-  SettingsOrganizationBillingRoute: SettingsOrganizationBillingRoute,
   SettingsOrganizationDevelopersRoute: SettingsOrganizationDevelopersRoute,
-  SettingsOrganizationDirectoryRoute: SettingsOrganizationDirectoryRoute,
-  SettingsOrganizationDomainsRoute: SettingsOrganizationDomainsRoute,
   SettingsOrganizationGithubRoute: SettingsOrganizationGithubRoute,
   SettingsOrganizationIntegrationsRoute: SettingsOrganizationIntegrationsRoute,
-  SettingsOrganizationLoginRoute: SettingsOrganizationLoginRoute,
   SettingsOrganizationMembersRoute: SettingsOrganizationMembersRoute,
-  SettingsOrganizationSsoRoute: SettingsOrganizationSsoRoute,
   SettingsOrganizationIndexRoute: SettingsOrganizationIndexRoute,
   SettingsOrganizationGroupsIndexRoute: SettingsOrganizationGroupsIndexRoute,
 };
@@ -1288,6 +1113,8 @@ const rootRouteChildren: RootRouteChildren = {
   InboxRoute: InboxRoute,
   OnboardingRoute: OnboardingRoute,
   SettingsRoute: SettingsRouteWithChildren,
+  SignInRoute: SignInRoute,
+  SignUpRoute: SignUpRoute,
   AgentsAgentIdRoute: AgentsAgentIdRouteWithChildren,
   DevelopersApiRoute: DevelopersApiRoute,
   DevelopersApiKeysRoute: DevelopersApiKeysRoute,
@@ -1299,12 +1126,11 @@ const rootRouteChildren: RootRouteChildren = {
   DevelopersSandboxesRoute: DevelopersSandboxesRoute,
   DevelopersSecretsRoute: DevelopersSecretsRoute,
   DevelopersWebhooksRoute: DevelopersWebhooksRoute,
+  InvitationsInvitationIdRoute: InvitationsInvitationIdRoute,
+  V1SplatRoute: V1SplatRoute,
   AgentsIndexRoute: AgentsIndexRoute,
   CasesIndexRoute: CasesIndexRoute,
-  ApiAuthCallbackRoute: ApiAuthCallbackRoute,
-  ApiAuthSignInRoute: ApiAuthSignInRoute,
-  ApiAuthSignOutRoute: ApiAuthSignOutRoute,
-  ApiAuthSignUpRoute: ApiAuthSignUpRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDevScenarioRoute: ApiDevScenarioRoute,
   CasesAgentIdCaseIdRoute: CasesAgentIdCaseIdRoute,
 };

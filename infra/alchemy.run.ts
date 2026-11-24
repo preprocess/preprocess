@@ -26,7 +26,6 @@ import { regionConfig } from "./src/regions.ts";
 import {
   apiCrons,
   apiSecrets,
-  appSecrets,
   compatibility,
   isPreviewStage,
   isStage,
@@ -235,14 +234,6 @@ export default Alchemy.Stack(
       workersDev: true,
       env: {
         PREPROCESS_REGION: region,
-        ...Object.fromEntries(
-          appSecrets.map((name) => [
-            name,
-            preview
-              ? Config.Redacted(name).pipe(Config.withDefault(undefined))
-              : Config.Redacted(name),
-          ]),
-        ),
       },
     });
 

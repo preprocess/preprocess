@@ -5,8 +5,9 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 
+import { useOrganizationId } from "../../../../features/auth/auth-context";
 import {
-  addGroupMembers,
+  addGroupMember,
   deleteGroup,
   groupDetail,
   removeGroupMember,
@@ -31,8 +32,8 @@ export const Route = createFileRoute("/settings/organization_/groups/$groupId")(
       isGroupTab(search.tab) && search.tab !== "members"
         ? { tab: search.tab }
         : {},
-    loader: ({ params }) => {
-      const group = groupDetail(params.groupId);
+    loader: async ({ params }) => {
+      const group = await groupDetail({ data: params.groupId });
       if (!group) throw notFound();
       return group;
     },
@@ -46,28 +47,29 @@ function OrganizationGroupPage() {
   const { tab = "members" } = Route.useSearch();
   const router = useRouter();
   const navigate = useNavigate();
+  const organizationId = useOrganizationId();
   const refresh = () => router.invalidate();
 
   return (
     <GroupDetailView
       group={group}
       onAccessChange={async (agentId, level) => {
-        await setGroupAgentAccess(group.name, agentId, level);
+        await setGroupAgentAccess(organizationId, group.id, agentId, level);
         await refresh();
       }}
       onAddMember={async (personId) => {
-        await addGroupMembers(group.id, [personId]);
+        await addGroupMember(organizationId, group.id, personId);
         await refresh();
       }}
       onDelete={async () => {
-        await deleteGroup(group.id);
+        await deleteGroup(organizationId, group.id);
         await navigate({
           to: "/settings/organization/groups",
           viewTransition: PAGE_BACK,
         });
       }}
       onRemoveMember={async (personId) => {
-        await removeGroupMember(group.id, personId);
+        await removeGroupMember(organizationId, group.id, personId);
         await refresh();
       }}
       onTabChange={(next) =>

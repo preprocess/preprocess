@@ -4,8 +4,8 @@ import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import {
-  ACCOUNT_SETTINGS_TABS,
   ORGANIZATION_SETTINGS_TABS,
+  SettingsPageHeader,
   SettingsChrome,
   SettingsSectionTabs,
   settingsTabIndexFromPath,
@@ -21,7 +21,7 @@ function SettingsRoutedSection({
 }: {
   title: string;
   detail?: ReactNode;
-  basePath: "/settings/account" | "/settings/organization";
+  basePath: "/settings/organization";
   idPrefix: string;
   tabs: readonly { slug: string; label: string }[];
   onSelect: (index: number) => void;
@@ -49,37 +49,13 @@ function SettingsRoutedSection({
 }
 
 export function AccountSettingsSection(): ReactNode {
-  const navigate = useNavigate();
-
   return (
-    <SettingsRoutedSection
-      title="Account settings"
-      basePath="/settings/account"
-      idPrefix="account-settings"
-      onSelect={(index) => {
-        const tab = ACCOUNT_SETTINGS_TABS[index];
-        if (!tab) return;
-        switch (tab.action) {
-          case "profile":
-            void navigate({ to: "/settings/account" });
-            return;
-          case "security":
-            void navigate({ to: "/settings/account/security" });
-            return;
-          case "sessions":
-            void navigate({ to: "/settings/account/sessions" });
-            return;
-          case "api-keys":
-            void navigate({ to: "/settings/account/api-keys" });
-            return;
-          default: {
-            const _exhaustive: never = tab;
-            return _exhaustive;
-          }
-        }
-      }}
-      tabs={ACCOUNT_SETTINGS_TABS}
-    />
+    <SettingsChrome>
+      <div className="flex flex-col gap-12">
+        <SettingsPageHeader title="Account settings" />
+        <Outlet />
+      </div>
+    </SettingsChrome>
   );
 }
 
@@ -104,11 +80,8 @@ export function OrganizationSettingsSection(): ReactNode {
           case "groups":
             void navigate({ to: "/settings/organization/groups" });
             return;
-          case "authentication":
-            void navigate({ to: "/settings/organization/authentication" });
-            return;
-          case "billing":
-            void navigate({ to: "/settings/organization/billing" });
+          case "audit-logs":
+            void navigate({ to: "/settings/organization/audit-logs" });
             return;
           default: {
             const _exhaustive: never = tab;

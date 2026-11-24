@@ -19,7 +19,6 @@ import {
   ArrowLeft,
   ChevronRight,
   Plus,
-  ShareUpRight,
   Users,
   X,
 } from "@preprocess/ui/lib/icons";
@@ -101,11 +100,11 @@ export function GroupsList({
           New group
         </Button>
       }
-      description="Groups decide who can see and operate each agent. Groups mapped to your identity provider keep their members in sync on their own."
+      description="Groups decide who can see and operate each agent. The built-in Developers group manages every agent."
     >
       {groups.length === 0 ? (
         <SettingsEmpty
-          description="Create a group, or map groups from your identity provider in Authentication."
+          description="Create a group to give its members access to agents."
           title="No groups yet"
         />
       ) : (
@@ -231,7 +230,6 @@ function CreateGroupDialog({
 export const GROUP_TABS = [
   { id: "members", label: "Members" },
   { id: "access", label: "Agent access" },
-  { id: "identity", label: "Identity provider" },
 ] as const;
 
 export type GroupTab = (typeof GROUP_TABS)[number]["id"];
@@ -239,9 +237,7 @@ export type GroupTab = (typeof GROUP_TABS)[number]["id"];
 /**
  * A group on its own page, outside Organization settings' tabs: a way back
  * to Groups, its name, and a tab each for its members, the access it holds
- * on each agent, and its identity-provider mapping. Synced groups take their
- * members from the provider, so only groups managed here add or remove
- * people.
+ * on each agent.
  */
 export function GroupDetailView({
   group,
@@ -302,7 +298,6 @@ export function GroupDetailView({
         {tab === "access" ? (
           <GroupAccess group={group} onAccessChange={onAccessChange} />
         ) : null}
-        {tab === "identity" ? <GroupIdentity group={group} /> : null}
       </div>
     </SettingsChrome>
   );
@@ -474,45 +469,6 @@ function GroupAccess({
           ))}
         </SettingsRows>
       )}
-    </SettingsSection>
-  );
-}
-
-function GroupIdentity({ group }: Readonly<{ group: GroupDetail }>) {
-  const { source } = group;
-  return (
-    <SettingsSection description="Which identity-provider groups feed this one. The mapping is edited in WorkOS's Admin Portal, opened from Authentication.">
-      <SettingsRows>
-        <SettingsRow
-          description={
-            source.kind === "directory"
-              ? `Members sync from ${source.provider}`
-              : "Not mapped; members are managed here"
-          }
-          label={
-            source.kind === "directory" ? (
-              <span className="flex flex-wrap items-center gap-1.5">
-                {source.idpGroups.map((name) => (
-                  <Badge color="gray" key={name} size="sm">
-                    {name}
-                  </Badge>
-                ))}
-              </span>
-            ) : (
-              "No mapped groups"
-            )
-          }
-        >
-          <Button
-            render={<Link to="/settings/organization/authentication" />}
-            size="compact"
-            trailingIcon={ShareUpRight}
-            variant="secondary"
-          >
-            {source.kind === "directory" ? "Edit mapping" : "Map groups"}
-          </Button>
-        </SettingsRow>
-      </SettingsRows>
     </SettingsSection>
   );
 }

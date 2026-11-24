@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { useAuth } from "../../features/auth/auth-context";
 import { useMemo, useRef, useState } from "react";
 
 import { InputBar } from "./input-bar";

@@ -60,7 +60,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { clientApiErrorKind } from "../workos-client-api/graphql";
+import { ApiError } from "../auth/client";
 
 /**
  * A block of settings: heading, optional description and actions. Leave the
@@ -432,22 +432,26 @@ export function SettingsEmpty({
   return inCard ? content : <SettingsCard>{content}</SettingsCard>;
 }
 
-// Copy from the widgets' GenericError, per failure kind.
+function errorKind(error: unknown): keyof typeof ERROR_COPY {
+  if (error instanceof TypeError) return "network";
+  if (!(error instanceof ApiError)) return "generic";
+  if (error.status === 401) return "unauthorized";
+  if (error.status === 403) return "forbidden";
+  return "generic";
+}
+
+// Copy per failure kind.
 const ERROR_COPY = {
   forbidden: {
     title: "Incorrect permissions",
     body: "You don’t have permission to view this. Ask an admin for access.",
-  },
-  expired: {
-    title: "Session expired",
-    body: "Reload the page to continue.",
   },
   unauthorized: {
     title: "Authorization error",
     body: "Sign in again to continue.",
   },
   network: {
-    title: "Couldn’t reach WorkOS",
+    title: "Couldn’t reach Preprocess",
     body: "Check your connection and try again.",
   },
   generic: {
@@ -464,7 +468,7 @@ export function SettingsError({
   error: unknown;
   className?: string;
 }) {
-  const kind = clientApiErrorKind(error);
+  const kind = errorKind(error);
   const copy = ERROR_COPY[kind];
   const message =
     kind === "generic" && error instanceof Error && error.message
