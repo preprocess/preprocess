@@ -18,6 +18,7 @@ import {
   localEmailFrom,
   localModelService,
   localRoleDatabaseUrl,
+  localSecretsMasterKey,
   names,
   runtimeDurableObjects,
 } from "../src/stages.ts";
@@ -53,6 +54,7 @@ const configs: Record<string, object> = {
       USER_WORKER: local.userWorker,
       MODEL_SERVICE_URL: localModelService.url,
       MODEL_SERVICE_KEY: localModelService.key,
+      SECRETS_MASTER_KEY: localSecretsMasterKey,
       APP_URL: localAppUrl,
       EMAIL_FROM: localEmailFrom,
       AUDIT_SIGNING_KEY_ID: localAuditKeyId,
@@ -83,16 +85,33 @@ const configs: Record<string, object> = {
       { tag: "v1", new_sqlite_classes: Object.values(durableObjects) },
     ],
     queues: {
-      producers: [{ binding: "JOBS", queue: local.queue }],
-      consumers: [{ queue: local.queue, max_batch_timeout: 1 }],
+      producers: [
+        { binding: "JOBS", queue: local.queue },
+        { binding: "CASES", queue: local.casesQueue },
+        { binding: "SECRET_SYNC", queue: local.secretSync },
+      ],
+      consumers: [
+        { queue: local.queue, max_batch_timeout: 1 },
+        { queue: local.secretSync, max_batch_timeout: 1 },
+        { queue: local.casesQueue, max_batch_timeout: 1 },
+      ],
     },
     r2_buckets: [
       { binding: "FILES", bucket_name: local.bucket },
       { binding: "AUDIT", bucket_name: local.auditBucket },
     ],
     // Wrangler supports dispatch namespaces only as remote bindings, so the
-    // local API reaches the user Worker through a service binding.
-    services: [{ binding: "LOCAL_USER_WORKER", service: local.userWorker }],
+    // local API reaches the user Worker through a service binding, and
+    // uploads agent scripts to apps/namespace-local.
+    services: [
+      { binding: "LOCAL_USER_WORKER", service: local.userWorker },
+      { binding: "RUNTIME", service: local.runtime },
+      {
+        binding: "LOCAL_NAMESPACE",
+        service: local.localNamespace,
+        entrypoint: "Namespace",
+      },
+    ],
   },
   "apps/model-stub": {
     $schema: "node_modules/wrangler/config-schema.json",
@@ -125,7 +144,11 @@ const configs: Record<string, object> = {
       { tag: "v1", new_sqlite_classes: Object.values(runtimeDurableObjects) },
     ],
     r2_buckets: [{ binding: "RUNS", bucket_name: local.runs }],
-    services: [{ binding: "LOCAL_NAMESPACE", service: local.localNamespace }],
+    services: [
+      { binding: "LOCAL_NAMESPACE", service: local.localNamespace },
+      { binding: "MCP_SERVICE", service: local.api, entrypoint: "McpService" },
+      { binding: "PLATFORM", service: local.api, entrypoint: "Platform" },
+    ],
   },
   "apps/outbound": {
     $schema: "node_modules/wrangler/config-schema.json",

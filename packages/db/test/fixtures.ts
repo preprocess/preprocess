@@ -30,8 +30,19 @@ import {
   outbox,
   reviewEvents,
 } from "../src/schema/cases.ts";
-import { deploymentGroups, deployments } from "../src/schema/deployments.ts";
+import {
+  deploymentGroups,
+  deployments,
+  secretDeliveries,
+  secretGrants,
+} from "../src/schema/deployments.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
+import {
+  mcpAuthorizations,
+  mcpConnections,
+  mcpGrants,
+  mcpServers,
+} from "../src/schema/mcp.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 
 export type Org = Awaited<ReturnType<typeof seedOrganization>>;
@@ -109,8 +120,9 @@ export const seedOrganization = async (name: string) =>
       masterKeyId: "secrets-master-v1",
       wrappedKey: new Uint8Array([1, 2, 3]),
     });
+    const secretId = newId("secret");
     await tx.insert(secrets).values({
-      id: newId("secret"),
+      id: secretId,
       organizationId: org,
       name: "ERP_TOKEN",
       version: 1,
@@ -137,6 +149,46 @@ export const seedOrganization = async (name: string) =>
     await tx
       .insert(deploymentGroups)
       .values({ organizationId: org, deploymentId, groupId, approves: true });
+    await tx
+      .insert(secretGrants)
+      .values({ organizationId: org, secretId, agentId, grantedBy: userId });
+    await tx.insert(secretDeliveries).values({
+      organizationId: org,
+      deploymentId,
+      secretId,
+      secretVersion: 1,
+    });
+    const serverId = newId("mcpServer");
+    await tx.insert(mcpServers).values({
+      id: serverId,
+      organizationId: org,
+      slug: "crm",
+      url: "https://crm.example.com/mcp",
+      auth: "oauth",
+      createdBy: userId,
+    });
+    await tx
+      .insert(mcpGrants)
+      .values({ organizationId: org, serverId, agentId, grantedBy: userId });
+    await tx.insert(mcpConnections).values({
+      id: newId("mcpConnection"),
+      organizationId: org,
+      serverId,
+      version: 1,
+      keyVersion: 1,
+      ciphertext: new Uint8Array([7, 8, 9]),
+      status: "active",
+      connectedBy: userId,
+    });
+    await tx.insert(mcpAuthorizations).values({
+      id: newId("mcpAuthorization"),
+      organizationId: org,
+      serverId,
+      codeVerifier: "verifier",
+      redirectUri: "https://app.test/v1/mcp/oauth/callback",
+      createdBy: userId,
+      expiresAt: new Date(now.getTime() + 600_000),
+    });
     await tx.insert(cases).values({
       id: caseId,
       organizationId: org,
@@ -265,6 +317,12 @@ export const tenantTables = {
   audit_heads: "organization_id",
   deployments: "organization_id",
   deployment_groups: "organization_id",
+  secret_grants: "organization_id",
+  secret_deliveries: "organization_id",
+  mcp_servers: "organization_id",
+  mcp_grants: "organization_id",
+  mcp_connections: "organization_id",
+  mcp_authorizations: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

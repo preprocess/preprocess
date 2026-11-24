@@ -7,16 +7,40 @@ import {
   RESERVED_BINDINGS,
   RESERVED_PREFIX,
   SECRET_NAME,
+  type Effect,
+  type EvaluateRequest,
   type Manifest,
   type McpBinding,
   type Model,
+  type OptionsRequest,
   type Reasoning,
+  type Schedule,
   type ToolCall,
   type ToolResult,
 } from "./protocol.ts";
 import { redact, redactConsole, redactText, type Secrets } from "./redact.ts";
+import {
+  evaluate,
+  options,
+  OptionsError,
+  schemaProblems,
+  serialise,
+  type Group,
+} from "./schema.ts";
 
 export type { Manifest, Model, Reasoning } from "./protocol.ts";
+export { schema } from "./schema.ts";
+export type {
+  Answers,
+  Check,
+  Field,
+  FieldOptions,
+  FunctionContext,
+  Group,
+  Review,
+  Source,
+  SourceResult,
+} from "./schema.ts";
 
 export const SDK_VERSION = "0.1.0";
 
@@ -31,6 +55,9 @@ export type ToolContext<S extends string> = {
   env: Readonly<Record<S, string | undefined>>;
   case: { id: string };
   mcp(server: string): McpServer;
+  // Group slugs must be listed in the agent's groups.
+  waitOn(group: string, opts?: { reason?: string }): void;
+  tag(group: string, message: string): void;
 };
 
 export type Tool<S extends string = string> = {
@@ -63,9 +90,30 @@ export type AgentDefinition<S extends string> = {
   secrets?: readonly S[];
   mcp?: readonly string[];
   tools: Record<string, Tool<NoInfer<S>>>;
+  schema?: Group;
+  groups?: readonly string[];
+  schedules?: readonly ScheduleDefinition[];
+  ocr?: boolean;
+};
+
+export type ScheduleDefinition = Omit<Schedule, "timezone" | "previews"> & {
+  timezone?: string;
+  previews?: boolean;
 };
 
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
+const GROUP_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/;
+const SCHEDULE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const CRON_FIELD = /^[0-9A-Za-z*?/,#-]+$/;
+
+const validTimezone = (timezone: string) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const check = (definition: AgentDefinition<string>) => {
   const problems: string[] = [];
@@ -86,6 +134,31 @@ const check = (definition: AgentDefinition<string>) => {
   for (const name of Object.keys(definition.tools)) {
     if (!TOOL_NAME.test(name))
       problems.push(`tool ${name} must match ${TOOL_NAME}`);
+  }
+  if (definition.schema !== undefined)
+    problems.push(...schemaProblems(definition.schema));
+  const groups = definition.groups ?? [];
+  for (const slug of groups)
+    if (!GROUP_SLUG.test(slug))
+      problems.push(`group ${slug} must match ${GROUP_SLUG}`);
+  if (new Set(groups).size !== groups.length)
+    problems.push("groups must be unique");
+  const names = new Set<string>();
+  for (const schedule of definition.schedules ?? []) {
+    if (!SCHEDULE_NAME.test(schedule.name))
+      problems.push(`schedule ${schedule.name} must match ${SCHEDULE_NAME}`);
+    if (names.has(schedule.name))
+      problems.push(`schedule ${schedule.name} is declared twice`);
+    names.add(schedule.name);
+    const fields = schedule.cron.trim().split(/\s+/);
+    if (fields.length !== 5 || !fields.every((f) => CRON_FIELD.test(f)))
+      problems.push(
+        `schedule ${schedule.name} needs a 5-field cron expression`,
+      );
+    if (schedule.timezone !== undefined && !validTimezone(schedule.timezone))
+      problems.push(`schedule ${schedule.name} has an unknown timezone`);
+    if (!schedule.text.trim())
+      problems.push(`schedule ${schedule.name} has empty text`);
   }
   if (problems.length) throw new Error(`Invalid agent: ${problems.join("; ")}`);
 };
@@ -112,6 +185,18 @@ export const agent = <const S extends string = never>(
       inputSchema: z.toJSONSchema(t.input, { io: "input" }),
       sideEffects: t.sideEffects,
     })),
+    ...(definition.schema && { schema: serialise(definition.schema) }),
+    ...(definition.groups && { groups: [...definition.groups] }),
+    ...(definition.schedules && {
+      schedules: definition.schedules.map((schedule) => ({
+        name: schedule.name,
+        cron: schedule.cron.trim(),
+        timezone: schedule.timezone ?? "UTC",
+        text: schedule.text,
+        previews: schedule.previews ?? false,
+      })),
+    }),
+    ...(definition.ocr !== undefined && { ocr: definition.ocr }),
   };
 
   const bound = (env: Env): Secrets =>
@@ -122,10 +207,23 @@ export const agent = <const S extends string = never>(
       }),
     );
 
+  const exposed = (secrets: Secrets) =>
+    Object.fromEntries(
+      manifest.secrets.map((s) => [s, secrets.get(s)]),
+    ) as Record<S, string | undefined>;
+
+  const declaredGroup = (group: string) => {
+    if (!manifest.groups?.includes(group))
+      throw new Error(
+        `Group ${group} is not declared in this agent's groups list`,
+      );
+  };
+
   const runTool = async (
     name: string,
     call: ToolCall,
     env: Env,
+    mcp: McpBinding | undefined,
   ): Promise<ToolResult> => {
     const definitionTool = definition.tools[name];
     if (!definitionTool)
@@ -134,17 +232,26 @@ export const agent = <const S extends string = never>(
     if (!parsed.success)
       return { output: z.prettifyError(parsed.error), isError: true };
     const secrets = bound(env);
+    const effects: Effect[] = [];
     const ctx: ToolContext<S> = {
-      env: Object.fromEntries(
-        manifest.secrets.map((s) => [s, secrets.get(s)]),
-      ) as Record<S, string | undefined>,
+      env: exposed(secrets),
       case: { id: call.case.id },
+      waitOn: (group, opts = {}) => {
+        declaredGroup(group);
+        effects.push({ type: "wait", group, reason: opts.reason ?? null });
+      },
+      tag: (group, message) => {
+        declaredGroup(group);
+        if (typeof message !== "string" || !message.trim())
+          throw new Error("A tag needs a message");
+        effects.push({ type: "tag", group, message });
+      },
       mcp: (server) => {
         if (!manifest.mcp.includes(server))
           throw new Error(
             `MCP server ${server} is not declared in this agent's mcp list`,
           );
-        const binding = env.MCP;
+        const binding = mcp;
         if (!binding) throw new Error("This deployment has no MCP binding");
         return {
           listTools: () => binding.listTools(server),
@@ -155,7 +262,13 @@ export const agent = <const S extends string = never>(
     };
     try {
       const output: unknown = await definitionTool.run(parsed.data, ctx);
-      return { output: redact(output ?? null, secrets), isError: false };
+      return {
+        output: redact(output ?? null, secrets),
+        isError: false,
+        ...(effects.length && {
+          effects: redact(effects, secrets) as Effect[],
+        }),
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { output: redactText(message, secrets), isError: true };
@@ -164,15 +277,50 @@ export const agent = <const S extends string = never>(
 
   return {
     manifest,
-    async fetch(request: Request, env: Env): Promise<Response> {
+    async fetch(
+      request: Request,
+      env: Env,
+      ctx?: ExecutionContext,
+    ): Promise<Response> {
       redactConsole(bound(env));
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/manifest")
         return Response.json(manifest);
+      const root = definition.schema;
+      if (
+        root &&
+        request.method === "POST" &&
+        (url.pathname === "/schema/evaluate" ||
+          url.pathname === "/schema/options")
+      ) {
+        const secrets = bound(env);
+        const body = await request.json<EvaluateRequest & OptionsRequest>();
+        const ctx = { env: exposed(secrets), caseId: body.caseId };
+        if (url.pathname === "/schema/evaluate")
+          return Response.json(
+            redact(await evaluate(root, body, ctx), secrets),
+          );
+        try {
+          return Response.json(redact(await options(root, body, ctx), secrets));
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          return Response.json(
+            { error: redactText(message, secrets) },
+            { status: error instanceof OptionsError ? 400 : 500 },
+          );
+        }
+      }
       const match = /^\/tools\/([a-z][a-z0-9_]*)$/.exec(url.pathname);
       if (request.method === "POST" && match?.[1]) {
         return Response.json(
-          await runTool(match[1], await request.json<ToolCall>(), env),
+          await runTool(
+            match[1],
+            await request.json<ToolCall>(),
+            env,
+            // The runtime passes the MCP capability with each dispatch.
+            (ctx?.props as { MCP?: McpBinding } | undefined)?.MCP ?? env.MCP,
+          ),
         );
       }
       return Response.json({ error: "not found" }, { status: 404 });

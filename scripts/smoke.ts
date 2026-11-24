@@ -1,7 +1,6 @@
 // Checks a deployed stage end to end: Postgres (seeded through Hyperdrive),
-// the Durable Object, the queue writing to R2, dispatch to the user Worker,
-// decide through the model client and stub, and the app Worker. OUTPUTS is the JSON
-// infra/scripts/preview.ts printed.
+// the Durable Object, the queue writing to R2, dispatch to the user Worker, and
+// the app Worker. OUTPUTS is the JSON infra/scripts/preview.ts printed.
 
 const { api, app } = JSON.parse(process.env.OUTPUTS ?? "{}") as {
   api?: string;
@@ -43,22 +42,6 @@ expect(done, "queue consumer wrote the job to R2");
 expect(
   (await call("/dispatch")).body.includes("dispatch-namespace"),
   "dispatch namespace",
-);
-expect(
-  (
-    await call("/models/decide", {
-      method: "POST",
-      body: JSON.stringify({
-        prompt: "Which vendor sent this invoice?",
-        case: { input: "Invoice 1042 from Acme Corporation" },
-        options: [
-          { id: "acme", label: "Acme Corporation" },
-          { id: "globex", label: "Globex" },
-        ],
-      }),
-    })
-  ).body.includes('"id":"acme"'),
-  "decide through the model service",
 );
 
 // Deployed stages don't bind the app to the API yet, so check only that its

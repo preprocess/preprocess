@@ -1,9 +1,7 @@
 import { ModelError } from "@preprocess/models/client";
-import { decide, type DecideInput } from "@preprocess/models/decide";
-import { modelEndpoint } from "@preprocess/models/endpoints";
-import { ocrPage } from "@preprocess/models/ocr";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { runMode } from "@preprocess/runmode";
+import { orgId } from "@preprocess/db/client";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
@@ -12,12 +10,24 @@ import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { orgCaller } from "./caller.ts";
 import type { OrgVariables } from "./caller.ts";
-import type { Env, Job } from "./env.ts";
+import { startQueuedCase } from "./cases.ts";
+import { syncAgent } from "./deploy.ts";
+import type { Env, Job, SecretSync } from "./env.ts";
+import { deleteExpiredIdempotencyKeys } from "./idempotency.ts";
+import { sweepOutbox } from "./outbox.ts";
+import type { OutboxMessage } from "./outbox.ts";
+import { agentRoutes } from "./routes/agents.ts";
+import { caseRoutes } from "./routes/cases.ts";
 import { auditRoutes } from "./routes/audit.ts";
+import { devRoutes } from "./routes/dev.ts";
 import { groupRoutes } from "./routes/groups.ts";
 import { organizationRoutes } from "./routes/organization.ts";
+import { mcpCallback, mcpRoutes } from "./routes/mcp.ts";
+import { secretRoutes } from "./routes/secrets.ts";
 
 export { Counter } from "./counter.ts";
+export { McpService } from "./mcp.ts";
+export { Platform } from "./platform.ts";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -25,7 +35,9 @@ app.use("*", cors());
 
 app.onError((error, c) => {
   if (error instanceof HTTPException)
-    return c.json({ error: error.message || "error" }, error.status);
+    return error.res
+      ? error.getResponse()
+      : c.json({ error: error.message || "error" }, error.status);
   if (error instanceof ModelError)
     return c.json(
       { error: error.code, message: error.message },
@@ -58,9 +70,14 @@ orgApi.use(orgCaller);
 orgApi.route("/", organizationRoutes);
 orgApi.route("/", groupRoutes);
 orgApi.route("/", auditRoutes);
+orgApi.route("/", agentRoutes);
+orgApi.route("/", secretRoutes);
+orgApi.route("/", mcpRoutes);
+orgApi.route("/", caseRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
+v1.route("/", mcpCallback);
 v1.doc31("/openapi.json", {
   openapi: "3.1.0",
   info: { title: "Preprocess API", version: "1" },
@@ -102,36 +119,48 @@ app.get("/dispatch", async (c) => {
   });
 });
 
-// Smoke routes for the model client until decide and OCR have their real
-// callers (the runtime's decide tool and POST /v1/orgs/{org}/ocr).
-app.post("/models/decide", async (c) =>
-  c.json(
-    await decide(
-      modelEndpoint(c.env, "decide"),
-      await c.req.json<DecideInput>(),
-    ),
-  ),
-);
-
-app.post("/models/ocr", async (c) =>
-  c.json(
-    await ocrPage(
-      modelEndpoint(c.env, "ocr"),
-      await c.req.json<{ image: string; grounding?: boolean }>(),
-    ),
-  ),
-);
+app.use("/dev/orgs/:org/*", orgCaller);
+app.route("/dev/orgs/:org", devRoutes);
 
 export default {
   fetch: app.fetch,
-  // 00:20 UTC: sign and store yesterday's audit chain for every organization.
   scheduled(controller, env, ctx) {
+    // Every minute: re-send outbox rows a failed queue send left behind.
+    if (controller.cron === "* * * * *") {
+      ctx.waitUntil(sweepOutbox(env));
+      return;
+    }
+    // 00:20 UTC: sign and store yesterday's audit chain for every
+    // organization, and forget expired idempotency keys.
     ctx.waitUntil(anchorAll(env, new Date(controller.scheduledTime)));
+    ctx.waitUntil(deleteExpiredIdempotencyKeys(env));
   },
-  // The queue consumer writes each job's result to R2 under its organization.
-  async queue(batch: MessageBatch<Job>, env: Env) {
-    for (const message of batch.messages) {
-      const job = message.body;
+  async queue(batch: MessageBatch<Job | SecretSync | OutboxMessage>, env: Env) {
+    if (batch.queue.startsWith("preprocess-cases-")) {
+      // A start that throws is retried by the queue.
+      for (const message of batch.messages as Message<OutboxMessage>[]) {
+        await startQueuedCase(env, message.body);
+        message.ack();
+      }
+      return;
+    }
+    for (const message of batch.messages as Message<Job | SecretSync>[]) {
+      const body = message.body;
+      if ("kind" in body) {
+        try {
+          await syncAgent(env, orgId(body.organizationId), body.agentId, {
+            actorType: "platform",
+            actorId: "secret-sync",
+          });
+          message.ack();
+        } catch (error) {
+          console.error(error);
+          message.retry({ delaySeconds: Math.min(300, 2 ** message.attempts) });
+        }
+        continue;
+      }
+      // A job's result goes to R2 under its organization.
+      const job = body;
       await env.FILES.put(
         `${job.organizationId}/jobs/${job.id}.json`,
         JSON.stringify({
@@ -144,4 +173,4 @@ export default {
       message.ack();
     }
   },
-} satisfies ExportedHandler<Env, Job>;
+} satisfies ExportedHandler<Env, Job | SecretSync | OutboxMessage>;

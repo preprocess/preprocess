@@ -36,6 +36,20 @@
       "when": 1795508710676,
       "tag": "0004_step3_security",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795509045083,
+      "tag": "0005_secret_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795510161288,
+      "tag": "0006_mcp",
+      "breakpoints": true
     }
   ]
 }

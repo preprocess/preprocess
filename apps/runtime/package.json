@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev -c wrangler.jsonc -c ../namespace-local/wrangler.jsonc -c ../outbound/wrangler.jsonc",
+    "dev": "wrangler dev --inspector-port 9249 -c wrangler.jsonc -c ../namespace-local/wrangler.jsonc -c ../outbound/wrangler.jsonc",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -14,7 +14,8 @@
     "@earendil-works/pi-durable": "1.6.0",
     "@earendil-works/pi-schema": "1.6.0",
     "@preprocess/sdk": "workspace:*",
-    "agents": "0.34.0"
+    "agents": "0.34.0",
+    "@preprocess/models": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",

@@ -30,6 +30,9 @@ export const names = (stage: string) => ({
   api: `preprocess-api-${stage}`,
   namespace: `preprocess-${stage}`,
   queue: `preprocess-jobs-${stage}`,
+  // Case starts (design doc 04): the API enqueues after commit and consumes.
+  casesQueue: `preprocess-cases-${stage}`,
+  secretSync: `preprocess-secret-sync-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
   userWorker: "hello",
@@ -49,7 +52,8 @@ export const names = (stage: string) => ({
 export const apiSecrets = ["BETTER_AUTH_SECRET", "AUDIT_SIGNING_KEY"] as const;
 
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
-export const apiCrons = ["20 0 * * *"];
+// Every minute: re-send outbox rows a failed queue send left behind (doc 04).
+export const apiCrons = ["20 0 * * *", "* * * * *"];
 
 // Durable Object classes the API Worker exports.
 export const durableObjects = { COUNTER: "Counter" } as const;
@@ -84,3 +88,7 @@ export const localRoleDatabaseUrl = (
 export const localAppUrl = "https://app.preprocess.localhost";
 export const localEmailFrom = "Preprocess <invitations@preprocess.localhost>";
 export const localAuditKeyId = "audit-ed25519-development";
+
+// values typed into a local database. Deployed stages bind Secrets Store.
+export const localSecretsMasterKey =
+  "cHJlcHJvY2Vzcy1sb2NhbC1tYXN0ZXIta2V5LTMyYnk=";

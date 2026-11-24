@@ -29,10 +29,6 @@ type Env = {
   };
 };
 
-// Set only by the runtime, which is the one Worker bound to this fetch.
-const SCRIPT_HEADER = "x-preprocess-script";
-const OUTBOUND_HEADER = "x-preprocess-outbound";
-
 const metaKey = (name: string) => `scripts/${name}.json`;
 const modulesKey = (name: string, revision: number) =>
   `scripts/${name}/${revision}.json`;
@@ -108,36 +104,37 @@ const bindingValue = (binding: ScriptBinding) => {
   return binding.text;
 };
 
-export default {
-  async fetch(request, env, ctx) {
-    const name = request.headers.get(SCRIPT_HEADER);
-    const params = request.headers.get(OUTBOUND_HEADER);
-    if (!name || !params)
-      return new Response("dispatch headers missing", { status: 400 });
-    const stored = await read(env, name);
+// The dispatch namespace's runtime half: runs a script with the outbound
+// Worker and the props the dispatching Worker passes, as `DISPATCHER.get`
+// does on Cloudflare.
+export default class extends WorkerEntrypoint<Env> {
+  async dispatch(
+    name: string,
+    outbound: OutboundParams,
+    props: Record<string, unknown>,
+    request: Request,
+  ) {
+    const stored = await read(this.env, name);
     if (!stored)
       return new Response(`Worker ${name} not found`, { status: 404 });
-    const worker = env.LOADER.get(`${name}:${stored.revision}`, async () => ({
-      compatibilityDate: "2026-07-26",
-      compatibilityFlags: ["nodejs_compat"],
-      mainModule: stored.mainModule,
-      modules: await (await env.SCRIPTS.get(
-        modulesKey(name, stored.revision),
-      ))!.json<Record<string, string>>(),
-      env: Object.fromEntries(
-        stored.bindings.map((b) => [b.name, bindingValue(b)]),
-      ),
-      globalOutbound: (
-        ctx.exports as unknown as {
-          Outbound(options: { props: OutboundParams }): Fetcher;
-        }
-      ).Outbound({
-        props: JSON.parse(params) as OutboundParams,
+    const exports = this.ctx.exports as unknown as {
+      Outbound(options: { props: OutboundParams }): Fetcher;
+    };
+    const worker = this.env.LOADER.get(
+      `${name}:${stored.revision}`,
+      async () => ({
+        compatibilityDate: "2026-07-26",
+        compatibilityFlags: ["nodejs_compat"],
+        mainModule: stored.mainModule,
+        modules: await (await this.env.SCRIPTS.get(
+          modulesKey(name, stored.revision),
+        ))!.json<Record<string, string>>(),
+        env: Object.fromEntries(
+          stored.bindings.map((b) => [b.name, bindingValue(b)]),
+        ),
+        globalOutbound: exports.Outbound({ props: outbound }),
       }),
-    }));
-    const forwarded = new Request(request);
-    forwarded.headers.delete(SCRIPT_HEADER);
-    forwarded.headers.delete(OUTBOUND_HEADER);
-    return worker.getEntrypoint().fetch(forwarded);
-  },
-} satisfies ExportedHandler<Env>;
+    );
+    return worker.getEntrypoint(undefined, { props }).fetch(request);
+  }
+}

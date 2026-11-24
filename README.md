@@ -46,11 +46,12 @@ applies migrations, loads the seed, and starts the apps behind
 
 - https://app.preprocess.localhost: the product app. Sign up there; the app
   serves Better Auth (`/api/auth/*`) and `/v1` from the API on its own origin.
-- https://api.preprocess.localhost: the API (`POST /orgs/:org/counter`,
-  `POST /orgs/:org/jobs`, `/dispatch`, `POST /models/decide`,
-  `POST /models/ocr`).
-- https://model-stub.preprocess.localhost: the stub model service the API calls
-  for `decide` and OCR.
+- https://api.preprocess.localhost: the API (`/v1/orgs/{org}/…`, with its
+  OpenAPI document at `/v1/openapi.json`).
+- https://runtime.preprocess.localhost: the case runtime the API starts cases
+  on.
+- https://model-stub.preprocess.localhost: the stub model service the runtime
+  calls for `decide` and the API for OCR.
 
 The first run starts portless's HTTPS proxy on port 443 and trusts its local CA,
 so it may ask for `sudo`. Chrome on Linux reads its own NSS store; add the CA

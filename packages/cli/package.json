@@ -1,0 +1,32 @@
+{
+  "name": "@preprocess/cli",
+  "version": "0.1.0",
+  "description": "The preprocess command: deploy agents written with @preprocess/sdk.",
+  "author": "Preprocess, Inc.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "preprocess": "./src/main.ts"
+  },
+  "exports": {
+    ".": "./src/deploy.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "devDependencies": {
+    "@preprocess/sdk": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "^5.9.3",
+    "vitest": "catalog:",
+    "zod": "catalog:"
+  }
+}
