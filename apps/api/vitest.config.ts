@@ -48,6 +48,7 @@ bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/crm-agent.ts", "crm-agent.js");
 bundle("test/fixtures/fake-builder.ts", "fake-builder.js");
 bundle("test/fixtures/network-agent.ts", "network-agent.js");
+bundle("test/fixtures/groups-agent.ts", "groups-agent.js");
 
 const worker = (name: string, extra: object = {}) => ({
   name,

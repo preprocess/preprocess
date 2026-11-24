@@ -45,6 +45,7 @@ export type WaitingFor = {
   secrets?: string[];
   mcp?: string[];
   network?: string[];
+  groups?: string[];
 };
 
 export const deployments = pgTable(

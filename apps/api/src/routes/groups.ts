@@ -19,6 +19,7 @@ import { HTTPException } from "hono/http-exception";
 import { actor, eventBase, requireAdmin } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
+import { drainOutbox, syncLater } from "../outbox.ts";
 
 const OrgParam = z.object({ org: z.string() });
 const GroupParam = OrgParam.extend({ group: z.string() });
@@ -450,7 +451,7 @@ export const groupRoutes = new OpenAPIHono<{
       requireAdmin(c.var.caller);
       const { agent: agentId, group: groupId } = c.req.valid("param");
       const { access } = c.req.valid("json");
-      const grant = await withOrg(c.env, c.var.org, async (tx) => {
+      const { grant, sync } = await withOrg(c.env, c.var.org, async (tx) => {
         const [agent] = await tx
           .select()
           .from(agents)
@@ -487,8 +488,13 @@ export const groupRoutes = new OpenAPIHono<{
             eq(agentGrants.groupId, groupId),
           ),
         );
-        return row!;
+        // Live deployments waiting for this group's access are re-checked.
+        return {
+          grant: row!,
+          sync: await syncLater(tx, c.var.org, [agentId]),
+        };
       });
+      await drainOutbox(c.env, c.var.org, sync);
       return c.json(toGrant(grant), 200);
     },
   )
