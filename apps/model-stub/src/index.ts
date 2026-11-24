@@ -3,9 +3,11 @@ import {
   ocrRequest,
   systemOneRequest,
 } from "@preprocess/models/contract";
+import { MODELS } from "@preprocess/sdk/protocol";
 import { Hono } from "hono";
 import type { z } from "zod";
 
+import { agentChat, type ChatRequest } from "./chat.ts";
 import type { Env } from "./env.ts";
 import { ocr } from "./ocr.ts";
 import { answer } from "./systemone.ts";
@@ -101,6 +103,8 @@ app.post("/v1/chat/completions", async (c) => {
   if (!parsed.ok)
     return c.json(vllmError("Request body must be JSON", 400), 400);
   const model = (parsed.json as { model?: unknown } | null)?.model;
+  if ((MODELS as readonly unknown[]).includes(model))
+    return agentChat(c, parsed.json as ChatRequest);
   if (typeof model === "string" && model !== models.ocr)
     return c.json(
       vllmError(`The model \`${model}\` does not exist.`, 404),

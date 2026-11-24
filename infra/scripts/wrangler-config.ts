@@ -15,6 +15,7 @@ import {
   localDatabaseUrl,
   localModelService,
   names,
+  runtimeDurableObjects,
 } from "../src/stages.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -78,6 +79,44 @@ const configs: Record<string, object> = {
     name: local.userWorker,
     main: "src/index.ts",
     ...common,
+  },
+  "apps/runtime": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.runtime,
+    main: "src/index.ts",
+    ...common,
+    vars: {
+      STAGE: LOCAL,
+      MODEL_SERVICE_URL: localModelService.url,
+      MODEL_SERVICE_KEY: localModelService.key,
+    },
+    durable_objects: {
+      bindings: Object.entries(runtimeDurableObjects).map(
+        ([name, class_name]) => ({ name, class_name }),
+      ),
+    },
+    migrations: [
+      { tag: "v1", new_sqlite_classes: Object.values(runtimeDurableObjects) },
+    ],
+    r2_buckets: [{ binding: "RUNS", bucket_name: local.runs }],
+    services: [{ binding: "LOCAL_NAMESPACE", service: local.localNamespace }],
+  },
+  "apps/outbound": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.outbound,
+    main: "src/index.ts",
+    ...common,
+  },
+  "apps/namespace-local": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.localNamespace,
+    main: "src/index.ts",
+    ...common,
+    worker_loaders: [{ binding: "LOADER" }],
+    r2_buckets: [{ binding: "SCRIPTS", bucket_name: local.localScripts }],
+    services: [
+      { binding: "OUTBOUND", service: local.outbound, entrypoint: "Egress" },
+    ],
   },
 };
 

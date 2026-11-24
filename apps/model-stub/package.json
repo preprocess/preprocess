@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@preprocess/models": "workspace:*",
+    "@preprocess/sdk": "workspace:*",
     "hono": "catalog:",
     "zod": "catalog:"
   },
