@@ -217,6 +217,7 @@ const backend = (
         ),
         COUNTER: Cloudflare.DurableObject("Counter"),
         BUILDS: Cloudflare.DurableObject("BuildQueue"),
+        SCHEDULER: Cloudflare.DurableObject("Scheduler"),
         BUILDER: Cloudflare.WorkerEntrypoint(builder, "Builder"),
         // The GitHub App, unconfigured (its routes answer 503) until these
         // are set.

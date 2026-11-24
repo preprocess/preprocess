@@ -28,6 +28,7 @@ import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
 import { namespaceFor } from "./namespace.ts";
 import { effectiveNetwork, permits } from "./network.ts";
+import { nextFire, schedulerName } from "./scheduler.ts";
 import {
   agentOverrideValues,
   clearOverrides,
@@ -485,6 +486,15 @@ export const deploy = async (
       message: `the agent's manifest is invalid: ${z.prettifyError(read.error)}`,
     });
   const manifest = read.data;
+  for (const s of manifest.schedules ?? []) {
+    try {
+      nextFire(s, new Date());
+    } catch (error) {
+      throw new HTTPException(422, {
+        message: `schedule ${s.name} has an invalid cron or timezone: ${String(error)}`,
+      });
+    }
+  }
 
   await withOrg(env, org, async (tx) => {
     const slugs = manifest.groups ?? [];
@@ -531,8 +541,18 @@ export const deploy = async (
     });
   });
   const waiting = await syncDeployment(env, org, id, actor);
+  const production = input.git.branch === agent.productionBranch;
+  // A preview runs its own scheduler; each fire checks the deployment is
+  // still live and the schedule may run on previews.
+  if (!production && manifest.schedules?.length)
+    await env.SCHEDULER.getByName(schedulerName(org, agent.id, id)).replace({
+      organizationId: org,
+      agentId: agent.id,
+      previewId: id,
+      schedules: manifest.schedules,
+    });
   const cleared =
-    waiting.length === 0 && input.git.branch === agent.productionBranch
+    waiting.length === 0 && production
       ? await promote(env, org, agent.id, id, actor)
       : [];
   const deployed = await getDeployment(env, org, agent.id, id);
@@ -551,7 +571,10 @@ export const promote = async (
 ) => {
   const [target] = await withOrg(env, org, (tx) =>
     tx
-      .select({ environment: deployments.environment })
+      .select({
+        environment: deployments.environment,
+        manifest: deployments.manifest,
+      })
       .from(deployments)
       .where(
         and(eq(deployments.id, deploymentId), eq(deployments.agentId, agentId)),
@@ -570,7 +593,7 @@ export const promote = async (
       message: `deployment is waiting for grants: ${waiting.join(", ")}`,
     });
   // Code is the truth again (spec 5): the agent's dashboard overrides go.
-  return withOrg(env, org, async (tx) => {
+  const cleared = await withOrg(env, org, async (tx) => {
     const [row] = await tx
       .update(deployments)
       .set({ promotedAt: sql`now()` })
@@ -597,6 +620,14 @@ export const promote = async (
       clearedWarning(key, value),
     );
   });
+  // The agent's scheduler now holds this deployment's schedules.
+  await env.SCHEDULER.getByName(schedulerName(org, agentId)).replace({
+    organizationId: org,
+    agentId,
+    previewId: null,
+    schedules: (target.manifest as Manifest).schedules ?? [],
+  });
+  return cleared;
 };
 
 const view = (

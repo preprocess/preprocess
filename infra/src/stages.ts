@@ -89,6 +89,9 @@ export const durableObjects = {
   COUNTER: "Counter",
   // One per organization, agent and branch: GitHub builds run one at a time.
   BUILDS: "BuildQueue",
+  // One per organization and agent, and one per preview deployment with
+  // schedules (design doc 04).
+  SCHEDULER: "Scheduler",
 } as const;
 
 // Durable Object classes the runtime Worker exports: one Pi Durable case

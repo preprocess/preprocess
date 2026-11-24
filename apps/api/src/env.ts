@@ -1,5 +1,6 @@
 import type { BuildQueue } from "./builds.ts";
 import type { Counter } from "./counter.ts";
+import type { Scheduler } from "./scheduler.ts";
 import type { Namespace } from "./namespace.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import type { EffectiveSettings } from "./settings.ts";
@@ -133,6 +134,8 @@ export type Env = {
   AUDIT_SIGNING_KEY: string;
   AUDIT_SIGNING_KEY_ID: string;
   COUNTER: DurableObjectNamespace<Counter>;
+  // Schedules (scheduler.ts): one object per agent, and one per preview.
+  SCHEDULER: DurableObjectNamespace<Scheduler>;
   JOBS: Queue<Job>;
   // Case starts from the outbox (outbox.ts).
   CASES: Queue<OutboxMessage>;
