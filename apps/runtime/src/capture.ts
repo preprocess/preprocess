@@ -14,6 +14,7 @@ export type CaptureEvent = {
     | "model.request"
     | "model.response"
     | "model.error"
+    | "context.summary"
     | "tool.call"
     | "tool.result"
     | "case.completed"
