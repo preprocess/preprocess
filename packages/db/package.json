@@ -10,7 +10,8 @@
     "./client": "./src/client.ts",
     "./audit": "./src/audit.ts",
     "./ids": "./src/ids.ts",
-    "./schema/*": "./src/schema/*.ts"
+    "./schema/*": "./src/schema/*.ts",
+    "./migrate": "./scripts/migrate-lib.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",

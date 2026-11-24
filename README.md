@@ -64,6 +64,12 @@ Worker through a service binding and `/dispatch` reports
 `"via": "local-service-binding"`. Deployed stages report
 `"via": "dispatch-namespace"`.
 
+The first `pnpm dev` writes `apps/api/.dev.vars` with a generated
+`BETTER_AUTH_SECRET` and an Ed25519 `AUDIT_SIGNING_KEY` that signs the daily
+audit manifests; it is ignored by Git and kept for later runs. Invitation and
+verification emails go to the local runtime's `send_email` sink, which prints
+each message to the dev server's log.
+
 ## Working on kit at the same time
 
 The app's UI and the run mode come from preprocess/kit. To try a kit change here

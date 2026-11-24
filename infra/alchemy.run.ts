@@ -24,6 +24,8 @@ import * as Layer from "effect/Layer";
 
 import { regionConfig } from "./src/regions.ts";
 import {
+  apiCrons,
+  apiSecrets,
   appSecrets,
   compatibility,
   isPreviewStage,
@@ -65,7 +67,11 @@ const builtApp = (stage: string) => {
   return dist;
 };
 
-const backend = (stage: string, region: string) =>
+const backend = (
+  stage: string,
+  region: string,
+  appUrl: Output.Output<string | undefined>,
+) =>
   Effect.gen(function* () {
     const n = names(stage);
 
@@ -84,8 +90,17 @@ const backend = (stage: string, region: string) =>
       branch,
       inheritedRoles: ["postgres"],
     });
+    // Auth reads then writes (SCIM, API key revocation, sessions), so query
+    // caching stays off on both configs (PLAT-27). DB and DB_SYSTEM should
+    // log in as preprocess_app and preprocess_system from bootstrap.sql; until
+    // previews run bootstrap, both use the branch role.
     const db = yield* Cloudflare.Hyperdrive.Connection("Db", {
       origin: role.origin,
+      caching: { disabled: true },
+    });
+    const dbSystem = yield* Cloudflare.Hyperdrive.Connection("DbSystem", {
+      origin: role.origin,
+      caching: { disabled: true },
     });
 
     const namespace = yield* Cloudflare.WorkersForPlatforms.DispatchNamespace(
@@ -105,6 +120,23 @@ const backend = (stage: string, region: string) =>
     });
     const jobs = yield* Cloudflare.Queues.Queue("Jobs", { name: n.queue });
 
+    // The daily signed audit manifests (doc 02), locked for a year. Preview
+    // stages skip the lock so destroying the stage can empty the bucket.
+    const auditBucket = yield* Cloudflare.R2.Bucket("Audit", {
+      name: n.auditBucket,
+      locationHint: regionConfig(region).r2LocationHint,
+      locks: isPreviewStage(stage)
+        ? []
+        : [
+            {
+              id: "audit-one-year",
+              enabled: true,
+              prefix: "audit/",
+              condition: { type: "Age", maxAgeSeconds: 365 * 24 * 60 * 60 },
+            },
+          ],
+    });
+
     // Each preview gets the stub model service (design doc 07). The API calls
     // it by URL, exactly as it would call a real model service; setting
     // MODEL_SERVICE_URL and MODEL_SERVICE_KEY points it at another one.
@@ -122,6 +154,7 @@ const backend = (stage: string, region: string) =>
       name: n.api,
       main: at("apps/api/src/index.ts"),
       workersDev: true,
+      crons: apiCrons,
       env: {
         STAGE: stage,
         PREPROCESS_REGION: region,
@@ -141,6 +174,18 @@ const backend = (stage: string, region: string) =>
               MODEL_SERVICE_KEY: "stub",
             }),
         DB: db,
+        DB_SYSTEM: dbSystem,
+        APP_URL: Output.map(appUrl, (url) => {
+          if (!url) throw new Error("The app has no workers.dev URL");
+          return url;
+        }),
+        EMAIL: Cloudflare.Email.SendEmail("Email"),
+        EMAIL_FROM: yield* Config.String("EMAIL_FROM"),
+        AUDIT: auditBucket,
+        AUDIT_SIGNING_KEY_ID: yield* Config.String("AUDIT_SIGNING_KEY_ID"),
+        ...Object.fromEntries(
+          apiSecrets.map((name) => [name, Config.Redacted(name)]),
+        ),
         COUNTER: Cloudflare.DurableObject("Counter"),
         JOBS: jobs,
         FILES: files,
@@ -202,6 +247,6 @@ export default Alchemy.Stack(
     });
 
     if (!preview) return { app: app.url };
-    return { app: app.url, ...(yield* backend(stage, region)) };
+    return { app: app.url, ...(yield* backend(stage, region, app.url)) };
   }),
 );

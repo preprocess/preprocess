@@ -14,14 +14,24 @@
     "USER_WORKER": "hello",
     "MODEL_SERVICE_URL": "https://model-stub.preprocess.localhost",
     "MODEL_SERVICE_KEY": "development",
+    "APP_URL": "https://app.preprocess.localhost",
+    "EMAIL_FROM": "Preprocess <invitations@preprocess.localhost>",
+    "AUDIT_SIGNING_KEY_ID": "audit-ed25519-development",
   },
   "hyperdrive": [
     {
       "binding": "DB",
-      "id": "local",
-      "localConnectionString": "postgresql://preprocess:preprocess@127.0.0.1:5432/preprocess_development",
+      "id": "local-app",
+      "localConnectionString": "postgresql://preprocess_app:preprocess_app@127.0.0.1:5432/preprocess_development",
+    },
+    {
+      "binding": "DB_SYSTEM",
+      "id": "local-system",
+      "localConnectionString": "postgresql://preprocess_system:preprocess_system@127.0.0.1:5432/preprocess_development",
     },
   ],
+  "triggers": { "crons": ["20 0 * * *"] },
+  "send_email": [{ "name": "EMAIL" }],
   "durable_objects": {
     "bindings": [{ "name": "COUNTER", "class_name": "Counter" }],
   },
@@ -36,6 +46,7 @@
   },
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "preprocess-files-development" },
+    { "binding": "AUDIT", "bucket_name": "preprocess-audit-development" },
   ],
   "services": [{ "binding": "LOCAL_USER_WORKER", "service": "hello" }],
 }
