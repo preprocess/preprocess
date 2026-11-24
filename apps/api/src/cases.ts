@@ -436,13 +436,13 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
           ...decided,
         })
         .onConflictDoUpdate({ target: caseApprovals.id, set: decided });
-      // A new request notifies the group the code named.
-      if (a.status !== "pending" || !group || a.decidedAt !== null) return;
+      // A new request notifies the group the code named, or any operator.
+      if (a.status !== "pending" || a.decidedAt !== null) return;
       webhookRows = await queueWebhooks(env, tx, event.organizationId, {
         caseId: event.caseId,
         agentId: event.agentId,
         status: "waiting",
-        group,
+        group: group ?? null,
         reason: a.reason,
         answers: null,
         error: null,

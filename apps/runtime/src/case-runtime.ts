@@ -164,11 +164,6 @@ const replayFrom = (
 
 const MAX_TURNS = 24;
 
-type ManifestApprovals = {
-  groups: string[];
-  agent: { group: string | null; conditional: boolean } | null;
-};
-
 const subject = (a: Approval) =>
   a.level === "completion"
     ? "completing the case"
@@ -477,45 +472,72 @@ export class CaseRuntime extends DurableObject<Env> {
       input,
       ...(approved && { approved }),
     });
+    // An eval case asks for an unconditional approval before it looks for
+    // the source case's result; a conditional one comes back in the replayed
+    // result, as the source case's call got it.
+    const rule = meta.manifest.approvals?.tools.find(
+      (t) => t.name === tool.name,
+    );
+    if (meta.eval && tool.sideEffects && !approved && rule && !rule.conditional)
+      return {
+        text: this.requestToolApproval(tool.name, input, {
+          type: "approval",
+          group: rule.group,
+          reason: null,
+        }),
+        isError: false,
+      };
     const retries = tool.sideEffects ? 0 : (meta.manifest.toolRetries ?? 0);
     let result: ToolResult;
-    for (let attempt = 0; ; attempt++) {
-      const started = Date.now();
-      result = await worker
-        .fetch(`/tools/${tool.name}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            input,
-            case: { id: meta.caseId },
-            callId,
-            ...(approved && { approved }),
-          }),
-        })
-        .then(async (response) =>
-          response.ok
-            ? await response.json<ToolResult>()
-            : {
-                output: `agent Worker answered ${response.status}`,
-                isError: true,
-                threw: true as const,
-              },
-        )
-        .catch((error: unknown) => ({
-          output: `agent Worker failed: ${String(error)}`,
-          isError: true,
-          threw: true as const,
-        }));
+    // An eval case never repeats a side effect (design doc 09): it gets the
+    // source case's result for the same input, or an error.
+    if (meta.eval && tool.sideEffects) {
+      result = this.replay(tool.name, input);
       this.record("tool.result", {
         callId,
         name: tool.name,
-        ms: Date.now() - started,
-        ...(attempt > 0 && { attempt }),
+        ms: 0,
+        replayed: true,
         ...result,
       });
-      if (!result.threw || attempt >= retries) break;
-    }
-    const effects = (result.effects ?? []) as Array<Effect | ApprovalEffect>;
+    } else
+      for (let attempt = 0; ; attempt++) {
+        const started = Date.now();
+        result = await worker
+          .fetch(`/tools/${tool.name}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              input,
+              case: { id: meta.caseId },
+              callId,
+              ...(approved && { approved }),
+            }),
+          })
+          .then(async (response) =>
+            response.ok
+              ? await response.json<ToolResult>()
+              : {
+                  output: `agent Worker answered ${response.status}`,
+                  isError: true,
+                  threw: true as const,
+                },
+          )
+          .catch((error: unknown) => ({
+            output: `agent Worker failed: ${String(error)}`,
+            isError: true,
+            threw: true as const,
+          }));
+        this.record("tool.result", {
+          callId,
+          name: tool.name,
+          ms: Date.now() - started,
+          ...(attempt > 0 && { attempt }),
+          ...result,
+        });
+        if (!result.threw || attempt >= retries) break;
+      }
+    const effects = result.effects ?? [];
     const approval = effects.find(
       (e): e is ApprovalEffect => e.type === "approval",
     );
@@ -525,7 +547,9 @@ export class CaseRuntime extends DurableObject<Env> {
         isError: false,
       };
     const problems = effects
-      .filter((e): e is Effect => e.type !== "approval")
+      .filter(
+        (e): e is Exclude<Effect, ApprovalEffect> => e.type !== "approval",
+      )
       .map((effect) => this.applyEffect(this.meta()!, effect))
       .filter((p): p is string => p !== null);
     const output =
@@ -573,10 +597,10 @@ export class CaseRuntime extends DurableObject<Env> {
     return new Approvals(this.ctx.storage.sql);
   }
 
-  private applyEffect(meta: Meta, effect: Effect): string | null {
-    // Approvals are PLAT-40's (step 4); until then the call stays unrun.
-    if (effect.type === "approval")
-      return "this call needs approval, which this runtime cannot ask for yet";
+  private applyEffect(
+    meta: Meta,
+    effect: Exclude<Effect, ApprovalEffect>,
+  ): string | null {
     const group = this.groups(meta).find((g) => g.slug === effect.group);
     if (!group) return `group ${effect.group} has no access to this agent`;
     if (effect.type === "wait") {
@@ -1178,16 +1202,8 @@ export class CaseRuntime extends DurableObject<Env> {
     const schema = this.schema(meta);
     const rules = schema.enabled
       ? schema.approvalRules()
-      : (meta.manifest as Manifest & { approvals?: ManifestApprovals })
-            .approvals?.agent?.conditional === false
-        ? [
-            {
-              target: "",
-              group: (
-                meta.manifest as Manifest & { approvals: ManifestApprovals }
-              ).approvals.agent!.group,
-            },
-          ]
+      : meta.manifest.approvals?.agent?.conditional === false
+        ? [{ target: "", group: meta.manifest.approvals.agent.group }]
         : [];
     const keep = new Set<string>();
     const blocking: Approval[] = [];

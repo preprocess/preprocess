@@ -287,6 +287,71 @@ describe("a case's status changes", () => {
     ).toEqual(["legal", "finance"]);
   });
 
+  it("send case.needs_group with what to approve, for a named group or any operator", async () => {
+    const key = await newCase();
+    const approval = (id: string, group: string | null) =>
+      recordCaseEvent(environment, {
+        ...key,
+        type: "approval",
+        approval: {
+          id,
+          level: "tool",
+          target: "pay_invoice",
+          group,
+          payload: { amount: 120 },
+          reason: "Payments need a check",
+          status: "pending",
+          run: 1,
+          requestedAt: Date.now(),
+          decidedBy: null,
+          decidedAt: null,
+          note: null,
+        },
+      });
+    const finance = `apr_${crypto.randomUUID()}`;
+    await approval(finance, "finance");
+    await approval(`apr_${crypto.randomUUID()}`, null);
+    await recordCaseEvent(environment, {
+      ...key,
+      type: "approval",
+      approval: {
+        id: finance,
+        level: "tool",
+        target: "pay_invoice",
+        group: "finance",
+        payload: { amount: 120 },
+        reason: "Payments need a check",
+        status: "approved",
+        run: 1,
+        requestedAt: Date.now(),
+        decidedBy: "usr_x",
+        decidedAt: Date.now(),
+        note: null,
+      },
+    });
+    const rows = await deliveriesOf(key.caseId);
+    expect(rows.map((r) => r.eventType)).toEqual([
+      "case.needs_group",
+      "case.needs_group",
+    ]);
+    const data = rows.map(
+      (r) =>
+        (
+          r.payload as {
+            data: {
+              group: { slug: string } | null;
+              approval: { id: string; level: string; payload: unknown };
+            };
+          }
+        ).data,
+    );
+    expect(data[0]).toMatchObject({
+      group: { slug: "finance" },
+      approval: { id: finance, level: "tool", payload: { amount: 120 } },
+    });
+    expect(data[1]?.group).toBeNull();
+  });
+
   it("send nothing on a halt, which the index records with its reason", async () => {
     const key = await newCase();
     await status(key, "halted", { haltReason: "spending_limit_reached" });

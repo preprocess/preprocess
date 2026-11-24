@@ -16,6 +16,7 @@ import {
   outbox,
   reviewEvents,
 } from "@preprocess/db/schema/cases";
+import { auditEvents } from "@preprocess/db/schema/audit";
 import { deployments } from "@preprocess/db/schema/deployments";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -48,6 +49,13 @@ let nextWrite: WriteResult = {
   stale: ["currency"],
 };
 
+let roomState: Awaited<ReturnType<Runtime["caseState"]>> = {
+  status: "completed",
+  run: 1,
+  answers: { vendor: "globex" },
+  checks: [],
+};
+
 const runtime: Runtime = {
   manifest: () => Promise.reject(new Error("unused")),
   getCase: () => Promise.reject(new Error("unused")),
@@ -55,13 +63,7 @@ const runtime: Runtime = {
     started.push(start);
     return Promise.resolve({});
   },
-  caseState: () =>
-    Promise.resolve({
-      status: "completed",
-      run: 1,
-      answers: { vendor: "globex" },
-      checks: [],
-    }),
+  caseState: () => Promise.resolve(roomState),
   rerun: (input) => {
     calls.push({ method: "rerun", input });
     return Promise.resolve({
@@ -82,7 +84,10 @@ const runtime: Runtime = {
   acceptSuggestion: () => Promise.reject(new Error("unused")),
   searchOptions: () => Promise.resolve({ items: [] }),
   postMessage: () => Promise.resolve({ id: "m1", mentioned: [] }),
-  decideApproval: () => Promise.reject(new Error("unused")),
+  decideApproval: (input) => {
+    calls.push({ method: "decide", input });
+    return Promise.resolve(roomState);
+  },
   cancelCase: (input) => {
     calls.push({ method: "cancel", input });
     return Promise.resolve({
@@ -108,6 +113,7 @@ const environment: Env = testEnv({
 let owner: Client;
 let ownerId: string;
 let operator: Client;
+let operatorId: string;
 let outsider: Client;
 let admin: Client;
 let org: string;
@@ -123,6 +129,7 @@ beforeAll(async () => {
   org = await createOrganization(owner, "Acme");
   const op = await addMember(owner, org, "Omar");
   operator = op.client;
+  operatorId = op.userId;
   outsider = (await addMember(owner, org, "Mia")).client;
   admin = (await addMember(owner, org, "Ada", "admin")).client;
   await withOrg(environment, orgId(org), async (tx) => {
@@ -444,6 +451,155 @@ describe("a started case", () => {
       `/v1/orgs/${org}/cases/${created.body.id}`,
     );
     expect(status.body.status).toBe("cancelled");
+  });
+});
+
+describe("approvals", () => {
+  const pending = {
+    id: "apr_pending",
+    level: "tool",
+    target: "pay_invoice",
+    group: "accounts-payable",
+    payload: { amount: 120 },
+    reason: "Payments need a check",
+    status: "pending",
+    run: 1,
+    requestedAt: Date.now(),
+    decidedBy: null,
+    decidedAt: null,
+    note: null,
+  };
+  const decided = { ...pending, id: "apr_decided", status: "approved" };
+  const anyOperator = { ...pending, id: "apr_any", group: null };
+  let caseId: string;
+  const status = (s: "running" | "waiting") =>
+    recordCaseEvent(environment, {
+      organizationId: org,
+      agentId,
+      caseId,
+      type: "status",
+      status: s,
+      waitingOn: s === "waiting" ? "accounts-payable" : null,
+      reason: null,
+      answers: null,
+      error: null,
+      ...(s === "waiting" && { approvalId: pending.id }),
+    });
+  const decide = (
+    who: Client,
+    id: string,
+    action: "approve" | "reject",
+    body: Record<string, unknown> = {},
+  ) =>
+    who.call<{ error?: { code: string } }>(
+      `/v1/orgs/${org}/cases/${caseId}/approvals/${id}/${action}`,
+      { body },
+    );
+
+  beforeAll(async () => {
+    const created = await operator.call<Accepted>(`/v1/orgs/${org}/cases`, {
+      body: { agent: "invoices", text: "Pay invoice 2002" },
+    });
+    caseId = created.body.id;
+    await startQueuedCase(environment, queued.at(-1)!);
+    await status("waiting");
+    roomState = {
+      status: "waiting",
+      run: 1,
+      answers: null,
+      checks: [],
+      approvals: [pending, decided, anyOperator],
+    };
+  });
+
+  it("are decided only by people who work the case and are in the named group", async () => {
+    // Ana works the case as a Developer but is not in accounts-payable.
+    expect((await decide(owner, pending.id, "approve")).status).toBe(403);
+    expect((await decide(admin, anyOperator.id, "approve")).status).toBe(403);
+    expect((await decide(outsider, pending.id, "approve")).status).toBe(404);
+    const created = await owner.call<{ key: string }>(
+      "/api/auth/api-key/create",
+      { body: { name: "approvals", organizationId: org } },
+    );
+    const key = new Client(environment, {
+      authorization: `Bearer ${created.body.key}`,
+    });
+    expect((await decide(key, pending.id, "approve")).status).toBe(403);
+    expect((await decide(owner, anyOperator.id, "approve")).status).toBe(200);
+    expect(calls.filter((c) => c.method === "decide")).toHaveLength(1);
+  });
+
+  it("refuse unknown and decided approvals, a running case, and a reject without a reason", async () => {
+    expect((await decide(operator, "apr_nope", "approve")).status).toBe(404);
+    const again = await decide(operator, decided.id, "approve");
+    expect(again.status).toBe(409);
+    expect(again.body.error?.code).toBe("approval_decided");
+    await status("running");
+    const running = await decide(operator, pending.id, "approve");
+    expect(running.status).toBe(409);
+    expect(running.body.error?.code).toBe("case_running");
+    await status("waiting");
+    expect((await decide(operator, pending.id, "reject")).status).toBe(400);
+  });
+
+  it("pass the decision to the runtime, and record it in the case room and the audit log", async () => {
+    const before = calls.length;
+    const approved = await decide(operator, pending.id, "approve", {
+      note: "Matches the PO",
+    });
+    expect(approved.status).toBe(200);
+    const rejected = await decide(operator, pending.id, "reject", {
+      reason: "Wrong vendor",
+    });
+    expect(rejected.status).toBe(200);
+    expect(calls.slice(before)).toEqual([
+      {
+        method: "decide",
+        input: expect.objectContaining({
+          caseId,
+          id: pending.id,
+          approve: true,
+          userId: operatorId,
+          note: "Matches the PO",
+        }) as unknown,
+      },
+      {
+        method: "decide",
+        input: expect.objectContaining({
+          approve: false,
+          note: "Wrong vendor",
+        }) as unknown,
+      },
+    ]);
+    const events = await withOrg(environment, orgId(org), (tx) =>
+      tx
+        .select()
+        .from(reviewEvents)
+        .where(eq(reviewEvents.caseId, caseId))
+        .orderBy(asc(reviewEvents.at)),
+    );
+    expect(events.slice(-2).map((e) => [e.kind, e.path])).toEqual([
+      ["approval.approved", "pay_invoice"],
+      ["approval.rejected", "pay_invoice"],
+    ]);
+    const audited = await withOrg(environment, orgId(org), (tx) =>
+      tx
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.caseId, caseId),
+            sql`${auditEvents.data}->>'approval' = ${pending.id}`,
+          ),
+        )
+        .orderBy(asc(auditEvents.seq)),
+    );
+    expect(
+      audited.map((a) => [a.action, a.actorId, a.data.approval, a.data.note]),
+    ).toEqual([
+      ["case.approval.approved", operatorId, pending.id, "Matches the PO"],
+      ["case.approval.rejected", operatorId, pending.id, "Wrong vendor"],
+    ]);
   });
 });
 

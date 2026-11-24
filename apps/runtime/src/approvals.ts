@@ -3,6 +3,8 @@
 // members approve, or null for any operator. The case's Durable Object keeps
 // them beside its answers; the API mirrors them for the inbox.
 
+import type { Effect } from "@preprocess/sdk/protocol";
+
 export type ApprovalLevel = "completion" | "field" | "tool";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "stale";
 
@@ -24,11 +26,7 @@ export type Approval = {
 };
 
 // The effect the SDK returns instead of running a tool that needs approval.
-export type ApprovalEffect = {
-  type: "approval";
-  group: string | null;
-  reason: string | null;
-};
+export type ApprovalEffect = Extract<Effect, { type: "approval" }>;
 
 export const APPROVAL_TABLES = `
 CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, level TEXT NOT NULL, target TEXT NOT NULL, grp TEXT, payload TEXT, reason TEXT, status TEXT NOT NULL, run INTEGER NOT NULL, requested_at INTEGER NOT NULL, decided_by TEXT, decided_at INTEGER, note TEXT);`;
