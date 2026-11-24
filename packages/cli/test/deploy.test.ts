@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -24,6 +24,29 @@ describe("bundle", () => {
     expect(code).toMatch(/export\s*\{[^}]*default/);
     for (const [, specifier] of code.matchAll(/\bfrom\s*"([^"]+)"/g))
       expect(specifier).toMatch(/^(cloudflare|node):/);
+  });
+
+  it("injects preprocess.config.json from the project root, or {} without one", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "preprocess-config-"));
+    mkdirSync(path.join(root, "src"));
+    const entry = path.join(root, "src/index.ts");
+    writeFileSync(entry, "export default __PREPROCESS_CONFIG__;\n");
+    writeFileSync(path.join(root, "package.json"), "{}");
+    const evaluate = async () => {
+      const code = (await bundle(entry)).modules["agent.js"]!;
+      const url = `data:text/javascript,${encodeURIComponent(code)}`;
+      return ((await import(url)) as { default: unknown }).default;
+    };
+    expect(await evaluate()).toEqual({});
+    const config = {
+      settings: { model: "kimi-k3.1-pro" },
+      groups: [{ slug: "finance", name: "Finance" }],
+    };
+    writeFileSync(
+      path.join(root, "preprocess.config.json"),
+      JSON.stringify(config),
+    );
+    expect(await evaluate()).toEqual(config);
   });
 });
 
@@ -130,6 +153,23 @@ describe("describe", () => {
       }),
     ).toBe(
       "crm: deployment dep_1 is waiting for grants: secret ERP_TOKEN, MCP server crm",
+    );
+  });
+
+  it("prints the agent's build warnings after the status", () => {
+    expect(
+      describeDeployment("crm", {
+        id: "dep_1",
+        status: "ready",
+        environment: "preview",
+        production: false,
+        waitingFor: {},
+        sdkVersion: "0.1.0",
+        tools: [],
+        warnings: ["group ops is not in preprocess.config.json's groups"],
+      }),
+    ).toBe(
+      "crm: deployment dep_1 is ready (preview)\nwarning: group ops is not in preprocess.config.json's groups",
     );
   });
 });

@@ -102,6 +102,99 @@ describe("manifest", () => {
   });
 });
 
+describe("settings", () => {
+  const manifestOf = async (a: ReturnType<typeof agent>) =>
+    (await a.fetch(new Request("https://agent/manifest"), {})).json<Manifest>();
+  const withConfig = <T>(config: unknown, build: () => T) => {
+    const g = globalThis as { __PREPROCESS_CONFIG__?: unknown };
+    g.__PREPROCESS_CONFIG__ = config;
+    try {
+      return build();
+    } finally {
+      delete g.__PREPROCESS_CONFIG__;
+    }
+  };
+
+  it("names the settings the code set, apart from the SDK's defaults", async () => {
+    const manifest = await manifestOf(
+      agent({
+        instructions: "x",
+        tools: {},
+        reasoning: "high",
+        network: ["api.erp.test"],
+        timeoutSeconds: 300,
+        evals: { onPush: true },
+      }),
+    );
+    expect(manifest).toMatchObject({
+      model: "inkling-2-small",
+      reasoning: "high",
+      network: ["api.erp.test"],
+      timeoutSeconds: 300,
+      evals: { onPush: true },
+    });
+    expect(manifest.declared).toEqual([
+      "reasoning",
+      "network",
+      "timeoutSeconds",
+      "evals",
+    ]);
+    expect(manifest.warnings).toBeUndefined();
+  });
+
+  it("lets preprocess.config.json win, and warns where the code disagrees", async () => {
+    const manifest = await manifestOf(
+      withConfig(
+        {
+          settings: {
+            model: "kimi-k3.1-pro",
+            reasoning: "high",
+            toolRetries: 2,
+            schedules: {
+              nightly: { previews: true },
+              gone: { previews: true },
+            },
+          },
+          groups: [{ slug: "finance", name: "Finance" }],
+        },
+        () =>
+          agent({
+            instructions: "x",
+            tools: {},
+            reasoning: "low",
+            groups: ["finance", "ops"],
+            schedules: [{ name: "nightly", cron: "0 2 * * *", text: "Run" }],
+          }),
+      ),
+    );
+    expect(manifest).toMatchObject({
+      model: "kimi-k3.1-pro",
+      reasoning: "high",
+      toolRetries: 2,
+      schedules: [{ name: "nightly", previews: true }],
+    });
+    expect(manifest.declared).toEqual([
+      "model",
+      "reasoning",
+      "toolRetries",
+      "schedules.nightly.previews",
+    ]);
+    expect(manifest.warnings).toEqual([
+      'reasoning is "low" in code but "high" in preprocess.config.json, which wins',
+      "preprocess.config.json sets schedule gone, which the code does not define",
+      "group ops is not in preprocess.config.json's groups",
+    ]);
+  });
+
+  it("checks the file's values like inline ones", () => {
+    expect(() =>
+      withConfig({ settings: { timeoutSeconds: 0 } }, () =>
+        agent({ instructions: "x", tools: {} }),
+      ),
+    ).toThrow(/timeoutSeconds/);
+  });
+});
+
 describe("tool calls", () => {
   it("validates input", async () => {
     expect(await call("lookup", { sku: 4 })).toMatchObject({ isError: true });
