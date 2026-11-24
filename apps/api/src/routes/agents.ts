@@ -225,9 +225,21 @@ agentRoutes.openapi(
   async (c) => {
     const { agent: slug, deployment } = c.req.valid("param");
     const agent = await agentBySlug(c.env, c.var.org, slug);
-    await promote(c.env, c.var.org, agent.id, deployment, eventBase(c.var));
+    const cleared = await promote(
+      c.env,
+      c.var.org,
+      agent.id,
+      deployment,
+      eventBase(c.var),
+    );
+    const promoted = await getDeployment(
+      c.env,
+      c.var.org,
+      agent.id,
+      deployment,
+    );
     return c.json(
-      await getDeployment(c.env, c.var.org, agent.id, deployment),
+      { ...promoted, warnings: [...promoted.warnings, ...cleared] },
       200,
     );
   },

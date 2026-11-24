@@ -9,7 +9,7 @@ import { audit } from "@preprocess/db/audit";
 import { withOrg } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
-import { agents, groupMembers, groups } from "@preprocess/db/schema/access";
+import { agents } from "@preprocess/db/schema/access";
 import { secretGrants } from "@preprocess/db/schema/deployments";
 import {
   agentNetworkRules,
@@ -19,9 +19,9 @@ import {
 import type { GuardrailChange } from "@preprocess/db/schema/guardrails";
 import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { secrets } from "@preprocess/db/schema/secrets";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
-import { actor, eventBase, requireAdmin } from "../caller.ts";
+import { actor, eventBase, requireAdmin, requireDeveloper } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
 import type { Env } from "../env.ts";
@@ -282,17 +282,6 @@ const applyChange = async (
       return [];
   }
 };
-
-const isDeveloper = async (tx: Tx, userId: string) =>
-  (
-    await tx
-      .select({ id: groups.id })
-      .from(groupMembers)
-      .innerJoin(groups, eq(groups.id, groupMembers.groupId))
-      .where(
-        and(eq(groupMembers.userId, userId), eq(groups.isDevelopers, true)),
-      )
-  ).length > 0;
 
 type RequestRow = typeof guardrailRequests.$inferSelect & {
   agentSlug: string | null;
@@ -567,16 +556,7 @@ export const guardrailRoutes = new OpenAPIHono<{
       const { agent: slug, change, reason } = c.req.valid("json");
       const caller = c.var.caller;
       const body = await withOrg(c.env, c.var.org, async (tx) => {
-        const admin = caller.role === "owner" || caller.role === "admin";
-        if (
-          !admin &&
-          !(caller.type === "person" && (await isDeveloper(tx, caller.userId)))
-        )
-          throw new ApiError(
-            403,
-            "forbidden",
-            "Only Owners, Admins, and the Developers group can request a guardrail change.",
-          );
+        await requireDeveloper(tx, caller);
         const agent = slug ? await findAgent(tx, slug) : null;
         if (!agent && (change.kind === "secret" || change.kind === "mcp"))
           throw new ApiError(
