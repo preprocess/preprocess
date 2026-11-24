@@ -18,6 +18,8 @@ We are not accepting outside contributions yet; issues are open. See
 | `apps/app`                     | TanStack Start product app (Cloudflare Worker)                                                                                |
 | `apps/api`                     | Hono API Worker: Durable Object, queue, R2, Postgres through Hyperdrive, Workers for Platforms dispatch, model service client |
 | `apps/user-worker`             | Stand-in for a customer agent Worker, dispatched through the stage's namespace                                                |
+| `apps/model-stub`              | Stub model service for `decide` and OCR in development and previews                                                           |
+| `packages/models`              | Model client: `decide` on System One, OCR on chat completions, endpoint resolution                                            |
 | `packages/db`                  | Drizzle schema, migrations and seed data                                                                                      |
 | `packages/sdk`, `packages/cli` | Reserved for the SDK and CLI (build step 2)                                                                                   |
 | `infra`                        | Alchemy stack: staging and per-PR previews                                                                                    |
@@ -45,7 +47,10 @@ applies migrations, loads the seed, and starts the apps behind
 - https://app.preprocess.localhost: the product app. Without WorkOS credentials
   it runs in preview mode, with a one-button sign-in and seeded scenarios.
 - https://api.preprocess.localhost: the API (`/orgs`, `POST /orgs/:org/counter`,
-  `POST /orgs/:org/jobs`, `/dispatch`, `POST /models/chat`).
+  `POST /orgs/:org/jobs`, `/dispatch`, `POST /models/decide`,
+  `POST /models/ocr`).
+- https://model-stub.preprocess.localhost: the stub model service the API calls
+  for `decide` and OCR.
 
 The first run starts portless's HTTPS proxy on port 443 and trusts its local CA,
 so it may ask for `sudo`. Chrome on Linux reads its own NSS store; add the CA
@@ -74,11 +79,20 @@ pull request here can use instead.
 
 ## Models
 
-Development and previews call the shared staging model service, never a GPU of
-their own. Until that service exists, `/models/chat` is a stub: with
-`MODEL_SERVICE_URL` unset it returns an OpenAI-shaped reply and calls nothing.
-With it set, the API forwards to `<MODEL_SERVICE_URL>/v1/chat/completions` with
-`MODEL_SERVICE_KEY` as the bearer token.
+`decide` runs on Groundhog-1 through Baseten's System One API (`/v1/systemone`)
+and OCR on LightOn OCR 3 4B through OpenAI chat completions
+(`/v1/chat/completions`). The API reaches both through `packages/models` at
+`MODEL_SERVICE_URL` with `MODEL_SERVICE_KEY` as the bearer token, or at an
+organization's own registered endpoint. With neither, `decide` and OCR answer
+`503 model_unavailable`; nothing falls back to a stub.
+
+Development and previews point `MODEL_SERVICE_URL` at `apps/model-stub`, which
+speaks both contracts, validates requests as strictly as the real services and
+answers deterministically: fixtures first (`apps/model-stub/fixtures`), then a
+lexical score for `decide` and a placeholder page for OCR. Tests can add the
+request headers `x-stub-latency-ms` and `x-stub-fail` (`429`, `500`, `503`,
+`timeout`) to simulate a slow or failing service; platform code never sends
+them. Hosted models come later behind the same variables.
 
 ## Pull request previews
 

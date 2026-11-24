@@ -32,6 +32,7 @@ export const names = (stage: string) => ({
   queue: `preprocess-jobs-${stage}`,
   bucket: `preprocess-files-${stage}`,
   userWorker: "hello",
+  modelStub: `preprocess-model-stub-${stage}`,
   branch: stage,
 });
 
@@ -47,6 +48,13 @@ export const appSecrets = [
 
 // Durable Object classes the API Worker exports.
 export const durableObjects = { COUNTER: "Counter" } as const;
+
+// Locally the API calls apps/model-stub through its portless URL, the same
+// code path as a real model service. The stub accepts any bearer token.
+export const localModelService = {
+  url: "https://model-stub.preprocess.localhost",
+  key: "development",
+};
 
 export const localDatabaseUrl =
   "postgresql://preprocess:preprocess@127.0.0.1:5432/preprocess_development";
