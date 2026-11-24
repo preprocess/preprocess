@@ -61,6 +61,14 @@ export type Runtime = {
   startCase(start: StartCase): Promise<unknown>;
   caseState(c: CaseKey): Promise<CaseRoomState>;
   rerun(c: CaseKey & { notes?: unknown[] }): Promise<CaseRoomState>;
+  decideApproval(
+    c: CaseKey & {
+      id: string;
+      approve: boolean;
+      userId: string;
+      note: string | null;
+    },
+  ): Promise<CaseRoomState>;
   editAnswer(
     c: Edit & { value: unknown },
   ): Promise<{ result: WriteResult; checks: CaseRoomState["checks"] }>;

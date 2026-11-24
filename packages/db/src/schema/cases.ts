@@ -215,6 +215,43 @@ export const caseMentions = pgTable(
   ],
 );
 
+// What the agent's code asked people to approve (spec §9), mirrored from the
+// case's runtime for the inbox: a tool call before it runs, an output value,
+// or the case's completion. A null group means any operator of the agent.
+export const caseApprovals = pgTable(
+  "case_approvals",
+  {
+    id: text().primaryKey(),
+    organizationId: text().notNull(),
+    caseId: text().notNull(),
+    level: text().$type<"completion" | "field" | "tool">().notNull(),
+    // The field path or tool name; empty for completion.
+    target: text().notNull(),
+    groupId: text(),
+    status: text()
+      .$type<"pending" | "approved" | "rejected" | "stale">()
+      .notNull(),
+    payload: jsonb(),
+    reason: text(),
+    requestedAt: timestamp({ withTimezone: true }).notNull(),
+    decidedBy: text(),
+    decidedAt: timestamp({ withTimezone: true }),
+    note: text(),
+  },
+  (t) => [
+    index().on(t.organizationId, t.status, t.groupId),
+    index().on(t.organizationId, t.caseId),
+    foreignKey({
+      columns: [t.organizationId, t.caseId],
+      foreignColumns: [cases.organizationId, cases.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.organizationId, t.groupId],
+      foreignColumns: [groups.organizationId, groups.id],
+    }).onDelete("cascade"),
+  ],
+);
+
 // What a person has read in the inbox, by item key:
 // "mention:<id>", "waiting:<caseId>:<since>" or "assigned:<caseId>:<at>".
 export const inboxReads = pgTable(

@@ -82,6 +82,7 @@ const runtime: Runtime = {
   acceptSuggestion: () => Promise.reject(new Error("unused")),
   searchOptions: () => Promise.resolve({ items: [] }),
   postMessage: () => Promise.resolve({ id: "m1", mentioned: [] }),
+  decideApproval: () => Promise.reject(new Error("unused")),
   cancelCase: (input) => {
     calls.push({ method: "cancel", input });
     return Promise.resolve({

@@ -24,6 +24,12 @@ import {
   type RunCapture,
   type Usage,
 } from "./capture.ts";
+import {
+  type Approval,
+  type ApprovalEffect,
+  APPROVAL_TABLES,
+  Approvals,
+} from "./approvals.ts";
 import { agentWorker } from "./dispatch.ts";
 import type {
   CaseEvent,
@@ -74,6 +80,7 @@ export type CaseState = {
   checks: ReturnType<SchemaState["checks"]>;
   answers: Record<string, unknown>;
   thread: ThreadMessage[];
+  approvals: Approval[];
 };
 
 // What a person did since the agent's last run, as the API recorded it in
@@ -98,9 +105,23 @@ type Meta = StartCase & {
   unprompted?: true;
   // When the current run passes timeoutSeconds, as epoch milliseconds.
   deadline?: number;
+  // What people decided on tool calls, for the agent's next run.
+  decisions?: string[];
 };
 
 const MAX_TURNS = 24;
+
+type ManifestApprovals = {
+  groups: string[];
+  agent: { group: string | null; conditional: boolean } | null;
+};
+
+const subject = (a: Approval) =>
+  a.level === "completion"
+    ? "completing the case"
+    : a.level === "tool"
+      ? `the call to ${a.target}`
+      : a.target;
 
 // The settings the platform resolved for this case apply over the code's
 // values; a null keeps the code's value, or the runtime's own behavior.
@@ -146,7 +167,7 @@ export class CaseRuntime extends DurableObject<Env> {
     ctx.storage.sql.exec(
       `CREATE TABLE IF NOT EXISTS case_meta (id INTEGER PRIMARY KEY CHECK (id = 1), body TEXT NOT NULL);
        CREATE TABLE IF NOT EXISTS capture (seq INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
-       CREATE TABLE IF NOT EXISTS thread (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, at TEXT NOT NULL, by TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, grp TEXT, run INTEGER NOT NULL);${SCHEMA_TABLES}`,
+       CREATE TABLE IF NOT EXISTS thread (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, at TEXT NOT NULL, by TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, grp TEXT, run INTEGER NOT NULL);${SCHEMA_TABLES}${APPROVAL_TABLES}`,
     );
     if (this.meta()?.status === "running") ctx.waitUntil(this.watch());
   }
@@ -359,6 +380,120 @@ export class CaseRuntime extends DurableObject<Env> {
       haltReason: verdict,
     });
     return true;
+  }
+
+  // One tool call through the agent's Worker. A call that failed runs again
+  // up to toolRetries times, but never one with side effects: it may have
+  // half happened. A call that needs approval does not run: it waits for a
+  // person, and runs again with approved once they approve.
+  private async callTool(
+    meta: Meta,
+    tool: Manifest["tools"][number],
+    input: unknown,
+    callId: string,
+    approved = false,
+  ): Promise<{ text: string; isError: boolean }> {
+    const worker = agentWorker(this.env, meta, this.ctx.exports);
+    this.record("tool.call", {
+      callId,
+      name: tool.name,
+      input,
+      ...(approved && { approved }),
+    });
+    const retries = tool.sideEffects ? 0 : (meta.manifest.toolRetries ?? 0);
+    let result: ToolResult;
+    for (let attempt = 0; ; attempt++) {
+      const started = Date.now();
+      result = await worker
+        .fetch(`/tools/${tool.name}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            input,
+            case: { id: meta.caseId },
+            callId,
+            ...(approved && { approved }),
+          }),
+        })
+        .then(async (response) =>
+          response.ok
+            ? await response.json<ToolResult>()
+            : {
+                output: `agent Worker answered ${response.status}`,
+                isError: true,
+                threw: true as const,
+              },
+        )
+        .catch((error: unknown) => ({
+          output: `agent Worker failed: ${String(error)}`,
+          isError: true,
+          threw: true as const,
+        }));
+      this.record("tool.result", {
+        callId,
+        name: tool.name,
+        ms: Date.now() - started,
+        ...(attempt > 0 && { attempt }),
+        ...result,
+      });
+      if (!result.threw || attempt >= retries) break;
+    }
+    const effects = (result.effects ?? []) as Array<Effect | ApprovalEffect>;
+    const approval = effects.find(
+      (e): e is ApprovalEffect => e.type === "approval",
+    );
+    if (approval && !approved)
+      return {
+        text: this.requestToolApproval(tool.name, input, approval),
+        isError: false,
+      };
+    const problems = effects
+      .filter((e): e is Effect => e.type !== "approval")
+      .map((effect) => this.applyEffect(this.meta()!, effect))
+      .filter((p): p is string => p !== null);
+    const output =
+      typeof result.output === "string"
+        ? result.output
+        : JSON.stringify(result.output);
+    return {
+      text: problems.length ? `${output}\n${problems.join("\n")}` : output,
+      isError: result.isError || problems.length > 0,
+    };
+  }
+
+  private requestToolApproval(
+    name: string,
+    input: unknown,
+    effect: ApprovalEffect,
+  ) {
+    const meta = this.meta()!;
+    if (
+      effect.group !== null &&
+      !this.groups(meta).some((g) => g.slug === effect.group)
+    )
+      return `${name} did not run: it needs approval from group ${effect.group}, which has no access to this agent.`;
+    const approval = this.approvals().request({
+      level: "tool",
+      target: name,
+      group: effect.group,
+      payload: input,
+      reason: effect.reason,
+      run: meta.run,
+    });
+    this.record("approval.requested", { ...approval });
+    this.post(
+      meta,
+      "platform",
+      "event",
+      `Waiting for ${effect.group ?? "an operator"} to approve ${name}`,
+      effect.group,
+    );
+    this.ctx.waitUntil(this.report(meta, { type: "approval", approval }));
+    return `${name} has not run: it needs approval from ${effect.group ? `group ${effect.group}` : "an operator"} first. Do not call it again. Finish what you can without it and end your turn; you will be told the decision.`;
+  }
+
+  private approvals() {
+    return new Approvals(this.ctx.storage.sql);
   }
 
   private applyEffect(meta: Meta, effect: Effect): string | null {
@@ -625,7 +760,6 @@ export class CaseRuntime extends DurableObject<Env> {
     harness: ({ storage, context, onWake }) => {
       const meta = this.meta();
       if (!meta) throw new Error("case has not started");
-      const worker = agentWorker(this.env, meta, this.ctx.exports);
       const tools = meta.manifest.tools.map((tool) =>
         defineTool({
           name: tool.name,
@@ -633,66 +767,15 @@ export class CaseRuntime extends DurableObject<Env> {
           parameters: tool.inputSchema,
           replay: tool.sideEffects ? "unsafe" : "safe",
           execute: async (input, api) => {
-            const callId = String(api.taskId);
-            this.record("tool.call", { callId, name: tool.name, input });
-            // A call that failed runs again up to toolRetries times, but
-            // never one with side effects: it may have half happened.
-            const retries = tool.sideEffects
-              ? 0
-              : (meta.manifest.toolRetries ?? 0);
-            let result: ToolResult;
-            for (let attempt = 0; ; attempt++) {
-              const started = Date.now();
-              result = await worker
-                .fetch(`/tools/${tool.name}`, {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({
-                    input,
-                    case: { id: meta.caseId },
-                    callId,
-                  }),
-                })
-                .then(async (response) =>
-                  response.ok
-                    ? await response.json<ToolResult>()
-                    : {
-                        output: `agent Worker answered ${response.status}`,
-                        isError: true,
-                        threw: true as const,
-                      },
-                )
-                .catch((error: unknown) => ({
-                  output: `agent Worker failed: ${String(error)}`,
-                  isError: true,
-                  threw: true as const,
-                }));
-              this.record("tool.result", {
-                callId,
-                name: tool.name,
-                ms: Date.now() - started,
-                ...(attempt > 0 && { attempt }),
-                ...result,
-              });
-              if (!result.threw || attempt >= retries) break;
-            }
-            const problems = (result.effects ?? [])
-              .map((effect) => this.applyEffect(this.meta()!, effect))
-              .filter((p): p is string => p !== null);
-            const output =
-              typeof result.output === "string"
-                ? result.output
-                : JSON.stringify(result.output);
+            const done = await this.callTool(
+              this.meta()!,
+              tool,
+              input,
+              String(api.taskId),
+            );
             return {
-              output: [
-                {
-                  type: "text",
-                  text: problems.length
-                    ? `${output}\n${problems.join("\n")}`
-                    : output,
-                },
-              ],
-              isError: result.isError || problems.length > 0,
+              output: [{ type: "text", text: done.text }],
+              isError: done.isError,
             };
           },
         }),
@@ -907,43 +990,205 @@ export class CaseRuntime extends DurableObject<Env> {
       return;
     const done = result.status === "done";
     if (done && result.text) this.post(meta, "agent", "agent", result.text);
-    const schema = this.schema(meta);
-    if (done)
-      await schema
+    if (done) {
+      await this.schema(meta)
         .evaluate("all")
         .catch((error: unknown) =>
           this.record("schema.error", { error: String(error) }),
         );
-    const status: CaseStatus = !done
-      ? "failed"
-      : meta.waitingOn
-        ? "waiting"
-        : "completed";
+      await this.close({
+        ...meta,
+        ...(result.text !== undefined && { answer: result.text }),
+      });
+      return;
+    }
     const next: Meta = {
       ...meta,
-      status,
-      ...(done
-        ? { ...(result.text !== undefined && { answer: result.text }) }
-        : { reason: result.reason ?? "unanswered" }),
+      status: "failed",
+      reason: result.reason ?? "unanswered",
     };
     this.save(next);
-    this.record(
-      done ? "case.completed" : "case.failed",
-      done ? { answer: next.answer ?? "", status } : { reason: next.reason },
-    );
+    this.record("case.failed", { reason: next.reason });
     await this.seal(next);
     await this.report(next, {
       type: "status",
+      status: "failed",
+      waitingOn: null,
+      reason: null,
+      answers: null,
+      error: { code: "run_failed", message: next.reason ?? "unanswered" },
+    });
+  }
+
+  // Where a case stands once its run is done: waiting on a group or on
+  // approvals, or completed.
+  private async close(meta: Meta) {
+    const schema = this.schema(meta);
+    const blocking = this.settleApprovals(meta);
+    const status: CaseStatus =
+      meta.waitingOn || blocking.length ? "waiting" : "completed";
+    const next: Meta = { ...meta, status };
+    if (status === "completed") delete next.reason;
+    this.save(next);
+    this.record("case.completed", { answer: next.answer ?? "", status });
+    await this.seal(next);
+    const first = blocking[0];
+    await this.report(next, {
+      type: "status",
       status,
-      waitingOn: status === "waiting" ? (next.waitingOn?.group ?? null) : null,
-      reason: status === "waiting" ? (next.waitingOn?.reason ?? null) : null,
+      waitingOn:
+        status === "waiting"
+          ? (next.waitingOn?.group ?? first?.group ?? null)
+          : null,
+      reason:
+        status === "waiting"
+          ? (next.waitingOn?.reason ??
+            next.reason ??
+            (first ? `Approval needed: ${subject(first)}` : null))
+          : null,
       answers:
         status === "completed" && schema.enabled ? schema.output() : null,
-      error:
-        status === "failed"
-          ? { code: "run_failed", message: next.reason ?? "unanswered" }
-          : null,
+      error: null,
+      ...(status === "waiting" &&
+        !next.waitingOn &&
+        first && { approvalId: first.id }),
     });
+  }
+
+  // Output and completion approvals for the answers as they stand. Returns
+  // what keeps the case from completing: held tool calls, open requests, and
+  // output approvals rejected in this run.
+  private settleApprovals(meta: Meta): Approval[] {
+    const approvals = this.approvals();
+    // The agent has more to do once a held call is decided: output is not
+    // final yet.
+    const held = approvals.pending().filter((a) => a.level === "tool");
+    if (held.length) return held;
+    const schema = this.schema(meta);
+    const rules = schema.enabled
+      ? schema.approvalRules()
+      : (meta.manifest as Manifest & { approvals?: ManifestApprovals })
+            .approvals?.agent?.conditional === false
+        ? [
+            {
+              target: "",
+              group: (
+                meta.manifest as Manifest & { approvals: ManifestApprovals }
+              ).approvals.agent!.group,
+            },
+          ]
+        : [];
+    const keep = new Set<string>();
+    const blocking: Approval[] = [];
+    for (const rule of rules) {
+      const level = rule.target === "" ? "completion" : "field";
+      keep.add(`${level}:${rule.target}`);
+      const { approval, created, stale } = approvals.ensure({
+        level,
+        target: rule.target,
+        group: rule.group,
+        payload:
+          level === "completion"
+            ? { run: meta.run }
+            : schema.valueAt(rule.target),
+        run: meta.run,
+      });
+      for (const a of stale)
+        this.ctx.waitUntil(
+          this.report(meta, { type: "approval", approval: a }),
+        );
+      if (created) {
+        this.record("approval.requested", { ...approval });
+        this.post(
+          meta,
+          "platform",
+          "event",
+          `Waiting for ${rule.group ?? "an operator"} to approve ${subject(approval)}`,
+          rule.group,
+        );
+        this.ctx.waitUntil(this.report(meta, { type: "approval", approval }));
+      }
+      if (approval.status === "rejected") blocking.push(approval);
+    }
+    for (const a of approvals.retire(keep))
+      this.ctx.waitUntil(this.report(meta, { type: "approval", approval: a }));
+    return [...approvals.pending(), ...blocking];
+  }
+
+  // A person approves or rejects an open request (spec `9). An approved tool
+  // call runs with the input as approved; once no call of the run waits, the
+  // agent continues with the decisions. Output and completion decisions
+  // settle the case; a rejection leaves it waiting on people.
+  async decide(input: {
+    id: string;
+    approve: boolean;
+    userId: string;
+    note: string | null;
+  }): Promise<CaseState> {
+    const meta = this.meta();
+    if (!meta) throw new Error("case has not started");
+    if (meta.status === "running") throw new Error("case is running");
+    const approvals = this.approvals();
+    const found = approvals.get(input.id);
+    if (!found || found.status !== "pending")
+      throw new Error("approval is not pending");
+    const by = `person:${input.userId}`;
+    const decided = approvals.decide(
+      found.id,
+      input.approve ? "approved" : "rejected",
+      by,
+      input.note,
+    );
+    this.record("approval.decided", { ...decided });
+    this.post(
+      meta,
+      by,
+      "event",
+      `${input.approve ? "Approved" : "Rejected"} ${subject(decided)}${input.note ? `: ${input.note}` : ""}`,
+      decided.group,
+    );
+    await this.report(meta, { type: "approval", approval: decided });
+    if (decided.level === "tool") {
+      const tool = meta.manifest.tools.find((t) => t.name === decided.target);
+      const lines: string[] = [];
+      if (input.approve && tool) {
+        const done = await this.callTool(
+          meta,
+          tool,
+          decided.payload,
+          decided.id,
+          true,
+        );
+        lines.push(
+          `A person approved your call to ${decided.target}. It ran and returned:`,
+          done.text,
+        );
+      } else
+        lines.push(
+          `A person rejected your call to ${decided.target}, so it did not run.${input.note ? ` Their reason: ${input.note}` : ""}`,
+        );
+      const next: Meta = {
+        ...this.meta()!,
+        decisions: [...(meta.decisions ?? []), ...lines],
+      };
+      this.save(next);
+      if (approvals.pending().some((a) => a.level === "tool"))
+        return this.state();
+      return this.continueWith(() => [
+        "Continue this case: people decided on calls that needed approval.",
+        "",
+        ...(next.decisions ?? []),
+      ]);
+    }
+    await this.close(
+      input.approve
+        ? meta
+        : {
+            ...meta,
+            reason: `Rejected ${subject(decided)}${input.note ? `: ${input.note}` : ""}`,
+          },
+    );
+    return this.state();
   }
 
   private async seal(meta: Meta) {
@@ -973,6 +1218,50 @@ export class CaseRuntime extends DurableObject<Env> {
     const meta = this.meta();
     if (!meta) throw new Error("case has not started");
     if (meta.status === "running") throw new Error("case is running");
+    return this.continueWith((schema) => {
+      const messages = this.thread().filter(
+        (m) => m.kind === "person" && this.messageRun(m.id) >= meta.run,
+      );
+      const stale = schema.fields().filter((f) => f.answer?.status === "stale");
+      return [
+        "Continue this case: a person asked you to run again.",
+        ...(notes.length
+          ? [
+              "",
+              "Changes people made since your last run:",
+              ...notes.map(
+                (n) =>
+                  `- ${n.kind}${n.path ? ` ${n.path}` : ""}${n.kind === "field.confirmed" ? "" : `: ${JSON.stringify(n.before)} → ${JSON.stringify(n.after)}`}`,
+              ),
+            ]
+          : []),
+        ...(stale.length
+          ? [
+              "",
+              "Stale answers to revisit:",
+              ...stale.map(
+                (f) =>
+                  `- ${f.path} because ${(f.answer!.staleBecause ?? []).map((r) => `${r.path} changed`).join(", ")}`,
+              ),
+            ]
+          : []),
+        ...(messages.length
+          ? [
+              "",
+              "Messages in the thread:",
+              ...messages.map((m) => `- ${m.text}`),
+            ]
+          : []),
+      ];
+    });
+  }
+
+  // Starts the case's next run with a prompt built from the schema as it
+  // stands, or the input itself if the agent has not had it yet.
+  private async continueWith(
+    lines: (schema: SchemaState) => string[],
+  ): Promise<CaseState> {
+    const meta = this.meta()!;
     const run = meta.run + 1;
     const next: Meta = {
       ...meta,
@@ -983,39 +1272,11 @@ export class CaseRuntime extends DurableObject<Env> {
     };
     delete next.reason;
     delete next.deadline;
+    delete next.decisions;
     this.save(next);
     const schema = this.schema(next);
     await schema.evaluate("all");
-    const messages = this.thread().filter(
-      (m) => m.kind === "person" && this.messageRun(m.id) >= meta.run,
-    );
-    const stale = schema.fields().filter((f) => f.answer?.status === "stale");
-    const lines = [
-      "Continue this case: a person asked you to run again.",
-      ...(notes.length
-        ? [
-            "",
-            "Changes people made since your last run:",
-            ...notes.map(
-              (n) =>
-                `- ${n.kind}${n.path ? ` ${n.path}` : ""}${n.kind === "field.confirmed" ? "" : `: ${JSON.stringify(n.before)} → ${JSON.stringify(n.after)}`}`,
-            ),
-          ]
-        : []),
-      ...(stale.length
-        ? [
-            "",
-            "Stale answers to revisit:",
-            ...stale.map(
-              (f) =>
-                `- ${f.path} because ${(f.answer!.staleBecause ?? []).map((r) => `${r.path} changed`).join(", ")}`,
-            ),
-          ]
-        : []),
-      ...(messages.length
-        ? ["", "Messages in the thread:", ...messages.map((m) => `- ${m.text}`)]
-        : []),
-    ];
+    const text = lines(schema).join("\n");
     this.post(next, "platform", "event", `Run ${run} started`);
     await this.report(next, {
       type: "status",
@@ -1025,9 +1286,7 @@ export class CaseRuntime extends DurableObject<Env> {
       answers: null,
       error: null,
     });
-    const prompt = meta.unprompted
-      ? await this.firstPrompt(next)
-      : lines.join("\n");
+    const prompt = meta.unprompted ? await this.firstPrompt(next) : text;
     if (prompt === null) return this.state();
     this.prompted();
     await this.armTimeout();
@@ -1191,6 +1450,12 @@ export class CaseRuntime extends DurableObject<Env> {
     const next: Meta = { ...meta, status: "cancelled", waitingOn: null };
     this.save(next);
     this.post(next, "platform", "event", "Cancelled");
+    const approvals = this.approvals();
+    for (const open of approvals.pending())
+      await this.report(next, {
+        type: "approval",
+        approval: approvals.decide(open.id, "stale", null, null),
+      });
     await this.report(next, {
       type: "status",
       status: "cancelled",
@@ -1216,6 +1481,7 @@ export class CaseRuntime extends DurableObject<Env> {
       checks: schema.checks(),
       answers: schema.output(),
       thread: this.thread(),
+      approvals: this.approvals().list(),
     };
   }
 

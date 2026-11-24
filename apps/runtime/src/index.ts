@@ -7,6 +7,7 @@ import type { WriteResult } from "./schema-state.ts";
 
 export { CaseRuntime } from "./case-runtime.ts";
 export { McpBroker } from "./mcp.ts";
+export type { Approval } from "./approvals.ts";
 export type { CaseState, CaseView, ReviewNote, WriteResult };
 
 type Edit = { path: string; version: number; userId: string };
@@ -32,6 +33,12 @@ type CaseObject = {
     mentioned: string[];
   }>;
   cancel(): Promise<CaseState>;
+  decide(input: {
+    id: string;
+    approve: boolean;
+    userId: string;
+    note: string | null;
+  }): Promise<CaseState>;
 };
 
 const runtimeFor = (env: Env, c: CaseKey) =>
@@ -88,6 +95,17 @@ export default class Runtime extends WorkerEntrypoint<Env> {
 
   cancelCase(c: CaseKey) {
     return runtimeFor(this.env, c).cancel();
+  }
+
+  decideApproval(
+    c: CaseKey & {
+      id: string;
+      approve: boolean;
+      userId: string;
+      note: string | null;
+    },
+  ) {
+    return runtimeFor(this.env, c).decide(c);
   }
 
   // The deployed Worker's manifest, read through the same dispatch path a

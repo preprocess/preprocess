@@ -18,10 +18,10 @@ import { deployments } from "@preprocess/db/schema/deployments";
 import { asc, eq } from "drizzle-orm";
 import type { Context } from "hono";
 
-import { agentRole, canSeeCase, canWorkCase } from "../access.ts";
+import { agentRole, canSeeCase, canWorkCase, mayApprove } from "../access.ts";
 import { eventBase } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
-import { ApiError, createCase } from "../cases.ts";
+import { ApiError, createCase, type Approval } from "../cases.ts";
 import type { Env, WriteResult } from "../env.ts";
 import { ocrFile } from "../ocr.ts";
 import { refuseOverLimit } from "../spend.ts";
@@ -218,6 +218,75 @@ const answerChange = async (
     checks: change.checks as z.infer<typeof Change>["checks"],
   };
   return c.json(response, 200);
+};
+
+const ApprovalParam = CaseParam.extend({ approval: z.string() });
+
+// A person decides an approval (spec §9). The runtime holds the request; the
+// decision is a review event and an audit event.
+const decideApproval = async (
+  c: Ctx,
+  caseId: string,
+  approvalId: string,
+  approve: boolean,
+  note: string | undefined,
+) => {
+  const { key, status } = await loadCase(c, caseId, true);
+  const state = (await runtime(c).caseState(key)) as unknown as {
+    approvals?: Approval[];
+  };
+  const found = state.approvals?.find((a) => a.id === approvalId);
+  if (!found) throw new ApiError(404, "not_found", "No such approval.");
+  if (found.status !== "pending")
+    throw new ApiError(
+      409,
+      "approval_decided",
+      `The approval is ${found.status}.`,
+    );
+  if (status === "running")
+    throw new ApiError(409, "case_running", "Decide once the run ends.");
+  const allowed = await withOrg(c.env, c.var.org, (tx) =>
+    mayApprove(tx, c.var.caller, key.agentId, found.group),
+  );
+  if (!allowed)
+    throw new ApiError(
+      403,
+      "forbidden",
+      found.group
+        ? `Only members of ${found.group} approve this.`
+        : "Approving needs a person with operator access to the agent.",
+    );
+  const next = await runtime(c).decideApproval({
+    ...key,
+    id: approvalId,
+    approve,
+    userId: personId(c),
+    note: note ?? null,
+  });
+  const decision = approve ? "approved" : "rejected";
+  await withOrg(c.env, c.var.org, async (tx) => {
+    await recordReview(tx, c, caseId, {
+      kind: `approval.${decision}`,
+      path: found.level === "completion" ? null : found.target,
+      before: found.payload,
+      after: { level: found.level, note: note ?? null },
+    });
+    await audit(tx, {
+      ...eventBase(c.var),
+      action: `case.approval.${decision}`,
+      targetType: "case",
+      targetId: caseId,
+      caseId,
+      data: {
+        approval: approvalId,
+        level: found.level,
+        target: found.target,
+        group: found.group,
+        note: note ?? null,
+      },
+    });
+  });
+  return c.json(next as unknown as z.infer<typeof RoomState>, 200);
 };
 
 export const caseRoutes = new OpenAPIHono<{
@@ -664,6 +733,54 @@ export const caseRoutes = new OpenAPIHono<{
         });
       });
       return c.body(null, 204);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "post",
+      path: "/cases/{id}/approvals/{approval}/approve",
+      tags: ["Case room"],
+      summary: "Approve what the agent's code asked a person to approve",
+      request: {
+        params: ApprovalParam,
+        ...body(z.object({ note: z.string().max(2000).optional() })),
+      },
+      responses: {
+        200: json(RoomState, "The case after the decision"),
+        403: error(
+          "Only members of the approving group, or any operator when the code names none",
+        ),
+        404: error("No such approval"),
+        409: error("Already decided, or the case is running"),
+      },
+    }),
+    async (c) => {
+      const { id, approval } = c.req.valid("param");
+      return decideApproval(c, id, approval, true, c.req.valid("json").note);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "post",
+      path: "/cases/{id}/approvals/{approval}/reject",
+      tags: ["Case room"],
+      summary: "Reject it, with the reason the agent and the thread see",
+      request: {
+        params: ApprovalParam,
+        ...body(z.object({ reason: z.string().trim().min(1).max(2000) })),
+      },
+      responses: {
+        200: json(RoomState, "The case after the decision"),
+        403: error(
+          "Only members of the approving group, or any operator when the code names none",
+        ),
+        404: error("No such approval"),
+        409: error("Already decided, or the case is running"),
+      },
+    }),
+    async (c) => {
+      const { id, approval } = c.req.valid("param");
+      return decideApproval(c, id, approval, false, c.req.valid("json").reason);
     },
   )
   .openapi(
