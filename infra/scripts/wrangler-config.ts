@@ -191,6 +191,15 @@ const configs: Record<string, object> = {
     main: "src/index.ts",
     ...common,
   },
+  "apps/tail": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.tail,
+    main: "src/index.ts",
+    ...common,
+    services: [
+      { binding: "PLATFORM", service: local.api, entrypoint: "Platform" },
+    ],
+  },
   "apps/namespace-local": {
     $schema: "node_modules/wrangler/config-schema.json",
     name: local.localNamespace,
@@ -200,6 +209,7 @@ const configs: Record<string, object> = {
     r2_buckets: [{ binding: "SCRIPTS", bucket_name: local.localScripts }],
     services: [
       { binding: "OUTBOUND", service: local.outbound, entrypoint: "Egress" },
+      { binding: "TAIL", service: local.tail },
     ],
   },
 };

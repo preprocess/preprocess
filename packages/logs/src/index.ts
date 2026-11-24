@@ -42,14 +42,27 @@ export type LogScope = {
 
 const DATA_LIMIT = 16_384;
 
-// A ULID: sortable by time, so the newest record has the largest id.
+// A monotonic ULID: sortable by time, so the newest record has the largest
+// id, and records made in the same millisecond (a Worker's clock stands still
+// while it runs) keep the order they were made in.
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+let last = { time: "", random: [] as number[] };
 export const logId = (at = Date.now()) => {
   let time = "";
   for (let t = at, i = 0; i < 10; i++, t = Math.floor(t / 32))
     time = CROCKFORD[t % 32] + time;
-  const random = crypto.getRandomValues(new Uint8Array(16));
-  return time + Array.from(random, (b) => CROCKFORD[b % 32]).join("");
+  let random: number[];
+  if (time === last.time) {
+    random = [...last.random];
+    for (let i = 15; i >= 0 && ++random[i]! === 32; i--) random[i] = 0;
+  } else {
+    random = Array.from(
+      crypto.getRandomValues(new Uint8Array(16)),
+      (b) => b % 16,
+    );
+  }
+  last = { time, random };
+  return time + random.map((d) => CROCKFORD[d]).join("");
 };
 
 const text = (value: unknown) =>

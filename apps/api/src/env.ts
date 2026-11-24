@@ -190,4 +190,7 @@ export type Env = {
   // read, Data Catalog and R2 storage access.
   LOG_SQL_BUCKET?: string;
   LOG_SQL_TOKEN?: string;
+  // apps/tail's script name, attached to every agent script as its tail
+  // consumer. Locally apps/namespace-local attaches it instead.
+  TAIL_WORKER?: string;
 };

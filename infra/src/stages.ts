@@ -45,6 +45,8 @@ export const names = (stage: string) => ({
   // The GitHub build sandbox (apps/builder).
   builder: `preprocess-builder-${stage}`,
   outbound: `preprocess-outbound-${stage}`,
+  // The Tail Worker on every agent script (design doc 09).
+  tail: `preprocess-tail-${stage}`,
   modelStub: `preprocess-model-stub-${stage}`,
   // PDF pages to images for OCR, in a sandbox container (design doc 07).
   pdfRender: `preprocess-pdf-render-${stage}`,

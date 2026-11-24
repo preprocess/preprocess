@@ -303,6 +303,7 @@ const backend = (
         WEBHOOKS: webhooksQueue,
         LOGS: logsQueue,
         LOG_BUCKET: logsBucket,
+        TAIL_WORKER: n.tail,
         ...logSql,
         FILES: files,
         DISPATCHER: namespace,
@@ -317,6 +318,14 @@ const backend = (
       queueId: casesQueue.queueId,
       scriptName: api.workerName,
       settings: { maxWaitTimeMs: 1000 },
+    });
+    // Tail consumer of every agent script: console output and exceptions
+    // become run logs (design doc 09).
+    yield* Cloudflare.Worker("Tail", {
+      ...worker,
+      name: n.tail,
+      main: at("apps/tail/src/index.ts"),
+      env: { PLATFORM: Cloudflare.WorkerEntrypoint(api, "Platform") },
     });
     yield* Cloudflare.Queues.Consumer("LogsConsumer", {
       queueId: logsQueue.queueId,

@@ -75,5 +75,7 @@ describe("logId", () => {
   it("sorts by time", () => {
     expect(logId(1_000) < logId(2_000)).toBe(true);
     expect(logId()).toHaveLength(26);
+    const same = [logId(5_000), logId(5_000), logId(5_000)];
+    expect([...same].sort()).toEqual(same);
   });
 });

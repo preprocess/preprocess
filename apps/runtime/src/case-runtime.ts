@@ -7,6 +7,7 @@ import {
   section,
 } from "@earendil-works/pi-durable";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { initLogs, wideEvent } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { decide } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
@@ -26,6 +27,7 @@ import {
 import { agentWorker } from "./dispatch.ts";
 import type { CaseEvent, CaseStatus, Env, GroupRef, StartCase } from "./env.ts";
 import { openModels, PROVIDER } from "./models.ts";
+import { runLogEntry } from "./run-log.ts";
 import { COMPACTION, largeSummaries } from "./summaries.ts";
 import {
   type FieldView,

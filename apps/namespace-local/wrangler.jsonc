@@ -19,5 +19,6 @@
       "service": "preprocess-outbound-development",
       "entrypoint": "Egress",
     },
+    { "binding": "TAIL", "service": "preprocess-tail-development" },
   ],
 }

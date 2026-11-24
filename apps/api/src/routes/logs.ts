@@ -209,7 +209,10 @@ export const logRoutes = new OpenAPIHono<{
       return c.json(
         await page(c.env, c.var, {
           ...q,
-          from: q.from ?? found.createdAt.toISOString(),
+          // A minute's margin for clock skew between Postgres and Workers.
+          from:
+            q.from ??
+            new Date(found.createdAt.getTime() - 60_000).toISOString(),
           agentId: found.agentId,
           caseId: id,
         }),

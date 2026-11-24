@@ -1,3 +1,5 @@
+import type { LogRecord } from "@preprocess/logs";
+
 import type { CaseRuntime } from "./case-runtime.ts";
 
 export type Env = {
@@ -114,4 +116,6 @@ export type Platform = {
     organizationId: string;
     fileId: string;
   }): Promise<{ markdown: string }>;
+  // Run-log records (design doc 09), queued for the API's consumer.
+  logs(records: LogRecord[]): Promise<void>;
 };
