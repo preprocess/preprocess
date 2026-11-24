@@ -25,6 +25,7 @@ export const prefixes = {
   webhook: "whk",
   delivery: "msg",
   outbox: "obx",
+  guardrailRequest: "grq",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -1,5 +1,5 @@
 {
-  "id": "6f4cd7cb-c385-42a5-a89b-50810eec0a7c",
+  "id": "07ce4749-7656-4138-a53d-4f56c1f1c408",
   "prevId": "21d1f4fe-3222-4d4b-b9b2-9bab920ee6ff",
   "version": "7",
   "dialect": "postgresql",
@@ -1321,13 +1321,6 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
-        },
-        "email_notifications": {
-          "name": "email_notifications",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         }
       },
       "indexes": {},
@@ -1639,12 +1632,6 @@
         "waiting_on_group_id": {
           "name": "waiting_on_group_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "waiting_since": {
-          "name": "waiting_since",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -2758,6 +2745,210 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.agent_network_rules": {
+      "name": "agent_network_rules",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rules": {
+          "name": "rules",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "agent_network_rules_organization_id_agent_id_agents_organization_id_id_fk": {
+          "name": "agent_network_rules_organization_id_agent_id_agents_organization_id_id_fk",
+          "tableFrom": "agent_network_rules",
+          "tableTo": "agents",
+          "columnsFrom": ["organization_id", "agent_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "agent_network_rules_organization_id_agent_id_pk": {
+          "name": "agent_network_rules_organization_id_agent_id_pk",
+          "columns": ["organization_id", "agent_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.guardrail_requests": {
+      "name": "guardrail_requests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "guardrail_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deployment_id": {
+          "name": "deployment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "change": {
+          "name": "change",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "guardrail_request_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "requested_by_type": {
+          "name": "requested_by_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_by": {
+          "name": "requested_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "guardrail_requests_organization_id_status_index": {
+          "name": "guardrail_requests_organization_id_status_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "guardrail_requests_organization_id_organization_id_fk": {
+          "name": "guardrail_requests_organization_id_organization_id_fk",
+          "tableFrom": "guardrail_requests",
+          "tableTo": "organization",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "guardrail_requests_organization_id_agent_id_agents_organization_id_id_fk": {
+          "name": "guardrail_requests_organization_id_agent_id_agents_organization_id_id_fk",
+          "tableFrom": "guardrail_requests",
+          "tableTo": "agents",
+          "columnsFrom": ["organization_id", "agent_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "guardrail_requests_organization_id_deployment_id_deployments_organization_id_id_fk": {
+          "name": "guardrail_requests_organization_id_deployment_id_deployments_organization_id_id_fk",
+          "tableFrom": "guardrail_requests",
+          "tableTo": "deployments",
+          "columnsFrom": ["organization_id", "deployment_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.organization_guardrails": {
       "name": "organization_guardrails",
       "schema": "",
@@ -2773,6 +2964,13 @@
           "type": "bigint",
           "primaryKey": false,
           "notNull": false
+        },
+        "network": {
+          "name": "network",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"allow\":[],\"block\":[]}'::jsonb"
         },
         "updated_by": {
           "name": "updated_by",
@@ -3627,6 +3825,16 @@
       "name": "deployment_status",
       "schema": "public",
       "values": ["ready", "waiting", "failed"]
+    },
+    "public.guardrail_kind": {
+      "name": "guardrail_kind",
+      "schema": "public",
+      "values": ["network", "secret", "mcp", "spending_limit"]
+    },
+    "public.guardrail_request_status": {
+      "name": "guardrail_request_status",
+      "schema": "public",
+      "values": ["pending", "approved", "rejected"]
     },
     "public.mcp_auth": {
       "name": "mcp_auth",

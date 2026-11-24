@@ -36,7 +36,11 @@ import {
   secretDeliveries,
   secretGrants,
 } from "../src/schema/deployments.ts";
-import { organizationGuardrails } from "../src/schema/guardrails.ts";
+import {
+  agentNetworkRules,
+  guardrailRequests,
+  organizationGuardrails,
+} from "../src/schema/guardrails.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
   mcpAuthorizations,
@@ -278,6 +282,21 @@ export const seedOrganization = async (name: string) =>
       spendingLimitMicroUsd: 1_000_000,
       updatedBy: userId,
     });
+    await tx.insert(agentNetworkRules).values({
+      organizationId: org,
+      agentId,
+      rules: { allow: ["erp.example.com"], block: [] },
+      updatedBy: userId,
+    });
+    await tx.insert(guardrailRequests).values({
+      id: newId("guardrailRequest"),
+      organizationId: org,
+      kind: "network",
+      agentId,
+      change: { kind: "network", hosts: ["bank.example.com"] },
+      requestedByType: "person",
+      requestedBy: userId,
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -330,6 +349,8 @@ export const tenantTables = {
   mcp_connections: "organization_id",
   mcp_authorizations: "organization_id",
   organization_guardrails: "organization_id",
+  agent_network_rules: "organization_id",
+  guardrail_requests: "organization_id",
 } as const;
 
 export const ident = (name: string) =>
