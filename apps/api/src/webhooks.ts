@@ -28,6 +28,7 @@ import {
 } from "drizzle-orm";
 
 import { decrypt, encrypt, orgKey, orgKeyVersion } from "./crypto.ts";
+import { caseRoomUrl } from "./notify.ts";
 import type { Env } from "./env.ts";
 import { readOutbox, writeOutbox } from "./outbox.ts";
 import type { OutboxMessage } from "./outbox.ts";
@@ -206,7 +207,7 @@ export const queueWebhooks = async (
     status: change.status,
     source: ref.source,
     idempotencyKey: key?.key ?? null,
-    url: new URL(`/cases/${change.agentId}/${change.caseId}`, env.APP_URL).href,
+    url: caseRoomUrl(env, change.agentId, change.caseId),
     statusUrl,
   };
   const answersFit =

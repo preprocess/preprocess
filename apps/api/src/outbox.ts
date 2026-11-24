@@ -29,6 +29,7 @@ const queues: Partial<Record<OutboxKind, (env: Env) => Queue<OutboxMessage>>> =
   {
     "case.start": (env) => env.CASES,
     webhook: (env) => env.WEBHOOKS,
+    email: (env) => env.EMAILS,
     "secret.sync": (env) => env.SECRET_SYNC,
   };
 

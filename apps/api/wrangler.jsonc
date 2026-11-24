@@ -42,6 +42,7 @@
       { "binding": "JOBS", "queue": "preprocess-jobs-development" },
       { "binding": "CASES", "queue": "preprocess-cases-development" },
       { "binding": "WEBHOOKS", "queue": "preprocess-webhooks-development" },
+      { "binding": "EMAILS", "queue": "preprocess-emails-development" },
       {
         "binding": "SECRET_SYNC",
         "queue": "preprocess-secret-sync-development",
@@ -56,8 +57,12 @@
         "max_batch_timeout": 1,
         "max_retries": 20,
       },
+      { "queue": "preprocess-emails-development", "max_batch_timeout": 1 },
     ],
   },
+  "kv_namespaces": [
+    { "binding": "EMAILS_SENT", "id": "preprocess-emails-sent-development" },
+  ],
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "preprocess-files-development" },
     { "binding": "AUDIT", "bucket_name": "preprocess-audit-development" },

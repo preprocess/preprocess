@@ -109,6 +109,10 @@ export type Env = {
   CASES: Queue<OutboxMessage>;
   // Webhook deliveries from the outbox (webhooks.ts).
   WEBHOOKS: Queue<OutboxMessage>;
+  // Notification emails from the outbox (notify.ts), and the keys already
+  // sent, kept for a day.
+  EMAILS: Queue<OutboxMessage>;
+  EMAILS_SENT: KVNamespace;
   // Re-delivers an agent's secrets and MCP grants to its live scripts after
   // a value or grant changes (design doc 03), from the outbox.
   SECRET_SYNC: Queue<OutboxMessage>;

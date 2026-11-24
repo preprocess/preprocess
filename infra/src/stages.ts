@@ -34,6 +34,9 @@ export const names = (stage: string) => ({
   casesQueue: `preprocess-cases-${stage}`,
   // Webhook deliveries (design doc 06), retried with backoff for 24 hours.
   webhooksQueue: `preprocess-webhooks-${stage}`,
+  // Notification emails (design doc 06) and the keys already sent, for a day.
+  emailsQueue: `preprocess-emails-${stage}`,
+  emailsSent: `preprocess-emails-sent-${stage}`,
   secretSync: `preprocess-secret-sync-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,

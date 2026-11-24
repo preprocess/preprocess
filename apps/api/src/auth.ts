@@ -106,6 +106,13 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     user: {
       additionalFields: {
         deactivatedAt: { type: "date", required: false, input: false },
+        // Set by the person through update-user (design doc 06).
+        emailNotifications: {
+          type: "boolean",
+          required: false,
+          defaultValue: true,
+          input: true,
+        },
       },
     },
     databaseHooks: {

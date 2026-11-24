@@ -15,15 +15,18 @@ import {
   reviewEvents,
 } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
-import { asc, eq } from "drizzle-orm";
+import { member } from "@preprocess/db/schema/auth";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Context } from "hono";
 
 import { agentRole, canSeeCase, canWorkCase } from "../access.ts";
-import { eventBase } from "../caller.ts";
-import type { OrgVariables } from "../caller.ts";
+import { eventBase, requireAdmin } from "../caller.ts";
+import type { OrgRole, OrgVariables } from "../caller.ts";
 import { ApiError, createCase } from "../cases.ts";
 import type { Env, WriteResult } from "../env.ts";
+import { notifyLater } from "../notify.ts";
 import { ocrFile } from "../ocr.ts";
+import { drainOutbox } from "../outbox.ts";
 import { refuseOverLimit } from "../spend.ts";
 
 type Ctx = Context<{ Bindings: Env; Variables: OrgVariables }>;
@@ -664,6 +667,113 @@ export const caseRoutes = new OpenAPIHono<{
         });
       });
       return c.body(null, 204);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "put",
+      path: "/cases/{id}/assignees",
+      tags: ["Cases"],
+      summary: "Replace the people assigned to a case",
+      description:
+        "API keys, Owners and Admins. Each person must be able to see the case. Agent code never assigns.",
+      request: {
+        params: CaseParam,
+        ...body(z.object({ userIds: z.array(z.string()).max(50) })),
+      },
+      responses: {
+        200: json(
+          z.object({ assignees: z.array(z.object({ id: z.string() })) }),
+          "The case's assignees",
+        ),
+        403: error("Only API keys, Owners and Admins assign"),
+        404: error("No such case"),
+        422: error("A person cannot see the case"),
+      },
+    }),
+    async (c) => {
+      requireAdmin(c.var.caller);
+      const id = c.req.valid("param").id;
+      const { key } = await loadCase(c, id, false);
+      const wanted = [...new Set(c.req.valid("json").userIds)];
+      const rows = await withOrg(c.env, c.var.org, async (tx) => {
+        const members = wanted.length
+          ? await tx
+              .select({ userId: member.userId, role: member.role })
+              .from(member)
+              .where(
+                and(
+                  eq(member.organizationId, c.var.org),
+                  inArray(member.userId, wanted),
+                ),
+              )
+          : [];
+        for (const userId of wanted) {
+          const found = members.find((m) => m.userId === userId);
+          const caller = found && {
+            type: "person" as const,
+            userId,
+            role: found.role as OrgRole,
+          };
+          if (
+            !caller ||
+            !canSeeCase(caller, await agentRole(tx, caller, key.agentId))
+          )
+            throw new ApiError(
+              422,
+              "assignee_without_access",
+              `${userId} cannot see this case.`,
+            );
+        }
+        const current = (
+          await tx
+            .select({ userId: caseAssignees.userId })
+            .from(caseAssignees)
+            .where(eq(caseAssignees.caseId, id))
+        ).map((a) => a.userId);
+        const added = wanted.filter((u) => !current.includes(u));
+        const removed = current.filter((u) => !wanted.includes(u));
+        if (removed.length)
+          await tx
+            .delete(caseAssignees)
+            .where(
+              and(
+                eq(caseAssignees.caseId, id),
+                inArray(caseAssignees.userId, removed),
+              ),
+            );
+        const outbox = [];
+        const assignedAt = new Date();
+        for (const userId of added) {
+          await tx.insert(caseAssignees).values({
+            organizationId: c.var.org,
+            caseId: id,
+            userId,
+            assignedBy: personId(c),
+            assignedAt,
+          });
+          outbox.push(
+            await notifyLater(tx, c.var.org, {
+              type: "assigned",
+              caseId: id,
+              userId,
+              assignedAt: assignedAt.toISOString(),
+            }),
+          );
+        }
+        if (added.length || removed.length)
+          await audit(tx, {
+            ...eventBase(c.var),
+            action: "case.assignees.updated",
+            targetType: "case",
+            targetId: id,
+            caseId: id,
+            data: { added, removed },
+          });
+        return outbox;
+      });
+      if (rows.length) await drainOutbox(c.env, c.var.org, rows);
+      return c.json({ assignees: wanted.map((u) => ({ id: u })) }, 200);
     },
   )
   .openapi(

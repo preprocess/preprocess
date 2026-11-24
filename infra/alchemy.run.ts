@@ -125,6 +125,12 @@ const backend = (
     const webhooksQueue = yield* Cloudflare.Queues.Queue("Webhooks", {
       name: n.webhooksQueue,
     });
+    const emailsQueue = yield* Cloudflare.Queues.Queue("Emails", {
+      name: n.emailsQueue,
+    });
+    const emailsSent = yield* Cloudflare.KV.Namespace("EmailsSent", {
+      title: n.emailsSent,
+    });
 
     // The daily signed audit manifests (doc 02), locked for a year. Preview
     // stages skip the lock so destroying the stage can empty the bucket.
@@ -196,6 +202,8 @@ const backend = (
         JOBS: jobs,
         CASES: casesQueue,
         WEBHOOKS: webhooksQueue,
+        EMAILS: emailsQueue,
+        EMAILS_SENT: emailsSent,
         FILES: files,
         DISPATCHER: namespace,
       },
@@ -207,6 +215,11 @@ const backend = (
     });
     yield* Cloudflare.Queues.Consumer("CasesConsumer", {
       queueId: casesQueue.queueId,
+      scriptName: api.workerName,
+      settings: { maxWaitTimeMs: 1000 },
+    });
+    yield* Cloudflare.Queues.Consumer("EmailsConsumer", {
+      queueId: emailsQueue.queueId,
       scriptName: api.workerName,
       settings: { maxWaitTimeMs: 1000 },
     });

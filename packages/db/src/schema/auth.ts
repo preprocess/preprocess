@@ -26,6 +26,9 @@ export const user = pgTable("user", {
   // Set when a directory or an Owner deactivates the person; sign-in is refused
   // while it is set (PLAT-27: Better Auth only deletes sessions).
   deactivatedAt: timestamp("deactivated_at"),
+  // One switch per person, across organizations: notification email for
+  // tags, waits and assignments (design doc 06). The inbox ignores it.
+  emailNotifications: boolean("email_notifications").default(true).notNull(),
 });
 
 export const session = pgTable(

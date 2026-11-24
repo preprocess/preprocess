@@ -53,6 +53,8 @@ export const cases = pgTable(
     deploymentId: text().notNull(),
     status: caseStatus().notNull(),
     waitingOnGroupId: text(),
+    // When the case started waiting on that group: the inbox item's key.
+    waitingSince: timestamp({ withTimezone: true }),
     haltReason: haltReason(),
     source: caseSource().notNull(),
     title: text(),

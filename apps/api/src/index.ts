@@ -19,6 +19,8 @@ import type { OutboxMessage } from "./outbox.ts";
 import { agentRoutes } from "./routes/agents.ts";
 import { caseRoutes } from "./routes/cases.ts";
 import { webhookRoutes } from "./routes/webhooks.ts";
+import { inboxRoutes } from "./routes/inbox.ts";
+import { sendNotice } from "./notify.ts";
 import { deliverWebhook } from "./webhooks.ts";
 import { auditRoutes } from "./routes/audit.ts";
 import { groupRoutes } from "./routes/groups.ts";
@@ -78,6 +80,7 @@ orgApi.route("/", mcpRoutes);
 orgApi.route("/", caseRoutes);
 orgApi.route("/", spendingRoutes);
 orgApi.route("/", webhookRoutes);
+orgApi.route("/", inboxRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
@@ -142,6 +145,20 @@ export default {
       for (const message of batch.messages as Message<OutboxMessage>[]) {
         await startQueuedCase(env, message.body);
         message.ack();
+      }
+      return;
+    }
+    if (batch.queue.startsWith("preprocess-emails-")) {
+      for (const message of batch.messages as Message<OutboxMessage>[]) {
+        try {
+          await sendNotice(env, message.body);
+          message.ack();
+        } catch (error) {
+          console.error(
+            JSON.stringify({ event: "notice.failed", error: String(error) }),
+          );
+          message.retry();
+        }
       }
       return;
     }
