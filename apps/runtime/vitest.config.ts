@@ -61,10 +61,24 @@ export default defineConfig({
               new Response(`reached ${new URL(request.url).hostname}`),
           }),
           worker("model-stub"),
+          // The API's internal entrypoint, which the runtime reports to. The
+          // tests read reports from run capture instead.
+          {
+            name: "platform",
+            modules: true,
+            compatibilityDate: "2026-07-26",
+            script: `import { WorkerEntrypoint } from "cloudflare:workers";
+export class Platform extends WorkerEntrypoint {
+  async caseEvent() {}
+  async ocrFile() { throw new Error("no OCR in the runtime tests"); }
+}
+export default { fetch: () => new Response("platform") };`,
+          },
         ],
         serviceBindings: {
           LOCAL_NAMESPACE: "namespace-local",
           NAMESPACE_ADMIN: { name: "namespace-local", entrypoint: "Namespace" },
+          PLATFORM: { name: "platform", entrypoint: "Platform" },
         },
       },
     }),

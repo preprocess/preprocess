@@ -26,5 +26,10 @@
       "binding": "LOCAL_NAMESPACE",
       "service": "preprocess-namespace-development",
     },
+    {
+      "binding": "PLATFORM",
+      "service": "preprocess-api-development",
+      "entrypoint": "Platform",
+    },
   ],
 }

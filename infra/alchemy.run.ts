@@ -119,6 +119,9 @@ const backend = (
       locationHint: regionConfig(region).r2LocationHint,
     });
     const jobs = yield* Cloudflare.Queues.Queue("Jobs", { name: n.queue });
+    const casesQueue = yield* Cloudflare.Queues.Queue("Cases", {
+      name: n.casesQueue,
+    });
 
     // The daily signed audit manifests (doc 02), locked for a year. Preview
     // stages skip the lock so destroying the stage can empty the bucket.
@@ -188,12 +191,18 @@ const backend = (
         ),
         COUNTER: Cloudflare.DurableObject("Counter"),
         JOBS: jobs,
+        CASES: casesQueue,
         FILES: files,
         DISPATCHER: namespace,
       },
     });
     yield* Cloudflare.Queues.Consumer("JobsConsumer", {
       queueId: jobs.queueId,
+      scriptName: api.workerName,
+      settings: { maxWaitTimeMs: 1000 },
+    });
+    yield* Cloudflare.Queues.Consumer("CasesConsumer", {
+      queueId: casesQueue.queueId,
       scriptName: api.workerName,
       settings: { maxWaitTimeMs: 1000 },
     });

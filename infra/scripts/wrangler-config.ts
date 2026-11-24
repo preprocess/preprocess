@@ -84,11 +84,13 @@ const configs: Record<string, object> = {
     queues: {
       producers: [
         { binding: "JOBS", queue: local.queue },
+        { binding: "CASES", queue: local.casesQueue },
         { binding: "SECRET_SYNC", queue: local.secretSync },
       ],
       consumers: [
         { queue: local.queue, max_batch_timeout: 1 },
         { queue: local.secretSync, max_batch_timeout: 1 },
+        { queue: local.casesQueue, max_batch_timeout: 1 },
       ],
     },
     r2_buckets: [
@@ -139,7 +141,10 @@ const configs: Record<string, object> = {
       { tag: "v1", new_sqlite_classes: Object.values(runtimeDurableObjects) },
     ],
     r2_buckets: [{ binding: "RUNS", bucket_name: local.runs }],
-    services: [{ binding: "LOCAL_NAMESPACE", service: local.localNamespace }],
+    services: [
+      { binding: "LOCAL_NAMESPACE", service: local.localNamespace },
+      { binding: "PLATFORM", service: local.api, entrypoint: "Platform" },
+    ],
   },
   "apps/outbound": {
     $schema: "node_modules/wrangler/config-schema.json",
