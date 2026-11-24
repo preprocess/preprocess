@@ -41,6 +41,7 @@ import { Route as AgentsAgentIdObservabilityRouteImport } from "./routes/agents/
 import { Route as AgentsAgentIdSandboxRouteImport } from "./routes/agents/$agentId/sandbox";
 import { Route as AgentsAgentIdSecretsRouteImport } from "./routes/agents/$agentId/secrets";
 import { Route as AgentsAgentIdSettingsRouteImport } from "./routes/agents/$agentId/settings";
+import { Route as AgentsAgentIdTrainingRouteImport } from "./routes/agents/$agentId/training";
 import { Route as AgentsAgentIdVariablesRouteImport } from "./routes/agents/$agentId/variables";
 import { Route as ApiAuthCallbackRouteImport } from "./routes/api/auth/callback";
 import { Route as ApiAuthSignInRouteImport } from "./routes/api/auth/sign-in";
@@ -232,6 +233,11 @@ const AgentsAgentIdSettingsRoute = AgentsAgentIdSettingsRouteImport.update({
   path: "/settings",
   getParentRoute: () => AgentsAgentIdRoute,
 } as any);
+const AgentsAgentIdTrainingRoute = AgentsAgentIdTrainingRouteImport.update({
+  id: "/training",
+  path: "/training",
+  getParentRoute: () => AgentsAgentIdRoute,
+} as any);
 const AgentsAgentIdVariablesRoute = AgentsAgentIdVariablesRouteImport.update({
   id: "/variables",
   path: "/variables",
@@ -409,6 +415,7 @@ export interface FileRoutesByFullPath {
   "/agents/$agentId/sandbox": typeof AgentsAgentIdSandboxRoute;
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
+  "/agents/$agentId/training": typeof AgentsAgentIdTrainingRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
   "/api/auth/callback": typeof ApiAuthCallbackRoute;
   "/api/auth/sign-in": typeof ApiAuthSignInRoute;
@@ -466,6 +473,7 @@ export interface FileRoutesByTo {
   "/agents/$agentId/sandbox": typeof AgentsAgentIdSandboxRoute;
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
+  "/agents/$agentId/training": typeof AgentsAgentIdTrainingRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
   "/api/auth/callback": typeof ApiAuthCallbackRoute;
   "/api/auth/sign-in": typeof ApiAuthSignInRoute;
@@ -527,6 +535,7 @@ export interface FileRoutesById {
   "/agents/$agentId/sandbox": typeof AgentsAgentIdSandboxRoute;
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
+  "/agents/$agentId/training": typeof AgentsAgentIdTrainingRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
   "/api/auth/callback": typeof ApiAuthCallbackRoute;
   "/api/auth/sign-in": typeof ApiAuthSignInRoute;
@@ -589,6 +598,7 @@ export interface FileRouteTypes {
     | "/agents/$agentId/sandbox"
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
+    | "/agents/$agentId/training"
     | "/agents/$agentId/variables"
     | "/api/auth/callback"
     | "/api/auth/sign-in"
@@ -646,6 +656,7 @@ export interface FileRouteTypes {
     | "/agents/$agentId/sandbox"
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
+    | "/agents/$agentId/training"
     | "/agents/$agentId/variables"
     | "/api/auth/callback"
     | "/api/auth/sign-in"
@@ -706,6 +717,7 @@ export interface FileRouteTypes {
     | "/agents/$agentId/sandbox"
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
+    | "/agents/$agentId/training"
     | "/agents/$agentId/variables"
     | "/api/auth/callback"
     | "/api/auth/sign-in"
@@ -987,6 +999,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AgentsAgentIdSettingsRouteImport;
       parentRoute: typeof AgentsAgentIdRoute;
     };
+    "/agents/$agentId/training": {
+      id: "/agents/$agentId/training";
+      path: "/training";
+      fullPath: "/agents/$agentId/training";
+      preLoaderRoute: typeof AgentsAgentIdTrainingRouteImport;
+      parentRoute: typeof AgentsAgentIdRoute;
+    };
     "/agents/$agentId/variables": {
       id: "/agents/$agentId/variables";
       path: "/variables";
@@ -1258,6 +1277,7 @@ interface AgentsAgentIdRouteChildren {
   AgentsAgentIdSandboxRoute: typeof AgentsAgentIdSandboxRoute;
   AgentsAgentIdSecretsRoute: typeof AgentsAgentIdSecretsRoute;
   AgentsAgentIdSettingsRoute: typeof AgentsAgentIdSettingsRoute;
+  AgentsAgentIdTrainingRoute: typeof AgentsAgentIdTrainingRoute;
   AgentsAgentIdVariablesRoute: typeof AgentsAgentIdVariablesRoute;
   AgentsAgentIdIndexRoute: typeof AgentsAgentIdIndexRoute;
 }
@@ -1275,6 +1295,7 @@ const AgentsAgentIdRouteChildren: AgentsAgentIdRouteChildren = {
   AgentsAgentIdSandboxRoute: AgentsAgentIdSandboxRoute,
   AgentsAgentIdSecretsRoute: AgentsAgentIdSecretsRoute,
   AgentsAgentIdSettingsRoute: AgentsAgentIdSettingsRoute,
+  AgentsAgentIdTrainingRoute: AgentsAgentIdTrainingRoute,
   AgentsAgentIdVariablesRoute: AgentsAgentIdVariablesRoute,
   AgentsAgentIdIndexRoute: AgentsAgentIdIndexRoute,
 };
