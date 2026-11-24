@@ -38,6 +38,11 @@ import type { NetworkRules } from "./network.ts";
 
 type Actor = Pick<AuditInput, "actorType" | "actorId" | "ip" | "requestId">;
 
+const approvalRule = z.object({
+  group: z.string().nullable(),
+  conditional: z.boolean(),
+});
+
 const manifestSchema = z
   .object({
     protocol: z.literal(PROTOCOL),
@@ -75,6 +80,15 @@ const manifestSchema = z
     toolRetries: z.number().int().nonnegative().optional(),
     sandboxImage: z.string().optional(),
     evals: z.object({ onPush: z.boolean().optional() }).optional(),
+    // Approvals the code requires (spec §9); a null group is any operator.
+    approvals: z
+      .object({
+        groups: z.array(z.string()),
+        agent: approvalRule.nullable(),
+        fields: z.array(approvalRule.extend({ path: z.string() })),
+        tools: z.array(approvalRule.extend({ name: z.string() })),
+      })
+      .optional(),
     declared: z.array(z.string()).optional(),
     warnings: z.array(z.string()).optional(),
   })
@@ -156,8 +170,11 @@ const boundSecrets = async (
 // access to the agent: no grant on it and not Developers. A group without
 // access holds the deployment in waiting, like an ungranted secret, so an
 // agent never runs with one; an unknown slug fails the deploy instead.
+// A group the code names waits for access to the agent; one it names to
+// approve waits for operator access, since viewers never approve.
 const namedGroups = async (tx: Tx, agentId: string, manifest: Manifest) => {
-  const slugs = manifest.groups ?? [];
+  const approving = new Set(manifest.approvals?.groups ?? []);
+  const slugs = [...new Set([...(manifest.groups ?? []), ...approving])];
   if (slugs.length === 0) return { named: [], waitingGroups: [] };
   const named = await tx
     .select({
@@ -173,9 +190,14 @@ const namedGroups = async (tx: Tx, agentId: string, manifest: Manifest) => {
     )
     .where(inArray(groups.slug, slugs));
   return {
-    named,
+    named: named.map((g) => ({ ...g, approves: approving.has(g.slug) })),
     waitingGroups: named
-      .filter((g) => !g.isDevelopers && g.access === null)
+      .filter(
+        (g) =>
+          !g.isDevelopers &&
+          (g.access === null ||
+            (approving.has(g.slug) && g.access !== "operator")),
+      )
       .map((g) => g.slug),
   };
 };
@@ -272,9 +294,7 @@ export const syncDeployment = async (
           organizationId: org,
           deploymentId,
           groupId: g.id,
-          // TODO(step 4): set from the code's approval groups, and require
-          // operator access for them.
-          approves: false,
+          approves: g.approves,
         })),
       );
     return {
