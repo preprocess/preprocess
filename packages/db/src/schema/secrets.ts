@@ -47,6 +47,7 @@ export const secrets = pgTable(
   },
   (t) => [
     unique().on(t.organizationId, t.name),
+    unique("secrets_org_id_unique").on(t.organizationId, t.id),
     check("secrets_name_format", sql`${t.name} ~ '^[A-Z][A-Z0-9_]{0,63}$'`),
   ],
 );

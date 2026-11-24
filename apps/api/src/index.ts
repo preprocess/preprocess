@@ -4,6 +4,7 @@ import { modelEndpoint } from "@preprocess/models/endpoints";
 import { ocrPage } from "@preprocess/models/ocr";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { runMode } from "@preprocess/runmode";
+import { orgId } from "@preprocess/db/client";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
@@ -12,10 +13,14 @@ import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { orgCaller } from "./caller.ts";
 import type { OrgVariables } from "./caller.ts";
-import type { Env, Job } from "./env.ts";
+import { syncAgent } from "./deploy.ts";
+import type { Env, Job, SecretSync } from "./env.ts";
+import { agentRoutes } from "./routes/agents.ts";
 import { auditRoutes } from "./routes/audit.ts";
+import { devRoutes } from "./routes/dev.ts";
 import { groupRoutes } from "./routes/groups.ts";
 import { organizationRoutes } from "./routes/organization.ts";
+import { secretRoutes } from "./routes/secrets.ts";
 
 export { Counter } from "./counter.ts";
 
@@ -58,6 +63,8 @@ orgApi.use(orgCaller);
 orgApi.route("/", organizationRoutes);
 orgApi.route("/", groupRoutes);
 orgApi.route("/", auditRoutes);
+orgApi.route("/", agentRoutes);
+orgApi.route("/", secretRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
@@ -102,6 +109,9 @@ app.get("/dispatch", async (c) => {
   });
 });
 
+app.use("/dev/orgs/:org/*", orgCaller);
+app.route("/dev/orgs/:org", devRoutes);
+
 // Smoke routes for the model client until decide and OCR have their real
 // callers (the runtime's decide tool and POST /v1/orgs/{org}/ocr).
 app.post("/models/decide", async (c) =>
@@ -128,10 +138,24 @@ export default {
   scheduled(controller, env, ctx) {
     ctx.waitUntil(anchorAll(env, new Date(controller.scheduledTime)));
   },
-  // The queue consumer writes each job's result to R2 under its organization.
-  async queue(batch: MessageBatch<Job>, env: Env) {
+  async queue(batch: MessageBatch<Job | SecretSync>, env: Env) {
     for (const message of batch.messages) {
-      const job = message.body;
+      const body = message.body;
+      if ("kind" in body) {
+        try {
+          await syncAgent(env, orgId(body.organizationId), body.agentId, {
+            actorType: "platform",
+            actorId: "secret-sync",
+          });
+          message.ack();
+        } catch (error) {
+          console.error(error);
+          message.retry({ delaySeconds: Math.min(300, 2 ** message.attempts) });
+        }
+        continue;
+      }
+      // A job's result goes to R2 under its organization.
+      const job = body;
       await env.FILES.put(
         `${job.organizationId}/jobs/${job.id}.json`,
         JSON.stringify({
@@ -144,4 +168,4 @@ export default {
       message.ack();
     }
   },
-} satisfies ExportedHandler<Env, Job>;
+} satisfies ExportedHandler<Env, Job | SecretSync>;

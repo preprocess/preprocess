@@ -9,6 +9,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -19,6 +20,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { agents, groups } from "./access.ts";
+import { secrets } from "./secrets.ts";
 
 // Deploys from the agent's production branch are production; any other
 // branch is a preview (spec 4).
@@ -108,6 +110,57 @@ export const deploymentGroups = pgTable(
     foreignKey({
       columns: [t.organizationId, t.groupId],
       foreignColumns: [groups.organizationId, groups.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+// The guardrail "which organization secrets an agent's code receives"
+// (spec 5): a deployment is bound the secrets it declares and the agent is
+// granted. Granting is loosening, so only an Admin or Owner writes it.
+export const secretGrants = pgTable(
+  "secret_grants",
+  {
+    organizationId: text().notNull(),
+    secretId: text().notNull(),
+    agentId: text().notNull(),
+    grantedBy: text().notNull(),
+    grantedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.secretId, t.agentId] }),
+    index().on(t.organizationId, t.agentId),
+    foreignKey({
+      columns: [t.organizationId, t.secretId],
+      foreignColumns: [secrets.organizationId, secrets.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.organizationId, t.agentId],
+      foreignColumns: [agents.organizationId, agents.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+// What each script actually holds, for the "delivered to n of m" status and
+// for audit (spec 12: which deployment received a secret).
+export const secretDeliveries = pgTable(
+  "secret_deliveries",
+  {
+    organizationId: text().notNull(),
+    deploymentId: text().notNull(),
+    secretId: text().notNull(),
+    secretVersion: integer().notNull(),
+    deliveredAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.deploymentId, t.secretId] }),
+    index().on(t.organizationId, t.secretId),
+    foreignKey({
+      columns: [t.organizationId, t.deploymentId],
+      foreignColumns: [deployments.organizationId, deployments.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.organizationId, t.secretId],
+      foreignColumns: [secrets.organizationId, secrets.id],
     }).onDelete("cascade"),
   ],
 );

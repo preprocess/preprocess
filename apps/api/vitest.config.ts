@@ -4,26 +4,57 @@ import path from "node:path";
 
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { localDatabaseUrl, localRoleUrl } from "@preprocess/db/migrate";
+import { buildSync } from "esbuild";
 import { defineConfig } from "vitest/config";
 
+const require = createRequire(import.meta.url);
 // pg require()s pg-protocol, and Vitest resolves that require with the
 // "import" condition, which points at an ES module. Pin it to the CommonJS
 // build pg expects. pg also loads its Workers socket from pg-cloudflare's
 // "workerd" export, which Vitest's resolver does not pick.
-const pgRequire = createRequire(createRequire(import.meta.url).resolve("pg"));
+const pgRequire = createRequire(require.resolve("pg"));
 
-// A fresh database per run (test/global-setup.ts), reached as the API reaches
-// its own: DB as preprocess_app, DB_SYSTEM as preprocess_system.
+const root = import.meta.dirname;
+const dist = path.join(root, "test/dist");
 const url =
   process.env.TEST_DATABASE_URL ?? localDatabaseUrl("preprocess_api_test");
+
+// The runtime, the local namespace, the outbound Worker and the model stub
+// run beside the API, as in `pnpm dev`; the sample agent is bundled the way
+// `preprocess deploy` bundles one.
+const bundle = (entry: string, out: string) =>
+  buildSync({
+    entryPoints: [path.join(root, entry)],
+    outfile: path.join(dist, out),
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    target: "es2023",
+    conditions: ["workerd", "worker", "browser"],
+    mainFields: ["module", "main"],
+    external: ["cloudflare:*", "node:*"],
+    loader: { ".png": "dataurl" },
+    logLevel: "warning",
+  });
+bundle("../runtime/src/index.ts", "runtime.js");
+bundle("../namespace-local/src/index.ts", "namespace-local.js");
+bundle("../outbound/src/index.ts", "outbound.js");
+bundle("../model-stub/src/index.ts", "model-stub.js");
+bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
+
+const worker = (name: string, extra: object = {}) => ({
+  name,
+  modules: true,
+  scriptPath: path.join(dist, `${name}.js`),
+  compatibilityDate: "2026-07-26",
+  compatibilityFlags: ["nodejs_compat"],
+  ...extra,
+});
 
 const auditKey = generateKeyPairSync("ed25519")
   .privateKey.export({ format: "der", type: "pkcs8" })
   .toString("base64");
 
-// Tests run inside the Workers runtime with the API's local bindings (the
-// generated wrangler.jsonc). The user Worker is not part of the test runtime,
-// so its service binding answers with a fixed reply.
 export default defineConfig({
   plugins: [
     cloudflareTest({
@@ -39,7 +70,43 @@ export default defineConfig({
         },
         serviceBindings: {
           LOCAL_USER_WORKER: () => Response.json({ worker: "test" }),
+          RUNTIME: "preprocess-runtime-development",
+          LOCAL_NAMESPACE: {
+            name: "preprocess-namespace-development",
+            entrypoint: "Namespace",
+          },
         },
+        workers: [
+          worker("runtime", {
+            name: "preprocess-runtime-development",
+            bindings: {
+              STAGE: "test",
+              MODEL_SERVICE_URL: "http://model-stub.test",
+              MODEL_SERVICE_KEY: "test",
+            },
+            durableObjects: {
+              CASE_RUNTIME: { className: "CaseRuntime", useSQLite: true },
+            },
+            r2Buckets: { RUNS: "runs" },
+            serviceBindings: {
+              LOCAL_NAMESPACE: "preprocess-namespace-development",
+            },
+            outboundService: "model-stub",
+          }),
+          worker("namespace-local", {
+            name: "preprocess-namespace-development",
+            workerLoaders: { LOADER: {} },
+            r2Buckets: { SCRIPTS: "scripts" },
+            serviceBindings: {
+              OUTBOUND: { name: "outbound", entrypoint: "Egress" },
+            },
+          }),
+          worker("outbound", {
+            outboundService: (request: Request) =>
+              new Response(`reached ${new URL(request.url).hostname}`),
+          }),
+          worker("model-stub"),
+        ],
       },
     }),
   ],
