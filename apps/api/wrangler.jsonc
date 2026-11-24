@@ -31,7 +31,7 @@
       "localConnectionString": "postgresql://preprocess_system:preprocess_system@127.0.0.1:5432/preprocess_development",
     },
   ],
-  "triggers": { "crons": ["20 0 * * *"] },
+  "triggers": { "crons": ["20 0 * * *", "* * * * *"] },
   "send_email": [{ "name": "EMAIL" }],
   "durable_objects": {
     "bindings": [{ "name": "COUNTER", "class_name": "Counter" }],
@@ -40,6 +40,7 @@
   "queues": {
     "producers": [
       { "binding": "JOBS", "queue": "preprocess-jobs-development" },
+      { "binding": "CASES", "queue": "preprocess-cases-development" },
       {
         "binding": "SECRET_SYNC",
         "queue": "preprocess-secret-sync-development",
@@ -48,6 +49,7 @@
     "consumers": [
       { "queue": "preprocess-jobs-development", "max_batch_timeout": 1 },
       { "queue": "preprocess-secret-sync-development", "max_batch_timeout": 1 },
+      { "queue": "preprocess-cases-development", "max_batch_timeout": 1 },
     ],
   },
   "r2_buckets": [

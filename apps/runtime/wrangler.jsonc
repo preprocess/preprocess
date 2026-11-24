@@ -31,5 +31,10 @@
       "service": "preprocess-api-development",
       "entrypoint": "McpService",
     },
+    {
+      "binding": "PLATFORM",
+      "service": "preprocess-api-development",
+      "entrypoint": "Platform",
+    },
   ],
 }
