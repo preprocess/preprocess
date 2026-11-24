@@ -13,16 +13,16 @@ libraries, including the UI, come from
 We are not accepting outside contributions yet; issues are open. See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
-| Path                           | What it is                                                                                                                    |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `apps/app`                     | TanStack Start product app (Cloudflare Worker)                                                                                |
-| `apps/api`                     | Hono API Worker: Durable Object, queue, R2, Postgres through Hyperdrive, Workers for Platforms dispatch, model service client |
-| `apps/user-worker`             | Stand-in for a customer agent Worker, dispatched through the stage's namespace                                                |
-| `apps/model-stub`              | Stub model service for `decide` and OCR in development and previews                                                           |
-| `packages/models`              | Model client: `decide` on System One, OCR on chat completions, endpoint resolution                                            |
-| `packages/db`                  | Drizzle schema, migrations and seed data                                                                                      |
-| `packages/sdk`, `packages/cli` | Reserved for the SDK and CLI (build step 2)                                                                                   |
-| `infra`                        | Alchemy stack: staging and per-PR previews                                                                                    |
+| Path                           | What it is                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `apps/app`                     | TanStack Start product app (Cloudflare Worker)                                                |
+| `apps/api`                     | Hono API Worker: Durable Object, queue, R2, Postgres through Hyperdrive, model service client |
+| `apps/runtime`                 | Agent runtime: case Durable Objects, and agent code loaded from R2 as Dynamic Workers         |
+| `apps/model-stub`              | Stub model service for `decide` and OCR in development and previews                           |
+| `packages/models`              | Model client: `decide` on System One, OCR on chat completions, endpoint resolution            |
+| `packages/db`                  | Drizzle schema, migrations and seed data                                                      |
+| `packages/sdk`, `packages/cli` | Reserved for the SDK and CLI (build step 2)                                                   |
+| `infra`                        | Alchemy stack: staging and per-PR previews                                                    |
 
 Apps depend on packages, never the reverse. Every package has its own name,
 semver version and `exports`, and `pnpm check:boundaries` (part of `pnpm lint`)
@@ -62,11 +62,9 @@ there once with
 `certutil -d sql:$HOME/.pki/nssdb -A -t C,, -n portless -i ~/.portless/ca.pem`.
 
 Workers, the Durable Object, the queue and R2 run in Cloudflare's local runtime,
-and Hyperdrive points at local Postgres; nothing reaches Cloudflare. The local
-runtime can't emulate a dispatch namespace, so locally the API reaches the user
-Worker through a service binding and `/dispatch` reports
-`"via": "local-service-binding"`. Deployed stages report
-`"via": "dispatch-namespace"`.
+and Hyperdrive points at local Postgres; nothing reaches Cloudflare. Agent code
+runs locally the same way it runs deployed: the runtime loads each deployment's
+bundle as a Dynamic Worker through its Worker Loader binding.
 
 The first `pnpm dev` writes `apps/api/.dev.vars` with a generated
 `BETTER_AUTH_SECRET` and an Ed25519 `AUDIT_SIGNING_KEY` that signs the daily
@@ -107,9 +105,9 @@ them. Hosted models come later behind the same variables.
 ## Pull request previews
 
 Every pull request gets its own isolated stage, `pr-<number>`, with its own
-Workers, dispatch namespace, PlanetScale branch (migrated and seeded), R2
-bucket, queue and Durable Objects. The URLs are posted on the pull request and
-everything is destroyed when it closes. See [infra/README.md](infra/README.md).
+Workers, PlanetScale branch (migrated and seeded), R2 bucket, queue and Durable
+Objects. The URLs are posted on the pull request and everything is destroyed
+when it closes. See [infra/README.md](infra/README.md).
 
 ## Checks
 

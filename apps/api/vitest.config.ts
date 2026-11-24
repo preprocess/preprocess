@@ -23,9 +23,8 @@ const dist = path.join(root, "test/dist");
 const url =
   process.env.TEST_DATABASE_URL ?? localDatabaseUrl("preprocess_api_test");
 
-// The runtime, the local namespace, the outbound Worker and the model stub
-// run beside the API, as in `pnpm dev`; the sample agent is bundled the way
-// `preprocess deploy` bundles one.
+// The runtime and the model stub run beside the API, as in `pnpm dev`; the
+// sample agents are bundled the way `preprocess deploy` bundles one.
 const bundle = (entry: string, out: string) =>
   buildSync({
     entryPoints: [path.join(root, entry)],
@@ -41,8 +40,6 @@ const bundle = (entry: string, out: string) =>
     logLevel: "warning",
   });
 bundle("../runtime/src/index.ts", "runtime.js");
-bundle("../namespace-local/src/index.ts", "namespace-local.js");
-bundle("../outbound/src/index.ts", "outbound.js");
 bundle("../model-stub/src/index.ts", "model-stub.js");
 bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/crm-agent.ts", "crm-agent.js");
@@ -98,16 +95,11 @@ export default defineConfig({
             ? fakeGithub(request)
             : fakeMcp(request),
         serviceBindings: {
-          LOCAL_USER_WORKER: () => Response.json({ worker: "test" }),
           RUNTIME: "preprocess-runtime-development",
           BUILDER: { name: "fake-builder", entrypoint: "Builder" },
           // The sandboxed renderer needs Docker; tests pass a stub as
           // env.PDF_RENDER instead.
           PDF_RENDER: () => new Response("pdf-render stub", { status: 501 }),
-          LOCAL_NAMESPACE: {
-            name: "preprocess-namespace-development",
-            entrypoint: "Namespace",
-          },
         },
         workers: [
           worker("runtime", {
@@ -120,29 +112,45 @@ export default defineConfig({
             durableObjects: {
               CASE_RUNTIME: { className: "CaseRuntime", useSQLite: true },
             },
-            r2Buckets: { RUNS: "runs" },
+            r2Buckets: { RUNS: "runs", BUNDLES: "bundles" },
+            workerLoaders: { LOADER: {} },
             serviceBindings: {
-              LOCAL_NAMESPACE: "preprocess-namespace-development",
-              // The test Worker is the API: its McpService entrypoint.
+              // The test Worker is the API: its McpService and Platform
+              // entrypoints.
               MCP_SERVICE: {
                 name: "vitest-plugin-runner-",
                 entrypoint: "McpService",
               },
+              PLATFORM: {
+                name: "vitest-plugin-runner-",
+                entrypoint: "Platform",
+              },
+              TAIL: "tail",
             },
-            outboundService: "model-stub",
+            // The model service, and the internet the agent's code reaches
+            // past the network rules.
+            outboundService: "internet",
           }),
-          worker("namespace-local", {
-            name: "preprocess-namespace-development",
-            workerLoaders: { LOADER: {} },
-            r2Buckets: { SCRIPTS: "scripts" },
-            serviceBindings: {
-              OUTBOUND: { name: "outbound", entrypoint: "Egress" },
-            },
-          }),
-          worker("outbound", {
-            outboundService: (request: Request) =>
-              new Response(`reached ${new URL(request.url).hostname}`),
-          }),
+          {
+            name: "internet",
+            modules: true,
+            compatibilityDate: "2026-07-26",
+            serviceBindings: { MODEL: "model-stub" },
+            script: `export default {
+  fetch(request, env) {
+    const host = new URL(request.url).hostname;
+    if (host === "model-stub.test") return env.MODEL.fetch(request);
+    return new Response("reached " + host);
+  },
+};`,
+          },
+          // apps/tail's place; its records are tested in apps/tail.
+          {
+            name: "tail",
+            modules: true,
+            compatibilityDate: "2026-07-26",
+            script: "export default { tail() {} };",
+          },
           worker("model-stub"),
           worker("fake-builder", {
             bindings: {

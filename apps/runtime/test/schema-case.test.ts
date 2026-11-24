@@ -1,8 +1,9 @@
-import { env, exports } from "cloudflare:workers";
+import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import type { CaseState, CaseView } from "../src/case-runtime.ts";
 import type { CaseKey, StartCase } from "../src/env.ts";
+import { deploy } from "./deploy.ts";
 // Bundled by vitest.config.ts, as the deploy command uploads it.
 import invoiceAgent from "./dist/invoice-agent.js?raw";
 
@@ -57,17 +58,19 @@ const field = (state: CaseState, path: string) => {
 
 describe("a case with an output schema", () => {
   it("is filled by the agent, edited by a person, and rerun with a suggestion beside the edit", async () => {
-    await env.NAMESPACE_ADMIN.putScript("org_inv--invoices--dep_1", {
-      mainModule: "agent.js",
-      modules: { "agent.js": invoiceAgent },
-      bindings: [],
-      tags: ["org:org_inv"],
-    });
+    const { bundleHash } = await deploy(
+      {
+        organizationId: "org_inv",
+        agentId: "agt_invoices",
+        deploymentId: "dep_1",
+      },
+      invoiceAgent,
+    );
     const c = key("case_inv_1");
     await runtime.startCase({
       ...c,
       deploymentId: "dep_1",
-      script: "org_inv--invoices--dep_1",
+      bundleHash,
       network: { allow: [], block: [] },
       input: { text: "Invoice 1042 from Acme Corporation, total 1,285.00 USD" },
       groups: [

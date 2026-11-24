@@ -1,5 +1,5 @@
 # Per-pull-request previews (spec 16c). Each PR gets its own Alchemy stage,
-# pr-<number>, with its own Workers, dispatch namespace, PlanetScale branch, R2
+# pr-<number>, with its own Workers, PlanetScale branch, R2
 # bucket, queue and Durable Objects. The URLs are posted on the PR, and the
 # stage and its branch are destroyed when the PR closes. See infra/README.md.
 
@@ -84,7 +84,7 @@ jobs:
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             let body;
             if (outcome === "destroy-success") {
-              body = `${marker}\n**Preview \`${stage}\` destroyed**: Workers, dispatch namespace, R2, queue, Durable Objects, Hyperdrive and PlanetScale branch. [Run](${run})`;
+              body = `${marker}\n**Preview \`${stage}\` destroyed**: Workers, R2, queue, Durable Objects, Hyperdrive and PlanetScale branch. [Run](${run})`;
             } else if (outcome.startsWith("destroy-")) {
               body = `${marker}\n**Preview \`${stage}\` failed to tear down.** Resources may remain. [Run](${run})`;
             } else if (outcome === "success") {
@@ -95,7 +95,7 @@ jobs:
                 "",
                 `- App: ${o.app}`,
                 `- API: ${o.api}`,
-                `- PlanetScale branch \`${o.branch}\`, dispatch namespace \`${o.namespace}\``,
+                `- PlanetScale branch \`${o.branch}\``,
                 "",
                 `Torn down when this pull request closes. [Run](${run})`,
               ].join("\n");

@@ -1,15 +1,20 @@
-# 03. Secret delivery to deployed Workers (build step 2)
+# 03. Secret delivery to agent code (build step 2)
 
-Scope: build step 2. Agents never read organization secrets. Values reach only the agent's deployed code (one Workers for Platforms script per deployment) when it is dispatched for a tool or hook, and never the model's context, the case thread, logs or run capture. MCP OAuth tokens are held the same way. Which secrets an agent's code receives is a guardrail.
+Scope: build step 2. Agents never read organization secrets. Values reach only the agent's own code, which runs as a Dynamic Worker the runtime loads from the deployment's bundle, and never the model's context, the case thread, logs or run capture. MCP OAuth tokens are held the same way. Which secrets an agent's code receives is a guardrail.
 
 ## Decision
 
-- **Organization secrets are `secret_text` bindings on the deployment's Workers for Platforms script**, set at upload from our encrypted store and re-synced when a value or a grant changes. the original suggestion, confirmed.
-- **MCP OAuth tokens are not bound.** Customer code reaches MCP servers through an `MCP` capability the runtime passes with each dispatch, as a dynamic dispatch prop (Cloudflare's documented pattern for request-scoped platform capabilities). The capability is an RPC stub of the runtime's `McpBroker` entrypoint, whose own props (the organization, agent and deployment) customer code can neither read nor change. It forwards to the API Worker's token service, which attaches the organization's token, refreshes it, and enforces the MCP-server guardrail. Customer code never holds the token. Every connection belongs to the organization; there are no personal connections.
-- **The runtime Worker (Pi Durable) has no Secrets Store binding.** Plaintext exists only in the deploy and sync jobs (memory, briefly) and inside the customer's script.
-- **The SDK redacts bound secret values** from tool results, hook results, errors and logs before they leave the customer's Worker, so a careless `return { headers }` does not put a key into the model's context, the thread, logs or capture. The docs describe this as defense in depth, not a guarantee: customer code that transforms a value can still leak it.
+- **Agent code runs as Dynamic Workers** (Worker Loader), not Workers for Platforms. Deploying stores the bundle in the runtime's `BUNDLES` R2 bucket and records its SHA-256 on the deployment; nothing is uploaded to Cloudflare per deployment. The PRE-45 spike measured 2–5 ms per warm call from a Worker and under 1 ms from a Durable Object, against 15–52 ms through a dispatch namespace.
+- **Secrets enter the isolate's `env` when it loads, and the isolate id carries a secrets version.** Each isolate is named `<org>:<agent>:<deployment>:<secrets version>:<rules>`. The runtime asks the API for the deployment's secrets version on every call; any change to a bound value or grant moves the version, so the next call names a different isolate and loads it with the current values. Values are decrypted only inside the loader callback, when a new isolate is created, and go straight into its `env`. SDK bundles keep reading `env.STRIPE_KEY` exactly as before.
+- **MCP OAuth tokens are not delivered.** Customer code reaches MCP servers through an `MCP` capability the runtime passes with each call as an entrypoint prop. The capability is an RPC stub of the runtime's `McpBroker` entrypoint, whose own props (the organization, agent and deployment) customer code can neither read nor change. It forwards to the API Worker's token service, which attaches the organization's token, refreshes it, and enforces the MCP-server guardrail on every call. Customer code never holds the token. Every connection belongs to the organization; there are no personal connections.
+- **The runtime Worker (Pi Durable) holds no key.** Decryption happens in the API Worker's `Platform` entrypoint; the runtime passes the plaintext from that RPC into the loader and keeps no copy.
+- **The SDK redacts bound secret values** from tool results, hook results, errors and logs before they leave the agent's code, so a careless `return { headers }` does not put a key into the model's context, the thread, logs or capture. The docs describe this as defense in depth, not a guarantee: customer code that transforms a value can still leak it.
 
-## Which secrets a script receives
+### Why a version in the id, not secrets per call
+
+Both satisfy "a rotation or revoke takes effect on the next call". Passing secrets per call would decrypt every bound value on every tool call and put plaintext into each call's props, where the runtime handles it constantly. A version in the id costs one small query per call (the version is a hash of `secretId:version` pairs, the first 8 bytes of a SHA-256, or `none`), decrypts only when an isolate loads, and keeps the SDK's `env` contract unchanged. If a value changes between the version check and the loader reading the values, the loader sees a different version, refuses to build that isolate, and the call retries once under the new version, so an id never holds values other than the version it names.
+
+## Which secrets a deployment receives
 
 ```ts
 // Agent code declares what it needs
@@ -28,45 +33,40 @@ export const secretGrants = pgTable("secret_grants", {
   grantedBy: text().notNull(),
   grantedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [primaryKey({ columns: [t.secretId, t.agentId] })]);
-
-// What each live script actually holds, for status and audit
-export const secretDeliveries = pgTable("secret_deliveries", {
-  organizationId: text().notNull(),
-  deploymentId: text().notNull(),
-  secretId: text().notNull(),
-  secretVersion: integer().notNull(),
-  deliveredAt: timestamp({ withTimezone: true }).notNull(),
-}, (t) => [primaryKey({ columns: [t.deploymentId, t.secretId] })]);
 ```
 
-Bound set = declared ∩ granted. A deployment that declares a secret without a grant still builds, shows "waiting for: STRIPE_KEY", and cannot be promoted until an Admin or Owner approves the loosening; the approval writes the grant. The approval flow itself is step 5; step 2 only needs the comparison and the "waiting" status.
+Bound set = declared ∩ granted, computed from current grants and values each time it is asked. A deployment that declares a secret without a grant still builds, shows "waiting for: STRIPE_KEY", and cannot be promoted until an Admin or Owner approves the loosening; the approval writes the grant.
+
+There is no delivery table: nothing is pushed anywhere, so what a deployment receives is always what the bound set says now. Each isolate load audits one `secret.delivered { secret, version, deployment }` per value, with the platform runtime as actor.
 
 Reserved binding names (`MCP`, `MODELS`, `PREPROCESS_*`) cannot be secret names.
 
 ## Flows
 
-**Deploy (upload).** The deploy Workflow (API side, has the KEK binding):
-1. Reads the manifest, computes the bound set, records any waiting guardrail.
-2. Decrypts those secrets in memory and uploads the script with `metadata.bindings` containing `{ type: "secret_text", name, text }` for each. Platform capabilities such as `MCP` are not upload bindings: the runtime passes them per dispatch (see MCP connections).
-3. Writes `secret_deliveries` and one audit event per secret: `secret.delivered { secret, version, deployment }`.
+**Deploy.** The API stores the bundle through the runtime (`putBundle`), which writes it to `BUNDLES` at `<org>/<agent>/<deployment>.json` and returns its SHA-256; the deployment row records it as `bundle_sha256`. The runtime then loads the bundle to read its manifest, and the API computes the bound set and any waiting guardrail.
 
-Plaintext is never logged: the Workflow's evlog context carries only names and versions, and its step outputs (which Workflows persist) carry no values: decryption and upload happen in one step that returns only ids.
+**Value change.** `PUT /v1/orgs/{org}/secrets/{name}` writes the new ciphertext and `version + 1` and audits `secret.updated`. Nothing else happens: the next call to any deployment bound to the secret sees a new secrets version and loads a fresh isolate. In-flight calls finish on the old isolate. There is no redeploy, no rebuild and no sync job.
 
-**Value change.** `PUT /v1/orgs/{org}/secrets/{name}` writes the new ciphertext and `version + 1`, audits `secret.updated`, and enqueues `secret.sync { secretId, version }` in the same transaction (outbox row, drained to a Queue). The consumer finds every **live script** whose deployment is bound to the secret and calls the WfP script secrets API on each, then updates `secret_deliveries` and audits `secret.delivered`. A script is live if its deployment is production, a current preview, or kept for rollback (step 2 decides how many).
+**Grant revoked** (tightening, no approval needed): the same. The bound set shrinks, the version moves, and the next call's isolate has no such `env` entry, so code that reads it gets `undefined`. The live deployments recheck what they wait for inside the revoking transaction.
 
-- In-flight tool calls finish on the old value; new invocations get the new one once Cloudflare rolls the script's new version, which is immediate for WfP.
-- The secrets page shows per secret "delivered to 4 of 4 deployments", from `secret_deliveries.secretVersion` versus `secrets.version`. A failed delivery retries with backoff and stays visible until it succeeds.
-- There is no redeploy and no rebuild; the code is unchanged.
-
-**Grant revoked** (tightening, no approval needed): the sync job removes the binding from every live script of that agent immediately. The deployment then shows the secret as declared but not granted, and tool calls that read it get `undefined`.
-
-**Promote or roll back.** Rolling back is promoting an earlier deployment. Before it serves, the bound set is recomputed against **current** grants and values and the script resynced; an older deployment never brings back a revoked grant or an old value.
+**Promote or roll back.** Rolling back is promoting an earlier deployment. Its bound set comes from current grants and values like any other call, so an older deployment never brings back a revoked grant or an old value. Neither touches Cloudflare.
 
 **Secret deleted.** Refused while any live deployment is bound to it; the error lists the deployments.
 
 **Previews** receive the same values as production: the grant is per agent and applies to every deployment of it, and an organization has one set of secrets.
 
-**Rotation of keys** (master or organization, doc 01) re-encrypts ciphertext only; plaintext does not change, so nothing is resynced.
+**Rotation of keys** (master or organization, doc 01) re-encrypts ciphertext only; plaintext and secret versions do not change, so no isolate reloads.
+
+## Loading agent code
+
+- **Bundle integrity.** Every read of a bundle is checked against the deployment's recorded SHA-256, whichever tier it came from. A mismatch in a cache tier is discarded and the next tier tried; a mismatch from R2 fails the call with "the bundle of deployment X does not match its hash".
+- **Bundle cache.** Three tiers: a per-isolate map (32 MB, least recently used out first), Cloudflare's colo cache keyed by the bundle key and hash, then R2. The spike measured about 120 ms of a 155 ms cold load in the R2 read, so a reload for a new secrets version or an evicted Dynamic Worker usually skips it.
+- **In-flight guard.** Cloudflare allows 10 distinct Dynamic Workers in flight per Durable Object and 4 per Worker request, and throws ("Dynamic worker concurrency limit exceeded") rather than queuing. The runtime counts its own calls per context and makes calls past the limit wait for a slot; calls to an isolate already in flight count once.
+- **CPU.** Custom Dynamic Worker `limits` did not take effect in the spike, so nothing relies on them. The case's `timeoutSeconds` stays the real bound on how long agent code can run.
+- **Egress.** The isolate's `globalOutbound` is the runtime's `Outbound` entrypoint, with the organization and its network rules as props; a blocked host gets a 403 `blocked_by_network_rules`. The rules are part of the isolate id, so a change applies on the next call.
+- **Logs.** The Tail Worker (`apps/tail`, doc 09) is attached through the loader's `tails`.
+
+Worker Loader runs in Cloudflare's local runtime, so development and tests load agent code the same way a deployed stage does. Locally the concurrency limit is not enforced, which is why the runtime's guard exists in code.
 
 ## MCP connections
 
@@ -75,9 +75,9 @@ Plaintext is never logged: the Workflow's evlog context carries only names and v
 const crm = ctx.mcp("hubspot");                       // the agent's declared server
 const result = await crm.call("search_contacts", { q });
 
-// Runtime: each dispatch carries the capability as a prop
+// Runtime: each call carries the capability as a prop
 const MCP = ctx.exports.McpBroker({ props: { organizationId, agentId, deploymentId } });
-env.DISPATCHER.get(script, { props: { MCP } }, { outbound });
+env.LOADER.get(id, load).getEntrypoint(undefined, { props: { MCP } }).fetch(…);
 
 // Runtime: the capability, forwarding to the API Worker's token service
 class McpBroker extends WorkerEntrypoint<Env, { organizationId: string; agentId: string; deploymentId: string }> {
@@ -90,11 +90,8 @@ class McpService extends WorkerEntrypoint<Env> {
   // 1. server is declared by the deployment and allowed by the MCP guardrail
   // 2. picks the organization's connection for that server (there are no personal connections)
   // 3. decrypts the token (same envelope scheme as secrets), refreshes it if expired, calls the server
-  // 4. egress goes through the same network rules as the outbound Worker (open until step 5)
 }
 ```
-
-The runtime holds no Secrets Store binding, so the capability only carries identity; decryption stays in the API Worker. Locally, apps/namespace-local runs the script with the same props through Worker Loader.
 
 ```ts
 export const mcpConnections = pgTable("mcp_connections", {
@@ -108,27 +105,23 @@ export const mcpConnections = pgTable("mcp_connections", {
 });
 ```
 
-Why not bind tokens like secrets: access tokens expire within hours, so rebinding every refresh would push a new script version per token per refresh, and a refresh token in customer code could mint access long after the deployment is gone. MCP servers **bundled** with the agent run inside the customer's Worker and use ordinary secret bindings.
+Why not put tokens in `env` like secrets: access tokens expire within hours, so each refresh would move the secrets version and reload every isolate, and a refresh token in customer code could mint access long after the deployment is gone. MCP servers **bundled** with the agent run inside the agent's code and use ordinary secrets.
 
 Tool results from the broker go back to customer code, which returns them to the runtime; the token never appears in either direction.
 
 ## Alternatives rejected
 
-- **Inject values per dispatch** (runtime decrypts and sends secrets with each tool call). Puts plaintext and the master key in the Worker that runs the model loop and records capture; one logging mistake leaks it.
-- **A secrets service binding the customer code calls at runtime** (`await env.SECRETS.get("X")`). Instant rotation, but every cold tool call depends on Postgres via Hyperdrive, it is a new API, and npm clients that read `env` would need wrapping. Rotation through the secrets API is fast enough.
-- **Hold secrets in Cloudflare only** (no Postgres copy). They live encrypted in our Postgres; self-hosted installs need the same store; and we could not resync a new script without a source of truth.
-- **Rebuild and redeploy on every change.** Turns a value change into a deployment with a new id, confusing promotion and rollback history, for no benefit over updating bindings.
+- **Workers for Platforms with `secret_text` bindings**, the step 2 design until PRE-45. It needed a sync job per value or grant change (`secret.sync`, `secret_deliveries`), a script upload per deployment, and a dispatch namespace per stage, and its calls were an order of magnitude slower.
+- **Secrets passed per call.** Rotation is equally immediate, but every tool call decrypts every value and carries plaintext in its props.
+- **A secrets service the customer code calls at runtime** (`await env.SECRETS.get("X")`). A new API, and npm clients that read `env` would need wrapping.
+- **Hold secrets in Cloudflare only** (no Postgres copy). They live encrypted in our Postgres; self-hosted installs need the same store.
 
 ## Settled decisions
 
 - No personal MCP connections; every connection is the organization's, and the token service stays.
-- Also settled: tokens are brokered rather than bound; deleting a secret a live deployment uses is refused; previews receive the same values; SDK redaction is documented as defense in depth.
-
-
-## Still to verify (step 2 spike, not a question)
-
-- That the WfP script secrets endpoint updates a dispatch-namespace script without re-uploading the bundle, and how fast new isolates see it.
+- Tokens are brokered rather than delivered; deleting a secret a live deployment uses is refused; previews receive the same values; SDK redaction is documented as defense in depth.
+- Dynamic Worker `limits` are not relied on for CPU; `timeoutSeconds` is.
 
 ## Open questions
 
-None left in this doc.
+- Dynamic Workers have been in open beta since 24 March 2026, with no GA date found. Revisit the concurrency limits and `limits` support when it reaches GA.

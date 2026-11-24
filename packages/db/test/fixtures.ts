@@ -33,7 +33,6 @@ import {
 import {
   deploymentGroups,
   deployments,
-  secretDeliveries,
   secretGrants,
 } from "../src/schema/deployments.ts";
 import {
@@ -160,7 +159,6 @@ export const seedOrganization = async (name: string) =>
       agentId,
       environment: "production",
       status: "ready",
-      scriptName: deploymentId,
       bundleSha256: "0".repeat(64),
       sdkVersion: "0.1.0",
       network: { allow: ["erp.example.com"], block: [] },
@@ -175,12 +173,6 @@ export const seedOrganization = async (name: string) =>
     await tx
       .insert(secretGrants)
       .values({ organizationId: org, secretId, agentId, grantedBy: userId });
-    await tx.insert(secretDeliveries).values({
-      organizationId: org,
-      deploymentId,
-      secretId,
-      secretVersion: 1,
-    });
     const serverId = newId("mcpServer");
     await tx.insert(mcpServers).values({
       id: serverId,
@@ -457,7 +449,6 @@ export const tenantTables = {
   deployments: "organization_id",
   deployment_groups: "organization_id",
   secret_grants: "organization_id",
-  secret_deliveries: "organization_id",
   mcp_servers: "organization_id",
   mcp_grants: "organization_id",
   mcp_connections: "organization_id",

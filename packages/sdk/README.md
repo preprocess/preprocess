@@ -1,9 +1,9 @@
 # @preprocess/sdk
 
-The TypeScript SDK agents are written with (spec 3). An agent is a Worker that
-Preprocess deploys into the organization's dispatch namespace. The runtime (Pi
+The TypeScript SDK agents are written with (spec 3). An agent is a Worker module
+that Preprocess stores as a bundle and runs as a Dynamic Worker. The runtime (Pi
 Durable, in the platform's Durable Objects) runs the model loop and calls the
-agent's Worker for its manifest and for each tool call.
+agent's code for its manifest and for each tool call.
 
 ```ts
 import { agent, tool } from "@preprocess/sdk";

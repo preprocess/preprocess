@@ -28,7 +28,6 @@ export const isStage = (stage: string): stage is Stage =>
 export const names = (stage: string) => ({
   app: `preprocess-app-${stage}`,
   api: `preprocess-api-${stage}`,
-  namespace: `preprocess-${stage}`,
   queue: `preprocess-jobs-${stage}`,
   // Case starts (design doc 04): the API enqueues after commit and consumes.
   casesQueue: `preprocess-cases-${stage}`,
@@ -37,27 +36,23 @@ export const names = (stage: string) => ({
   // Notification emails (design doc 06) and the keys already sent, for a day.
   emailsQueue: `preprocess-emails-${stage}`,
   emailsSent: `preprocess-emails-sent-${stage}`,
-  secretSync: `preprocess-secret-sync-${stage}`,
   // Run logs (design doc 09): every producer's records, consumed by the API.
   logsQueue: `preprocess-logs-${stage}`,
   logs: `preprocess-logs-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
-  userWorker: "hello",
   runtime: `preprocess-runtime-${stage}`,
   // The GitHub build sandbox (apps/builder).
   builder: `preprocess-builder-${stage}`,
-  outbound: `preprocess-outbound-${stage}`,
-  // The Tail Worker on every agent script (design doc 09).
+  // Agent code (design doc 03): each deployment's bundle, which the runtime
+  // loads as a Dynamic Worker.
+  bundles: `preprocess-bundles-${stage}`,
+  // The Tail Worker on agent code (design doc 09).
   tail: `preprocess-tail-${stage}`,
   modelStub: `preprocess-model-stub-${stage}`,
   // PDF pages to images for OCR, in a sandbox container (design doc 07).
   pdfRender: `preprocess-pdf-render-${stage}`,
   runs: `preprocess-runs-${stage}`,
-  // Local only: stands in for the dispatch namespace, which Cloudflare's local
-  // runtime cannot emulate (apps/namespace-local).
-  localNamespace: `preprocess-namespace-${stage}`,
-  localScripts: `preprocess-scripts-${stage}`,
   branch: stage,
 });
 

@@ -11,7 +11,6 @@
   "observability": { "enabled": true },
   "vars": {
     "STAGE": "development",
-    "USER_WORKER": "hello",
     "MODEL_SERVICE_URL": "https://model-stub.preprocess.localhost",
     "MODEL_SERVICE_KEY": "development",
     "SECRETS_MASTER_KEY": "cHJlcHJvY2Vzcy1sb2NhbC1tYXN0ZXIta2V5LTMyYnk=",
@@ -57,15 +56,10 @@
       { "binding": "CASES", "queue": "preprocess-cases-development" },
       { "binding": "WEBHOOKS", "queue": "preprocess-webhooks-development" },
       { "binding": "EMAILS", "queue": "preprocess-emails-development" },
-      {
-        "binding": "SECRET_SYNC",
-        "queue": "preprocess-secret-sync-development",
-      },
       { "binding": "LOGS", "queue": "preprocess-logs-development" },
     ],
     "consumers": [
       { "queue": "preprocess-jobs-development", "max_batch_timeout": 1 },
-      { "queue": "preprocess-secret-sync-development", "max_batch_timeout": 1 },
       { "queue": "preprocess-cases-development", "max_batch_timeout": 1 },
       {
         "queue": "preprocess-webhooks-development",
@@ -89,7 +83,6 @@
     { "binding": "LOG_BUCKET", "bucket_name": "preprocess-logs-development" },
   ],
   "services": [
-    { "binding": "LOCAL_USER_WORKER", "service": "hello" },
     { "binding": "RUNTIME", "service": "preprocess-runtime-development" },
     {
       "binding": "BUILDER",
@@ -97,10 +90,5 @@
       "entrypoint": "Builder",
     },
     { "binding": "PDF_RENDER", "service": "preprocess-pdf-render-development" },
-    {
-      "binding": "LOCAL_NAMESPACE",
-      "service": "preprocess-namespace-development",
-      "entrypoint": "Namespace",
-    },
   ],
 }

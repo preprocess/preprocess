@@ -4,7 +4,6 @@ import { ModelError } from "@preprocess/models/client";
 import { evlog, type EvlogVariables } from "evlog/hono";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { runMode } from "@preprocess/runmode";
-import { orgId } from "@preprocess/db/client";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
@@ -14,10 +13,9 @@ import { handleAuthRequest } from "./auth.ts";
 import { orgCaller } from "./caller.ts";
 import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
-import { syncAgent } from "./deploy.ts";
 import type { Env, Job } from "./env.ts";
 import { deleteExpiredIdempotencyKeys } from "./idempotency.ts";
-import { readOutbox, sweepOutbox } from "./outbox.ts";
+import { sweepOutbox } from "./outbox.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import { agentRoutes } from "./routes/agents.ts";
 import { caseRoutes } from "./routes/cases.ts";
@@ -151,18 +149,6 @@ app.get("/orgs/:org/jobs/:id", async (c) => {
   return c.json(await object.json());
 });
 
-app.get("/dispatch", async (c) => {
-  const worker =
-    c.env.DISPATCHER?.get(c.env.USER_WORKER) ?? c.env.LOCAL_USER_WORKER;
-  if (!worker) return c.json({ error: "no dispatch binding" }, 500);
-  const response = await worker.fetch(new Request("https://user-worker/"));
-  return c.json({
-    via: c.env.DISPATCHER ? "dispatch-namespace" : "local-service-binding",
-    status: response.status,
-    body: await response.json(),
-  });
-});
-
 export default {
   fetch: app.fetch,
   scheduled(controller, env, ctx) {
@@ -222,26 +208,6 @@ export default {
         const retryIn = await deliverWebhook(env, message.body);
         if (retryIn === null) message.ack();
         else message.retry({ delaySeconds: retryIn });
-      }
-      return;
-    }
-    if (batch.queue.startsWith("preprocess-secret-sync-")) {
-      // Retried with backoff until it succeeds.
-      for (const message of batch.messages as Message<OutboxMessage>[]) {
-        try {
-          const row = await readOutbox(env, message.body);
-          if (row)
-            await syncAgent(
-              env,
-              orgId(row.organizationId),
-              (row.payload as { agentId: string }).agentId,
-              { actorType: "platform", actorId: "secret-sync" },
-            );
-          message.ack();
-        } catch (error) {
-          console.error(error);
-          message.retry({ delaySeconds: Math.min(300, 2 ** message.attempts) });
-        }
       }
       return;
     }

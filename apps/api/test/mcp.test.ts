@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { readAuditEvents } from "@preprocess/db/audit";
 import { orgId, withOrg, type OrgId } from "@preprocess/db/client";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -50,6 +50,7 @@ const eventually = async <T>(
 
 type Deployment = {
   id: string;
+  agentId: string;
   status: string;
   waitingFor: { secrets?: string[]; mcp?: string[] };
 };
@@ -229,20 +230,54 @@ describe("MCP servers and the organization's connection", () => {
         )
       ).status,
     ).toBe(204);
-    const { result } = await runCase(a);
-    expect(result).toMatchObject({ isError: true });
-    expect(String(result.output)).toContain("not granted");
-    await eventually(
-      async () =>
-        (
-          await call<Deployment>(
-            a,
-            "GET",
-            `/v1/orgs/{org}/agents/crm-agent/deployments/${deployment.id}`,
-          )
-        ).body,
-      (d) => d.status === "waiting",
-    );
+    // The deployment waits for the grant again before the revoke returns,
+    // so no new case starts on it.
+    expect(
+      (
+        await call<Deployment>(
+          a,
+          "GET",
+          `/v1/orgs/{org}/agents/crm-agent/deployments/${deployment.id}`,
+        )
+      ).body,
+    ).toMatchObject({ status: "waiting", waitingFor: { mcp: ["crm"] } });
+    expect(
+      (
+        await call(a, "POST", "/v1/orgs/{org}/cases", {
+          agent: "crm-agent",
+          text: "Check stock for SKU A1.",
+        })
+      ).status,
+    ).toBe(409);
+    // A case already running gets nothing from the token service either.
+    const mcp = (
+      exports as unknown as {
+        McpService: {
+          call(
+            props: object,
+            server: string,
+            tool: string,
+            args: unknown,
+          ): Promise<unknown>;
+        };
+      }
+    ).McpService;
+    const refused = await mcp
+      .call(
+        {
+          organizationId: a.org,
+          agentId: deployment.agentId,
+          deploymentId: deployment.id,
+        },
+        "crm",
+        "search_contacts",
+        { q: "acme" },
+      )
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(String(refused)).toContain("not granted");
   });
 
   it("audits the connection without its tokens", async () => {

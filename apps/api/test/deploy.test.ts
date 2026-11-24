@@ -3,6 +3,7 @@ import { readAuditEvents, verifyAuditChain } from "@preprocess/db/audit";
 import { orgId, withOrg, type OrgId } from "@preprocess/db/client";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { secretsVersion, secretValues } from "../src/deploy.ts";
 import { Client, createOrganization, signUp, testEnv } from "./helpers.ts";
 // Bundled by vitest.config.ts, as `preprocess deploy` bundles an agent.
 import sampleAgent from "./dist/sample-agent.js?raw";
@@ -49,6 +50,7 @@ const call = async <T = unknown>(
 
 type Deployment = {
   id: string;
+  agentId: string;
   status: string;
   production: boolean;
   waitingFor: { secrets?: string[] };
@@ -199,7 +201,13 @@ describe("deploy, secrets and one case end to end", () => {
     expect(JSON.stringify(view)).not.toContain(ERP_V1);
   });
 
-  it("resyncs a rotated value to the live deployment without a redeploy", async () => {
+  it("gives the live deployment a rotated value on its next call, without a redeploy", async () => {
+    const ref = {
+      organizationId: a.org,
+      agentId: first.agentId,
+      deploymentId: first.id,
+    };
+    const before = await secretsVersion(testEnv(), ref);
     expect(
       (
         await call(a, "PUT", "/v1/orgs/{org}/secrets/ERP_TOKEN", {
@@ -207,17 +215,7 @@ describe("deploy, secrets and one case end to end", () => {
         })
       ).body,
     ).toMatchObject({ version: 2 });
-    await eventually(
-      async () =>
-        (
-          await call<Array<{ delivered: number }>>(
-            a,
-            "GET",
-            "/v1/orgs/{org}/secrets",
-          )
-        ).body[0]!,
-      (s) => s.delivered === 1,
-    );
+    expect(await secretsVersion(testEnv(), ref)).not.toBe(before);
     const view = await runCase(a);
     expect(lookupOutput(view).tokenLength).toBe(ERP_V2.length);
   });
@@ -228,22 +226,27 @@ describe("deploy, secrets and one case end to end", () => {
     ).toBe(409);
   });
 
-  it("removes the binding when the grant is revoked, and starts no case until it is back", async () => {
+  it("withdraws a revoked secret from the next call, and starts no case until it is back", async () => {
+    const ref = {
+      organizationId: a.org,
+      agentId: first.agentId,
+      deploymentId: first.id,
+    };
+    expect((await secretValues(testEnv(), ref)).values).toHaveProperty(
+      "ERP_TOKEN",
+    );
     expect(
       (await call(a, "DELETE", "/v1/orgs/{org}/secrets/ERP_TOKEN/agents/stock"))
         .status,
     ).toBe(204);
-    await eventually(
-      async () =>
-        (
-          await call<Array<{ live: number }>>(
-            a,
-            "GET",
-            "/v1/orgs/{org}/secrets",
-          )
-        ).body[0]!,
-      (s) => s.live === 0,
-    );
+    expect(await secretValues(testEnv(), ref)).toEqual({
+      version: "none",
+      values: {},
+    });
+    expect(
+      (await call<Array<{ live: number }>>(a, "GET", "/v1/orgs/{org}/secrets"))
+        .body[0],
+    ).toMatchObject({ live: 0 });
     expect(
       (
         await call<Deployment>(
@@ -283,7 +286,6 @@ describe("deploy, secrets and one case end to end", () => {
         "deployment.promoted",
         "secret.updated",
         "secret.revoked",
-        "secret.withdrawn",
       ]),
     );
     expect(JSON.stringify(events)).not.toContain(ERP_V1);
