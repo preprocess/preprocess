@@ -10,12 +10,16 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@better-auth/api-key": "1.7.27",
+    "@hono/zod-openapi": "^1.6.3",
     "@preprocess/db": "workspace:*",
     "@preprocess/models": "workspace:*",
     "@preprocess/runmode": "catalog:",
+    "better-auth": "1.7.27",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
-    "pg": "catalog:"
+    "pg": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
