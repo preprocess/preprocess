@@ -18,7 +18,7 @@ import {
 } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { recordCaseEvent, startQueuedCase } from "../src/cases.ts";
 import type { Env, Runtime, StartCase, WriteResult } from "../src/env.ts";
@@ -31,6 +31,7 @@ import {
   signUp,
   testEnv,
 } from "./helpers.ts";
+import modelStub from "../../model-stub/src/index.ts";
 import worker from "../src/index.ts";
 // The stub's sample invoice page, as a data URL.
 import acmeInvoice from "../../model-stub/fixtures/ocr/samples/acme-invoice.png?inline";
@@ -530,6 +531,14 @@ describe("files and OCR", () => {
   });
 
   it("reads a page image, and a PDF page by page through the renderer", async () => {
+    // The model service is the stub, called in this isolate.
+    const fetch = globalThis.fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const request = new Request(input, init);
+      return new URL(request.url).hostname === "model-stub.test"
+        ? Promise.resolve(modelStub.fetch(request, {}))
+        : fetch(request);
+    });
     const png = Uint8Array.from(atob(acmeInvoice.split(",")[1]!), (c) =>
       c.charCodeAt(0),
     );
@@ -562,5 +571,6 @@ describe("files and OCR", () => {
     expect(new TextDecoder().decode(rendered[0])).toBe("%PDF-1.7 two pages");
     expect(pages.body.pages.map((p) => p.index)).toEqual([0, 1]);
     expect(pages.body.pages[1]?.markdown).toContain("Invoice 1042");
+    vi.restoreAllMocks();
   });
 });

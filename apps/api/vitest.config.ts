@@ -67,8 +67,6 @@ export default defineConfig({
           DB: localRoleUrl(url, "preprocess_app"),
           DB_SYSTEM: localRoleUrl(url, "preprocess_system"),
         },
-        // The API's own fetches go to the model stub, as the runtime's do.
-        outboundService: "model-stub",
         bindings: {
           MODEL_SERVICE_URL: "http://model-stub.test",
           BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
