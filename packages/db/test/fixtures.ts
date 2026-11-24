@@ -21,6 +21,7 @@ import {
   groups,
 } from "../src/schema/access.ts";
 import { caseAssignees, cases } from "../src/schema/cases.ts";
+import { deploymentGroups, deployments } from "../src/schema/deployments.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 
 export type Org = Awaited<ReturnType<typeof seedOrganization>>;
@@ -107,11 +108,30 @@ export const seedOrganization = async (name: string) =>
       ciphertext: new Uint8Array([4, 5, 6]),
       updatedBy: userId,
     });
+    const deploymentId = newId("deployment");
+    await tx.insert(deployments).values({
+      id: deploymentId,
+      organizationId: org,
+      agentId,
+      environment: "production",
+      status: "ready",
+      scriptName: deploymentId,
+      bundleSha256: "0".repeat(64),
+      sdkVersion: "0.1.0",
+      network: { allow: ["erp.example.com"], block: [] },
+      manifest: {},
+      source: "cli",
+      createdBy: userId,
+      promotedAt: now,
+    });
+    await tx
+      .insert(deploymentGroups)
+      .values({ organizationId: org, deploymentId, groupId, approves: true });
     await tx.insert(cases).values({
       id: caseId,
       organizationId: org,
       agentId,
-      deploymentId: "dep_test",
+      deploymentId,
       status: "waiting",
       waitingOnGroupId: groupId,
       source: "api",
@@ -130,7 +150,15 @@ export const seedOrganization = async (name: string) =>
       targetType: "organization",
       targetId: org,
     });
-    return { org, userId, groupId, developersId, agentId, caseId };
+    return {
+      org,
+      userId,
+      groupId,
+      developersId,
+      agentId,
+      deploymentId,
+      caseId,
+    };
   });
 
 // Every table that holds tenant rows, with its organization column.
@@ -149,6 +177,8 @@ export const tenantTables = {
   case_assignees: "organization_id",
   audit_events: "organization_id",
   audit_heads: "organization_id",
+  deployments: "organization_id",
+  deployment_groups: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

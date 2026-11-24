@@ -17,6 +17,7 @@ import {
 
 import { agents, groups } from "./access.ts";
 import { organization } from "./auth.ts";
+import { deployments } from "./deployments.ts";
 
 export const caseStatus = pgEnum("case_status", [
   "queued",
@@ -46,7 +47,6 @@ export const cases = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     agentId: text().notNull(),
-    // Foreign key to deployments is added in step 2.
     deploymentId: text().notNull(),
     status: caseStatus().notNull(),
     waitingOnGroupId: text(),
@@ -66,6 +66,12 @@ export const cases = pgTable(
     foreignKey({
       columns: [t.organizationId, t.agentId],
       foreignColumns: [agents.organizationId, agents.id],
+    }),
+    // A deployment that served cases cannot be deleted on its own; deleting
+    // the organization removes both in one statement.
+    foreignKey({
+      columns: [t.organizationId, t.deploymentId],
+      foreignColumns: [deployments.organizationId, deployments.id],
     }),
     foreignKey({
       columns: [t.organizationId, t.waitingOnGroupId],
