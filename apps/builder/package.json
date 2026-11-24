@@ -1,0 +1,19 @@
+{
+  "name": "@preprocess/builder",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@cloudflare/workers-types": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "^5.9.3",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

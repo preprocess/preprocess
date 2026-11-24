@@ -18,6 +18,11 @@
     "APP_URL": "https://app.preprocess.localhost",
     "EMAIL_FROM": "Preprocess <invitations@preprocess.localhost>",
     "AUDIT_SIGNING_KEY_ID": "audit-ed25519-development",
+    "GITHUB_APP_ID": "1",
+    "GITHUB_APP_SLUG": "preprocess-development",
+    "GITHUB_CLIENT_ID": "Iv1.development",
+    "GITHUB_API_URL": "http://127.0.0.1:8791",
+    "GITHUB_URL": "http://127.0.0.1:8791",
   },
   "hyperdrive": [
     {
@@ -34,9 +39,14 @@
   "triggers": { "crons": ["20 0 * * *", "* * * * *"] },
   "send_email": [{ "name": "EMAIL" }],
   "durable_objects": {
-    "bindings": [{ "name": "COUNTER", "class_name": "Counter" }],
+    "bindings": [
+      { "name": "COUNTER", "class_name": "Counter" },
+      { "name": "BUILDS", "class_name": "BuildQueue" },
+    ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counter"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Counter", "BuildQueue"] },
+  ],
   "queues": {
     "producers": [
       { "binding": "JOBS", "queue": "preprocess-jobs-development" },
@@ -70,6 +80,11 @@
   "services": [
     { "binding": "LOCAL_USER_WORKER", "service": "hello" },
     { "binding": "RUNTIME", "service": "preprocess-runtime-development" },
+    {
+      "binding": "BUILDER",
+      "service": "preprocess-builder-development",
+      "entrypoint": "Builder",
+    },
     { "binding": "PDF_RENDER", "service": "preprocess-pdf-render-development" },
     {
       "binding": "LOCAL_NAMESPACE",

@@ -1,5 +1,5 @@
 {
-  "id": "5c72664a-7694-4ea5-9a7d-97776c6c6f88",
+  "id": "428067c3-427a-42f3-a401-b77cbd4d2ef9",
   "prevId": "07ce4749-7656-4138-a53d-4f56c1f1c408",
   "version": "7",
   "dialect": "postgresql",
@@ -1321,13 +1321,6 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
-        },
-        "email_notifications": {
-          "name": "email_notifications",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         }
       },
       "indexes": {},
@@ -1639,12 +1632,6 @@
         "waiting_on_group_id": {
           "name": "waiting_on_group_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "waiting_since": {
-          "name": "waiting_since",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -2758,6 +2745,451 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.github_builds": {
+      "name": "github_builds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "link_id": {
+          "name": "link_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_slug": {
+          "name": "agent_slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "commit": {
+          "name": "commit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "github_build_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deployment_id": {
+          "name": "deployment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "log": {
+          "name": "log",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "github_builds_organization_id_agent_slug_created_at_index": {
+          "name": "github_builds_organization_id_agent_slug_created_at_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "github_builds_link_id_branch_status_index": {
+          "name": "github_builds_link_id_branch_status_index",
+          "columns": [
+            {
+              "expression": "link_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "branch",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "github_builds_organization_id_link_id_github_links_organization_id_id_fk": {
+          "name": "github_builds_organization_id_link_id_github_links_organization_id_id_fk",
+          "tableFrom": "github_builds",
+          "tableTo": "github_links",
+          "columnsFrom": ["organization_id", "link_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "github_builds_organization_id_deployment_id_deployments_organization_id_id_fk": {
+          "name": "github_builds_organization_id_deployment_id_deployments_organization_id_id_fk",
+          "tableFrom": "github_builds",
+          "tableTo": "deployments",
+          "columnsFrom": ["organization_id", "deployment_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.github_installations": {
+      "name": "github_installations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_login": {
+          "name": "account_login",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_type": {
+          "name": "account_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "suspended_at": {
+          "name": "suspended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "github_installations_organization_id_organization_id_fk": {
+          "name": "github_installations_organization_id_organization_id_fk",
+          "tableFrom": "github_installations",
+          "tableTo": "organization",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "github_installations_installationId_unique": {
+          "name": "github_installations_installationId_unique",
+          "nullsNotDistinct": false,
+          "columns": ["installation_id"]
+        },
+        "github_installations_org_id_unique": {
+          "name": "github_installations_org_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["organization_id", "id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.github_links": {
+      "name": "github_links",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_slug": {
+          "name": "agent_slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "directory": {
+          "name": "directory",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "entry": {
+          "name": "entry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'src/index.ts'"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "github_links_organization_id_repository_id_index": {
+          "name": "github_links_organization_id_repository_id_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "repository_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "github_links_organization_id_repository_id_github_repositories_organization_id_id_fk": {
+          "name": "github_links_organization_id_repository_id_github_repositories_organization_id_id_fk",
+          "tableFrom": "github_links",
+          "tableTo": "github_repositories",
+          "columnsFrom": ["organization_id", "repository_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "github_links_org_id_unique": {
+          "name": "github_links_org_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["organization_id", "id"]
+        },
+        "github_links_organizationId_agentSlug_unique": {
+          "name": "github_links_organizationId_agentSlug_unique",
+          "nullsNotDistinct": false,
+          "columns": ["organization_id", "agent_slug"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.github_repositories": {
+      "name": "github_repositories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_branch": {
+          "name": "default_branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "private": {
+          "name": "private",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "github_repositories_organization_id_installation_id_github_installations_organization_id_id_fk": {
+          "name": "github_repositories_organization_id_installation_id_github_installations_organization_id_id_fk",
+          "tableFrom": "github_repositories",
+          "tableTo": "github_installations",
+          "columnsFrom": ["organization_id", "installation_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "github_repositories_org_id_unique": {
+          "name": "github_repositories_org_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["organization_id", "id"]
+        },
+        "github_repositories_installationId_repositoryId_unique": {
+          "name": "github_repositories_installationId_repositoryId_unique",
+          "nullsNotDistinct": false,
+          "columns": ["installation_id", "repository_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.agent_network_rules": {
       "name": "agent_network_rules",
       "schema": "",
@@ -3838,6 +4270,18 @@
       "name": "deployment_status",
       "schema": "public",
       "values": ["ready", "waiting", "failed"]
+    },
+    "public.github_build_status": {
+      "name": "github_build_status",
+      "schema": "public",
+      "values": [
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "timed_out",
+        "superseded"
+      ]
     },
     "public.guardrail_kind": {
       "name": "guardrail_kind",
