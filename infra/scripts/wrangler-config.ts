@@ -85,12 +85,15 @@ const configs: Record<string, object> = {
       producers: [
         { binding: "JOBS", queue: local.queue },
         { binding: "CASES", queue: local.casesQueue },
+        { binding: "WEBHOOKS", queue: local.webhooksQueue },
         { binding: "SECRET_SYNC", queue: local.secretSync },
       ],
       consumers: [
         { queue: local.queue, max_batch_timeout: 1 },
         { queue: local.secretSync, max_batch_timeout: 1 },
         { queue: local.casesQueue, max_batch_timeout: 1 },
+        // Retries are timed by the consumer (webhooks.ts) over 24 hours.
+        { queue: local.webhooksQueue, max_batch_timeout: 1, max_retries: 20 },
       ],
     },
     r2_buckets: [

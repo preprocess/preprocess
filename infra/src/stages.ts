@@ -32,6 +32,8 @@ export const names = (stage: string) => ({
   queue: `preprocess-jobs-${stage}`,
   // Case starts (design doc 04): the API enqueues after commit and consumes.
   casesQueue: `preprocess-cases-${stage}`,
+  // Webhook deliveries (design doc 06), retried with backoff for 24 hours.
+  webhooksQueue: `preprocess-webhooks-${stage}`,
   secretSync: `preprocess-secret-sync-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
