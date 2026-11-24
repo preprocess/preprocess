@@ -99,6 +99,8 @@ type Meta = StartCase & {
   unprompted?: true;
   // An eval case's side-effect tool results, from the source case's capture.
   replay?: Replay[];
+  // When the current run passes timeoutSeconds, as epoch milliseconds.
+  deadline?: number;
 };
 
 type Replay = { name: string; input: string; result: ToolResult };
@@ -168,6 +170,7 @@ const withSettings = (manifest: Manifest, settings?: Settings): Manifest => {
     ...(settings.toolRetries !== null && {
       toolRetries: settings.toolRetries,
     }),
+    // TODO: nothing reads sandboxImage until tools run in a sandbox.
     ...(settings.sandboxImage !== null && {
       sandboxImage: settings.sandboxImage,
     }),
@@ -725,39 +728,63 @@ export class CaseRuntime extends DurableObject<Env> {
           execute: async (input, api) => {
             const callId = String(api.taskId);
             this.record("tool.call", { callId, name: tool.name, input });
-            const started = Date.now();
+            // A call that failed runs again up to toolRetries times, but
+            // never one with side effects: it may have half happened.
+            const retries = tool.sideEffects
+              ? 0
+              : (meta.manifest.toolRetries ?? 0);
             // An eval case never repeats a side effect (design doc 09): it
             // gets the source case's result for the same input, or an error.
             const replayed =
               tool.sideEffects && meta.eval
                 ? this.replay(tool.name, input)
                 : null;
-            const response = replayed
-              ? null
-              : await worker.fetch(`/tools/${tool.name}`, {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({
-                    input,
-                    case: { id: meta.caseId },
-                    callId,
-                  }),
-                });
-            const result: ToolResult =
-              replayed ??
-              (response!.ok
-                ? await response!.json<ToolResult>()
-                : {
-                    output: `agent Worker answered ${response!.status}`,
+            let result: ToolResult;
+            if (replayed) {
+              result = replayed;
+              this.record("tool.result", {
+                callId,
+                name: tool.name,
+                ms: 0,
+                replayed: true,
+                ...result,
+              });
+            } else
+              for (let attempt = 0; ; attempt++) {
+                const started = Date.now();
+                result = await worker
+                  .fetch(`/tools/${tool.name}`, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      input,
+                      case: { id: meta.caseId },
+                      callId,
+                    }),
+                  })
+                  .then(async (response) =>
+                    response.ok
+                      ? await response.json<ToolResult>()
+                      : {
+                          output: `agent Worker answered ${response.status}`,
+                          isError: true,
+                          threw: true as const,
+                        },
+                  )
+                  .catch((error: unknown) => ({
+                    output: `agent Worker failed: ${String(error)}`,
                     isError: true,
-                  });
-            this.record("tool.result", {
-              callId,
-              name: tool.name,
-              ms: Date.now() - started,
-              ...(replayed && { replayed: true }),
-              ...result,
-            });
+                    threw: true as const,
+                  }));
+                this.record("tool.result", {
+                  callId,
+                  name: tool.name,
+                  ms: Date.now() - started,
+                  ...(attempt > 0 && { attempt }),
+                  ...result,
+                });
+                if (!result.threw || attempt >= retries) break;
+              }
             const problems = (result.effects ?? [])
               .map((effect) => this.applyEffect(this.meta()!, effect))
               .filter((p): p is string => p !== null);
@@ -979,6 +1006,7 @@ export class CaseRuntime extends DurableObject<Env> {
     const prompt = await this.firstPrompt(meta);
     if (prompt === null) return this.view();
     this.prompted();
+    await this.armTimeout();
     await this.harness.submit(prompt, { operationId: meta.operation });
     this.ctx.waitUntil(this.watch());
     return this.view();
@@ -1078,6 +1106,7 @@ export class CaseRuntime extends DurableObject<Env> {
       waitingOn: null,
     };
     delete next.reason;
+    delete next.deadline;
     this.save(next);
     const schema = this.schema(next);
     await schema.evaluate("all");
@@ -1125,9 +1154,48 @@ export class CaseRuntime extends DurableObject<Env> {
       : lines.join("\n");
     if (prompt === null) return this.state();
     this.prompted();
+    await this.armTimeout();
     await this.harness.submit(prompt, { operationId: next.operation });
     this.ctx.waitUntil(this.watch());
     return this.state();
+  }
+
+  // timeoutSeconds is each run's wall clock, from the agent's first prompt.
+  private async armTimeout() {
+    const meta = this.meta()!;
+    const seconds = meta.manifest.timeoutSeconds;
+    if (!seconds) return;
+    meta.deadline = Date.now() + seconds * 1000;
+    this.save(meta);
+    await this.ctx.storage.setAlarm(meta.deadline);
+  }
+
+  override async alarm() {
+    const meta = this.meta();
+    if (meta?.status !== "running" || meta.deadline === undefined) return;
+    if (Date.now() < meta.deadline) {
+      await this.ctx.storage.setAlarm(meta.deadline);
+      return;
+    }
+    const seconds = meta.manifest.timeoutSeconds ?? 0;
+    const next: Meta = { ...meta, status: "failed", reason: "timeout" };
+    delete next.deadline;
+    this.save(next);
+    this.record("case.failed", { reason: "timeout" });
+    this.post(next, "platform", "event", `Timed out after ${seconds}s`);
+    await this.harness.abort().catch(() => false);
+    await this.seal(next);
+    await this.report(next, {
+      type: "status",
+      status: "failed",
+      waitingOn: null,
+      reason: null,
+      answers: null,
+      error: {
+        code: "timeout",
+        message: `The run passed its ${seconds} second limit`,
+      },
+    });
   }
 
   private prompted() {

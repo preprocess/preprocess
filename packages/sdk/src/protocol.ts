@@ -48,6 +48,8 @@ export type ToolCall = {
 export type ToolResult = {
   output: unknown;
   isError: boolean;
+  /** The tool's code threw, as opposed to refusing its input: retryable. */
+  threw?: true;
   effects?: Effect[];
 };
 

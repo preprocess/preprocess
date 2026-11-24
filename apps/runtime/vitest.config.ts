@@ -29,6 +29,7 @@ bundle("../outbound/src/index.ts", "outbound.js");
 bundle("../model-stub/src/index.ts", "model-stub.js");
 bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/invoice-agent.ts", "invoice-agent.js");
+bundle("test/fixtures/failing-agent.ts", "failing-agent.js");
 bundle("test/fixtures/mcp-service.ts", "mcp-service.js");
 
 const worker = (name: string, extra: object = {}) => ({
