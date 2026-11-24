@@ -13,9 +13,11 @@
     "@earendil-works/pi-ai": "1.6.0",
     "@earendil-works/pi-durable": "1.6.0",
     "@earendil-works/pi-schema": "1.6.0",
+    "@preprocess/logs": "workspace:*",
+    "@preprocess/models": "workspace:*",
     "@preprocess/sdk": "workspace:*",
     "agents": "0.34.0",
-    "@preprocess/models": "workspace:*"
+    "evlog": "2.37.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",

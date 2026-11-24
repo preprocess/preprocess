@@ -1,3 +1,6 @@
+import type { LogRecord } from "@preprocess/logs";
+import type { Pipeline } from "cloudflare:pipelines";
+
 import type { BuildQueue } from "./builds.ts";
 import type { Counter } from "./counter.ts";
 import type { Namespace } from "./namespace.ts";
@@ -175,4 +178,16 @@ export type Env = {
   GITHUB_BUILD_TIMEOUT_SECONDS?: string;
   BUILDS: DurableObjectNamespace<BuildQueue>;
   BUILDER?: Builder;
+  // Run logs (design doc 09). Every producer's records go through LOGS; its
+  // consumer writes the store and the Postgres summaries. LOG_STORE "sql" is
+  // the Pipelines stream plus R2 SQL on deployed stages; anything else keeps
+  // NDJSON in LOG_BUCKET, which is how local development and tests run.
+  LOGS: Queue<LogRecord>;
+  LOG_BUCKET: R2Bucket;
+  LOG_STORE?: string;
+  LOG_STREAM?: Pipeline;
+  // The R2 bucket holding the Data Catalog warehouse, and a token with R2 SQL
+  // read, Data Catalog and R2 storage access.
+  LOG_SQL_BUCKET?: string;
+  LOG_SQL_TOKEN?: string;
 };

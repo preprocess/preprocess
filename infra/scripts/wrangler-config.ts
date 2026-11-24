@@ -93,6 +93,7 @@ const configs: Record<string, object> = {
         { binding: "CASES", queue: local.casesQueue },
         { binding: "WEBHOOKS", queue: local.webhooksQueue },
         { binding: "SECRET_SYNC", queue: local.secretSync },
+        { binding: "LOGS", queue: local.logsQueue },
       ],
       consumers: [
         { queue: local.queue, max_batch_timeout: 1 },
@@ -100,11 +101,13 @@ const configs: Record<string, object> = {
         { queue: local.casesQueue, max_batch_timeout: 1 },
         // Retries are timed by the consumer (webhooks.ts) over 24 hours.
         { queue: local.webhooksQueue, max_batch_timeout: 1, max_retries: 20 },
+        { queue: local.logsQueue, max_batch_timeout: 1, max_batch_size: 100 },
       ],
     },
     r2_buckets: [
       { binding: "FILES", bucket_name: local.bucket },
       { binding: "AUDIT", bucket_name: local.auditBucket },
+      { binding: "LOG_BUCKET", bucket_name: local.logs },
     ],
     // Wrangler supports dispatch namespaces only as remote bindings, so the
     // local API reaches the user Worker through a service binding, and

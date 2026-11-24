@@ -45,6 +45,7 @@ import {
   agentOverrides,
   organizationDefaults,
 } from "../src/schema/settings.ts";
+import { logSummaries } from "../src/schema/logs.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
   mcpAuthorizations,
@@ -354,6 +355,14 @@ export const seedOrganization = async (name: string) =>
       requestedByType: "person",
       requestedBy: userId,
     });
+    await tx.insert(logSummaries).values({
+      organizationId: org,
+      subjectKind: "case",
+      subjectId: caseId,
+      events: 1,
+      firstAt: new Date(),
+      lastAt: new Date(),
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -414,6 +423,7 @@ export const tenantTables = {
   guardrail_requests: "organization_id",
   organization_defaults: "organization_id",
   agent_overrides: "organization_id",
+  log_summaries: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

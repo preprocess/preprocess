@@ -35,6 +35,9 @@ export const names = (stage: string) => ({
   // Webhook deliveries (design doc 06), retried with backoff for 24 hours.
   webhooksQueue: `preprocess-webhooks-${stage}`,
   secretSync: `preprocess-secret-sync-${stage}`,
+  // Run logs (design doc 09): every producer's records, consumed by the API.
+  logsQueue: `preprocess-logs-${stage}`,
+  logs: `preprocess-logs-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
   userWorker: "hello",

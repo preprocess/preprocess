@@ -141,6 +141,26 @@ export class CaseRuntime extends DurableObject<Env> {
       kind,
       JSON.stringify(data),
     );
+    const entry = runLogEntry(kind, data);
+    const meta = this.meta();
+    if (!entry || !meta) return;
+    // Run logs (design doc 09) leave through the API's Platform entrypoint.
+    initLogs("runtime", (records) =>
+      this.env.PLATFORM ? this.env.PLATFORM.logs(records) : Promise.resolve(),
+    );
+    const log = wideEvent(
+      entry.kind,
+      {
+        organizationId: meta.organizationId,
+        agentId: meta.agentId,
+        deploymentId: meta.deploymentId,
+        caseId: meta.caseId,
+      },
+      (promise) => this.ctx.waitUntil(promise),
+    );
+    log.set(entry.fields);
+    if (entry.level !== "info") log.setLevel(entry.level);
+    log.emit(entry.ms === undefined ? undefined : { _durationMs: entry.ms });
   }
 
   private events(): CaptureEvent[] {
