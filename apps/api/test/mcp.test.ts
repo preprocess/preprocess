@@ -68,23 +68,30 @@ type Server = {
 };
 
 const runCase = async (who: Who) => {
-  const started = await call<{ caseId: string }>(
+  const started = await call<{ id: string }>(
     who,
     "POST",
-    "/dev/orgs/{org}/agents/crm-agent/cases",
-    { text: "Check stock for SKU A1." },
+    "/v1/orgs/{org}/cases",
+    { agent: "crm-agent", text: "Check stock for SKU A1." },
   );
   expect(started.status).toBe(202);
+  const { body: created } = await call<{ agent: { id: string } }>(
+    who,
+    "GET",
+    `/v1/orgs/{org}/cases/${started.body.id}`,
+  );
+  // The case starts from the queue; its capture is read from the runtime.
+  const key = {
+    organizationId: who.org,
+    agentId: created.agent.id,
+    caseId: started.body.id,
+  };
   const view = await eventually(
-    async () =>
-      (
-        await call<CaseView>(
-          who,
-          "GET",
-          `/dev/orgs/{org}/agents/crm-agent/cases/${started.body.caseId}`,
-        )
-      ).body,
-    (v) => v.status !== "running",
+    () =>
+      (testEnv().RUNTIME.getCase(key) as Promise<CaseView>).catch(
+        () => ({ status: "queued" }) as CaseView,
+      ),
+    (v) => v.status === "completed" || v.status === "failed",
   );
   return {
     view,
