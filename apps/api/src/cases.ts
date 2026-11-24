@@ -338,11 +338,13 @@ export type CaseEvent = {
 } & (
   | {
       type: "status";
-      status: "running" | "waiting" | "completed" | "failed" | "cancelled";
+      status:
+        "running" | "waiting" | "halted" | "completed" | "failed" | "cancelled";
       waitingOn: string | null;
       reason: string | null;
       answers: Record<string, unknown> | null;
       error: { code: string; message: string } | null;
+      haltReason?: "credit_exhausted" | "spending_limit_reached";
     }
   | {
       type: "mention";
@@ -404,7 +406,8 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
       .set({
         status: event.status,
         waitingOnGroupId: group?.id ?? null,
-        haltReason: null,
+        haltReason:
+          event.status === "halted" ? (event.haltReason ?? null) : null,
         updatedAt: new Date(),
         completedAt: done ? new Date() : null,
       })

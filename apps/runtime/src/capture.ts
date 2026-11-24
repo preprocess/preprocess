@@ -18,6 +18,7 @@ export type CaptureEvent = {
     | "tool.result"
     | "case.completed"
     | "case.failed"
+    | "case.halted"
     | "case.event"
     | "case.wait"
     | "platform.error"

@@ -91,11 +91,12 @@ const newCase = async (key?: string) => {
 
 const status = (
   key: { organizationId: string; agentId: string; caseId: string },
-  s: "running" | "waiting" | "completed" | "failed" | "cancelled",
+  s: "running" | "waiting" | "halted" | "completed" | "failed" | "cancelled",
   extra: {
     waitingOn?: string;
     reason?: string;
     answers?: Record<string, unknown>;
+    haltReason?: "spending_limit_reached";
   } = {},
 ) =>
   recordCaseEvent(environment, {
@@ -106,6 +107,7 @@ const status = (
     reason: extra.reason ?? null,
     answers: extra.answers ?? null,
     error: null,
+    ...(extra.haltReason && { haltReason: extra.haltReason }),
   });
 
 const deliveriesOf = (caseId: string) =>
@@ -283,6 +285,24 @@ describe("a case's status changes", () => {
           (r.payload as { data: { group: { slug: string } } }).data.group.slug,
       ),
     ).toEqual(["legal", "finance"]);
+  });
+
+  it("send nothing on a halt, which the index records with its reason", async () => {
+    const key = await newCase();
+    await status(key, "halted", { haltReason: "spending_limit_reached" });
+    const halted = () =>
+      withOrg(environment, orgId(org), (tx) =>
+        tx
+          .select({ status: cases.status, haltReason: cases.haltReason })
+          .from(cases)
+          .where(eq(cases.id, key.caseId)),
+      );
+    expect(await halted()).toEqual([
+      { status: "halted", haltReason: "spending_limit_reached" },
+    ]);
+    expect(await deliveriesOf(key.caseId)).toEqual([]);
+    await status(key, "running");
+    expect(await halted()).toEqual([{ status: "running", haltReason: null }]);
   });
 
   it("retry a failed delivery with backoff, and sign with both secrets after a rotation", async () => {
