@@ -4,12 +4,12 @@ The Postgres schema, its migrations, the tenant data layer and the audit chain
 (design docs [01](../../docs/design/01-postgres-schema.md) and
 [02](../../docs/design/02-audit-chain.md)).
 
-| Export                    | What it is                                                                                   |
-| ------------------------- | -------------------------------------------------------------------------------------------- |
-| `@preprocess/db/client`   | `withOrg(env, org, fn)` and `withoutOrg(env, reason, fn)`: the only way to reach Postgres    |
-| `@preprocess/db/audit`    | `audit(tx, event)`, the only writer of audit events, and `verifyAuditChain`                  |
-| `@preprocess/db/schema/*` | Drizzle tables: `auth` (Better Auth's), `access`, `secrets`, `deployments`, `cases`, `audit` |
-| `@preprocess/db/ids`      | `newId(kind)`: prefixed, time-ordered text ids                                               |
+| Export                    | What it is                                                                                               |
+| ------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `@preprocess/db/client`   | `withOrg(env, org, fn)` and `withoutOrg(env, reason, fn)`: the only way to reach Postgres                |
+| `@preprocess/db/audit`    | `audit(tx, event)`, the only writer of audit events, and `verifyAuditChain`                              |
+| `@preprocess/db/schema/*` | Drizzle tables: `auth` (Better Auth's), `access`, `secrets`, `deployments`, `cases`, `webhooks`, `audit` |
+| `@preprocess/db/ids`      | `newId(kind)`: prefixed, time-ordered text ids                                                           |
 
 ## Roles
 
