@@ -89,16 +89,16 @@ export function AgentEvaluations() {
   );
 }
 
-/** Placeholder: what people say about the agent's work. */
-export function AgentFeedback() {
+/** Placeholder: the agent's datasets, training runs and fine-tuned models. */
+export function AgentTraining() {
   return (
     <SettingsSection
-      description="Ratings and corrections people leave on this agent's work."
-      title="Feedback"
+      description="Datasets built from this agent's reviewed cases, training runs, and the fine-tuned models they produce."
+      title="Training"
     >
       <SettingsEmpty
-        description="Feedback on this agent's cases will show up here."
-        title="No feedback yet"
+        description="Training for this agent will show up here."
+        title="No training yet"
       />
     </SettingsSection>
   );

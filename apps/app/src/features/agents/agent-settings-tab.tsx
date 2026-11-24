@@ -2,7 +2,11 @@ import { getRouteApi, useRouter } from "@tanstack/react-router";
 
 import type { PlatformSettings } from "../developers/platform-store";
 import { AgentPage } from "./agent-page";
-import { AgentSettings, type AgentSettingsSection } from "./agent-settings";
+import {
+  AGENT_SETTINGS_ANCHORS,
+  AgentSettings,
+  type AgentSettingsSection,
+} from "./agent-settings";
 import {
   deleteAgentEnvVar,
   deleteAgentMcpServer,
@@ -45,7 +49,11 @@ export function AgentSettingsTab({
     };
 
   return (
-    <AgentPage agent={agent} tab={section}>
+    <AgentPage
+      agent={agent}
+      anchors={section === "settings" ? AGENT_SETTINGS_ANCHORS : undefined}
+      tab={section}
+    >
       <AgentSettings
         actions={{
           setRepo: run(setAgentRepo),

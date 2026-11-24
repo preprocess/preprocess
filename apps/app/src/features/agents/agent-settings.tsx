@@ -51,6 +51,15 @@ const DEFAULT_IMAGE = "default";
  */
 export type AgentSettingsSection = "access" | "settings";
 
+/** The Settings page's sections, as jump links under it in the sidebar. */
+export const AGENT_SETTINGS_ANCHORS = [
+  { id: "repository", label: "Repository" },
+  { id: "sandbox-image", label: "Sandbox image" },
+  { id: "secrets", label: "Secrets" },
+  { id: "mcp-servers", label: "MCP servers" },
+  { id: "network", label: "Network" },
+];
+
 function validateRepoPath(value: string) {
   const path = value.trim();
   if (!path) return "Enter the agent's folder, like agents/intake.";
@@ -262,118 +271,128 @@ export function AgentSettings({
         />
       ) : null}
       {section === "settings" ? (
-        <SettingsSection
-          description="Where this agent's code lives. Every branch deploys: the production branch for production, others to previews. Repositories are connected in Developers → Integrations."
-          title="Repository"
-        >
-          <SettingsRows>
-            <SettingsRow
-              label="Source"
-              value={
-                repoText ? (
-                  <span className="truncate">{repoText}</span>
-                ) : (
-                  <span className="text-muted-foreground">Not connected</span>
-                )
-              }
-            >
-              <Button
-                disabled={platform.repos.length === 0}
-                onClick={() => setEditingRepo(true)}
-                size="compact"
-                type="button"
-                variant="secondary"
+        <div className="scroll-mt-8" id="repository">
+          <SettingsSection
+            description="Where this agent's code lives. Every branch deploys: the production branch for production, others to previews. Repositories are connected in Developers → Integrations."
+            title="Repository"
+          >
+            <SettingsRows>
+              <SettingsRow
+                label="Source"
+                value={
+                  repoText ? (
+                    <span className="truncate">{repoText}</span>
+                  ) : (
+                    <span className="text-muted-foreground">Not connected</span>
+                  )
+                }
               >
-                {agent.repo ? "Edit" : "Connect"}
-              </Button>
-            </SettingsRow>
-          </SettingsRows>
-          {editingRepo ? (
-            <RepoDialog
-              onOpenChange={setEditingRepo}
-              onSave={actions.setRepo}
-              repo={agent.repo}
-              repos={platform.repos}
-            />
-          ) : null}
-        </SettingsSection>
+                <Button
+                  disabled={platform.repos.length === 0}
+                  onClick={() => setEditingRepo(true)}
+                  size="compact"
+                  type="button"
+                  variant="secondary"
+                >
+                  {agent.repo ? "Edit" : "Connect"}
+                </Button>
+              </SettingsRow>
+            </SettingsRows>
+            {editingRepo ? (
+              <RepoDialog
+                onOpenChange={setEditingRepo}
+                onSave={actions.setRepo}
+                repo={agent.repo}
+                repos={platform.repos}
+              />
+            ) : null}
+          </SettingsSection>
+        </div>
       ) : null}
       {section === "settings" ? (
-        <SettingsSection
-          description="The Docker image this agent's sandbox starts from. The organization's images are managed in Developers → Sandbox images."
-          title="Sandbox image"
-        >
-          <SettingsRows>
-            <SettingsRow
-              label="Image"
-              value={
-                <SizeProvider size="compact">
-                  <Select
-                    onValueChange={(value) =>
-                      void actions.setSandboxImage(
-                        value === DEFAULT_IMAGE ? null : value,
-                      )
-                    }
-                    value={agent.sandboxImageId ?? DEFAULT_IMAGE}
-                  >
-                    <SelectTrigger
-                      aria-label="Sandbox image"
-                      className="w-80"
-                    />
-                    <SelectContent>
-                      <SelectItem index={0} value={DEFAULT_IMAGE}>
-                        {defaultImage
-                          ? `Organization default (${imageLabel(defaultImage)})`
-                          : "Organization default"}
-                      </SelectItem>
-                      {platform.images.map((image, index) => (
-                        <SelectItem
-                          index={index + 1}
-                          key={image.id}
-                          value={image.id}
-                        >
-                          {imageLabel(image)}
+        <div className="scroll-mt-8" id="sandbox-image">
+          <SettingsSection
+            description="The Docker image this agent's sandbox starts from. The organization's images are managed in Developers → Sandbox images."
+            title="Sandbox image"
+          >
+            <SettingsRows>
+              <SettingsRow
+                label="Image"
+                value={
+                  <SizeProvider size="compact">
+                    <Select
+                      onValueChange={(value) =>
+                        void actions.setSandboxImage(
+                          value === DEFAULT_IMAGE ? null : value,
+                        )
+                      }
+                      value={agent.sandboxImageId ?? DEFAULT_IMAGE}
+                    >
+                      <SelectTrigger
+                        aria-label="Sandbox image"
+                        className="w-80"
+                      />
+                      <SelectContent>
+                        <SelectItem index={0} value={DEFAULT_IMAGE}>
+                          {defaultImage
+                            ? `Organization default (${imageLabel(defaultImage)})`
+                            : "Organization default"}
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </SizeProvider>
-              }
-            />
-          </SettingsRows>
-        </SettingsSection>
+                        {platform.images.map((image, index) => (
+                          <SelectItem
+                            index={index + 1}
+                            key={image.id}
+                            value={image.id}
+                          >
+                            {imageLabel(image)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </SizeProvider>
+                }
+              />
+            </SettingsRows>
+          </SettingsSection>
+        </div>
       ) : null}
       {section === "settings" ? (
-        <SecretsSection
-          description="Available to this agent's deployed code, after the organization's secrets, which can't be overridden. Organization secrets are managed in Developers → Secrets."
-          inherited={platform.secrets}
-          items={agent.env}
-          noun="secret"
-          onDelete={actions.deleteEnvVar}
-          onSave={actions.saveEnvVar}
-          title="Secrets"
-        />
+        <div className="scroll-mt-8" id="secrets">
+          <SecretsSection
+            description="Available to this agent's deployed code, after the organization's secrets, which can't be overridden. Organization secrets are managed in Developers → Secrets."
+            inherited={platform.secrets}
+            items={agent.env}
+            noun="secret"
+            onDelete={actions.deleteEnvVar}
+            onSave={actions.saveEnvVar}
+            title="Secrets"
+          />
+        </div>
       ) : null}
       {section === "settings" ? (
-        <AgentMcpSection
-          grants={agent.mcp}
-          onDelete={actions.deleteMcpServer}
-          onEnable={actions.setMcpEnabled}
-          onSave={actions.saveMcpServer}
-          onTools={actions.setMcpTools}
-          organization={platform.mcpServers}
-          servers={agent.mcpServers}
-          title="MCP servers"
-        />
+        <div className="scroll-mt-8" id="mcp-servers">
+          <AgentMcpSection
+            grants={agent.mcp}
+            onDelete={actions.deleteMcpServer}
+            onEnable={actions.setMcpEnabled}
+            onSave={actions.saveMcpServer}
+            onTools={actions.setMcpTools}
+            organization={platform.mcpServers}
+            servers={agent.mcpServers}
+            title="MCP servers"
+          />
+        </div>
       ) : null}
       {section === "settings" ? (
-        <AgentNetworkSection
-          title="Network"
-          onAdd={actions.addNetworkRule}
-          onDelete={actions.deleteNetworkRule}
-          organization={platform.network}
-          rules={agent.network}
-        />
+        <div className="scroll-mt-8" id="network">
+          <AgentNetworkSection
+            title="Network"
+            onAdd={actions.addNetworkRule}
+            onDelete={actions.deleteNetworkRule}
+            organization={platform.network}
+            rules={agent.network}
+          />
+        </div>
       ) : null}
     </>
   );
