@@ -5,6 +5,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { audit } from "@preprocess/db/audit";
 import { withOrg } from "@preprocess/db/client";
+import type { Tx } from "@preprocess/db/client";
 import { organizationGuardrails } from "@preprocess/db/schema/guardrails";
 
 import { actor, eventBase, requireAdmin } from "../caller.ts";
@@ -15,7 +16,7 @@ import { monthSpend, monthStart, spendingLimit } from "../spend.ts";
 const OrgParam = z.object({ org: z.string() });
 
 const toUsd = (micro: number) => micro / 1_000_000;
-const toMicro = (usd: number) => Math.round(usd * 1_000_000);
+export const toMicro = (usd: number) => Math.round(usd * 1_000_000);
 
 const Spending = z
   .object({
@@ -32,7 +33,7 @@ const Spending = z
   })
   .openapi("Spending");
 
-const read = async (tx: Parameters<typeof spendingLimit>[0]) => {
+const read = async (tx: Tx) => {
   const now = new Date();
   const [limit, spent] = await Promise.all([
     spendingLimit(tx),
@@ -44,6 +45,46 @@ const read = async (tx: Parameters<typeof spendingLimit>[0]) => {
     limitUsd: limit === null ? null : toUsd(limit),
     reached: limit !== null && spent >= limit,
   };
+};
+
+// Sets the limit and audits the change with its old and new values; the
+// caller is the Owner or Admin whose change is the approval.
+export const setSpendingLimit = async (
+  tx: Tx,
+  vars: OrgVariables,
+  next: number | null,
+) => {
+  const before = await spendingLimit(tx);
+  const values = {
+    organizationId: vars.org,
+    spendingLimitMicroUsd: next,
+    updatedBy: actor(vars.caller).actorId,
+    updatedAt: new Date(),
+  };
+  await tx
+    .insert(organizationGuardrails)
+    .values(values)
+    .onConflictDoUpdate({
+      target: organizationGuardrails.organizationId,
+      set: {
+        spendingLimitMicroUsd: next,
+        updatedBy: values.updatedBy,
+        updatedAt: values.updatedAt,
+      },
+    });
+  if (before !== next)
+    await audit(tx, {
+      ...eventBase(vars),
+      action: "guardrail.updated",
+      targetType: "organization",
+      targetId: vars.org,
+      data: {
+        guardrail: "spending_limit",
+        loosened: next === null || (before !== null && next > before),
+        before: before === null ? null : toUsd(before),
+        after: next === null ? null : toUsd(next),
+      },
+    });
 };
 
 export const spendingRoutes = new OpenAPIHono<{
@@ -97,33 +138,7 @@ export const spendingRoutes = new OpenAPIHono<{
       const { limitUsd } = c.req.valid("json");
       const next = limitUsd === null ? null : toMicro(limitUsd);
       const body = await withOrg(c.env, c.var.org, async (tx) => {
-        const before = await spendingLimit(tx);
-        const values = {
-          organizationId: c.var.org,
-          spendingLimitMicroUsd: next,
-          updatedBy: actor(c.var.caller).actorId,
-          updatedAt: new Date(),
-        };
-        await tx
-          .insert(organizationGuardrails)
-          .values(values)
-          .onConflictDoUpdate({
-            target: organizationGuardrails.organizationId,
-            set: values,
-          });
-        if (before !== next)
-          await audit(tx, {
-            ...eventBase(c.var),
-            action: "guardrail.updated",
-            targetType: "organization",
-            targetId: c.var.org,
-            data: {
-              guardrail: "spending_limit",
-              loosened: next === null || (before !== null && next > before),
-              before: before === null ? null : toUsd(before),
-              after: next === null ? null : toUsd(next),
-            },
-          });
+        await setSpendingLimit(tx, c.var, next);
         return read(tx);
       });
       return c.json(body, 200);
