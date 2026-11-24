@@ -41,6 +41,7 @@
     "producers": [
       { "binding": "JOBS", "queue": "preprocess-jobs-development" },
       { "binding": "CASES", "queue": "preprocess-cases-development" },
+      { "binding": "WEBHOOKS", "queue": "preprocess-webhooks-development" },
       {
         "binding": "SECRET_SYNC",
         "queue": "preprocess-secret-sync-development",
@@ -50,6 +51,11 @@
       { "queue": "preprocess-jobs-development", "max_batch_timeout": 1 },
       { "queue": "preprocess-secret-sync-development", "max_batch_timeout": 1 },
       { "queue": "preprocess-cases-development", "max_batch_timeout": 1 },
+      {
+        "queue": "preprocess-webhooks-development",
+        "max_batch_timeout": 1,
+        "max_retries": 20,
+      },
     ],
   },
   "r2_buckets": [
@@ -59,6 +65,7 @@
   "services": [
     { "binding": "LOCAL_USER_WORKER", "service": "hello" },
     { "binding": "RUNTIME", "service": "preprocess-runtime-development" },
+    { "binding": "PDF_RENDER", "service": "preprocess-pdf-render-development" },
     {
       "binding": "LOCAL_NAMESPACE",
       "service": "preprocess-namespace-development",
