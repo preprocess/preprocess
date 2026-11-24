@@ -74,6 +74,21 @@ export type StartCase = Deployment & {
   caseId: string;
   input: { text: string; files?: CaseFile[] };
   groups?: GroupRef[];
+  // The agent's effective settings (apps/api/src/settings.ts): dashboard
+  // overrides and organization defaults over the code's values. Null means
+  // the runtime's own behavior.
+  settings?: Settings;
+};
+
+export type Settings = {
+  model: string;
+  reasoning: string;
+  ocr: boolean;
+  timeoutSeconds: number | null;
+  toolRetries: number | null;
+  sandboxImage: string | null;
+  evals: { onPush: boolean };
+  schedules: Record<string, { previews: boolean }>;
 };
 
 export type CaseKey = Pick<Deployment, "organizationId" | "agentId"> & {

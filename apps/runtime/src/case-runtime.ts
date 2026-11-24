@@ -24,7 +24,14 @@ import {
   type Usage,
 } from "./capture.ts";
 import { agentWorker } from "./dispatch.ts";
-import type { CaseEvent, CaseStatus, Env, GroupRef, StartCase } from "./env.ts";
+import type {
+  CaseEvent,
+  CaseStatus,
+  Env,
+  GroupRef,
+  Settings,
+  StartCase,
+} from "./env.ts";
 import { openModels, PROVIDER } from "./models.ts";
 import { COMPACTION, largeSummaries } from "./summaries.ts";
 import {
@@ -90,6 +97,34 @@ type Meta = StartCase & {
 };
 
 const MAX_TURNS = 24;
+
+// The settings the platform resolved for this case apply over the code's
+// values; a null keeps the code's value, or the runtime's own behavior.
+const withSettings = (manifest: Manifest, settings?: Settings): Manifest => {
+  if (!settings) return manifest;
+  return {
+    ...manifest,
+    model: settings.model as Manifest["model"],
+    reasoning: settings.reasoning as Manifest["reasoning"],
+    ocr: settings.ocr,
+    ...(settings.timeoutSeconds !== null && {
+      timeoutSeconds: settings.timeoutSeconds,
+    }),
+    ...(settings.toolRetries !== null && {
+      toolRetries: settings.toolRetries,
+    }),
+    ...(settings.sandboxImage !== null && {
+      sandboxImage: settings.sandboxImage,
+    }),
+    evals: { ...manifest.evals, onPush: settings.evals.onPush },
+    ...(manifest.schedules && {
+      schedules: manifest.schedules.map((s) => ({
+        ...s,
+        previews: settings.schedules[s.name]?.previews ?? s.previews,
+      })),
+    }),
+  };
+};
 
 const text = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -760,7 +795,10 @@ export class CaseRuntime extends DurableObject<Env> {
       throw new Error(
         `agent Worker ${start.script} answered ${response.status}`,
       );
-    const manifest = await response.json<Manifest>();
+    const manifest = withSettings(
+      await response.json<Manifest>(),
+      start.settings,
+    );
     if (manifest.protocol !== PROTOCOL)
       throw new Error(
         `agent protocol ${String(manifest.protocol)} is not supported`,
