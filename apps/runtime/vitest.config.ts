@@ -28,6 +28,7 @@ bundle("../namespace-local/src/index.ts", "namespace-local.js");
 bundle("../outbound/src/index.ts", "outbound.js");
 bundle("../model-stub/src/index.ts", "model-stub.js");
 bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
+bundle("test/fixtures/invoice-agent.ts", "invoice-agent.js");
 
 const worker = (name: string, extra: object = {}) => ({
   name,
