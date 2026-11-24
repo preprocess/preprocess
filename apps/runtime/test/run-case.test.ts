@@ -102,6 +102,12 @@ describe("one case end to end", () => {
     });
     expect(capture.usage.input).toBeGreaterThan(0);
     expect(capture.events.map((e) => e.kind)).toContain("model.request");
+    // Every model call carries the agent's reasoning level (the SDK default).
+    expect(
+      capture.events
+        .filter((e) => e.kind === "model.request")
+        .map((e) => e.data.reasoning),
+    ).toSatisfy((levels: unknown[]) => levels.every((l) => l === "medium"));
     expect(JSON.stringify(capture)).not.toContain(SECRET);
   });
 

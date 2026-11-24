@@ -50,6 +50,41 @@
       "when": 1795510161288,
       "tag": "0006_mcp",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795511940607,
+      "tag": "0007_secret_sync_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795512577314,
+      "tag": "0008_spending_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795513108614,
+      "tag": "0009_network_guardrail",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795514516409,
+      "tag": "0010_github_app",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795514993309,
+      "tag": "0011_settings",
+      "breakpoints": true
     }
   ]
 }

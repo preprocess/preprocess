@@ -32,13 +32,19 @@ export const names = (stage: string) => ({
   queue: `preprocess-jobs-${stage}`,
   // Case starts (design doc 04): the API enqueues after commit and consumes.
   casesQueue: `preprocess-cases-${stage}`,
+  // Webhook deliveries (design doc 06), retried with backoff for 24 hours.
+  webhooksQueue: `preprocess-webhooks-${stage}`,
   secretSync: `preprocess-secret-sync-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
   userWorker: "hello",
   runtime: `preprocess-runtime-${stage}`,
+  // The GitHub build sandbox (apps/builder).
+  builder: `preprocess-builder-${stage}`,
   outbound: `preprocess-outbound-${stage}`,
   modelStub: `preprocess-model-stub-${stage}`,
+  // PDF pages to images for OCR, in a sandbox container (design doc 07).
+  pdfRender: `preprocess-pdf-render-${stage}`,
   runs: `preprocess-runs-${stage}`,
   // Local only: stands in for the dispatch namespace, which Cloudflare's local
   // runtime cannot emulate (apps/namespace-local).
@@ -51,12 +57,29 @@ export const names = (stage: string) => ({
 // secret_text. Locally `pnpm dev` writes generated values to apps/api/.dev.vars.
 export const apiSecrets = ["BETTER_AUTH_SECRET", "AUDIT_SIGNING_KEY"] as const;
 
+// The GitHub App's credentials (docs/design/08-github-app.md), optional on
+// every stage: without them the App's routes answer 503.
+export const githubVars = [
+  "GITHUB_APP_ID",
+  "GITHUB_APP_SLUG",
+  "GITHUB_CLIENT_ID",
+] as const;
+export const githubSecrets = [
+  "GITHUB_APP_PRIVATE_KEY",
+  "GITHUB_WEBHOOK_SECRET",
+  "GITHUB_CLIENT_SECRET",
+] as const;
+
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).
 export const apiCrons = ["20 0 * * *", "* * * * *"];
 
 // Durable Object classes the API Worker exports.
-export const durableObjects = { COUNTER: "Counter" } as const;
+export const durableObjects = {
+  COUNTER: "Counter",
+  // One per organization, agent and branch: GitHub builds run one at a time.
+  BUILDS: "BuildQueue",
+} as const;
 
 // Durable Object classes the runtime Worker exports: one Pi Durable case
 // runtime per organization, agent and case.
@@ -86,6 +109,18 @@ export const localRoleDatabaseUrl = (
 // The app's local origin. It serves Better Auth and /v1 from the API Worker,
 // so cookies stay first-party.
 export const localAppUrl = "https://app.preprocess.localhost";
+
+// The GitHub App in `pnpm dev`: scripts/github-stub.ts stands in for GitHub
+// and apps/builder/local/server.ts runs the build sandbox under Docker. The
+// private key, webhook secret and client secret are generated into
+// apps/api/.dev.vars.
+export const localGitHub = {
+  appId: "1",
+  appSlug: "preprocess-development",
+  clientId: "Iv1.development",
+  url: "http://127.0.0.1:8791",
+  builder: "http://127.0.0.1:8789",
+};
 export const localEmailFrom = "Preprocess <invitations@preprocess.localhost>";
 export const localAuditKeyId = "audit-ed25519-development";
 

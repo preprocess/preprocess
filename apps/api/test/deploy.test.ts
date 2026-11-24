@@ -78,25 +78,30 @@ const deployBody = {
 };
 
 const runCase = async (who: Who) => {
-  const started = await call<CaseView & { caseId: string }>(
+  const started = await call<{ id: string }>(
     who,
     "POST",
-    "/dev/orgs/{org}/agents/stock/cases",
-    {
-      text: "Check stock for SKU A1.",
-    },
+    "/v1/orgs/{org}/cases",
+    { agent: "stock", text: "Check stock for SKU A1." },
   );
   expect(started.status).toBe(202);
+  const { body: created } = await call<{ agent: { id: string } }>(
+    who,
+    "GET",
+    `/v1/orgs/{org}/cases/${started.body.id}`,
+  );
+  // The case starts from the queue; its capture is read from the runtime.
+  const key = {
+    organizationId: who.org,
+    agentId: created.agent.id,
+    caseId: started.body.id,
+  };
   return eventually(
-    async () =>
-      (
-        await call<CaseView>(
-          who,
-          "GET",
-          `/dev/orgs/{org}/agents/stock/cases/${started.body.caseId}`,
-        )
-      ).body,
-    (view) => view.status !== "running",
+    () =>
+      (testEnv().RUNTIME.getCase(key) as Promise<CaseView>).catch(
+        () => ({ status: "queued" }) as CaseView,
+      ),
+    (view) => view.status === "completed" || view.status === "failed",
   );
 };
 
@@ -223,7 +228,7 @@ describe("deploy, secrets and one case end to end", () => {
     ).toBe(409);
   });
 
-  it("removes the binding when the grant is revoked", async () => {
+  it("removes the binding when the grant is revoked, and starts no case until it is back", async () => {
     expect(
       (await call(a, "DELETE", "/v1/orgs/{org}/secrets/ERP_TOKEN/agents/stock"))
         .status,
@@ -239,11 +244,28 @@ describe("deploy, secrets and one case end to end", () => {
         ).body[0]!,
       (s) => s.live === 0,
     );
-    const view = await runCase(a);
-    expect(lookupOutput(view)).toMatchObject({
-      authorization: "Bearer undefined",
-      tokenLength: 0,
+    expect(
+      (
+        await call<Deployment>(
+          a,
+          "GET",
+          `/v1/orgs/{org}/agents/stock/deployments/${first.id}`,
+        )
+      ).body,
+    ).toMatchObject({
+      status: "waiting",
+      waitingFor: { secrets: ["ERP_TOKEN"] },
     });
+    const refused = await call<{ code: string }>(
+      a,
+      "POST",
+      "/v1/orgs/{org}/cases",
+      {
+        agent: "stock",
+        text: "Check stock for SKU A1.",
+      },
+    );
+    expect(refused.status).toBe(409);
   });
 
   it("audits deliveries by name and version, never by value, on an intact chain", async () => {

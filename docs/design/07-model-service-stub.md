@@ -100,7 +100,7 @@ type OcrResult = {
 };
 ```
 
-Rendering PDFs to page images happens on the platform side. Nothing in the stub depends on that.
+Rendering PDFs to page images happens on the platform side, in a sandbox: `apps/pdf-render` runs poppler's `pdftoppm` in a Cloudflare Container (Debian with `poppler-utils`, no network) and returns one PNG per page, scaled so the longest edge is 2048 px, up to 100 pages. Each render gets its own container, which is destroyed afterwards, so files from different organizations never share one. The API sends each page to the model service in turn; PNG, JPEG and WebP uploads go to it as a single page. Locally the container runs in Docker through `wrangler dev`. Nothing in the stub depends on rendering.
 
 ## What the stub returns
 

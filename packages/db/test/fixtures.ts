@@ -36,6 +36,15 @@ import {
   secretDeliveries,
   secretGrants,
 } from "../src/schema/deployments.ts";
+import {
+  agentNetworkRules,
+  guardrailRequests,
+  organizationGuardrails,
+} from "../src/schema/guardrails.ts";
+import {
+  agentOverrides,
+  organizationDefaults,
+} from "../src/schema/settings.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
   mcpAuthorizations,
@@ -43,6 +52,12 @@ import {
   mcpGrants,
   mcpServers,
 } from "../src/schema/mcp.ts";
+import {
+  githubBuilds,
+  githubInstallations,
+  githubLinks,
+  githubRepositories,
+} from "../src/schema/github.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 
 export type Org = Awaited<ReturnType<typeof seedOrganization>>;
@@ -189,6 +204,42 @@ export const seedOrganization = async (name: string) =>
       createdBy: userId,
       expiresAt: new Date(now.getTime() + 600_000),
     });
+    const installationId = newId("githubInstallation");
+    await tx.insert(githubInstallations).values({
+      id: installationId,
+      organizationId: org,
+      installationId: Math.floor(Math.random() * 2 ** 40),
+      accountLogin: name.toLowerCase(),
+      accountType: "Organization",
+      createdBy: userId,
+    });
+    const repositoryId = newId("githubRepository");
+    await tx.insert(githubRepositories).values({
+      id: repositoryId,
+      organizationId: org,
+      installationId,
+      repositoryId: Math.floor(Math.random() * 2 ** 40),
+      fullName: `${name.toLowerCase()}/agents`,
+      private: true,
+    });
+    const linkId = newId("githubLink");
+    await tx.insert(githubLinks).values({
+      id: linkId,
+      organizationId: org,
+      repositoryId,
+      agentSlug: "stock",
+      createdBy: userId,
+    });
+    await tx.insert(githubBuilds).values({
+      id: newId("githubBuild"),
+      organizationId: org,
+      linkId,
+      agentSlug: "stock",
+      branch: "main",
+      commit: "abc1234",
+      status: "succeeded",
+      deploymentId,
+    });
     await tx.insert(cases).values({
       id: caseId,
       organizationId: org,
@@ -272,6 +323,37 @@ export const seedOrganization = async (name: string) =>
       payload: {},
       status: "pending",
     });
+    await tx.insert(organizationGuardrails).values({
+      organizationId: org,
+      spendingLimitMicroUsd: 1_000_000,
+      updatedBy: userId,
+    });
+    await tx.insert(agentNetworkRules).values({
+      organizationId: org,
+      agentId,
+      rules: { allow: ["erp.example.com"], block: [] },
+      updatedBy: userId,
+    });
+    await tx.insert(organizationDefaults).values({
+      organizationId: org,
+      values: { reasoning: "high" },
+      updatedBy: userId,
+    });
+    await tx.insert(agentOverrides).values({
+      organizationId: org,
+      agentId,
+      values: { model: "kimi-k3.1-pro" },
+      updatedBy: userId,
+    });
+    await tx.insert(guardrailRequests).values({
+      id: newId("guardrailRequest"),
+      organizationId: org,
+      kind: "network",
+      agentId,
+      change: { kind: "network", hosts: ["bank.example.com"] },
+      requestedByType: "person",
+      requestedBy: userId,
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -323,6 +405,15 @@ export const tenantTables = {
   mcp_grants: "organization_id",
   mcp_connections: "organization_id",
   mcp_authorizations: "organization_id",
+  github_installations: "organization_id",
+  github_repositories: "organization_id",
+  github_links: "organization_id",
+  github_builds: "organization_id",
+  organization_guardrails: "organization_id",
+  agent_network_rules: "organization_id",
+  guardrail_requests: "organization_id",
+  organization_defaults: "organization_id",
+  agent_overrides: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

@@ -13,6 +13,8 @@ import {
   type McpBinding,
   type Model,
   type OptionsRequest,
+  type ProjectConfig,
+  type ProjectSettings,
   type Reasoning,
   type Schedule,
   type ToolCall,
@@ -28,7 +30,13 @@ import {
   type Group,
 } from "./schema.ts";
 
-export type { Manifest, Model, Reasoning } from "./protocol.ts";
+export type {
+  Manifest,
+  Model,
+  ProjectConfig,
+  ProjectSettings,
+  Reasoning,
+} from "./protocol.ts";
 export { schema } from "./schema.ts";
 export type {
   Answers,
@@ -94,6 +102,12 @@ export type AgentDefinition<S extends string> = {
   groups?: readonly string[];
   schedules?: readonly ScheduleDefinition[];
   ocr?: boolean;
+  // Hosts the code may reach, in the outbound Worker's pattern syntax.
+  network?: readonly string[];
+  timeoutSeconds?: number;
+  toolRetries?: number;
+  sandboxImage?: string;
+  evals?: { onPush?: boolean };
 };
 
 export type ScheduleDefinition = Omit<Schedule, "timezone" | "previews"> & {
@@ -160,7 +174,94 @@ const check = (definition: AgentDefinition<string>) => {
     if (!schedule.text.trim())
       problems.push(`schedule ${schedule.name} has empty text`);
   }
+  for (const host of definition.network ?? [])
+    if (!host.trim()) problems.push("network hosts must not be empty");
+  if (
+    definition.timeoutSeconds !== undefined &&
+    !(
+      Number.isInteger(definition.timeoutSeconds) &&
+      definition.timeoutSeconds > 0
+    )
+  )
+    problems.push("timeoutSeconds must be a positive integer");
+  if (
+    definition.toolRetries !== undefined &&
+    !(Number.isInteger(definition.toolRetries) && definition.toolRetries >= 0)
+  )
+    problems.push("toolRetries must be a whole number");
+  if (definition.sandboxImage !== undefined && !definition.sandboxImage.trim())
+    problems.push("sandboxImage must not be empty");
   if (problems.length) throw new Error(`Invalid agent: ${problems.join("; ")}`);
+};
+
+// Set by bundle() from preprocess.config.json; absent when another bundler
+// built the agent.
+declare const __PREPROCESS_CONFIG__: ProjectConfig | undefined;
+
+const SETTINGS = [
+  "model",
+  "reasoning",
+  "ocr",
+  "network",
+  "timeoutSeconds",
+  "toolRetries",
+  "sandboxImage",
+  "evals",
+] as const satisfies readonly (keyof ProjectSettings &
+  keyof AgentDefinition<string>)[];
+
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(a) === JSON.stringify(b);
+const differs = (key: string, inline: unknown, file: unknown) =>
+  `${key} is ${JSON.stringify(inline)} in code but ${JSON.stringify(file)} in preprocess.config.json, which wins`;
+
+// The file's settings win over the inline ones. `declared` names every
+// setting either of them set, so a settings page can tell them from defaults.
+const settle = <S extends string>(
+  definition: AgentDefinition<S>,
+  config: ProjectConfig,
+) => {
+  const file = config.settings ?? {};
+  const merged: AgentDefinition<S> = { ...definition };
+  const declared: string[] = [];
+  const warnings: string[] = [];
+  for (const key of SETTINGS) {
+    const inline = definition[key];
+    if (file[key] !== undefined) {
+      if (inline !== undefined && !same(inline, file[key]))
+        warnings.push(differs(key, inline, file[key]));
+      Object.assign(merged, { [key]: file[key] });
+    }
+    if (merged[key] !== undefined) declared.push(key);
+  }
+  const names = new Set(definition.schedules?.map((s) => s.name));
+  for (const name of Object.keys(file.schedules ?? {}))
+    if (!names.has(name))
+      warnings.push(
+        `preprocess.config.json sets schedule ${name}, which the code does not define`,
+      );
+  if (definition.schedules)
+    merged.schedules = definition.schedules.map((schedule) => {
+      const key = `schedules.${schedule.name}.previews`;
+      const previews = file.schedules?.[schedule.name]?.previews;
+      if (previews === undefined) {
+        if (schedule.previews !== undefined) declared.push(key);
+        return schedule;
+      }
+      if (schedule.previews !== undefined && schedule.previews !== previews)
+        warnings.push(differs(key, schedule.previews, previews));
+      declared.push(key);
+      return { ...schedule, previews };
+    });
+  if (config.groups) {
+    const listed = new Set(config.groups.map((g) => g.slug));
+    for (const slug of definition.groups ?? [])
+      if (!listed.has(slug))
+        warnings.push(
+          `group ${slug} is not in preprocess.config.json's groups`,
+        );
+  }
+  return { merged, declared, warnings };
 };
 
 type Env = Record<string, unknown> & { MCP?: McpBinding };
@@ -168,8 +269,16 @@ type Env = Record<string, unknown> & { MCP?: McpBinding };
 // The agent's Worker. Export it as the module's default export; Preprocess
 // deploys it as a stateless Worker and calls it only from the runtime.
 export const agent = <const S extends string = never>(
-  definition: AgentDefinition<S>,
+  inline: AgentDefinition<S>,
 ) => {
+  const {
+    merged: definition,
+    declared,
+    warnings,
+  } = settle(
+    inline,
+    typeof __PREPROCESS_CONFIG__ === "undefined" ? {} : __PREPROCESS_CONFIG__,
+  );
   check(definition);
   const manifest: Manifest = {
     protocol: PROTOCOL,
@@ -197,6 +306,19 @@ export const agent = <const S extends string = never>(
       })),
     }),
     ...(definition.ocr !== undefined && { ocr: definition.ocr }),
+    ...(definition.network && { network: [...definition.network] }),
+    ...(definition.timeoutSeconds !== undefined && {
+      timeoutSeconds: definition.timeoutSeconds,
+    }),
+    ...(definition.toolRetries !== undefined && {
+      toolRetries: definition.toolRetries,
+    }),
+    ...(definition.sandboxImage !== undefined && {
+      sandboxImage: definition.sandboxImage,
+    }),
+    ...(definition.evals && { evals: { ...definition.evals } }),
+    declared,
+    ...(warnings.length && { warnings }),
   };
 
   const bound = (env: Env): Secrets =>

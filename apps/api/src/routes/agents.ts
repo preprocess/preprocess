@@ -41,6 +41,10 @@ const Deployment = z
     source: z.enum(["cli", "github"]),
     tools: z.array(z.string()),
     secrets: z.array(z.string()),
+    warnings: z.array(z.string()).openapi({
+      description:
+        "Build warnings from the agent's code and preprocess.config.json",
+    }),
     createdAt: z.string(),
     promotedAt: z.string().nullable(),
   })
@@ -221,9 +225,21 @@ agentRoutes.openapi(
   async (c) => {
     const { agent: slug, deployment } = c.req.valid("param");
     const agent = await agentBySlug(c.env, c.var.org, slug);
-    await promote(c.env, c.var.org, agent.id, deployment, eventBase(c.var));
+    const cleared = await promote(
+      c.env,
+      c.var.org,
+      agent.id,
+      deployment,
+      eventBase(c.var),
+    );
+    const promoted = await getDeployment(
+      c.env,
+      c.var.org,
+      agent.id,
+      deployment,
+    );
     return c.json(
-      await getDeployment(c.env, c.var.org, agent.id, deployment),
+      { ...promoted, warnings: [...promoted.warnings, ...cleared] },
       200,
     );
   },

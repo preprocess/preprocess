@@ -4,6 +4,8 @@
 
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { OrgId } from "@preprocess/db/client";
+import type { Tx } from "@preprocess/db/client";
+import { groupMembers, groups } from "@preprocess/db/schema/access";
 import { member } from "@preprocess/db/schema/auth";
 import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
@@ -92,6 +94,28 @@ export const requireAdmin = (caller: Caller) => {
   if (caller.role !== "owner" && caller.role !== "admin")
     throw new HTTPException(403, {
       message: "Only Owners and Admins can do this.",
+    });
+};
+
+// Owners, Admins (and API keys, which act as Admin) and the Developers group.
+export const requireDeveloper = async (tx: Tx, caller: Caller) => {
+  if (caller.role === "owner" || caller.role === "admin") return;
+  const [developer] =
+    caller.type === "person"
+      ? await tx
+          .select({ id: groups.id })
+          .from(groupMembers)
+          .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+          .where(
+            and(
+              eq(groupMembers.userId, caller.userId),
+              eq(groups.isDevelopers, true),
+            ),
+          )
+      : [];
+  if (!developer)
+    throw new HTTPException(403, {
+      message: "Only Owners, Admins and the Developers group can do this.",
     });
 };
 

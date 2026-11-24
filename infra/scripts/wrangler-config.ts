@@ -16,6 +16,7 @@ import {
   localAppUrl,
   localAuditKeyId,
   localEmailFrom,
+  localGitHub,
   localModelService,
   localRoleDatabaseUrl,
   localSecretsMasterKey,
@@ -58,6 +59,11 @@ const configs: Record<string, object> = {
       APP_URL: localAppUrl,
       EMAIL_FROM: localEmailFrom,
       AUDIT_SIGNING_KEY_ID: localAuditKeyId,
+      GITHUB_APP_ID: localGitHub.appId,
+      GITHUB_APP_SLUG: localGitHub.appSlug,
+      GITHUB_CLIENT_ID: localGitHub.clientId,
+      GITHUB_API_URL: localGitHub.url,
+      GITHUB_URL: localGitHub.url,
     },
     hyperdrive: [
       {
@@ -88,12 +94,15 @@ const configs: Record<string, object> = {
       producers: [
         { binding: "JOBS", queue: local.queue },
         { binding: "CASES", queue: local.casesQueue },
+        { binding: "WEBHOOKS", queue: local.webhooksQueue },
         { binding: "SECRET_SYNC", queue: local.secretSync },
       ],
       consumers: [
         { queue: local.queue, max_batch_timeout: 1 },
         { queue: local.secretSync, max_batch_timeout: 1 },
         { queue: local.casesQueue, max_batch_timeout: 1 },
+        // Retries are timed by the consumer (webhooks.ts) over 24 hours.
+        { queue: local.webhooksQueue, max_batch_timeout: 1, max_retries: 20 },
       ],
     },
     r2_buckets: [
@@ -106,6 +115,8 @@ const configs: Record<string, object> = {
     services: [
       { binding: "LOCAL_USER_WORKER", service: local.userWorker },
       { binding: "RUNTIME", service: local.runtime },
+      { binding: "BUILDER", service: local.builder, entrypoint: "Builder" },
+      { binding: "PDF_RENDER", service: local.pdfRender },
       {
         binding: "LOCAL_NAMESPACE",
         service: local.localNamespace,
@@ -113,11 +124,35 @@ const configs: Record<string, object> = {
       },
     ],
   },
+  // Locally the build sandbox runs under Docker (apps/builder/local), because
+  // wrangler's container runtime needs a kernel module some hosts lack.
+  "apps/builder": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.builder,
+    main: "src/index.ts",
+    ...common,
+    vars: { LOCAL_DOCKER_BUILDER: localGitHub.builder },
+  },
   "apps/model-stub": {
     $schema: "node_modules/wrangler/config-schema.json",
     name: local.modelStub,
     main: "src/index.ts",
     ...common,
+  },
+  // Its container builds from the Dockerfile; `wrangler dev` runs it in
+  // Docker.
+  "apps/pdf-render": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.pdfRender,
+    main: "src/index.ts",
+    ...common,
+    containers: [
+      { class_name: "Renderer", image: "./Dockerfile", max_instances: 10 },
+    ],
+    durable_objects: {
+      bindings: [{ name: "RENDERER", class_name: "Renderer" }],
+    },
+    migrations: [{ tag: "v1", new_sqlite_classes: ["Renderer"] }],
   },
   "apps/user-worker": {
     $schema: "node_modules/wrangler/config-schema.json",

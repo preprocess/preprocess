@@ -1,0 +1,16 @@
+{
+  "name": "@preprocess/pdf-render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --inspector-port 9242",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "^5.9.3",
+    "wrangler": "catalog:"
+  }
+}

@@ -1,16 +1,10 @@
+import type { BuildQueue } from "./builds.ts";
 import type { Counter } from "./counter.ts";
 import type { Namespace } from "./namespace.ts";
 import type { OutboxMessage } from "./outbox.ts";
+import type { EffectiveSettings } from "./settings.ts";
 
 export type Job = { organizationId: string; id: string; requestedAt: string };
-
-// Re-delivers an agent's secrets to its live scripts after a value or grant
-// changes (design doc 03). Retried with backoff until it succeeds.
-export type SecretSync = {
-  kind: "secret.sync";
-  organizationId: string;
-  agentId: string;
-};
 
 type CaseKey = { organizationId: string; agentId: string; caseId: string };
 type Edit = CaseKey & { path: string; version: number; userId: string };
@@ -27,6 +21,9 @@ export type StartCase = CaseKey & {
   deploymentId: string;
   script: string;
   network: { allow: string[]; block: string[] };
+  // The agent's settings after dashboard overrides and organization defaults
+  // (spec 5), applied over the manifest's.
+  settings?: EffectiveSettings;
   input: {
     text: string;
     files?: { id: string; name: string; contentType: string }[];
@@ -86,6 +83,30 @@ export type Runtime = {
   getCase(c: CaseKey): Promise<unknown>;
 };
 
+// apps/builder's Builder entrypoint: builds a commit's tarball in a sandbox
+// with the project's own package manager and the CLI's bundle(). It never
+// receives a credential.
+export type BuildRequest = {
+  id: string;
+  archive: ReadableStream<Uint8Array>;
+  directory: string;
+  entry: string;
+  timeoutSeconds: number;
+};
+
+export type BuildResult =
+  | {
+      status: "succeeded";
+      bundle: { mainModule: string; modules: Record<string, string> };
+      log: string;
+    }
+  | { status: "failed" | "timed_out"; log: string };
+
+export type Builder = {
+  build(request: BuildRequest): Promise<BuildResult>;
+  cancel(id: string): Promise<void>;
+};
+
 export type Env = {
   STAGE: string;
   // Set on our cloud, unset on a self-hosted install; read it through
@@ -115,9 +136,16 @@ export type Env = {
   JOBS: Queue<Job>;
   // Case starts from the outbox (outbox.ts).
   CASES: Queue<OutboxMessage>;
-  SECRET_SYNC: Queue<SecretSync>;
+  // Webhook deliveries from the outbox (webhooks.ts).
+  WEBHOOKS: Queue<OutboxMessage>;
+  // Re-delivers an agent's secrets and MCP grants to its live scripts after
+  // a value or grant changes (design doc 03), from the outbox.
+  SECRET_SYNC: Queue<OutboxMessage>;
   FILES: R2Bucket;
   RUNTIME: Runtime;
+  // apps/pdf-render: PDF pages to PNGs in a sandbox container. Bound locally;
+  // the deployed stack does not run it yet.
+  PDF_RENDER?: { renderPdf(pdf: Uint8Array): Promise<Uint8Array[]> };
   // 32 random bytes, base64: Secrets Store on our cloud, a local variable in
   // development and tests. Only this Worker binds it (design doc 01).
   SECRETS_MASTER_KEY: string | SecretsStoreSecret;
@@ -131,4 +159,20 @@ export type Env = {
   // runtime cannot emulate one, so local dev binds the user Worker directly.
   DISPATCHER?: DispatchNamespace;
   LOCAL_USER_WORKER?: Fetcher;
+  // The GitHub App (docs/design/08-github-app.md). Without these its routes
+  // answer 503. The private key is the App's key converted to PKCS #8 PEM.
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_SLUG?: string;
+  GITHUB_APP_PRIVATE_KEY?: string;
+  GITHUB_WEBHOOK_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  // Default https://api.github.com and https://github.com; the local GitHub
+  // stub in development.
+  GITHUB_API_URL?: string;
+  GITHUB_URL?: string;
+  // Wall-clock limit for one build, in seconds (default 600).
+  GITHUB_BUILD_TIMEOUT_SECONDS?: string;
+  BUILDS: DurableObjectNamespace<BuildQueue>;
+  BUILDER?: Builder;
 };

@@ -8,8 +8,9 @@ import type { OrgId, Tx } from "@preprocess/db/client";
 import { withOrg } from "@preprocess/db/client";
 import { audit } from "@preprocess/db/audit";
 import { newId } from "@preprocess/db/ids";
-import { agents } from "@preprocess/db/schema/access";
+import { agentGrants, agents, groups } from "@preprocess/db/schema/access";
 import {
+  deploymentGroups,
   deployments,
   secretDeliveries,
   secretGrants,
@@ -26,44 +27,73 @@ import type { AuditInput } from "@preprocess/db/audit";
 import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
 import { namespaceFor } from "./namespace.ts";
+import { effectiveNetwork, permits } from "./network.ts";
+import {
+  agentOverrideValues,
+  clearOverrides,
+  overrideWarnings,
+} from "./settings.ts";
+import type { NetworkRules } from "./network.ts";
 
 type Actor = Pick<AuditInput, "actorType" | "actorId" | "ip" | "requestId">;
 
-const manifestSchema = z.object({
-  protocol: z.literal(PROTOCOL),
-  sdk: z.object({ name: z.literal("@preprocess/sdk"), version: z.string() }),
-  instructions: z.string(),
-  model: z.enum(MODELS),
-  reasoning: z.enum(REASONING),
-  secrets: z.array(z.string()),
-  mcp: z.array(z.string()),
-  tools: z.array(
-    z.object({
-      name: z.string(),
-      description: z.string(),
-      inputSchema: z.record(z.string(), z.unknown()),
-      sideEffects: z.boolean(),
-    }),
-  ),
-});
+const manifestSchema = z
+  .object({
+    protocol: z.literal(PROTOCOL),
+    sdk: z.object({ name: z.literal("@preprocess/sdk"), version: z.string() }),
+    instructions: z.string(),
+    model: z.enum(MODELS),
+    reasoning: z.enum(REASONING),
+    secrets: z.array(z.string()),
+    mcp: z.array(z.string()),
+    tools: z.array(
+      z.object({
+        name: z.string(),
+        description: z.string(),
+        inputSchema: z.record(z.string(), z.unknown()),
+        sideEffects: z.boolean(),
+      }),
+    ),
+    // Optional in protocol 1; kept so settings can tell the code's values from
+    // defaults and dashboard overrides.
+    groups: z.array(z.string()).optional(),
+    schedules: z
+      .array(
+        z.object({
+          name: z.string(),
+          cron: z.string(),
+          timezone: z.string(),
+          text: z.string(),
+          previews: z.boolean(),
+        }),
+      )
+      .optional(),
+    ocr: z.boolean().optional(),
+    network: z.array(z.string()).optional(),
+    timeoutSeconds: z.number().int().positive().optional(),
+    toolRetries: z.number().int().nonnegative().optional(),
+    sandboxImage: z.string().optional(),
+    evals: z.object({ onPush: z.boolean().optional() }).optional(),
+    declared: z.array(z.string()).optional(),
+    warnings: z.array(z.string()).optional(),
+  })
+  // Keys this list does not name yet (the schema tree) are stored as sent.
+  .loose();
 
 export type Manifest = z.infer<typeof manifestSchema>;
-
-// Network rules are an organization guardrail set in step 5; until then
-// agent code may reach any host.
-export const NETWORK = { allow: [] as string[], block: [] as string[] };
 
 export const deploymentTarget = (d: {
   organizationId: string;
   agentId: string;
   id: string;
   scriptName: string;
+  network: NetworkRules;
 }) => ({
   organizationId: d.organizationId,
   agentId: d.agentId,
   deploymentId: d.id,
   script: d.scriptName,
-  network: NETWORK,
+  network: d.network,
 });
 
 const sha256 = async (text: string) =>
@@ -121,6 +151,67 @@ const boundSecrets = async (
   return { bound, waiting: declared.filter((name) => !granted.has(name)) };
 };
 
+// The groups a deployment's code names (design doc 06), and those without
+// access to the agent: no grant on it and not Developers. A group without
+// access holds the deployment in waiting, like an ungranted secret, so an
+// agent never runs with one; an unknown slug fails the deploy instead.
+const namedGroups = async (tx: Tx, agentId: string, manifest: Manifest) => {
+  const slugs = manifest.groups ?? [];
+  if (slugs.length === 0) return { named: [], waitingGroups: [] };
+  const named = await tx
+    .select({
+      id: groups.id,
+      slug: groups.slug,
+      isDevelopers: groups.isDevelopers,
+      access: agentGrants.access,
+    })
+    .from(groups)
+    .leftJoin(
+      agentGrants,
+      and(eq(agentGrants.groupId, groups.id), eq(agentGrants.agentId, agentId)),
+    )
+    .where(inArray(groups.slug, slugs));
+  return {
+    named,
+    waitingGroups: named
+      .filter((g) => !g.isDevelopers && g.access === null)
+      .map((g) => g.slug),
+  };
+};
+
+// Whether a live deployment's code names the group (design doc 01, q29): the
+// group, or its access to agentId when given, cannot be removed while so.
+export const groupInUse = async (tx: Tx, groupId: string, agentId?: string) => {
+  const agentIds = agentId
+    ? [agentId]
+    : (
+        await tx
+          .selectDistinct({ agentId: deployments.agentId })
+          .from(deploymentGroups)
+          .innerJoin(
+            deployments,
+            eq(deployments.id, deploymentGroups.deploymentId),
+          )
+          .where(eq(deploymentGroups.groupId, groupId))
+      ).map((r) => r.agentId);
+  for (const id of agentIds) {
+    const live = (await liveDeployments(tx, id)).map((d) => d.id);
+    if (live.length === 0) continue;
+    const [named] = await tx
+      .select({ id: deploymentGroups.deploymentId })
+      .from(deploymentGroups)
+      .where(
+        and(
+          eq(deploymentGroups.groupId, groupId),
+          inArray(deploymentGroups.deploymentId, live),
+        ),
+      )
+      .limit(1);
+    if (named) return true;
+  }
+  return false;
+};
+
 // Brings one deployment's script in line with current grants and values:
 // sets new or changed values, removes revoked ones, records deliveries and
 // audits each (spec 12: which deployment received a secret). Returns what
@@ -131,44 +222,74 @@ export const syncDeployment = async (
   deploymentId: string,
   actor: Actor,
 ): Promise<string[]> => {
-  const { deployment, bound, waiting, waitingMcp, delivered } = await withOrg(
-    env,
-    org,
-    async (tx) => {
-      const [deployment] = await tx
-        .select()
-        .from(deployments)
-        .where(eq(deployments.id, deploymentId));
-      if (!deployment)
-        throw new HTTPException(404, { message: "deployment not found" });
-      const declared = (deployment.manifest as Manifest).secrets;
-      const delivered = await tx
-        .select({
-          secretId: secretDeliveries.secretId,
-          version: secretDeliveries.secretVersion,
-          name: secrets.name,
-        })
-        .from(secretDeliveries)
-        .innerJoin(secrets, eq(secrets.id, secretDeliveries.secretId))
-        .where(eq(secretDeliveries.deploymentId, deploymentId));
-      const declaredMcp = (deployment.manifest as Manifest).mcp;
-      const granted = declaredMcp.length
-        ? await tx
-            .select({ slug: mcpServers.slug })
-            .from(mcpGrants)
-            .innerJoin(mcpServers, eq(mcpServers.id, mcpGrants.serverId))
-            .where(eq(mcpGrants.agentId, deployment.agentId))
-        : [];
-      return {
-        deployment,
-        delivered,
-        waitingMcp: declaredMcp.filter(
-          (slug) => !granted.some((g) => g.slug === slug),
-        ),
-        ...(await boundSecrets(env, tx, org, deployment.agentId, declared)),
-      };
-    },
-  );
+  const {
+    deployment,
+    bound,
+    waiting,
+    waitingMcp,
+    network,
+    waitingNetwork,
+    waitingGroups,
+    delivered,
+  } = await withOrg(env, org, async (tx) => {
+    const [deployment] = await tx
+      .select()
+      .from(deployments)
+      .where(eq(deployments.id, deploymentId));
+    if (!deployment)
+      throw new HTTPException(404, { message: "deployment not found" });
+    const declared = (deployment.manifest as Manifest).secrets;
+    const delivered = await tx
+      .select({
+        secretId: secretDeliveries.secretId,
+        version: secretDeliveries.secretVersion,
+        name: secrets.name,
+      })
+      .from(secretDeliveries)
+      .innerJoin(secrets, eq(secrets.id, secretDeliveries.secretId))
+      .where(eq(secretDeliveries.deploymentId, deploymentId));
+    const declaredMcp = (deployment.manifest as Manifest).mcp;
+    const granted = declaredMcp.length
+      ? await tx
+          .select({ slug: mcpServers.slug })
+          .from(mcpGrants)
+          .innerJoin(mcpServers, eq(mcpServers.id, mcpGrants.serverId))
+          .where(eq(mcpGrants.agentId, deployment.agentId))
+      : [];
+    const network = await effectiveNetwork(tx, deployment.agentId);
+    const { named, waitingGroups } = await namedGroups(
+      tx,
+      deployment.agentId,
+      deployment.manifest as Manifest,
+    );
+    await tx
+      .delete(deploymentGroups)
+      .where(eq(deploymentGroups.deploymentId, deploymentId));
+    if (named.length)
+      await tx.insert(deploymentGroups).values(
+        named.map((g) => ({
+          organizationId: org,
+          deploymentId,
+          groupId: g.id,
+          // TODO(step 4): set from the code's approval groups, and require
+          // operator access for them.
+          approves: false,
+        })),
+      );
+    return {
+      deployment,
+      delivered,
+      network,
+      waitingGroups,
+      waitingNetwork: ((deployment.manifest as Manifest).network ?? []).filter(
+        (host) => !permits(network, host),
+      ),
+      waitingMcp: declaredMcp.filter(
+        (slug) => !granted.some((g) => g.slug === slug),
+      ),
+      ...(await boundSecrets(env, tx, org, deployment.agentId, declared)),
+    };
+  });
   const namespace = namespaceFor(env);
   const current = new Map(delivered.map((d) => [d.secretId, d.version]));
   const changed = bound.filter((b) => current.get(b.secretId) !== b.version);
@@ -226,19 +347,29 @@ export const syncDeployment = async (
     const status =
       deployment.status === "failed"
         ? "failed"
-        : waiting.length || waitingMcp.length
+        : waiting.length ||
+            waitingMcp.length ||
+            waitingNetwork.length ||
+            waitingGroups.length
           ? "waiting"
           : "ready";
     const waitingFor: WaitingFor = {
       ...(waiting.length && { secrets: waiting }),
       ...(waitingMcp.length && { mcp: waitingMcp }),
+      ...(waitingNetwork.length && { network: waitingNetwork }),
+      ...(waitingGroups.length && { groups: waitingGroups }),
     };
     await tx
       .update(deployments)
-      .set({ status, waitingFor })
+      .set({ status, waitingFor, network })
       .where(eq(deployments.id, deploymentId));
   });
-  return [...waiting, ...waitingMcp.map((slug) => `MCP server ${slug}`)];
+  return [
+    ...waiting,
+    ...waitingMcp.map((slug) => `MCP server ${slug}`),
+    ...waitingNetwork.map((host) => `network access to ${host}`),
+    ...waitingGroups.map((slug) => `access for group ${slug}`),
+  ];
 };
 
 // Live scripts (doc 03): the production deployment and the newest deployment
@@ -336,13 +467,18 @@ export const deploy = async (
     tags: [`org:${org}`, `agent:${agent.id}`],
   });
   const read = manifestSchema.safeParse(
-    await env.RUNTIME.manifest(deploymentTarget(target)).catch(
-      (error: unknown) => {
-        throw new HTTPException(422, {
-          message: `the agent's Worker did not serve its manifest: ${String(error)}`,
-        });
-      },
-    ),
+    await env.RUNTIME.manifest(
+      deploymentTarget({
+        ...target,
+        network: await withOrg(env, org, (tx) =>
+          effectiveNetwork(tx, agent.id),
+        ),
+      }),
+    ).catch((error: unknown) => {
+      throw new HTTPException(422, {
+        message: `the agent's Worker did not serve its manifest: ${String(error)}`,
+      });
+    }),
   );
   if (!read.success)
     throw new HTTPException(422, {
@@ -351,6 +487,18 @@ export const deploy = async (
   const manifest = read.data;
 
   await withOrg(env, org, async (tx) => {
+    const slugs = manifest.groups ?? [];
+    const known = slugs.length
+      ? await tx
+          .select({ slug: groups.slug })
+          .from(groups)
+          .where(inArray(groups.slug, slugs))
+      : [];
+    const unknown = slugs.filter((s) => !known.some((k) => k.slug === s));
+    if (unknown.length)
+      throw new HTTPException(422, {
+        message: `the code names groups this organization does not have: ${unknown.join(", ")}`,
+      });
     await tx.insert(deployments).values({
       id,
       organizationId: org,
@@ -383,10 +531,16 @@ export const deploy = async (
     });
   });
   const waiting = await syncDeployment(env, org, id, actor);
-  if (waiting.length === 0 && input.git.branch === agent.productionBranch)
-    await promote(env, org, agent.id, id, actor);
-  return getDeployment(env, org, agent.id, id);
+  const cleared =
+    waiting.length === 0 && input.git.branch === agent.productionBranch
+      ? await promote(env, org, agent.id, id, actor)
+      : [];
+  const deployed = await getDeployment(env, org, agent.id, id);
+  return { ...deployed, warnings: [...deployed.warnings, ...cleared] };
 };
+
+const clearedWarning = (key: string, value: unknown) =>
+  `promotion cleared the dashboard override of ${key} (${JSON.stringify(value)})`;
 
 export const promote = async (
   env: Env,
@@ -415,7 +569,8 @@ export const promote = async (
     throw new HTTPException(409, {
       message: `deployment is waiting for grants: ${waiting.join(", ")}`,
     });
-  await withOrg(env, org, async (tx) => {
+  // Code is the truth again (spec 5): the agent's dashboard overrides go.
+  return withOrg(env, org, async (tx) => {
     const [row] = await tx
       .update(deployments)
       .set({ promotedAt: sql`now()` })
@@ -432,6 +587,15 @@ export const promote = async (
       targetId: deploymentId,
       data: { agent: agentId },
     });
+    const cleared = await clearOverrides(
+      tx,
+      agentId,
+      { organizationId: org, ...actor },
+      deploymentId,
+    );
+    return Object.entries(cleared).map(([key, value]) =>
+      clearedWarning(key, value),
+    );
   });
 };
 
@@ -452,6 +616,7 @@ const view = (
   source: d.source,
   tools: (d.manifest as Manifest).tools.map((t) => t.name),
   secrets: (d.manifest as Manifest).secrets,
+  warnings: (d.manifest as Manifest).warnings ?? [],
   createdAt: d.createdAt.toISOString(),
   promotedAt: d.promotedAt?.toISOString() ?? null,
 });
@@ -485,7 +650,17 @@ export const getDeployment = (
       .from(deployments)
       .where(and(eq(deployments.id, id), eq(deployments.agentId, agentId)));
     if (!d) throw new HTTPException(404, { message: "deployment not found" });
-    return view(d, await productionId(tx, agentId));
+    const production = await productionId(tx, agentId);
+    const shown = view(d, production);
+    if (d.environment !== "production" || d.id === production) return shown;
+    const overrides = await agentOverrideValues(tx, agentId);
+    return {
+      ...shown,
+      warnings: [
+        ...shown.warnings,
+        ...overrideWarnings(overrides, d.manifest as Manifest),
+      ],
+    };
   });
 
 export const listDeployments = (env: Env, org: OrgId, agentId: string) =>

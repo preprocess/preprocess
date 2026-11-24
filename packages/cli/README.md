@@ -23,6 +23,11 @@ other branch makes a preview.
 The API key is read only from `PREPROCESS_API_KEY`, so it never lands in shell
 history.
 
+A `preprocess.config.json` beside the project's `package.json` (or beside the
+entry) is bundled with the agent. Its `settings` win over the values set in
+`agent({...})`, and the deploy prints a warning for each inline value it
+overrides and each group the agent names that its `groups` list leaves out.
+
 ## GitHub Action
 
 `action.yml` runs the same command in GitHub Actions. Install the agent

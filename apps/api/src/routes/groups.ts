@@ -13,12 +13,14 @@ import {
   groups,
 } from "@preprocess/db/schema/access";
 import { member, user } from "@preprocess/db/schema/auth";
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { actor, eventBase, requireAdmin } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
+import { groupInUse } from "../deploy.ts";
+import { drainOutbox, syncLater } from "../outbox.ts";
 
 const OrgParam = z.object({ org: z.string() });
 const GroupParam = OrgParam.extend({ group: z.string() });
@@ -107,6 +109,29 @@ const findGroup = async (tx: Tx, id: string) => {
   const [found] = await listGroups(tx).where(eq(groups.id, id));
   if (!found) throw new HTTPException(404, { message: "No such group." });
   return found;
+};
+
+// q29: a group a live deployment's code names, or its access to that agent,
+// stays until the code stops naming it.
+const refuseInUse = async (
+  tx: Tx,
+  groupId: string,
+  slug: string,
+  agentIds: string[],
+  what: string,
+) => {
+  const using: string[] = [];
+  for (const id of agentIds)
+    if (await groupInUse(tx, groupId, id)) using.push(id);
+  if (using.length === 0) return;
+  const named = await tx
+    .select({ slug: agents.slug })
+    .from(agents)
+    .where(inArray(agents.id, using))
+    .orderBy(asc(agents.slug));
+  throw new HTTPException(409, {
+    message: `${what}: live deployments of ${named.map((a) => a.slug).join(", ")} name the group ${slug}. Deploy code that stops naming it first.`,
+  });
 };
 
 const grantsOf = (tx: Tx) =>
@@ -323,6 +348,13 @@ export const groupRoutes = new OpenAPIHono<{
           throw new HTTPException(409, {
             message: "The Developers group cannot be deleted.",
           });
+        await refuseInUse(
+          tx,
+          id,
+          group.slug,
+          (await tx.select({ id: agents.id }).from(agents)).map((a) => a.id),
+          "The group cannot be deleted",
+        );
         const [grant] = await grantsOf(tx)
           .where(eq(agentGrants.groupId, id))
           .limit(1);
@@ -444,13 +476,16 @@ export const groupRoutes = new OpenAPIHono<{
           },
         },
       },
-      responses: { 200: json(Grant, "The grant") },
+      responses: {
+        200: json(Grant, "The grant"),
+        409: { description: "Lowering the access of a group live code names" },
+      },
     }),
     async (c) => {
       requireAdmin(c.var.caller);
       const { agent: agentId, group: groupId } = c.req.valid("param");
       const { access } = c.req.valid("json");
-      const grant = await withOrg(c.env, c.var.org, async (tx) => {
+      const { grant, sync } = await withOrg(c.env, c.var.org, async (tx) => {
         const [agent] = await tx
           .select()
           .from(agents)
@@ -461,6 +496,23 @@ export const groupRoutes = new OpenAPIHono<{
           throw new HTTPException(400, {
             message: "The Developers group already manages every agent.",
           });
+        const [current] = await tx
+          .select({ access: agentGrants.access })
+          .from(agentGrants)
+          .where(
+            and(
+              eq(agentGrants.agentId, agentId),
+              eq(agentGrants.groupId, groupId),
+            ),
+          );
+        if (current?.access === "operator" && access === "viewer")
+          await refuseInUse(
+            tx,
+            groupId,
+            group.slug,
+            [agentId],
+            "The group's access cannot be lowered",
+          );
         await tx
           .insert(agentGrants)
           .values({
@@ -487,8 +539,13 @@ export const groupRoutes = new OpenAPIHono<{
             eq(agentGrants.groupId, groupId),
           ),
         );
-        return row!;
+        // Live deployments waiting for this group's access are re-checked.
+        return {
+          grant: row!,
+          sync: await syncLater(tx, c.var.org, [agentId]),
+        };
       });
+      await drainOutbox(c.env, c.var.org, sync);
       return c.json(toGrant(grant), 200);
     },
   )
@@ -498,12 +555,23 @@ export const groupRoutes = new OpenAPIHono<{
       path: "/agents/{agent}/grants/{group}",
       tags: ["Agent access"],
       request: { params: GrantParam },
-      responses: noContent,
+      responses: {
+        ...noContent,
+        409: { description: "The group is named by live code" },
+      },
     }),
     async (c) => {
       requireAdmin(c.var.caller);
       const { agent: agentId, group: groupId } = c.req.valid("param");
       await withOrg(c.env, c.var.org, async (tx) => {
+        const group = await findGroup(tx, groupId);
+        await refuseInUse(
+          tx,
+          groupId,
+          group.slug,
+          [agentId],
+          "The group's access cannot be removed",
+        );
         const removed = await tx
           .delete(agentGrants)
           .where(
