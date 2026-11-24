@@ -27,6 +27,11 @@
       "service": "preprocess-namespace-development",
     },
     {
+      "binding": "MCP_SERVICE",
+      "service": "preprocess-api-development",
+      "entrypoint": "McpService",
+    },
+    {
       "binding": "PLATFORM",
       "service": "preprocess-api-development",
       "entrypoint": "Platform",

@@ -5,7 +5,12 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { bundle, deploy, gitInfo } from "../src/deploy.ts";
+import {
+  bundle,
+  deploy,
+  describe as describeDeployment,
+  gitInfo,
+} from "../src/deploy.ts";
 import { main } from "../src/main.ts";
 
 const fixture = path.join(import.meta.dirname, "fixtures/agent.ts");
@@ -108,6 +113,24 @@ describe("deploy", () => {
         fetch: fake,
       }),
     ).rejects.toThrow("deploy failed (400): agent name must match");
+  });
+});
+
+describe("describe", () => {
+  it("names every grant a waiting deployment needs", () => {
+    expect(
+      describeDeployment("crm", {
+        id: "dep_1",
+        status: "waiting",
+        environment: "production",
+        production: false,
+        waitingFor: { secrets: ["ERP_TOKEN"], mcp: ["crm"] },
+        sdkVersion: "0.1.0",
+        tools: [],
+      }),
+    ).toBe(
+      "crm: deployment dep_1 is waiting for grants: secret ERP_TOKEN, MCP server crm",
+    );
   });
 });
 

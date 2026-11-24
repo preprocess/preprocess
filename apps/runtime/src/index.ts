@@ -6,6 +6,7 @@ import type { CaseKey, Deployment, Env, StartCase } from "./env.ts";
 import type { WriteResult } from "./schema-state.ts";
 
 export { CaseRuntime } from "./case-runtime.ts";
+export { McpBroker } from "./mcp.ts";
 export type { CaseState, CaseView, ReviewNote, WriteResult };
 
 type Edit = { path: string; version: number; userId: string };
