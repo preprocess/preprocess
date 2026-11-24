@@ -1,0 +1,31 @@
+{
+  "source": "samples/acme-invoice.png",
+  "markdown": "# Acme Corporation\n\nInvoice 1042 - 2026-11-02\n\nBill to: Northwind Traders\n\n| Item | Amount |\n| --- | --- |\n| Widgets (x40) | 1,200.00 |\n| Freight | 85.00 |\n| Total due (USD) | 1,285.00 |\n\nPayment terms: net 30",
+  "blocks": [
+    {
+      "label": "title",
+      "bbox": [50, 58, 500, 135],
+      "text": "# Acme Corporation"
+    },
+    {
+      "label": "text",
+      "bbox": [50, 154, 450, 200],
+      "text": "Invoice 1042 - 2026-11-02"
+    },
+    {
+      "label": "text",
+      "bbox": [50, 269, 430, 315],
+      "text": "Bill to: Northwind Traders"
+    },
+    {
+      "label": "table",
+      "bbox": [50, 423, 860, 615],
+      "text": "| Item | Amount |\n| --- | --- |\n| Widgets (x40) | 1,200.00 |\n| Freight | 85.00 |\n| Total due (USD) | 1,285.00 |"
+    },
+    {
+      "label": "text",
+      "bbox": [50, 846, 380, 892],
+      "text": "Payment terms: net 30"
+    }
+  ]
+}

@@ -1,4 +1,8 @@
 import { organizations } from "@preprocess/db";
+import { ModelError } from "@preprocess/models/client";
+import { decide, type DecideInput } from "@preprocess/models/decide";
+import { modelEndpoint } from "@preprocess/models/endpoints";
+import { ocrPage } from "@preprocess/models/ocr";
 import { runMode } from "@preprocess/runmode";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Hono } from "hono";
@@ -6,7 +10,6 @@ import { cors } from "hono/cors";
 import pg from "pg";
 
 import type { Env, Job } from "./env.ts";
-import { chat } from "./models.ts";
 
 export { Counter } from "./counter.ts";
 
@@ -14,12 +17,22 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", cors());
 
+app.onError((error, c) => {
+  if (error instanceof ModelError)
+    return c.json(
+      { error: error.code, message: error.message },
+      error.status as 400 | 429 | 502 | 503 | 504,
+    );
+  console.error(error);
+  return c.text("Internal Server Error", 500);
+});
+
 app.get("/", (c) =>
   c.json({
     service: "api",
     stage: c.env.STAGE,
     runMode: runMode(c.env),
-    model: c.env.MODEL_SERVICE_URL ? "staging" : "stub",
+    modelService: c.env.MODEL_SERVICE_URL ? "configured" : "none",
   }),
 );
 
@@ -68,7 +81,25 @@ app.get("/dispatch", async (c) => {
   });
 });
 
-app.post("/models/chat", async (c) => chat(c.env, await c.req.json()));
+// Smoke routes for the model client until decide and OCR have their real
+// callers (the runtime's decide tool and POST /v1/orgs/{org}/ocr).
+app.post("/models/decide", async (c) =>
+  c.json(
+    await decide(
+      modelEndpoint(c.env, "decide"),
+      await c.req.json<DecideInput>(),
+    ),
+  ),
+);
+
+app.post("/models/ocr", async (c) =>
+  c.json(
+    await ocrPage(
+      modelEndpoint(c.env, "ocr"),
+      await c.req.json<{ image: string; grounding?: boolean }>(),
+    ),
+  ),
+);
 
 export default {
   fetch: app.fetch,

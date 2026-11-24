@@ -6,9 +6,9 @@
 // - Preview stages (pr-<number>) also get the backend, isolated per stage: the
 //   API Worker with its Durable Object, R2 bucket, queue and consumer, a
 //   dispatch namespace with the user Worker, and a PlanetScale branch
-//   (migrated and seeded) behind Hyperdrive. Destroying the stage removes all
-//   of it. Models are the one shared piece: the API calls the staging model
-//   service, stubbed until it exists (apps/api/src/models.ts).
+//   (migrated and seeded) behind Hyperdrive, and the stub model service
+//   (apps/model-stub) the API calls for decide and OCR. Destroying the stage
+//   removes all of it.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -16,6 +16,7 @@ import path from "node:path";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Planetscale from "@alchemy.run/planetscale";
 import * as Alchemy from "alchemy";
+import * as Output from "alchemy/Output";
 import { Stack } from "alchemy/Stack";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -104,6 +105,15 @@ const backend = (stage: string, region: string) =>
     });
     const jobs = yield* Cloudflare.Queues.Queue("Jobs", { name: n.queue });
 
+    // Each preview gets the stub model service (design doc 07). The API calls
+    // it by URL, exactly as it would call a real model service; setting
+    // MODEL_SERVICE_URL and MODEL_SERVICE_KEY points it at another one.
+    const modelStub = yield* Cloudflare.Worker("ModelStub", {
+      ...worker,
+      name: n.modelStub,
+      main: at("apps/model-stub/src/index.ts"),
+      workersDev: true,
+    });
     const modelServiceUrl = yield* Config.String("MODEL_SERVICE_URL").pipe(
       Config.withDefault(""),
     );
@@ -116,10 +126,20 @@ const backend = (stage: string, region: string) =>
         STAGE: stage,
         PREPROCESS_REGION: region,
         USER_WORKER: n.userWorker,
-        ...(modelServiceUrl && {
-          MODEL_SERVICE_URL: modelServiceUrl,
-          MODEL_SERVICE_KEY: Config.Redacted("MODEL_SERVICE_KEY"),
-        }),
+        ...(modelServiceUrl
+          ? {
+              MODEL_SERVICE_URL: modelServiceUrl,
+              MODEL_SERVICE_KEY: Config.Redacted("MODEL_SERVICE_KEY"),
+            }
+          : {
+              MODEL_SERVICE_URL: Output.map(modelStub.url, (url) => {
+                if (!url)
+                  throw new Error("The model stub has no workers.dev URL");
+                return url;
+              }),
+              // The stub accepts any bearer token.
+              MODEL_SERVICE_KEY: "stub",
+            }),
         DB: db,
         COUNTER: Cloudflare.DurableObject("Counter"),
         JOBS: jobs,
@@ -133,7 +153,12 @@ const backend = (stage: string, region: string) =>
       settings: { maxWaitTimeMs: 1000 },
     });
 
-    return { api: api.url, branch: branch.name, namespace: n.namespace };
+    return {
+      api: api.url,
+      modelStub: modelStub.url,
+      branch: branch.name,
+      namespace: n.namespace,
+    };
   });
 
 export default Alchemy.Stack(

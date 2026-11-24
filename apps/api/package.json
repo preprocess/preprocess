@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@preprocess/db": "workspace:*",
+    "@preprocess/models": "workspace:*",
     "@preprocess/runmode": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
