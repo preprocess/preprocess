@@ -1,12 +1,14 @@
 // The API's internal entrypoint for the platform's other Workers. The runtime
-// reports case events here (the API is the one writer of the case index) and
-// OCRs a case's files through it (design doc 04).
+// reports case events here (the API is the one writer of the case index),
+// OCRs a case's files through it (design doc 04), and reads the secrets agent
+// code receives when it loads that code (design doc 03).
 
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { LogRecord } from "@preprocess/logs";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { recordCaseEvent } from "./cases.ts";
+import { secretsVersion, secretValues, type DeploymentRef } from "./deploy.ts";
 import type { CaseEvent } from "./cases.ts";
 import type { Env } from "./env.ts";
 import { recordEvalEvent } from "./evals.ts";
@@ -43,5 +45,16 @@ export class Platform extends WorkerEntrypoint<Env> {
       file.fileId,
     );
     return { markdown: result.pages.map((p) => p.markdown).join("\n\n") };
+  }
+
+  // Asked on every call into agent code: a new version loads a fresh isolate,
+  // so a rotated or revoked secret takes effect on the next call.
+  secretsVersion(deployment: DeploymentRef) {
+    return secretsVersion(this.env, deployment);
+  }
+
+  // Only while an isolate loads; the values go straight into its env.
+  secretValues(deployment: DeploymentRef) {
+    return secretValues(this.env, deployment);
   }
 }

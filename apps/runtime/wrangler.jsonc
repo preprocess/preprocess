@@ -20,12 +20,11 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CaseRuntime"] }],
   "r2_buckets": [
     { "binding": "RUNS", "bucket_name": "preprocess-runs-development" },
+    { "binding": "BUNDLES", "bucket_name": "preprocess-bundles-development" },
   ],
+  "worker_loaders": [{ "binding": "LOADER" }],
   "services": [
-    {
-      "binding": "LOCAL_NAMESPACE",
-      "service": "preprocess-namespace-development",
-    },
+    { "binding": "TAIL", "service": "preprocess-tail-development" },
     {
       "binding": "MCP_SERVICE",
       "service": "preprocess-api-development",

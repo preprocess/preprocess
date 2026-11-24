@@ -49,7 +49,6 @@ const configs: Record<string, object> = {
     ...common,
     vars: {
       STAGE: LOCAL,
-      USER_WORKER: local.userWorker,
       MODEL_SERVICE_URL: localModelService.url,
       MODEL_SERVICE_KEY: localModelService.key,
       SECRETS_MASTER_KEY: localSecretsMasterKey,
@@ -92,12 +91,10 @@ const configs: Record<string, object> = {
         { binding: "JOBS", queue: local.queue },
         { binding: "CASES", queue: local.casesQueue },
         { binding: "WEBHOOKS", queue: local.webhooksQueue },
-        { binding: "SECRET_SYNC", queue: local.secretSync },
         { binding: "LOGS", queue: local.logsQueue },
       ],
       consumers: [
         { queue: local.queue, max_batch_timeout: 1 },
-        { queue: local.secretSync, max_batch_timeout: 1 },
         { queue: local.casesQueue, max_batch_timeout: 1 },
         // Retries are timed by the consumer (webhooks.ts) over 24 hours.
         { queue: local.webhooksQueue, max_batch_timeout: 1, max_retries: 20 },
@@ -109,19 +106,10 @@ const configs: Record<string, object> = {
       { binding: "AUDIT", bucket_name: local.auditBucket },
       { binding: "LOG_BUCKET", bucket_name: local.logs },
     ],
-    // Wrangler supports dispatch namespaces only as remote bindings, so the
-    // local API reaches the user Worker through a service binding, and
-    // uploads agent scripts to apps/namespace-local.
     services: [
-      { binding: "LOCAL_USER_WORKER", service: local.userWorker },
       { binding: "RUNTIME", service: local.runtime },
       { binding: "BUILDER", service: local.builder, entrypoint: "Builder" },
       { binding: "PDF_RENDER", service: local.pdfRender },
-      {
-        binding: "LOCAL_NAMESPACE",
-        service: local.localNamespace,
-        entrypoint: "Namespace",
-      },
     ],
   },
   // Locally the build sandbox runs under Docker (apps/builder/local), because
@@ -154,12 +142,6 @@ const configs: Record<string, object> = {
     },
     migrations: [{ tag: "v1", new_sqlite_classes: ["Renderer"] }],
   },
-  "apps/user-worker": {
-    $schema: "node_modules/wrangler/config-schema.json",
-    name: local.userWorker,
-    main: "src/index.ts",
-    ...common,
-  },
   "apps/runtime": {
     $schema: "node_modules/wrangler/config-schema.json",
     name: local.runtime,
@@ -178,18 +160,16 @@ const configs: Record<string, object> = {
     migrations: [
       { tag: "v1", new_sqlite_classes: Object.values(runtimeDurableObjects) },
     ],
-    r2_buckets: [{ binding: "RUNS", bucket_name: local.runs }],
+    r2_buckets: [
+      { binding: "RUNS", bucket_name: local.runs },
+      { binding: "BUNDLES", bucket_name: local.bundles },
+    ],
+    worker_loaders: [{ binding: "LOADER" }],
     services: [
-      { binding: "LOCAL_NAMESPACE", service: local.localNamespace },
+      { binding: "TAIL", service: local.tail },
       { binding: "MCP_SERVICE", service: local.api, entrypoint: "McpService" },
       { binding: "PLATFORM", service: local.api, entrypoint: "Platform" },
     ],
-  },
-  "apps/outbound": {
-    $schema: "node_modules/wrangler/config-schema.json",
-    name: local.outbound,
-    main: "src/index.ts",
-    ...common,
   },
   "apps/tail": {
     $schema: "node_modules/wrangler/config-schema.json",
@@ -198,18 +178,6 @@ const configs: Record<string, object> = {
     ...common,
     services: [
       { binding: "PLATFORM", service: local.api, entrypoint: "Platform" },
-    ],
-  },
-  "apps/namespace-local": {
-    $schema: "node_modules/wrangler/config-schema.json",
-    name: local.localNamespace,
-    main: "src/index.ts",
-    ...common,
-    worker_loaders: [{ binding: "LOADER" }],
-    r2_buckets: [{ binding: "SCRIPTS", bucket_name: local.localScripts }],
-    services: [
-      { binding: "OUTBOUND", service: local.outbound, entrypoint: "Egress" },
-      { binding: "TAIL", service: local.tail },
     ],
   },
 };

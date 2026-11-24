@@ -30,7 +30,6 @@ const queues: Partial<Record<OutboxKind, (env: Env) => Queue<OutboxMessage>>> =
     "case.start": (env) => env.CASES,
     "eval.start": (env) => env.CASES,
     webhook: (env) => env.WEBHOOKS,
-    "secret.sync": (env) => env.SECRET_SYNC,
   };
 
 // Inside the transaction that decides the work.
@@ -43,23 +42,6 @@ export const writeOutbox = async (
   const id = newId("outbox");
   await tx.insert(outbox).values({ id, organizationId, kind, payload });
   return id;
-};
-
-// Inside the transaction that changes what an agent's code is given (a
-// secret's value, a secret or MCP grant): its live deployments rebind once
-// that commits (design doc 03).
-export const syncLater = async (
-  tx: Tx,
-  organizationId: string,
-  agentIds: string[],
-) => {
-  const rows: { id: string; kind: OutboxKind }[] = [];
-  for (const agentId of agentIds)
-    rows.push({
-      id: await writeOutbox(tx, organizationId, "secret.sync", { agentId }),
-      kind: "secret.sync",
-    });
-  return rows;
 };
 
 type Row = { id: string; organizationId: string; kind: OutboxKind };

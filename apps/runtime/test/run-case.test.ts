@@ -4,21 +4,22 @@ import { describe, expect, it } from "vitest";
 import type { CaseView } from "../src/case-runtime.ts";
 import type { RunCapture } from "../src/capture.ts";
 import type { StartCase } from "../src/env.ts";
+import { deploy } from "./deploy.ts";
 // Bundled by vitest.config.ts, as the deploy command uploads it.
 import sampleAgent from "./dist/sample-agent.js?raw";
 
 const SECRET = "erp-live-7c1f9a";
 
-const deploy = async (script: string, secrets: Record<string, string>) => {
-  await env.NAMESPACE_ADMIN.putScript(script, {
-    mainModule: "agent.js",
-    modules: { "agent.js": sampleAgent },
-    bindings: [],
-    tags: ["org:test"],
-  });
-  for (const [name, text] of Object.entries(secrets)) {
-    await env.NAMESPACE_ADMIN.putSecret(script, { name, text });
-  }
+let bundleHash = "";
+const deployStock = async (
+  organizationId: string,
+  secrets: Record<string, string>,
+) => {
+  ({ bundleHash } = await deploy(
+    { organizationId, agentId: "agt_stock", deploymentId: "dep_1" },
+    sampleAgent,
+    secrets,
+  ));
 };
 
 const runtime = (exports as unknown as { default: unknown }).default as {
@@ -51,7 +52,7 @@ const start = (
   organizationId,
   agentId: "agt_stock",
   deploymentId: "dep_1",
-  script: `${organizationId}--stock--dep_1`,
+  bundleHash,
   network: { allow: [], block },
   caseId,
   input: { text: "Check stock for SKU A1 and its carrier status." },
@@ -59,7 +60,7 @@ const start = (
 
 describe("one case end to end", () => {
   it("runs the agent's tools through dispatch and seals a run capture", async () => {
-    await deploy("org_a--stock--dep_1", { ERP_TOKEN: SECRET });
+    await deployStock("org_a", { ERP_TOKEN: SECRET });
     const begun = await runtime.startCase(
       start("org_a", "case_1", ["example.com"]),
     );
@@ -112,7 +113,7 @@ describe("one case end to end", () => {
   });
 
   it("keeps each organization's network rules and secrets to itself", async () => {
-    await deploy("org_b--stock--dep_1", {});
+    await deployStock("org_b", {});
     await runtime.startCase(start("org_b", "case_1"));
     const done = await settle({
       organizationId: "org_b",

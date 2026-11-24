@@ -51,7 +51,6 @@ const seed = async (client: Client, name: string) => {
       agentId,
       environment: "production",
       status: "ready",
-      scriptName: org + "--invoices--" + deploymentId,
       bundleSha256: "00",
       sdkVersion: "0.1.0",
       manifest: {},

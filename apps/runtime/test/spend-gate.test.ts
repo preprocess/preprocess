@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CaseState, CaseView } from "../src/case-runtime.ts";
 import type { CaseKey, StartCase } from "../src/env.ts";
+import { deploy } from "./deploy.ts";
 // Bundled by vitest.config.ts, as the deploy command uploads it.
 import sampleAgent from "./dist/sample-agent.js?raw";
 
@@ -26,23 +27,17 @@ const settle = async (c: CaseKey) => {
 };
 
 const begin = async (organizationId: string, allowed: number) => {
-  const script = `${organizationId}--stock--dep_1`;
-  await env.NAMESPACE_ADMIN.putScript(script, {
-    mainModule: "agent.js",
-    modules: { "agent.js": sampleAgent },
-    bindings: [],
-    tags: [`org:${organizationId}`],
-  });
-  await env.NAMESPACE_ADMIN.putSecret(script, {
-    name: "ERP_TOKEN",
-    text: "erp-test",
-  });
+  const { bundleHash } = await deploy(
+    { organizationId, agentId: "agt_stock", deploymentId: "dep_1" },
+    sampleAgent,
+    { ERP_TOKEN: "erp-test" },
+  );
   await platform.limitSpend(organizationId, allowed);
   const key = { organizationId, agentId: "agt_stock", caseId: "case_1" };
   await runtime.startCase({
     ...key,
     deploymentId: "dep_1",
-    script,
+    bundleHash,
     network: { allow: [], block: [] },
     input: { text: "Check stock for SKU A1 and its carrier status." },
   });

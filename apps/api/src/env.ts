@@ -4,7 +4,6 @@ import type { Pipeline } from "cloudflare:pipelines";
 import type { BuildQueue } from "./builds.ts";
 import type { Counter } from "./counter.ts";
 import type { Scheduler } from "./scheduler.ts";
-import type { Namespace } from "./namespace.ts";
 import type { OtelRetry } from "./otel.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import type { EffectiveSettings } from "./settings.ts";
@@ -24,7 +23,7 @@ export type GroupRef = {
 
 export type StartCase = CaseKey & {
   deploymentId: string;
-  script: string;
+  bundleHash: string;
   network: { allow: string[]; block: string[] };
   // The agent's settings after dashboard overrides and organization defaults
   // (spec 5), applied over the manifest's.
@@ -87,6 +86,16 @@ export type Runtime = {
   manifest(
     deployment: Omit<StartCase, "caseId" | "input" | "groups">,
   ): Promise<unknown>;
+  // Stores a new deployment's bundle where the runtime loads it as a Dynamic
+  // Worker (design doc 03) and returns its SHA-256.
+  putBundle(
+    deployment: {
+      organizationId: string;
+      agentId: string;
+      deploymentId: string;
+    },
+    bundle: { mainModule: string; modules: Record<string, string> },
+  ): Promise<string>;
   getCase(c: CaseKey): Promise<unknown>;
 };
 
@@ -119,7 +128,6 @@ export type Env = {
   // Set on our cloud, unset on a self-hosted install; read it through
   // @preprocess/runmode.
   PREPROCESS_REGION?: string;
-  USER_WORKER: string;
   MODEL_SERVICE_URL?: string;
   MODEL_SERVICE_KEY?: string;
   // Postgres as preprocess_app (RLS enforced) and as preprocess_system (RLS
@@ -147,9 +155,6 @@ export type Env = {
   CASES: Queue<OutboxMessage>;
   // Webhook deliveries from the outbox (webhooks.ts).
   WEBHOOKS: Queue<OutboxMessage>;
-  // Re-delivers an agent's secrets and MCP grants to its live scripts after
-  // a value or grant changes (design doc 03), from the outbox.
-  SECRET_SYNC: Queue<OutboxMessage>;
   FILES: R2Bucket;
   RUNTIME: Runtime;
   // apps/pdf-render: PDF pages to PNGs in a sandbox container. Bound locally;
@@ -158,16 +163,6 @@ export type Env = {
   // 32 random bytes, base64: Secrets Store on our cloud, a local variable in
   // development and tests. Only this Worker binds it (design doc 01).
   SECRETS_MASTER_KEY: string | SecretsStoreSecret;
-  // Deploys upload into the stage's dispatch namespace through Cloudflare's
-  // API. Locally, apps/namespace-local takes the same calls instead.
-  CLOUDFLARE_ACCOUNT_ID?: string;
-  CLOUDFLARE_API_TOKEN?: string;
-  DISPATCH_NAMESPACE?: string;
-  LOCAL_NAMESPACE?: Namespace;
-  // Deployed stages bind the stage's dispatch namespace. Cloudflare's local
-  // runtime cannot emulate one, so local dev binds the user Worker directly.
-  DISPATCHER?: DispatchNamespace;
-  LOCAL_USER_WORKER?: Fetcher;
   // The GitHub App (docs/design/08-github-app.md). Without these its routes
   // answer 503. The private key is the App's key converted to PKCS #8 PEM.
   GITHUB_APP_ID?: string;
@@ -192,11 +187,9 @@ export type Env = {
   LOG_BUCKET: R2Bucket;
   LOG_STORE?: string;
   LOG_STREAM?: Pipeline;
-  // The R2 bucket holding the Data Catalog warehouse, and a token with R2 SQL
-  // read, Data Catalog and R2 storage access.
+  // The account, the R2 bucket holding the Data Catalog warehouse, and a
+  // token with R2 SQL read, Data Catalog and R2 storage access.
+  CLOUDFLARE_ACCOUNT_ID?: string;
   LOG_SQL_BUCKET?: string;
   LOG_SQL_TOKEN?: string;
-  // apps/tail's script name, attached to every agent script as its tail
-  // consumer. Locally apps/namespace-local attaches it instead.
-  TAIL_WORKER?: string;
 };

@@ -1,6 +1,5 @@
 // Checks a deployed stage end to end: Postgres (seeded through Hyperdrive),
-// the Durable Object, the queue writing to R2, dispatch to the user Worker, and
-// the app Worker. OUTPUTS is the JSON infra/scripts/preview.ts printed.
+// the Durable Object, the queue writing to R2, and the app Worker. OUTPUTS is the JSON infra/scripts/preview.ts printed.
 
 const { api, app } = JSON.parse(process.env.OUTPUTS ?? "{}") as {
   api?: string;
@@ -39,10 +38,6 @@ for (let attempt = 0; attempt < 30 && !done; attempt++) {
   done = (await call(`/orgs/org_acme/jobs/${job.id}`)).status === 200;
 }
 expect(done, "queue consumer wrote the job to R2");
-expect(
-  (await call("/dispatch")).body.includes("dispatch-namespace"),
-  "dispatch namespace",
-);
 
 // The app has no backend calls yet and signs in with WorkOS until Better Auth
 // lands (step 1), so check only that its Worker answers.
