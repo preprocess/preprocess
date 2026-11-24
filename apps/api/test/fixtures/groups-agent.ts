@@ -9,9 +9,9 @@ export default agent({
     review: tool({
       description: "Send a contract to legal",
       input: z.object({ contract: z.string() }),
-      run: async ({ contract }, ctx) => {
+      run: ({ contract }, ctx) => {
         ctx.waitOn("legal", { reason: `Review ${contract}` });
-        return "sent";
+        return Promise.resolve("sent");
       },
     }),
   },
