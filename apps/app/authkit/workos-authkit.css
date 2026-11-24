@@ -1,0 +1,392 @@
+/*
+ * Preprocess hosted AuthKit theme
+ * Paste into WorkOS Dashboard -> Branding -> AuthKit -> Custom CSS.
+ * Colors are literal values from packages/ui/src/styles/globals.css because
+ * hosted AuthKit pages cannot inherit the app's runtime CSS variables.
+ * WorkOS does not honor prefers-color-scheme — use light-dark() or
+ * .light-theme / .dark-theme.
+ * Corner radii follow the marketing site's scale (--lander-radius-*): 10px
+ * callouts, 6px inputs, pill buttons and badges.
+ * Sign-in and sign-up use the Split layout: the form sits on the page with
+ * no card, and the right-hand content panel is content-panel.html + .css.
+ */
+
+/* Page + layout */
+.ak-Background {
+  color-scheme: light dark;
+  --default-font-size: 1rem;
+  --font-size-3: 1rem;
+  --gray-1: light-dark(#fbf7f0, #15120f);
+  --gray-2: light-dark(#f3efe7, #1b1815);
+  --gray-3: light-dark(#ece7de, #211e1b);
+  --gray-4: light-dark(#e4dfd4, #282421);
+  --gray-5: light-dark(#ddd7cb, #2e2b28);
+  --gray-6: light-dark(#d5cfc2, #35312e);
+  --gray-7: light-dark(#cec7b9, #3c3835);
+  --gray-8: light-dark(#c6bfb0, #423f3c);
+  --gray-9: light-dark(#a39d94, #96948d);
+  --gray-10: light-dark(#878175, #b4b2aa);
+  --gray-11: light-dark(#6b655c, oklch(0.708 0 0));
+  --gray-12: light-dark(#26251e, oklch(0.985 0 0));
+  --color-background: light-dark(#fbf7f0, #15120f);
+  --color-surface: light-dark(#f3efe7, #1b1815);
+  --color-panel: light-dark(#f3efe7, #1b1815);
+  --color-panel-solid: light-dark(#f3efe7, #1b1815);
+  background: light-dark(#fbf7f0, #15120f);
+  color: light-dark(#26251e, oklch(0.985 0 0));
+  font-family: "Geist Variable", "Geist", sans-serif;
+  font-size: 1rem;
+}
+
+/* Split layout: the form and the content panel each take half the page.
+   AuthKit sets the columns as an inline custom property on the outer grid,
+   so only !important outranks it. WorkOS nests this whole file inside
+   .ak-Background, a direct child of that grid, so a plain selector would
+   only match descendants; & inside :has() reaches up to the parent. */
+.rt-Grid:has(> &):has(> [data-hak-custom-html]) {
+  --grid-template-columns-md: minmax(0, 1fr) minmax(0, 1fr) !important;
+}
+
+.ak-Content {
+  box-sizing: border-box !important;
+  width: min(calc(100% - 48px), 400px) !important;
+  margin: auto !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  justify-self: center !important;
+  align-self: center !important;
+}
+
+.ak-Card {
+  position: relative !important;
+  overflow: visible !important;
+  width: 100% !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.ak-AuthForm {
+  width: 100% !important;
+  margin-inline: auto !important;
+}
+
+/* Header */
+.ak-Header {
+  width: 100% !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  margin: 0 0 28px !important;
+  text-align: left !important;
+}
+
+.ak-Logo {
+  flex: none !important;
+  width: 28px !important;
+  height: 28px !important;
+  object-fit: contain !important;
+  margin-bottom: 12px;
+}
+
+.ak-Header .ak-Heading {
+  display: block !important;
+  width: 100% !important;
+  margin: 0 !important;
+  color: light-dark(#26251e, oklch(0.985 0 0));
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: -0.03em;
+  text-align: left !important;
+}
+
+/* Invitation pages place the description inside the heading. */
+.ak-Header .ak-Heading > .rt-Text {
+  display: block !important;
+  width: 100% !important;
+  margin: 0 !important;
+  color: light-dark(#6b655c, oklch(0.708 0 0));
+  font-size: 1rem !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+  text-align: left !important;
+}
+
+/* Sign-in, sign-up, the waitlist and invites replace the stock heading
+   with two lines: the original text is sized to zero and ::before draws
+   ours, where \A breaks the line under pre-line. Tracking is set again on
+   ::before because the heading's em letter-spacing resolves to 0px at
+   font-size 0. Not localized. */
+:is(
+    [data-hak-page="sign-in"],
+    [data-hak-page="sign-up"],
+    [data-hak-page="waitlist"],
+    [data-hak-page="invite"]
+  )
+  .ak-Header
+  .ak-Heading {
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+
+:is(
+    [data-hak-page="sign-in"],
+    [data-hak-page="sign-up"],
+    [data-hak-page="waitlist"],
+    [data-hak-page="invite"]
+  )
+  .ak-Header
+  .ak-Heading::before {
+  display: block;
+  white-space: pre-line;
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: -0.03em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+[data-hak-page="sign-in"] .ak-Header .ak-Heading::before {
+  content: "Welcome back.\A Sign in to your workspace.";
+}
+
+[data-hak-page="sign-up"] .ak-Header .ak-Heading::before {
+  content: "Create your account.\A Start automating complex work.";
+}
+
+[data-hak-page="waitlist"] .ak-Header .ak-Heading::before {
+  content: "Join the waitlist.\A We'll email you when you're in.";
+}
+
+[data-hak-page="invite"] .ak-Header .ak-Heading::before {
+  content: "You're invited.\A Join your team on Preprocess.";
+}
+
+/* Invitees land on sign-up or sign-in, not a separate page; AuthKit marks
+   them only by putting the invite line ("You've been invited to join …")
+   inside the heading, so :has() picks the invitee wording. */
+[data-hak-page="sign-up"] .ak-Header .ak-Heading:has(> .rt-Text)::before {
+  content: "Welcome aboard.\A Create your account to get started.";
+}
+
+[data-hak-page="sign-in"] .ak-Header .ak-Heading:has(> .rt-Text)::before {
+  content: "Welcome aboard.\A Sign in to accept your invite.";
+}
+
+/* Our two lines replace AuthKit's invite line too. */
+:is(
+    [data-hak-page="sign-in"],
+    [data-hak-page="sign-up"],
+    [data-hak-page="invite"]
+  )
+  .ak-Header
+  .ak-Heading
+  > .rt-Text {
+  display: none !important;
+}
+
+/* Labels */
+.ak-Label {
+  margin-bottom: 0 !important;
+  color: light-dark(#26251e, oklch(0.985 0 0));
+  font:
+    500 1rem/1 "Geist Variable",
+    "Geist",
+    sans-serif;
+}
+
+/* Inputs */
+.ak-TextField,
+.ak-TextField.rt-TextFieldRoot {
+  box-sizing: border-box;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 10px !important;
+  color: light-dark(#26251e, oklch(0.985 0 0));
+  background: light-dark(
+    transparent,
+    color-mix(in oklab, oklch(0.985 0 0) 4.5%, transparent)
+  );
+  border: 1px solid
+    light-dark(
+      color-mix(in oklab, #26251e 15%, transparent),
+      color-mix(in oklab, oklch(0.985 0 0) 15%, transparent)
+    );
+  border-radius: 6px;
+  font:
+    400 1rem/1.25 "Geist Variable",
+    "Geist",
+    sans-serif;
+  box-shadow: none;
+  transition:
+    color 150ms,
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.ak-TextField:focus-within {
+  border-color: light-dark(#26251e, oklch(0.985 0 0)) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px
+    light-dark(
+      color-mix(in oklab, #26251e 50%, transparent),
+      color-mix(in oklab, oklch(0.985 0 0) 50%, transparent)
+    ) !important;
+}
+
+/* Radix Themes insets the inner input on top of the root's padding; zero it
+   so only the root's 10px applies, matching the app's inputs. */
+.ak-TextField,
+.ak-TextField.rt-TextFieldRoot {
+  --text-field-padding: 0px !important;
+}
+
+.ak-TextField input,
+.ak-TextField .rt-TextFieldInput {
+  padding-inline: 0 !important;
+  text-indent: 0 !important;
+}
+
+.ak-TextField input:focus,
+.ak-TextField input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.ak-TextField input::placeholder {
+  color: light-dark(#6b655c, oklch(0.708 0 0));
+  opacity: 1;
+}
+
+/* Main “Continue” button — the marketing site's lg Button (36px, 16px
+   type), one step up from the app's default control. */
+.ak-PrimaryButton,
+.ak-PrimaryButton.rt-Button {
+  position: relative !important;
+  overflow: visible !important;
+  cursor: pointer !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 20px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: light-dark(#26251e, oklch(0.985 0 0)) !important;
+  color: light-dark(#fbf7f0, #15120f) !important;
+  font:
+    400 16px/24px "Geist Variable",
+    "Geist",
+    sans-serif;
+  box-shadow: none !important;
+  transition:
+    background-color 80ms ease,
+    box-shadow 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Hover/press mix the foreground into the page background, as Button does. */
+.ak-PrimaryButton:hover {
+  background: light-dark(
+    color-mix(in oklab, #26251e 90%, #fbf7f0),
+    color-mix(in oklab, oklch(0.985 0 0) 90%, #15120f)
+  ) !important;
+}
+
+.ak-PrimaryButton:active {
+  background: light-dark(
+    color-mix(in oklab, #26251e 80%, #fbf7f0),
+    color-mix(in oklab, oklch(0.985 0 0) 80%, #15120f)
+  ) !important;
+}
+
+/* Press: the surface shrinks exactly 1px per side (an inset ring in the card
+   colour) instead of scaling, matching Button. */
+.ak-PrimaryButton:active,
+.ak-AuthButton:active {
+  box-shadow: inset 0 0 0 1px light-dark(#ece7de, #211e1b) !important;
+  transition-duration: 80ms;
+}
+
+.ak-PrimaryButton:focus-visible,
+.ak-AuthButton:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 1px light-dark(#26251e, oklch(0.985 0 0)) !important;
+}
+
+/* Provider / secondary button — Button's see-through tint (--tint), so it
+   keeps a defined edge on the card in both themes. */
+.ak-AuthButton,
+.ak-AuthButton.rt-Button {
+  cursor: pointer !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 20px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: light-dark(rgb(40 32 16 / 8%), rgb(255 255 255 / 25%)) !important;
+  color: light-dark(#26251e, oklch(0.985 0 0)) !important;
+  font:
+    400 16px/24px "Geist Variable",
+    "Geist",
+    sans-serif;
+  box-shadow: none !important;
+  transition:
+    background-color 80ms ease,
+    box-shadow 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.ak-AuthButton:hover {
+  background: light-dark(
+    rgb(40 32 16 / 6.5%),
+    rgb(255 255 255 / 20%)
+  ) !important;
+}
+
+.ak-AuthButton .ak-AuthButtonLabel {
+  font-size: 1rem !important;
+  line-height: 24px !important;
+}
+
+/* Last-used method badge — surface 2 + elevation */
+.ak-LastUsedBadge {
+  border-radius: 999px !important;
+  background: light-dark(#f3efe7, #1b1815) !important;
+  color: light-dark(#26251e, oklch(0.985 0 0)) !important;
+  font:
+    500 11px/1 "Geist Variable",
+    "Geist",
+    sans-serif !important;
+  box-shadow:
+    0 0 0 1px rgb(40 32 16 / 7%),
+    0 1px 1px -0.5px rgb(40 32 16 / 7%) !important;
+}
+
+/* Callouts and organization selection */
+.ak-Callout,
+.ak-OrganizationSelection {
+  color: light-dark(#26251e, oklch(0.985 0 0));
+  background: light-dark(#ddd7cb, #2e2b28);
+  border: 1px solid
+    light-dark(
+      color-mix(in oklab, #26251e 10%, transparent),
+      color-mix(in oklab, oklch(0.985 0 0) 10%, transparent)
+    );
+  border-radius: 10px;
+  font:
+    400 1rem/1.25 "Geist Variable",
+    "Geist",
+    sans-serif;
+}
+
+.dark-theme .ak-LastUsedBadge {
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 1%),
+    inset 0 0 0 1px rgb(255 255 255 / 2%),
+    0 1px 1px -0.5px rgb(0 0 0 / 18%) !important;
+}

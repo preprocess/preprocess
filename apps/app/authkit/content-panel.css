@@ -1,0 +1,443 @@
+/*
+ * Preprocess hosted AuthKit content panel (sign-in and sign-up)
+ * Paste into WorkOS Dashboard -> Branding -> Page Settings -> Split layout,
+ * panel on the right -> click the panel -> CSS. The HTML is
+ * content-panel.html. Panel content is per page, so paste on both pages.
+ * WorkOS prefixes every selector with :where([data-hak-custom-html]), strips
+ * <style>, scripts and possibly inline styles, so every part is placed here.
+ * In the style of the landing page's VM switches: glass and pearl on the
+ * grainy slate green. One very large dial, cropped by the panel's right and
+ * bottom edges as in Mercury's art, with hairline rings radiating from it
+ * across the panel. The team the agents work with sits top left, and a glass
+ * card floats over the rings showing a case working through its steps. Its arc runs 270 degrees, from
+ * -135 to +135, fades in from nothing and ends in a bead at 25. Every part
+ * of the dial is sized in percent of it, so it scales as one piece.
+ * The panel is half the page (see workos-authkit.css); .pp-stage sets the
+ * em scale from the panel's width, so everything grows with it.
+ */
+
+.pp-panel,
+.pp-panel * {
+  box-sizing: border-box;
+}
+
+.pp-panel {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(70% 55% at 60% 60%, #2c3a34, transparent 72%), #1f2925;
+  color: #fbf7f0;
+  font-family: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  container-type: size;
+  -webkit-font-smoothing: antialiased;
+}
+
+.pp-stage {
+  position: absolute;
+  inset: 0;
+  font-size: clamp(10px, 1.6cqw, 15px);
+}
+
+/* Fine grain over the whole panel; it also breaks up the arc's fade. */
+.pp-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+}
+
+/* Hairline rings radiating from the dial's center (16em in from the right,
+   4em up from the bottom), every 2.4em. The mask keeps a clear gap outside
+   the dial's arc (its outer edge is at 25.8em), then fades the rings out
+   across the panel. */
+.pp-rings {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: repeating-radial-gradient(
+    circle at calc(100% - 16em) calc(100% - 4em),
+    transparent 0 calc(2.4em - 1px),
+    rgba(251, 247, 240, 0.09) calc(2.4em - 1px) 2.4em
+  );
+  -webkit-mask: radial-gradient(
+    circle at calc(100% - 16em) calc(100% - 4em),
+    transparent 30em,
+    #000 31em,
+    rgba(0, 0, 0, 0.5) 42em,
+    transparent 64em
+  );
+  mask: radial-gradient(
+    circle at calc(100% - 16em) calc(100% - 4em),
+    transparent 30em,
+    #000 31em,
+    rgba(0, 0, 0, 0.5) 42em,
+    transparent 64em
+  );
+}
+
+/* Very large and cropped by the right and bottom edges, as in Mercury's
+   art: a 56em dial centered 16em in from the right and 4em up from the
+   bottom. Turned to 25 degrees, the bead (24.9em out from the center)
+   stays in view about 5.5em inside the right edge. */
+.pp-dial {
+  position: absolute;
+  right: -12em;
+  bottom: -24em;
+  width: 56em;
+  aspect-ratio: 1;
+}
+
+.pp-dial b {
+  position: absolute;
+  display: block;
+}
+
+/* The ring the arc runs in, and the arc itself. The track fades in and out
+   over the same 60 degrees at each end (10-70, 200-260) so both tails stop
+   at the same height; the arc stays dark until the track is full. */
+.pp-track,
+.pp-arc {
+  inset: 0;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(
+    closest-side,
+    transparent 85.5%,
+    #000 86%,
+    #000 92%,
+    transparent 92.5%
+  );
+  mask: radial-gradient(
+    closest-side,
+    transparent 85.5%,
+    #000 86%,
+    #000 92%,
+    transparent 92.5%
+  );
+}
+
+.pp-track {
+  background: conic-gradient(
+    from 225deg,
+    rgba(251, 247, 240, 0) 10deg,
+    rgba(251, 247, 240, 0.05) 70deg 200deg,
+    rgba(251, 247, 240, 0) 260deg
+  );
+}
+
+/* Nothing at the start, building to full light at the pointer (160 degrees
+   into the arc, which is the 25-degree setting). */
+.pp-arc {
+  background: conic-gradient(
+    from 225deg,
+    rgba(251, 247, 240, 0) 55deg,
+    rgba(251, 247, 240, 0.08) 82deg,
+    rgba(251, 247, 240, 0.4) 123deg,
+    #fbf7f0 160deg,
+    transparent 160deg
+  );
+  filter: drop-shadow(0 0 0.7em rgba(251, 247, 240, 0.45));
+}
+
+/* A round bright cap where the arc stops: the wrapper turns with the
+   pointer, and the bead sits at the top of it, centered on the arc's band
+   (89% of the radius, so 5.5% in from the edge). */
+.pp-bead {
+  inset: 0;
+  transform: rotate(25deg);
+}
+
+.pp-bead::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 5.5%;
+  width: 5.6%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #fff, #e6e2d8 70%);
+  box-shadow:
+    0 0 1.2em rgba(251, 247, 240, 0.7),
+    0 0 3em rgba(251, 247, 240, 0.25);
+  transform: translate(-50%, -50%);
+}
+
+/* The knob: dark glass with a finely knurled rim and a lit dot that points
+   at the bead. */
+.pp-knob {
+  inset: 31%;
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      circle at 38% 30%,
+      rgba(255, 255, 255, 0.16),
+      rgba(255, 255, 255, 0.03) 62%
+    ),
+    #26302c;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -0.5em 1em rgba(0, 0, 0, 0.35),
+    0 1em 2.4em rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(0, 0, 0, 0.25);
+  transform: rotate(25deg);
+}
+
+.pp-knob::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    rgba(255, 255, 255, 0.07) 0deg 1.5deg,
+    transparent 1.5deg 5deg
+  );
+  -webkit-mask: radial-gradient(closest-side, transparent 86%, #000 88%);
+  mask: radial-gradient(closest-side, transparent 86%, #000 88%);
+}
+
+.pp-knob i {
+  position: absolute;
+  left: 50%;
+  top: 16%;
+  width: 4.5%;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #fbf7f0;
+  box-shadow:
+    0 0 0.7em rgba(251, 247, 240, 0.8),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Team, top left: who the agents work with. The card shows what a case
+   does; this shows the people around it. Overlapping glass discs, one per
+   team, then the agent set a little apart. */
+.pp-team {
+  position: absolute;
+  top: 5.6em;
+  left: 5.6em;
+  z-index: 4;
+}
+
+.pp-faces {
+  display: flex;
+  /* Center, not stretch: the larger agent orb would stretch the role
+     discs into ovals. */
+  align-items: center;
+}
+
+.pp-faces b {
+  display: grid;
+  place-items: center;
+  width: 3.4em;
+  aspect-ratio: 1;
+  margin-right: -0.7em;
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      circle at 38% 30%,
+      rgba(255, 255, 255, 0.16),
+      rgba(255, 255, 255, 0.03) 62%
+    ),
+    #26302c;
+  box-shadow:
+    0 0 0 0.25em #222d29,
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(251, 247, 240, 0.08);
+  flex: none;
+  font-size: 1.1em;
+}
+
+/* Role glyphs: Lucide icons (Cog, Coins, ShoppingCart, BadgeCheck, Scale,
+   TrendingUp, Users, Server; ISC) as masks, because the
+   WorkOS panel strips scripts and may strip inline SVG. */
+.pp-faces b:not(.pp-agent)::before {
+  content: "";
+  width: 1.35em;
+  aspect-ratio: 1;
+  background: rgba(251, 247, 240, 0.78);
+  -webkit-mask: var(--pp-icon) center / contain no-repeat;
+  mask: var(--pp-icon) center / contain no-repeat;
+}
+
+.pp-ops {
+  --pp-icon: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.25%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M11 10.27 7 3.34%22%3E%3C/path%3E%3Cpath d=%22m11 13.73-4 6.93%22%3E%3C/path%3E%3Cpath d=%22M12 22v-2%22%3E%3C/path%3E%3Cpath d=%22M12 2v2%22%3E%3C/path%3E%3Cpath d=%22M14 12h8%22%3E%3C/path%3E%3Cpath d=%22m17 20.66-1-1.73%22%3E%3C/path%3E%3Cpath d=%22m17 3.34-1 1.73%22%3E%3C/path%3E%3Cpath d=%22M2 12h2%22%3E%3C/path%3E%3Cpath d=%22m20.66 17-1.73-1%22%3E%3C/path%3E%3Cpath d=%22m20.66 7-1.73 1%22%3E%3C/path%3E%3Cpath d=%22m3.34 17 1.73-1%22%3E%3C/path%3E%3Cpath d=%22m3.34 7 1.73 1%22%3E%3C/path%3E%3Ccircle cx=%2212%22 cy=%2212%22 r=%222%22%3E%3C/circle%3E%3Ccircle cx=%2212%22 cy=%2212%22 r=%228%22%3E%3C/circle%3E%3C/svg%3E");
+}
+
+.pp-fin {
+  --pp-icon: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.25%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M13.744 17.736a6 6 0 1 1-7.48-7.48%22%3E%3C/path%3E%3Cpath d=%22M15 6h1v4%22%3E%3C/path%3E%3Cpath d=%22m6.134 14.768.866-.5 2 3.464%22%3E%3C/path%3E%3Ccircle cx=%2216%22 cy=%228%22 r=%226%22%3E%3C/circle%3E%3C/svg%3E");
+}
+
+.pp-pro {
+  --pp-icon: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.25%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22m2.05 2.05 1.099-.028a1 1 0 0 1 1.008.815l2.69 14.347A1 1 0 0 0 7.83 18H18%22%3E%3C/path%3E%3Cpath d=%22M4.563 5h16.435a1 1 0 0 1 .981 1.204l-1.026 6.226A2 2 0 0 1 18.962 14H6.25%22%3E%3C/path%3E%3Ccircle cx=%2218%22 cy=%2220%22 r=%222%22%3E%3C/circle%3E%3Ccircle cx=%228%22 cy=%2220%22 r=%222%22%3E%3C/circle%3E%3C/svg%3E");
+}
+
+.pp-qa {
+  --pp-icon: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.25%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z%22%3E%3C/path%3E%3Cpath d=%22m16 9-5.5 5.5L8 12%22%3E%3C/path%3E%3C/svg%3E");
+}
+
+.pp-law {
+  --pp-icon: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.25%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M12 3v18%22%3E%3C/path%3E%3Cpath d=%22m19 8 3 8a5 5 0 0 1-6 0zV7%22%3E%3C/path%3E%3Cpath d=%22M3 7h1a17 17 0 0 0 8-2 17 17 0 0 0 8 2h1%22%3E%3C/path%3E%3Cpath d=%22m5 8 3 8a5 5 0 0 1-6 0zV7%22%3E%3C/path%3E%3Cpath d=%22M7 21h10%22%3E%3C/path%3E%3C/svg%3E");
+}
+
+.pp-sales {
+  --pp-icon: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.25%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M16 7h6v6%22%3E%3C/path%3E%3Cpath d=%22m22 7-8.5 8.5-5-5L2 17%22%3E%3C/path%3E%3C/svg%3E");
+}
+
+.pp-hr {
+  --pp-icon: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.25%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2%22%3E%3C/path%3E%3Cpath d=%22M16 3.128a4 4 0 0 1 0 7.744%22%3E%3C/path%3E%3Cpath d=%22M22 21v-2a4 4 0 0 0-3-3.87%22%3E%3C/path%3E%3Ccircle cx=%229%22 cy=%227%22 r=%224%22%3E%3C/circle%3E%3C/svg%3E");
+}
+
+.pp-it {
+  --pp-icon: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.25%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Crect width=%2220%22 height=%228%22 x=%222%22 y=%222%22 rx=%222%22 ry=%222%22%3E%3C/rect%3E%3Crect width=%2220%22 height=%228%22 x=%222%22 y=%2214%22 rx=%222%22 ry=%222%22%3E%3C/rect%3E%3Cline x1=%226%22 x2=%226.01%22 y1=%226%22 y2=%226%22%3E%3C/line%3E%3Cline x1=%226%22 x2=%226.01%22 y1=%2218%22 y2=%2218%22%3E%3C/line%3E%3C/svg%3E");
+}
+
+/* The agent sits in the stack like the teams, overlapping them, but as
+   the bright pearl orb from the dial's bead, lit so it reads as the one
+   doing the work alongside them. */
+.pp-faces .pp-agent {
+  position: relative;
+  z-index: 1;
+  background: radial-gradient(circle at 38% 32%, #fff, #e6e2d8 70%);
+  box-shadow:
+    0 0 0 0.25em #222d29,
+    0 0 1.4em rgba(251, 247, 240, 0.5);
+}
+
+.pp-faces .pp-agent i {
+  display: none;
+}
+
+.pp-team p {
+  margin: 0.8em 0 0;
+  font-size: 1.15em;
+  line-height: 1.5;
+  color: rgba(251, 247, 240, 0.45);
+}
+
+@keyframes pp-arrive-turned {
+  from {
+    opacity: 0;
+    transform: translateY(0.4em) rotate(25deg);
+  }
+}
+
+/* Glass card: a case working through its steps. It sits over the rings,
+   left of the dial, so neither covers the other's focal point. */
+.pp-card {
+  position: absolute;
+  left: 5.6em;
+  bottom: 22%;
+  z-index: 4;
+  width: 30em;
+  padding: 1.4em 1.4em 0.6em;
+  border-radius: 1em;
+  background: linear-gradient(
+    180deg,
+    rgba(251, 247, 240, 0.09),
+    rgba(251, 247, 240, 0.04)
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(251, 247, 240, 0.08),
+    0 1.6em 3.2em rgba(0, 0, 0, 0.35);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  font-size: 1.15em;
+}
+
+.pp-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  margin-bottom: 0.9em;
+}
+
+.pp-card-title {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: #fbf7f0;
+}
+
+.pp-pill {
+  padding: 0.2em 0.7em;
+  border-radius: 999px;
+  background: rgba(251, 247, 240, 0.1);
+  color: rgba(251, 247, 240, 0.75);
+  font-size: 0.85em;
+}
+
+.pp-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  padding: 0.7em 0;
+  border-top: 1px solid rgba(251, 247, 240, 0.08);
+  color: rgba(251, 247, 240, 0.45);
+}
+
+.pp-step span {
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-step em {
+  font-style: normal;
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(251, 247, 240, 0.45);
+}
+
+/* Step markers: an empty ring, a filled pearl when done, and a pulsing
+   half-lit ring while waiting on a person. */
+.pp-step i {
+  position: relative;
+  flex: none;
+  width: 0.9em;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(251, 247, 240, 0.3);
+}
+
+.pp-done {
+  color: rgba(251, 247, 240, 0.85);
+}
+
+.pp-done i {
+  background: radial-gradient(circle at 38% 32%, #fff, #e6e2d8 70%);
+  box-shadow: 0 0 0.6em rgba(251, 247, 240, 0.45);
+}
+
+.pp-wait {
+  color: #fbf7f0;
+}
+
+.pp-wait em {
+  color: #fbf7f0;
+}
+
+.pp-wait i {
+  box-shadow: inset 0 0 0 1px rgba(251, 247, 240, 0.8);
+  background: conic-gradient(#fbf7f0 0 50%, transparent 50%);
+  animation: pp-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pp-pulse {
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(251, 247, 240, 0.8),
+      0 0 0.8em rgba(251, 247, 240, 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-wait i {
+    animation: none;
+  }
+}

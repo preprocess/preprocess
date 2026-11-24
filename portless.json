@@ -1,0 +1,11 @@
+{
+  "turbo": false,
+  "apps": {
+    "apps/app": {
+      "name": "app.preprocess"
+    },
+    "apps/api": {
+      "name": "api.preprocess"
+    }
+  }
+}

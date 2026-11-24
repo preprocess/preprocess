@@ -1,0 +1,18 @@
+coverage/
+dist/
+docs/
+node_modules/
+.turbo/
+.wrangler/
+
+
+# Vendored WorkOS widgets client (see apps/app/src/features/workos-client-api/vendor).
+apps/app/src/features/workos-client-api/vendor/
+
+# Vendored Hairline kernel and empty-state figures (see apps/app/src/components/hairline/LICENSE).
+apps/app/src/components/hairline/
+
+# Generated or rewritten by pnpm.
+pnpm-lock.yaml
+pnpm-workspace.yaml
+.kit/

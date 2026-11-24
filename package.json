@@ -1,0 +1,39 @@
+{
+  "name": "preprocess",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "bootstrap": "pnpm install --frozen-lockfile",
+    "build": "turbo run build",
+    "check:boundaries": "node scripts/check-boundaries.ts",
+    "clean": "turbo run clean && rm -rf .turbo",
+    "db:migrate": "pnpm --filter @preprocess/db migrate",
+    "db:seed": "pnpm --filter @preprocess/db seed",
+    "dev": "node scripts/dev.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "kit:link": "node scripts/kit-link.ts",
+    "kit:unlink": "node scripts/kit-link.ts --unlink",
+    "lint": "turbo run lint && pnpm check:boundaries",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "validate": "pnpm format:check && pnpm lint && pnpm typecheck",
+    "wrangler": "pnpm --filter @preprocess/app exec wrangler"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "eslint": "^9.32.0",
+    "globals": "^16.3.0",
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.5",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0",
+    "portless": "0.18.1",
+    "@types/node": "catalog:"
+  }
+}

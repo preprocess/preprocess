@@ -1,0 +1,7 @@
+# Copy to apps/app/.dev.vars and fill in values from the WorkOS dashboard.
+# Never commit .dev.vars.
+
+WORKOS_CLIENT_ID=client_...
+WORKOS_API_KEY=sk_test_...
+WORKOS_COOKIE_PASSWORD=replace-with-openssl-rand-base64-24-output
+WORKOS_REDIRECT_URI=https://app.preprocess.localhost/api/auth/callback

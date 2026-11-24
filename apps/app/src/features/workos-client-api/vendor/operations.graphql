@@ -1,0 +1,1387 @@
+# Vendored from @workos-inc/widgets 1.20.2 (MIT, Copyright (c) 2024 WorkOS),
+# src/api/client-graphql/operations.graphql. Reference for generated.ts.
+# Operations for the WorkOS Client GraphQL API.
+#
+# Add queries and mutations here as widgets migrate off the private Widgets REST
+# API. Run `pnpm generate-graphql` to regenerate `generated.ts`.
+
+# Lightweight health-check query used to smoke-test the GraphQL client wiring.
+query ClientApiStatus {
+  clientApiStatus
+}
+
+# Domain Verification widget operations.
+
+fragment OrganizationDomainFields on OrganizationDomain {
+  id
+  organizationId
+  domain
+  subdomain
+  state
+  verificationPrefix
+  verificationToken
+  nameServer
+  createdAt
+}
+
+# `organizationDomains` is a paginated connection and defaults to `limit: 10`,
+# so callers must page through it to see every domain.
+query ListOrganizationDomains(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+) {
+  organizationDomains(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+  ) {
+    data {
+      ...OrganizationDomainFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+mutation CreateOrganizationDomain($domain: String!) {
+  createOrganizationDomain(domain: $domain) {
+    ...OrganizationDomainFields
+  }
+}
+
+mutation DeleteOrganizationDomain($id: ID!) {
+  deleteOrganizationDomain(id: $id) {
+    ...OrganizationDomainFields
+  }
+}
+
+mutation ReverifyOrganizationDomain($id: ID!) {
+  reverifyOrganizationDomain(id: $id) {
+    ...OrganizationDomainFields
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Mutation results are unions of a success payload plus typed failure variants.
+# We select `__typename` to discriminate and inline-fragment only the variants
+# that carry data the UI needs. Failure variants are deliberately NOT unwrapped
+# for their `message` field: widgets are localized, so the UI maps `__typename`
+# to a translated string rather than rendering server copy. `PasswordPolicy-
+# Violation` is the exception — its structured `violations` describe *which*
+# rule failed and can't be reconstructed from the typename alone.
+# ---------------------------------------------------------------------------
+
+# User Profile / User Security widget operations.
+
+fragment UserFields on User {
+  id
+  email
+  emailVerified
+  firstName
+  lastName
+  profilePictureUrl
+  mfaEnabled
+  mfaLastUsedAt
+  passwordSet
+  passwordLastUsedAt
+  createdAt
+  updatedAt
+}
+
+fragment ConnectedAccountFields on ConnectedAccount {
+  id
+  provider
+  email
+  firstName
+  lastName
+  profilePictureUrl
+  lastLoginAt
+}
+
+fragment PasswordViolationFields on PasswordViolation {
+  code
+  message
+  characterType
+  minimumLength
+  maximumLength
+  allowedSymbols
+  breachOccurrences
+  strengthWarning
+  strengthSuggestions
+}
+
+query Me {
+  me {
+    ...UserFields
+    connectedAccounts {
+      ...ConnectedAccountFields
+    }
+  }
+}
+
+# Environment-level auth configuration: which methods to offer at all.
+query AuthenticationSettings {
+  authenticationSettings {
+    mfaEnabled
+    mfaRequired
+    passkeyAuthEnabled
+    passwordAuthEnabled
+    passwordPolicy {
+      minimumLength
+      minimumStrength
+      rejectsBreachedPasswords
+      requiresLowercase
+      requiresNumber
+      requiresSymbol
+      requiresUppercase
+    }
+  }
+}
+
+query Passkeys {
+  passkeys {
+    id
+    createdAt
+    updatedAt
+    lastVerifiedAt
+  }
+}
+
+mutation UpdateProfile($input: UpdateProfileInput!) {
+  updateProfile(input: $input) {
+    __typename
+    ... on ProfileUpdated {
+      user {
+        ...UserFields
+      }
+    }
+  }
+}
+
+mutation SendVerificationCode {
+  sendVerificationCode {
+    __typename
+    ... on VerificationCodeSent {
+      authenticationChallengeId
+      expiresAt
+    }
+  }
+}
+
+mutation VerifyCurrentEmail($input: VerifyCurrentEmailInput!) {
+  verifyCurrentEmail(input: $input) {
+    __typename
+    ... on CurrentEmailVerified {
+      elevatedAccessToken
+      expiresAt
+    }
+  }
+}
+
+mutation SendEmailChange($input: SendEmailChangeInput!) {
+  sendEmailChange(input: $input) {
+    __typename
+    ... on EmailChangeSent {
+      expiresAt
+    }
+  }
+}
+
+mutation ConfirmEmailChange($input: ConfirmEmailChangeInput!) {
+  confirmEmailChange(input: $input) {
+    __typename
+    ... on EmailChangeConfirmed {
+      elevatedAccessToken
+      expiresAt
+      user {
+        ...UserFields
+      }
+    }
+  }
+}
+
+mutation CreatePassword($input: CreatePasswordInput!) {
+  createPassword(input: $input) {
+    __typename
+    ... on PasswordCreated {
+      success
+    }
+    ... on PasswordPolicyViolation {
+      code
+      message
+      violations {
+        ...PasswordViolationFields
+      }
+    }
+  }
+}
+
+mutation UpdatePassword($input: UpdatePasswordInput!) {
+  updatePassword(input: $input) {
+    __typename
+    ... on PasswordUpdated {
+      success
+    }
+    ... on PasswordPolicyViolation {
+      code
+      message
+      violations {
+        ...PasswordViolationFields
+      }
+    }
+  }
+}
+
+mutation EnrollTotp($input: EnrollTotpInput!) {
+  enrollTotp(input: $input) {
+    __typename
+    ... on TotpFactor {
+      authenticationChallengeId
+      authenticationFactorId
+      secret
+      uri
+      qrCode
+    }
+  }
+}
+
+mutation VerifyTotp($input: VerifyTotpInput!) {
+  verifyTotp(input: $input) {
+    __typename
+    ... on TotpVerified {
+      success
+    }
+  }
+}
+
+mutation RemoveMfaFactor($input: RemoveMfaFactorInput!) {
+  removeMfaFactor(input: $input) {
+    __typename
+    ... on MfaFactorRemoved {
+      success
+    }
+  }
+}
+
+# User Sessions widget operations.
+
+fragment SessionFields on Session {
+  id
+  isCurrent
+  ipAddress
+  userAgent
+  organizationId
+  lastActivityAt
+  createdAt
+  updatedAt
+  state {
+    tag
+    expiresAt
+  }
+  currentLocation {
+    cityName
+    countryISOCode
+  }
+}
+
+query Sessions {
+  sessions {
+    ...SessionFields
+  }
+}
+
+mutation RevokeSession($input: RevokeSessionInput!) {
+  revokeSession(input: $input) {
+    __typename
+    ... on SessionRevoked {
+      session {
+        ...SessionFields
+      }
+    }
+  }
+}
+
+mutation RevokeAllSessions($input: RevokeAllSessionsInput) {
+  revokeAllSessions(input: $input) {
+    __typename
+    ... on AllSessionsRevoked {
+      success
+    }
+  }
+}
+
+# Users Management widget operations.
+
+fragment OrganizationMemberFields on OrganizationMember {
+  id
+  email
+  emailVerified
+  firstName
+  lastName
+  profilePictureUrl
+  status
+  lastActivityAt
+  createdAt
+  actions
+  isCurrentUser
+  isDirectoryManaged
+  roles {
+    slug
+    name
+  }
+}
+
+fragment OrganizationInvitationFields on OrganizationInvitation {
+  id
+  email
+  status
+  roleSlug
+  expiresAt
+  createdAt
+}
+
+fragment RoleFields on Role {
+  id
+  slug
+  name
+  description
+  isDefault
+  createdAt
+  updatedAt
+}
+
+query ListOrganizationMemberships(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+  $roleSlug: String
+  $search: String
+) {
+  organizationMemberships(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+    roleSlug: $roleSlug
+    search: $search
+  ) {
+    data {
+      ...OrganizationMemberFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+# Replaces both `roles` and `roles-and-config`: `multipleRolesEnabled` is the
+# config half the widget needs to decide between single- and multi-role UI.
+query ListRoles {
+  roles {
+    multipleRolesEnabled
+    roles {
+      ...RoleFields
+    }
+  }
+}
+
+mutation InviteUser($input: InviteUserInput!) {
+  inviteUser(input: $input) {
+    __typename
+    ... on UserInvited {
+      invitation {
+        ...OrganizationInvitationFields
+      }
+    }
+  }
+}
+
+mutation UpdateMemberRole($input: UpdateMemberRoleInput!) {
+  updateMemberRole(input: $input) {
+    __typename
+    ... on MemberRoleUpdated {
+      member {
+        ...OrganizationMemberFields
+      }
+    }
+    ... on RoleNotFound {
+      roleSlugs
+    }
+  }
+}
+
+mutation RemoveMember($input: RemoveMemberInput!) {
+  removeMember(input: $input) {
+    __typename
+    ... on MemberRemoved {
+      userId
+    }
+  }
+}
+
+mutation ResendInvitation($input: ResendInvitationInput!) {
+  resendInvitation(input: $input) {
+    __typename
+    ... on InvitationResent {
+      invitation {
+        ...OrganizationInvitationFields
+      }
+    }
+  }
+}
+
+mutation RevokeInvitation($input: RevokeInvitationInput!) {
+  revokeInvitation(input: $input) {
+    __typename
+    ... on InvitationRevoked {
+      invitation {
+        ...OrganizationInvitationFields
+      }
+    }
+  }
+}
+
+# Organization Switcher widget operations.
+
+query ListUserOrganizations {
+  organizations {
+    id
+    name
+    isCurrent
+  }
+}
+
+# Directory Sync widget operations.
+
+fragment DirectoryFields on Directory {
+  id
+  name
+  organizationId
+  externalKey
+  state
+  type
+  lastSyncRunAt
+  metadata {
+    groups
+    users {
+      active
+    }
+  }
+  createdAt
+  updatedAt
+}
+
+query ListDirectoryConnections(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+  $search: String
+) {
+  directoryConnections(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+    search: $search
+  ) {
+    data {
+      ...DirectoryFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+query GetDirectoryConnection($id: ID!) {
+  directoryConnection(id: $id) {
+    ...DirectoryFields
+  }
+}
+
+# Admin Portal SSO Connection widget operations.
+
+fragment ConnectionFields on Connection {
+  id
+  name
+  organizationId
+  type
+  providerTag
+  state
+  setupComplete
+  lastSession {
+    id
+    createdAt
+    state
+  }
+  latestExpiringCertificate {
+    id
+    notAfter
+  }
+  latestExpiredCertificate {
+    id
+    notAfter
+  }
+  createdAt
+  updatedAt
+}
+
+query ListSsoConnections {
+  ssoConnections {
+    ...ConnectionFields
+  }
+}
+
+query GetSsoConnection($id: ID!) {
+  ssoConnection(id: $id) {
+    ...ConnectionFields
+  }
+}
+
+# Pipes / Pipes Admin widget operations.
+
+fragment DataProviderConfigFieldFields on DataProviderConfigField {
+  key
+  label
+  required
+  scope
+  description
+  example
+  pattern
+  patternFlags
+  order
+  secret
+  default
+}
+
+fragment DataProviderFields on DataProvider {
+  id
+  slug
+  name
+  description
+  integrationType
+  authMethods
+  credentialsType
+  scopes
+  state
+  enabled
+  iconSlug
+  iconUrl
+  iconDarkUrl
+  capabilities {
+    canAddConnection
+    addConnectionMethods
+  }
+  configFields {
+    ...DataProviderConfigFieldFields
+  }
+  config {
+    name
+    value
+  }
+  createdAt
+  updatedAt
+}
+
+fragment DataProviderConnectionFields on DataProviderConnection {
+  id
+  dataProviderId
+  dataProviderSlug
+  connectionRole
+  accountIdentifier
+  accountDisplayName
+  authMethod
+  scopes
+  state
+  availability
+  capabilities {
+    canReauthorize
+    canUpdateCredentials
+  }
+  apiKeyLast4
+  clientId
+  clientSecretLast4
+  config {
+    name
+    value
+  }
+  userId
+  organizationId
+  createdAt
+  updatedAt
+}
+
+query ListDataProviders(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+) {
+  dataProviders(after: $after, before: $before, limit: $limit, order: $order) {
+    data {
+      ...DataProviderFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+query ListDataProviderConnections(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+) {
+  dataProviderConnections(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+  ) {
+    data {
+      ...DataProviderConnectionFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+# Connects (or reconnects) a provider whose `authMethods` include `api_key`.
+# OAuth providers go through `CreateDataProviderAuthorization` instead.
+mutation CreateDataProviderConnection(
+  $input: CreateDataProviderConnectionInput!
+) {
+  createDataProviderConnection(input: $input) {
+    ...DataProviderConnectionFields
+  }
+}
+
+mutation DeleteDataProviderConnection($id: ID!) {
+  deleteDataProviderConnection(id: $id)
+}
+
+mutation SetDataProviderEnabled($input: SetDataProviderEnabledInput!) {
+  setDataProviderEnabled(input: $input) {
+    ...DataProviderFields
+  }
+}
+
+# Pipes OAuth authorization + organization-owned providers.
+
+fragment DataProviderAuthorizationResultFields on CreateDataProviderAuthorizationResult {
+  __typename
+  ... on DataProviderAuthorization {
+    url
+    state
+    redirectToken
+    handoffToken
+  }
+  ... on DataProviderAuthorizationUnavailable {
+    message
+  }
+  ... on DataProviderConfigInvalid {
+    message
+  }
+}
+
+mutation CreateDataProviderAuthorization(
+  $input: CreateDataProviderAuthorizationInput!
+) {
+  createDataProviderAuthorization(input: $input) {
+    ...DataProviderAuthorizationResultFields
+  }
+}
+
+mutation CreateOrganizationDataProviderAuthorization(
+  $input: CreateOrganizationDataProviderAuthorizationInput!
+) {
+  createOrganizationDataProviderAuthorization(input: $input) {
+    ...DataProviderAuthorizationResultFields
+  }
+}
+
+# Poll with the server-generated `state` returned by the authorization mutation.
+query DataProviderAuthorizationStatus($dataProviderId: ID!, $state: String!) {
+  dataProviderAuthorizationStatus(
+    dataProviderId: $dataProviderId
+    state: $state
+  ) {
+    state
+    connecting
+  }
+}
+
+mutation ConnectDataProviderWithClientCredentials(
+  $input: ConnectDataProviderWithClientCredentialsInput!
+) {
+  connectDataProviderWithClientCredentials(input: $input) {
+    __typename
+    ... on DataProviderConnected {
+      connection {
+        ...DataProviderConnectionFields
+      }
+    }
+    ... on DataProviderAuthMethodUnsupported {
+      authMethod
+      supportedAuthMethods
+    }
+    ... on DataProviderConnectionAuthMethodConflict {
+      existingAuthMethod
+    }
+    ... on DataProviderConfigInvalid {
+      message
+    }
+  }
+}
+
+fragment DataProviderConfigurationFields on DataProviderConfiguration {
+  dataProviderId
+  dataProviderSlug
+  organizationId
+  enabled
+  hasCredentials
+  scopes
+  availableScopes
+  config {
+    name
+    value
+  }
+  updatedAt
+}
+
+mutation SetDataProviderConfiguration(
+  $input: SetDataProviderConfigurationInput!
+) {
+  setDataProviderConfiguration(input: $input) {
+    __typename
+    ... on DataProviderConfiguration {
+      ...DataProviderConfigurationFields
+    }
+    ... on DataProviderConfigInvalid {
+      message
+    }
+  }
+}
+
+query ListOrganizationDataProviders(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+) {
+  organizationDataProviders(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+  ) {
+    data {
+      ...OrganizationDataProviderFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+fragment OrganizationDataProviderFields on OrganizationDataProvider {
+  id
+  slug
+  name
+  description
+  integrationType
+  authMethods
+  credentialsType
+  scopes
+  defaultScopes
+  availableScopes
+  state
+  enabled
+  disabledSource
+  configured
+  hasCredentials
+  iconSlug
+  iconUrl
+  iconDarkUrl
+  credentials {
+    clientId
+    credentialsType
+    hasCredentials
+    redactedClientSecret
+    redirectUri
+  }
+  capabilities {
+    canConfigure
+    canConnect
+    canDisconnect
+    canReauthorize
+    canUpdateCredentials
+    canAddConnection
+    addConnectionMethods
+  }
+  configFields {
+    ...DataProviderConfigFieldFields
+  }
+  config {
+    name
+    value
+  }
+  connection {
+    ...DataProviderConnectionFields
+  }
+  connectedAccounts {
+    ...DataProviderConnectionFields
+  }
+  createdAt
+  updatedAt
+}
+
+# Organization-owned (shared) connection management for Pipes Admin.
+
+mutation SetOrganizationDataProviderConfiguration(
+  $input: SetOrganizationDataProviderConfigurationInput!
+) {
+  setOrganizationDataProviderConfiguration(input: $input) {
+    __typename
+    ... on DataProviderConfiguration {
+      ...DataProviderConfigurationFields
+    }
+    ... on DataProviderConfigInvalid {
+      message
+    }
+  }
+}
+
+mutation CreateOrganizationDataProviderConnection(
+  $input: CreateOrganizationDataProviderConnectionInput!
+) {
+  createOrganizationDataProviderConnection(input: $input) {
+    ...DataProviderConnectionFields
+  }
+}
+
+mutation ConnectOrganizationDataProviderWithClientCredentials(
+  $input: ConnectOrganizationDataProviderWithClientCredentialsInput!
+) {
+  connectOrganizationDataProviderWithClientCredentials(input: $input) {
+    __typename
+    ... on DataProviderConnected {
+      connection {
+        ...DataProviderConnectionFields
+      }
+    }
+    ... on DataProviderAuthMethodUnsupported {
+      authMethod
+      supportedAuthMethods
+    }
+    ... on DataProviderConnectionAuthMethodConflict {
+      existingAuthMethod
+    }
+    ... on DataProviderConfigInvalid {
+      message
+    }
+  }
+}
+
+mutation DeleteOrganizationDataProviderConnection($id: ID!) {
+  deleteOrganizationDataProviderConnection(id: $id)
+}
+
+fragment DataProviderConnectionLabelResultFields on UpdateDataProviderConnectionLabelResult {
+  connection {
+    ...DataProviderConnectionFields
+  }
+  warnings {
+    code
+    message
+  }
+}
+
+mutation UpdateDataProviderConnectionLabel(
+  $input: UpdateDataProviderConnectionLabelInput!
+) {
+  updateDataProviderConnectionLabel(input: $input) {
+    ...DataProviderConnectionLabelResultFields
+  }
+}
+
+mutation UpdateOrganizationDataProviderConnectionLabel(
+  $input: UpdateDataProviderConnectionLabelInput!
+) {
+  updateOrganizationDataProviderConnectionLabel(input: $input) {
+    ...DataProviderConnectionLabelResultFields
+  }
+}
+
+# Passkey management (User Security widget).
+
+mutation RegisterPasskey($input: RegisterPasskeyInput!) {
+  registerPasskey(input: $input) {
+    __typename
+    ... on PasskeyRegistrationOptions {
+      challengeId
+      options
+    }
+    ... on ElevatedAccessTokenExpired {
+      message
+    }
+    ... on ElevatedAccessTokenInvalid {
+      message
+    }
+  }
+}
+
+mutation VerifyPasskey($input: VerifyPasskeyInput!) {
+  verifyPasskey(input: $input) {
+    __typename
+    ... on PasskeyVerified {
+      success
+    }
+    ... on PasskeyChallengeNotFound {
+      _placeholder
+    }
+    ... on PasskeyVerificationFailed {
+      _placeholder
+    }
+    ... on ElevatedAccessTokenExpired {
+      message
+    }
+    ... on ElevatedAccessTokenInvalid {
+      message
+    }
+  }
+}
+
+mutation DeletePasskey($input: DeletePasskeyInput!) {
+  deletePasskey(input: $input) {
+    __typename
+    ... on PasskeyDeleted {
+      success
+    }
+    ... on PasskeyNotFound {
+      _placeholder
+    }
+    ... on ElevatedAccessTokenExpired {
+      message
+    }
+    ... on ElevatedAccessTokenInvalid {
+      message
+    }
+  }
+}
+
+# Admin Portal handoff links (SSO, Domain Verification, Audit Log Streaming).
+
+mutation CreateAdminPortalLink($intent: AdminPortalLinkIntent!) {
+  createAdminPortalLink(intent: $intent) {
+    link
+    intent
+    expiresAt
+  }
+}
+
+# Audit Log Streaming widget.
+
+query AuditLogStream {
+  auditLogStream {
+    id
+    auditLogTrailId
+    type
+    state
+    errorMessage
+    lastSyncedEventId
+  }
+}
+
+# Environment branding + AuthKit settings (replaces `GET /_widgets/settings`).
+
+query Branding {
+  branding {
+    displayName
+    logoLightPath
+    logoDarkPath
+    logoLightIconPath
+    logoDarkIconPath
+  }
+}
+
+query AuthKitSettings {
+  authkitSettings {
+    origin
+  }
+}
+
+# Permissions (paginated + searchable).
+
+query ListPermissions(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+  $search: String
+) {
+  permissions(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+    search: $search
+  ) {
+    data {
+      id
+      slug
+      name
+      description
+      system
+      createdAt
+      updatedAt
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+# Permissions that can be granted to API keys of the given owner type
+# (organization or user), as offered by the API-key permission picker.
+
+query ListApiKeyPermissions(
+  $apiKeyOwnerType: ApiKeyOwnerType!
+  $after: String
+  $before: String
+  $limit: Int
+  $search: String
+) {
+  permissions(
+    filter: { apiKeyOwnerType: $apiKeyOwnerType, heldByCaller: true }
+    after: $after
+    before: $before
+    limit: $limit
+    search: $search
+  ) {
+    data {
+      id
+      slug
+      name
+      description
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+# Single domain read (e.g. polling verification state after reverify).
+
+query GetOrganizationDomain($id: ID!) {
+  organizationDomain(id: $id) {
+    ...OrganizationDomainFields
+  }
+}
+
+# The organization's shared connections as any active member sees them
+# (replaces `GET /_widgets/DataIntegrations/shared-connections`).
+
+fragment SharedDataProviderFields on SharedDataProvider {
+  id
+  slug
+  name
+  description
+  integrationType
+  iconSlug
+  iconUrl
+  iconDarkUrl
+  connectedAccounts {
+    id
+    dataProviderId
+    dataProviderSlug
+    authMethod
+    connectionRole
+    state
+    availability
+    createdAt
+    updatedAt
+  }
+  createdAt
+  updatedAt
+}
+
+query ListSharedDataProviders(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+  $supportsMultipleConnections: Boolean
+) {
+  sharedDataProviders(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+    supportsMultipleConnections: $supportsMultipleConnections
+  ) {
+    data {
+      ...SharedDataProviderFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+# The organization's policy configuration of each member-connectable provider
+# (replaces `GET /_widgets/DataIntegrations/configurations`).
+
+fragment ConfigurableDataProviderFields on ConfigurableDataProvider {
+  id
+  slug
+  name
+  description
+  integrationType
+  authMethods
+  credentialsType
+  scopes
+  defaultScopes
+  availableScopes
+  state
+  enabled
+  iconSlug
+  iconUrl
+  iconDarkUrl
+  credentials {
+    clientId
+    credentialsType
+    hasCredentials
+    redactedClientSecret
+    redirectUri
+  }
+  configFields {
+    ...DataProviderConfigFieldFields
+  }
+  config {
+    name
+    value
+  }
+  createdAt
+  updatedAt
+}
+
+query ListConfigurableDataProviders(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+) {
+  configurableDataProviders(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+  ) {
+    data {
+      ...ConfigurableDataProviderFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# API Keys
+# ---------------------------------------------------------------------------
+
+fragment OrganizationApiKeyFields on OrganizationApiKey {
+  id
+  name
+  obfuscatedValue
+  permissions
+  lastUsedAt
+  expiresAt
+  createdAt
+  updatedAt
+}
+
+fragment UserApiKeyFields on UserApiKey {
+  id
+  name
+  obfuscatedValue
+  permissions
+  lastUsedAt
+  expiresAt
+  createdAt
+  updatedAt
+  owner {
+    id
+    email
+    firstName
+    lastName
+    displayName
+  }
+}
+
+query ListOrganizationApiKeys(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+  $search: String
+) {
+  organizationApiKeys(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+    search: $search
+  ) {
+    data {
+      ...OrganizationApiKeyFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+query ListUserApiKeys(
+  $after: String
+  $before: String
+  $limit: Int
+  $order: PaginationOrder
+  $search: String
+) {
+  userApiKeys(
+    after: $after
+    before: $before
+    limit: $limit
+    order: $order
+    search: $search
+  ) {
+    data {
+      ...UserApiKeyFields
+    }
+    listMetadata {
+      after
+      before
+    }
+  }
+}
+
+mutation CreateOrganizationApiKey($input: CreateApiKeyInput!) {
+  createOrganizationApiKey(input: $input) {
+    __typename
+    ... on OrganizationApiKeyCreated {
+      value
+      apiKey {
+        ...OrganizationApiKeyFields
+      }
+    }
+    ... on ApiKeyPermissionsNotHeld {
+      message
+      unheldPermissions
+    }
+    ... on ApiKeyPermissionsUnsupportedForToken {
+      message
+      requestedPermissions
+    }
+    ... on InvalidApiKeyExpiration {
+      message
+    }
+    ... on InvalidApiKeyName {
+      message
+    }
+    ... on InvalidApiKeyPermissions {
+      message
+      invalidPermissions
+    }
+  }
+}
+
+mutation CreateUserApiKey($input: CreateApiKeyInput!) {
+  createUserApiKey(input: $input) {
+    __typename
+    ... on UserApiKeyCreated {
+      value
+      apiKey {
+        ...UserApiKeyFields
+      }
+    }
+    ... on ApiKeyPermissionsNotHeld {
+      message
+      unheldPermissions
+    }
+    ... on ApiKeyPermissionsUnsupportedForToken {
+      message
+      requestedPermissions
+    }
+    ... on InvalidApiKeyExpiration {
+      message
+    }
+    ... on InvalidApiKeyName {
+      message
+    }
+    ... on InvalidApiKeyPermissions {
+      message
+      invalidPermissions
+    }
+  }
+}
+
+mutation ExpireOrganizationApiKey($input: ExpireApiKeyInput!) {
+  expireOrganizationApiKey(input: $input) {
+    __typename
+    ... on OrganizationApiKeyExpired {
+      apiKey {
+        ...OrganizationApiKeyFields
+      }
+    }
+    ... on ApiKeyAlreadyExpired {
+      apiKeyId
+    }
+  }
+}
+
+mutation ExpireUserApiKey($input: ExpireApiKeyInput!) {
+  expireUserApiKey(input: $input) {
+    __typename
+    ... on UserApiKeyExpired {
+      apiKey {
+        ...UserApiKeyFields
+      }
+    }
+    ... on ApiKeyAlreadyExpired {
+      apiKeyId
+    }
+  }
+}
+
+mutation DeleteOrganizationApiKey($apiKeyId: ID!) {
+  deleteOrganizationApiKey(apiKeyId: $apiKeyId) {
+    ...OrganizationApiKeyFields
+  }
+}
+
+mutation DeleteUserApiKey($apiKeyId: ID!) {
+  deleteUserApiKey(apiKeyId: $apiKeyId) {
+    ...UserApiKeyFields
+  }
+}

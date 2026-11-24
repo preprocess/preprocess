@@ -1,0 +1,28 @@
+# We are not accepting outside contributions yet (CONTRIBUTING.md). Close pull
+# requests from anyone outside the preprocess organization with a note; issues
+# stay open for bug reports.
+
+name: Close external pull requests
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    if: >-
+      github.event.pull_request.author_association != 'OWNER' &&
+      github.event.pull_request.author_association != 'MEMBER' &&
+      github.event.pull_request.author_association != 'COLLABORATOR' &&
+      github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr close "$PR" --comment "Thank you for taking the time to open this. We are not accepting outside contributions yet, so we are closing this pull request; see CONTRIBUTING.md. Issues are open, and a bug report there is very welcome."

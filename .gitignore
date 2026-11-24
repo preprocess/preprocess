@@ -1,0 +1,27 @@
+node_modules
+.pnpm-store
+.turbo
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.env
+.env.*
+!.env.example
+*.local
+.wrangler
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.output
+dist
+coverage
+.benchmarks
+*.tsbuildinfo
+tmp/
+*.sqlite
+.alchemy
+
+# Local kit tarballs from pnpm kit:link.
+.kit/
