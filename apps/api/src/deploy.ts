@@ -8,8 +8,9 @@ import type { OrgId, Tx } from "@preprocess/db/client";
 import { withOrg } from "@preprocess/db/client";
 import { audit } from "@preprocess/db/audit";
 import { newId } from "@preprocess/db/ids";
-import { agents } from "@preprocess/db/schema/access";
+import { agentGrants, agents, groups } from "@preprocess/db/schema/access";
 import {
+  deploymentGroups,
   deployments,
   secretDeliveries,
   secretGrants,
@@ -145,6 +146,67 @@ const boundSecrets = async (
   return { bound, waiting: declared.filter((name) => !granted.has(name)) };
 };
 
+// The groups a deployment's code names (design doc 06), and those without
+// access to the agent: no grant on it and not Developers. A group without
+// access holds the deployment in waiting, like an ungranted secret, so an
+// agent never runs with one; an unknown slug fails the deploy instead.
+const namedGroups = async (tx: Tx, agentId: string, manifest: Manifest) => {
+  const slugs = manifest.groups ?? [];
+  if (slugs.length === 0) return { named: [], waitingGroups: [] };
+  const named = await tx
+    .select({
+      id: groups.id,
+      slug: groups.slug,
+      isDevelopers: groups.isDevelopers,
+      access: agentGrants.access,
+    })
+    .from(groups)
+    .leftJoin(
+      agentGrants,
+      and(eq(agentGrants.groupId, groups.id), eq(agentGrants.agentId, agentId)),
+    )
+    .where(inArray(groups.slug, slugs));
+  return {
+    named,
+    waitingGroups: named
+      .filter((g) => !g.isDevelopers && g.access === null)
+      .map((g) => g.slug),
+  };
+};
+
+// Whether a live deployment's code names the group (design doc 01, q29): the
+// group, or its access to agentId when given, cannot be removed while so.
+export const groupInUse = async (tx: Tx, groupId: string, agentId?: string) => {
+  const agentIds = agentId
+    ? [agentId]
+    : (
+        await tx
+          .selectDistinct({ agentId: deployments.agentId })
+          .from(deploymentGroups)
+          .innerJoin(
+            deployments,
+            eq(deployments.id, deploymentGroups.deploymentId),
+          )
+          .where(eq(deploymentGroups.groupId, groupId))
+      ).map((r) => r.agentId);
+  for (const id of agentIds) {
+    const live = (await liveDeployments(tx, id)).map((d) => d.id);
+    if (live.length === 0) continue;
+    const [named] = await tx
+      .select({ id: deploymentGroups.deploymentId })
+      .from(deploymentGroups)
+      .where(
+        and(
+          eq(deploymentGroups.groupId, groupId),
+          inArray(deploymentGroups.deploymentId, live),
+        ),
+      )
+      .limit(1);
+    if (named) return true;
+  }
+  return false;
+};
+
 // Brings one deployment's script in line with current grants and values:
 // sets new or changed values, removes revoked ones, records deliveries and
 // audits each (spec 12: which deployment received a secret). Returns what
@@ -162,6 +224,7 @@ export const syncDeployment = async (
     waitingMcp,
     network,
     waitingNetwork,
+    waitingGroups,
     delivered,
   } = await withOrg(env, org, async (tx) => {
     const [deployment] = await tx
@@ -189,10 +252,30 @@ export const syncDeployment = async (
           .where(eq(mcpGrants.agentId, deployment.agentId))
       : [];
     const network = await effectiveNetwork(tx, deployment.agentId);
+    const { named, waitingGroups } = await namedGroups(
+      tx,
+      deployment.agentId,
+      deployment.manifest as Manifest,
+    );
+    await tx
+      .delete(deploymentGroups)
+      .where(eq(deploymentGroups.deploymentId, deploymentId));
+    if (named.length)
+      await tx.insert(deploymentGroups).values(
+        named.map((g) => ({
+          organizationId: org,
+          deploymentId,
+          groupId: g.id,
+          // TODO(step 4): set from the code's approval groups, and require
+          // operator access for them.
+          approves: false,
+        })),
+      );
     return {
       deployment,
       delivered,
       network,
+      waitingGroups,
       waitingNetwork: ((deployment.manifest as Manifest).network ?? []).filter(
         (host) => !permits(network, host),
       ),
@@ -259,13 +342,17 @@ export const syncDeployment = async (
     const status =
       deployment.status === "failed"
         ? "failed"
-        : waiting.length || waitingMcp.length || waitingNetwork.length
+        : waiting.length ||
+            waitingMcp.length ||
+            waitingNetwork.length ||
+            waitingGroups.length
           ? "waiting"
           : "ready";
     const waitingFor: WaitingFor = {
       ...(waiting.length && { secrets: waiting }),
       ...(waitingMcp.length && { mcp: waitingMcp }),
       ...(waitingNetwork.length && { network: waitingNetwork }),
+      ...(waitingGroups.length && { groups: waitingGroups }),
     };
     await tx
       .update(deployments)
@@ -276,6 +363,7 @@ export const syncDeployment = async (
     ...waiting,
     ...waitingMcp.map((slug) => `MCP server ${slug}`),
     ...waitingNetwork.map((host) => `network access to ${host}`),
+    ...waitingGroups.map((slug) => `access for group ${slug}`),
   ];
 };
 
@@ -394,6 +482,18 @@ export const deploy = async (
   const manifest = read.data;
 
   await withOrg(env, org, async (tx) => {
+    const slugs = manifest.groups ?? [];
+    const known = slugs.length
+      ? await tx
+          .select({ slug: groups.slug })
+          .from(groups)
+          .where(inArray(groups.slug, slugs))
+      : [];
+    const unknown = slugs.filter((s) => !known.some((k) => k.slug === s));
+    if (unknown.length)
+      throw new HTTPException(422, {
+        message: `the code names groups this organization does not have: ${unknown.join(", ")}`,
+      });
     await tx.insert(deployments).values({
       id,
       organizationId: org,
