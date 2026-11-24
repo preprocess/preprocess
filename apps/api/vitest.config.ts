@@ -64,13 +64,19 @@ export default defineConfig({
           DB: localRoleUrl(url, "preprocess_app"),
           DB_SYSTEM: localRoleUrl(url, "preprocess_system"),
         },
+        // The API's own fetches go to the model stub, as the runtime's do.
+        outboundService: "model-stub",
         bindings: {
+          MODEL_SERVICE_URL: "http://model-stub.test",
           BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
           AUDIT_SIGNING_KEY: auditKey,
         },
         serviceBindings: {
           LOCAL_USER_WORKER: () => Response.json({ worker: "test" }),
           RUNTIME: "preprocess-runtime-development",
+          // The sandboxed renderer needs Docker; tests pass a stub as
+          // env.PDF_RENDER instead.
+          PDF_RENDER: () => new Response("pdf-render stub", { status: 501 }),
           LOCAL_NAMESPACE: {
             name: "preprocess-namespace-development",
             entrypoint: "Namespace",

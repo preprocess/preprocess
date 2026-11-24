@@ -59,6 +59,7 @@
   "services": [
     { "binding": "LOCAL_USER_WORKER", "service": "hello" },
     { "binding": "RUNTIME", "service": "preprocess-runtime-development" },
+    { "binding": "PDF_RENDER", "service": "preprocess-pdf-render-development" },
     {
       "binding": "LOCAL_NAMESPACE",
       "service": "preprocess-namespace-development",

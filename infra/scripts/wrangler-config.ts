@@ -103,6 +103,7 @@ const configs: Record<string, object> = {
     services: [
       { binding: "LOCAL_USER_WORKER", service: local.userWorker },
       { binding: "RUNTIME", service: local.runtime },
+      { binding: "PDF_RENDER", service: local.pdfRender },
       {
         binding: "LOCAL_NAMESPACE",
         service: local.localNamespace,
@@ -115,6 +116,21 @@ const configs: Record<string, object> = {
     name: local.modelStub,
     main: "src/index.ts",
     ...common,
+  },
+  // Its container builds from the Dockerfile; `wrangler dev` runs it in
+  // Docker.
+  "apps/pdf-render": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.pdfRender,
+    main: "src/index.ts",
+    ...common,
+    containers: [
+      { class_name: "Renderer", image: "./Dockerfile", max_instances: 10 },
+    ],
+    durable_objects: {
+      bindings: [{ name: "RENDERER", class_name: "Renderer" }],
+    },
+    migrations: [{ tag: "v1", new_sqlite_classes: ["Renderer"] }],
   },
   "apps/user-worker": {
     $schema: "node_modules/wrangler/config-schema.json",

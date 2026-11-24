@@ -31,6 +31,9 @@ import {
   signUp,
   testEnv,
 } from "./helpers.ts";
+import worker from "../src/index.ts";
+// The stub's sample invoice page, as a data URL.
+import acmeInvoice from "../../model-stub/fixtures/ocr/samples/acme-invoice.png?inline";
 
 const queued: OutboxMessage[] = [];
 let queueDown = false;
@@ -478,15 +481,14 @@ describe("the outbox", () => {
 });
 
 describe("files and OCR", () => {
-  it("stores an upload under the organization and refuses OCR of a non-image", async () => {
+  const upload = async (
+    bytes: string | Uint8Array,
+    name: string,
+    type: string,
+  ) => {
     const form = new FormData();
-    form.append(
-      "file",
-      new File(["hello"], "note.txt", { type: "text/plain" }),
-    );
-    const response = await (
-      await import("../src/index.ts")
-    ).default.fetch(
+    form.append("file", new File([bytes], name, { type }));
+    const response = await worker.fetch(
       new Request(new URL(`/v1/orgs/${org}/files`, environment.APP_URL), {
         method: "POST",
         headers: { cookie: operator.cookie, origin: environment.APP_URL },
@@ -500,23 +502,24 @@ describe("files and OCR", () => {
       },
     );
     expect(response.status).toBe(201);
-    const file = await response.json<{ id: string; size: number }>();
+    return response.json<{ id: string; size: number }>();
+  };
+
+  it("stores an upload under the organization, and a file joins one case", async () => {
+    const file = await upload("hello", "note.txt", "text/plain");
     expect(file.size).toBe(5);
     expect(
       await (await environment.FILES.get(`${org}/files/${file.id}`))?.text(),
     ).toBe("hello");
     const ocr = await operator.call<{ error: { code: string } }>(
       `/v1/orgs/${org}/ocr`,
-      {
-        body: { file: file.id },
-      },
+      { body: { file: file.id } },
     );
     expect(ocr.status).toBe(415);
     const started = await operator.call<Accepted>(`/v1/orgs/${org}/cases`, {
       body: { agent: "invoices", files: [file.id] },
     });
     expect(started.status).toBe(202);
-    // A file joins one case only.
     expect(
       (
         await operator.call(`/v1/orgs/${org}/cases`, {
@@ -524,5 +527,40 @@ describe("files and OCR", () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  it("reads a page image, and a PDF page by page through the renderer", async () => {
+    const png = Uint8Array.from(atob(acmeInvoice.split(",")[1]!), (c) =>
+      c.charCodeAt(0),
+    );
+    const image = await upload(png, "acme-invoice.png", "image/png");
+    const read = await operator.call<{
+      pages: { index: number; markdown: string; blocks?: unknown[] }[];
+      model: string;
+    }>(`/v1/orgs/${org}/ocr`, { body: { file: image.id, grounding: true } });
+    expect(read.status).toBe(200);
+    expect(read.body.model).toBe("stub-lightonocr");
+    expect(read.body.pages[0]?.markdown).toContain("Invoice 1042");
+    expect(read.body.pages[0]?.blocks?.length).toBeGreaterThan(0);
+
+    const pdf = await upload(
+      "%PDF-1.7 two pages",
+      "invoice.pdf",
+      "application/pdf",
+    );
+    const rendered: Uint8Array[] = [];
+    environment.PDF_RENDER = {
+      renderPdf: (bytes) => {
+        rendered.push(bytes);
+        return Promise.resolve([png, png]);
+      },
+    };
+    const pages = await operator.call<{
+      pages: { index: number; markdown: string }[];
+    }>(`/v1/orgs/${org}/ocr`, { body: { file: pdf.id } });
+    expect(pages.status).toBe(200);
+    expect(new TextDecoder().decode(rendered[0])).toBe("%PDF-1.7 two pages");
+    expect(pages.body.pages.map((p) => p.index)).toEqual([0, 1]);
+    expect(pages.body.pages[1]?.markdown).toContain("Invoice 1042");
   });
 });
