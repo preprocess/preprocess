@@ -69,4 +69,6 @@ export default defineConfig({
     }),
   ],
   resolve: { alias: { zod: require.resolve("zod") } },
+  // The first test pays for loading Pi into a fresh isolate.
+  test: { testTimeout: 30_000 },
 });

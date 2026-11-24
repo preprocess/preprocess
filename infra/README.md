@@ -25,8 +25,10 @@ deliberately and read its changelog first.
 
 A preview stage gets its own API Worker (with the `Counter` Durable Object
 namespace), R2 bucket, queue and consumer, dispatch namespace with the user
-Worker, Hyperdrive config, and PlanetScale Postgres branch `pr-<number>` forked
-from the database's `main`, with `packages/db/migrations` applied and
+Worker, the stub model service (`apps/model-stub`) the API calls for `decide`
+and OCR unless `MODEL_SERVICE_URL` and `MODEL_SERVICE_KEY` name another,
+Hyperdrive config, and PlanetScale Postgres branch `pr-<number>` forked from the
+database's `main`, with `packages/db/migrations` applied and
 `packages/db/seed.sql` imported. Everything is served on workers.dev, so a
 preview needs no DNS. `destroy` removes all of it, the PlanetScale branch
 included. Staging gets the backend once its PlanetScale database exists (build

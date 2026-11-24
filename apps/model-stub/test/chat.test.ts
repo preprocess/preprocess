@@ -21,14 +21,18 @@ describe("chat completions stub", () => {
   it("requires a bearer token", async () => {
     const response = await stub.fetch("https://stub/v1/chat/completions", {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify({ model: "inkling-2-small", messages: [] }),
     });
     expect(response.status).toBe(401);
   });
 
   it("plays a fixture's turns in order", async () => {
     const user = { role: "user", content: "Check stock for SKU A1 please" };
-    const first = await chat({ messages: [user], tools });
+    const first = await chat({
+      model: "inkling-2-small",
+      messages: [user],
+      tools,
+    });
     const body = await first.json<{
       choices: Array<{
         message: {
@@ -41,6 +45,7 @@ describe("chat completions stub", () => {
       arguments: JSON.stringify({ sku: "A1" }),
     });
     const last = await chat({
+      model: "inkling-2-small",
       messages: [
         user,
         {
@@ -65,6 +70,7 @@ describe("chat completions stub", () => {
 
   it("streams in the OpenAI chunk shape", async () => {
     const response = await chat({
+      model: "inkling-2-small",
       messages: [{ role: "user", content: "hello" }],
       stream: true,
     });

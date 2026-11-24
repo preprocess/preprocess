@@ -1,0 +1,27 @@
+{
+  "name": "@preprocess/models",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Client and request contracts for the decision (System One) and OCR model services.",
+  "author": "Preprocess, Inc.",
+  "license": "Elastic-2.0",
+  "type": "module",
+  "exports": {
+    "./contract": "./src/contract.ts",
+    "./client": "./src/client.ts",
+    "./endpoints": "./src/endpoints.ts",
+    "./decide": "./src/decide.ts",
+    "./ocr": "./src/ocr.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "^5.9.3"
+  }
+}

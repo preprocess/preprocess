@@ -30,19 +30,8 @@ const workos =
   existsSync(path.join(import.meta.dirname, "../apps/app/.dev.vars"));
 if (!workos) process.env.PREPROCESS_PREVIEW ??= "true";
 
-// The model stub (doc 07) listens on the fixed address the runtime's
-// MODEL_SERVICE_URL names, outside portless, because Workers reach it by URL.
-const modelStub = spawn("pnpm", ["--filter", "@preprocess/model-stub", "dev"], {
-  stdio: "inherit",
-});
 const apps = spawn("pnpm", ["exec", "portless"], { stdio: "inherit" });
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => {
-    modelStub.kill(signal);
-    apps.kill(signal);
-  });
+  process.on(signal, () => apps.kill(signal));
 }
-apps.on("exit", (code) => {
-  modelStub.kill();
-  process.exit(code ?? 0);
-});
+apps.on("exit", (code) => process.exit(code ?? 0));

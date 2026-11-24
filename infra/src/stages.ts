@@ -60,9 +60,12 @@ export const durableObjects = { COUNTER: "Counter" } as const;
 // runtime per organization, agent and case.
 export const runtimeDurableObjects = { CASE_RUNTIME: "CaseRuntime" } as const;
 
-// The model service the runtime calls. Locally and in previews this is the
-// stub (apps/model-stub); the URL is the only thing that selects it (doc 07).
-export const localModelService = "http://127.0.0.1:8790";
+// Locally the API calls apps/model-stub through its portless URL, the same
+// code path as a real model service. The stub accepts any bearer token.
+export const localModelService = {
+  url: "https://model-stub.preprocess.localhost",
+  key: "development",
+};
 
 export const localDatabaseUrl =
   "postgresql://preprocess:preprocess@127.0.0.1:5432/preprocess_development";

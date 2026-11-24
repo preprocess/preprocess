@@ -11,8 +11,8 @@
   "observability": { "enabled": true },
   "vars": {
     "STAGE": "development",
-    "MODEL_SERVICE_URL": "http://127.0.0.1:8790",
-    "MODEL_SERVICE_KEY": "local",
+    "MODEL_SERVICE_URL": "https://model-stub.preprocess.localhost",
+    "MODEL_SERVICE_KEY": "development",
   },
   "durable_objects": {
     "bindings": [{ "name": "CASE_RUNTIME", "class_name": "CaseRuntime" }],

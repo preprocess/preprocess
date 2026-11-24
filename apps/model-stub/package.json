@@ -4,13 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --port 8790",
+    "dev": "wrangler dev --inspector-port 9239",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "hono": "catalog:"
+    "@preprocess/models": "workspace:*",
+    "@preprocess/sdk": "workspace:*",
+    "hono": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
