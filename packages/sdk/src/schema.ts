@@ -6,6 +6,7 @@ import type {
   FieldKind,
   OptionsRequest,
   OptionsResponse,
+  ApprovalRule,
   Path,
   ReviewRequirement,
   SchemaManifest,
@@ -61,10 +62,16 @@ export type Check = (
 
 type Options = OptionLike[] | ((a: Answers) => OptionLike[]) | Source;
 
+// Approval by a person: true is any operator; a group names who approves,
+// and `when` decides per case or call. `when` runs synchronously.
+export type Approval<X> = true | { group?: string; when?: (x: X) => boolean };
+
 export type FieldOptions = {
   description?: string;
   visible?: (a: Answers) => boolean;
   review?: Review;
+  // Approval of this field's value (a group or list: its whole subtree).
+  approval?: Approval<Answers>;
   invalidates?: Path[];
 };
 
@@ -232,6 +239,24 @@ export const schemaProblems = (root: unknown): string[] => {
   };
   visit(root, "");
   return problems;
+};
+
+export const approvalRule = (approval: Approval<never>): ApprovalRule => ({
+  group: approval === true ? null : (approval.group ?? null),
+  conditional: approval !== true && typeof approval.when === "function",
+});
+
+// Every field approval, by the field's path; list items as "lines[].amount".
+export const fieldApprovals = (root: Group) => {
+  const rules: Array<ApprovalRule & { path: Path }> = [];
+  const visit = (node: Field, path: Path) => {
+    if (node.approval) rules.push({ path, ...approvalRule(node.approval) });
+    for (const [name, value] of Object.entries(node.fields ?? {}))
+      visit(value, child(path, name));
+    if (node.item) visit(node.item, `${path}[]`);
+  };
+  visit(root, "");
+  return rules;
 };
 
 export const serialise = (root: Group): SchemaManifest => {
@@ -506,10 +531,12 @@ const leaves = (
   return [path];
 };
 
+// The agent's approval before completion, when the code declared one.
 export const evaluate = async (
   root: Group,
   request: EvaluateRequest,
   ctx: FunctionContext,
+  completion?: Approval<Answers>,
 ): Promise<EvaluateResponse> => {
   const answers = request.answers ?? {};
   const run = session(root, answers, request.fetched ?? {}, ctx);
@@ -559,6 +586,27 @@ export const evaluate = async (
       if (result.visible) {
         if (typeof review === "function")
           result.review = await track((r) => review(run.accessor(r, path, [])));
+        // The nearest approval on the field or a group or list holding it.
+        // A `when` that throws counts as applying: approvals fail closed.
+        for (const holder of [...chain].reverse()) {
+          const approval = holder.node.approval;
+          if (!approval) continue;
+          const { group } = approvalRule(approval);
+          const when = approval === true ? undefined : approval.when;
+          if (!when) {
+            result.approval = { group };
+            break;
+          }
+          let applies = true;
+          try {
+            applies = Boolean(
+              await track((r) => when(run.accessor(r, holder.path, []))),
+            );
+          } finally {
+            if (applies) result.approval = { group };
+          }
+          if (applies) break;
+        }
         const { options } = node;
         if (Array.isArray(options))
           result.options = { kind: "inline", items: normalise(options) };
@@ -602,7 +650,17 @@ export const evaluate = async (
     else checks.push({ name, ok: false });
   }
 
-  return { fields, checks };
+  let approval: EvaluateResponse["approval"];
+  if (completion) {
+    const { group } = approvalRule(completion);
+    const when = completion === true ? undefined : completion.when;
+    const settled = when
+      ? await settle((r) => when(run.accessor(r, "", [])))
+      : { ok: true as const, value: true };
+    if (!settled.ok || settled.value) approval = { group };
+  }
+
+  return { fields, checks, ...(approval && { approval }) };
 };
 
 const page = (result: SourceResult): OptionsResponse => {

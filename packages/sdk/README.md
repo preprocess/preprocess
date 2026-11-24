@@ -115,6 +115,13 @@ export default agent({
   lists that are searched and paged, never loaded whole.
 - **Groups.** `ctx.waitOn(group, { reason })` and `ctx.tag(group, message)` in a
   tool name groups by slug; only slugs listed in `groups` are allowed.
+- **Approvals.** `approval` on `agent()`, a schema field or `tool()` asks a
+  person to approve before the case completes, the field's value stands, or the
+  tool runs. `true` is any operator; `{ group, when }` names the group (listed
+  in `groups`) and decides per case or call. `when` gets the answers (agent and
+  fields; the agent's needs a schema) or the tool's input, runs synchronously,
+  and counts as applying if it throws. A field approval on a group or list
+  covers everything under it.
 - **Protocol.** The Worker also answers `POST /schema/evaluate` and
   `POST /schema/options`; the manifest carries the static tree.
 
