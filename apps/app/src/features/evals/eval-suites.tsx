@@ -1,10 +1,6 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
 } from "@preprocess/ui/components/loading-button";
@@ -27,6 +23,10 @@ import {
   formatRelative,
 } from "../settings/kit";
 import { RUN_STATUS, formatRate, useOrgJson, type EvalSuite } from "./eval-api";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 const countFormat = new Intl.NumberFormat();
 
@@ -166,7 +166,7 @@ function NewSuiteForm({
   close: () => void;
   onCreate: (input: { name: string; runOnPush: boolean }) => Promise<void>;
 }>) {
-  const nameRef = useRef<InlineValidationHandle>(null);
+  const nameRef = useRef<ValidatedFieldHandle>(null);
   const [name, setName] = useState("");
   const [runOnPush, setRunOnPush] = useState(false);
   const [pending, setPending] = useState(false);
@@ -188,7 +188,7 @@ function NewSuiteForm({
       className="flex flex-col gap-4"
       onSubmit={(event: FormEvent<HTMLFormElement>) => event.preventDefault()}
     >
-      <InlineValidation
+      <ValidatedField
         ref={nameRef}
         autoComplete="off"
         id="eval-suite-name"

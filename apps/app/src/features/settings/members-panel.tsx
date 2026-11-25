@@ -6,10 +6,6 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
@@ -52,6 +48,10 @@ import {
   actionErrorMessage,
   formatDate,
 } from "./kit";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 type Role = "owner" | "admin" | "member";
 
@@ -202,7 +202,7 @@ function InviteDialog({
   allowOwner: boolean;
   onInvited: () => Promise<unknown>;
 }) {
-  const emailRef = useRef<InlineValidationHandle>(null);
+  const emailRef = useRef<ValidatedFieldHandle>(null);
   const sendRef = useRef<LoadingButtonHandle>(null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("member");
@@ -247,7 +247,7 @@ function InviteDialog({
           sendRef.current?.run();
         }}
       >
-        <InlineValidation
+        <ValidatedField
           ref={emailRef}
           autoComplete="off"
           autoFocus

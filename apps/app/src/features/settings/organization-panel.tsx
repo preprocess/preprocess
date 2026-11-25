@@ -3,10 +3,6 @@
 import { Button } from "@preprocess/ui/components/button";
 import { InputCopy } from "@preprocess/ui/components/input-copy";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
@@ -41,6 +37,10 @@ import {
   SettingsPanelMessage,
   actionErrorMessage,
 } from "./kit";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 function validateOrgName(value: string) {
   const result = validateOrganizationName(value);
@@ -57,7 +57,7 @@ function EditOrganizationNameDialog({
   onSaved: (name: string) => void;
 }) {
   const { organizationId } = useAuth();
-  const nameRef = useRef<InlineValidationHandle>(null);
+  const nameRef = useRef<ValidatedFieldHandle>(null);
   const saveRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState(initialName);
   const [pending, setPending] = useState(false);
@@ -90,7 +90,7 @@ function EditOrganizationNameDialog({
         saveRef.current?.run();
       }}
     >
-      <InlineValidation
+      <ValidatedField
         ref={nameRef}
         autoComplete="organization"
         hint="Shown to everyone in this organization."

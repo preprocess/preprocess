@@ -7,6 +7,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@preprocess/ui/components/dialog";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@preprocess/ui/components/field";
 import { Label } from "@preprocess/ui/components/label";
 import {
   AsyncActionAbortError,
@@ -19,9 +25,9 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@preprocess/ui/components/select";
+import { Textarea } from "@preprocess/ui/components/textarea";
 import { useInlineValidation } from "@preprocess/ui/hooks/use-inline-validation";
 import { FileIcon, Plus, XIcon } from "@preprocess/ui/lib/icons";
-import { cn } from "@preprocess/ui/lib/utils";
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useRef, useState, type FormEvent } from "react";
 
@@ -123,8 +129,8 @@ function StartCaseDialog({
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <div className="flex flex-col gap-1.5">
-            <Label>Agent</Label>
+          <Field>
+            <FieldLabel>Agent</FieldLabel>
             <Select disabled={pending} onValueChange={setAgent} value={agent}>
               <SelectTrigger aria-label="Agent" placeholder="Pick an agent" />
               <SelectContent>
@@ -135,32 +141,26 @@ function StartCaseDialog({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={textId}>Text</Label>
-            <textarea
-              aria-describedby={`${textId}-message`}
+          </Field>
+          <Field data-invalid={input.error ? true : undefined}>
+            <FieldLabel htmlFor={textId}>Text</FieldLabel>
+            <Textarea
               aria-invalid={input.error ? true : undefined}
               autoFocus
-              className="min-h-28 w-full resize-y rounded-xl border border-input bg-transparent px-2.5 py-2 text-body outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20"
               disabled={pending}
               id={textId}
               onChange={(event) => setText(event.target.value)}
               placeholder="What should the agent work on?"
               value={text}
             />
-            <span
-              className={cn(
-                "text-body",
-                input.error ? "text-destructive" : "text-muted-foreground",
-              )}
-              id={`${textId}-message`}
-              role={input.error ? "alert" : undefined}
-            >
-              {input.error ??
-                "The agent reads this with the files. Either one is enough."}
-            </span>
-          </div>
+            {input.error ? (
+              <FieldError>{input.error}</FieldError>
+            ) : (
+              <FieldDescription>
+                The agent reads this with the files. Either one is enough.
+              </FieldDescription>
+            )}
+          </Field>
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">
               <Label>Files</Label>
