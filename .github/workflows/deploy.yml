@@ -1,0 +1,161 @@
+# Our cloud's deploy pipeline (spec 16c and PRE-46). Every push to main:
+#
+#   CI -> deploy staging -> Staging smoke test -> production
+#
+# Production config is private, so the last job only asks preprocess/internal
+# to deploy this sha, through the preprocess-deploy GitHub App (Actions: write
+# on that repository only). Internal checks the sha is on main and passed the
+# "Staging smoke test" check before it deploys anything. Rollback lives there:
+#   gh workflow run deploy-preprocess.yml -R preprocess/internal -f rollback=true
+#
+# Until a stage's secrets exist, its job reports "skipped" with the missing
+# names and stays green. v* tags are self-hosted releases and deploy nothing.
+
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+# One push at a time, start to finish, so the smoke test always checks the
+# commit staging is running. A newer push waits (superseded pending pushes are
+# dropped); a running deploy is never cancelled.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  staging:
+    name: Deploy staging
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    outputs:
+      deployed: ${{ steps.deploy.outcome == 'success' }}
+      outputs: ${{ steps.deploy.outputs.outputs }}
+    env:
+      CI: "true"
+      PREPROCESS_REGION: ${{ vars.PREPROCESS_REGION }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PLANETSCALE_API_TOKEN_ID: ${{ secrets.PLANETSCALE_API_TOKEN_ID }}
+      PLANETSCALE_API_TOKEN: ${{ secrets.PLANETSCALE_API_TOKEN }}
+      PLANETSCALE_ORGANIZATION: ${{ secrets.PLANETSCALE_ORGANIZATION }}
+      PLANETSCALE_DATABASE: ${{ secrets.PLANETSCALE_DATABASE }}
+      BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+      AUDIT_SIGNING_KEY: ${{ secrets.AUDIT_SIGNING_KEY }}
+      AUDIT_SIGNING_KEY_ID: ${{ secrets.AUDIT_SIGNING_KEY_ID }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+    steps:
+      - name: Check credentials
+        id: credentials
+        run: |
+          missing=()
+          for name in PREPROCESS_REGION CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID \
+            PLANETSCALE_API_TOKEN_ID PLANETSCALE_API_TOKEN PLANETSCALE_ORGANIZATION \
+            PLANETSCALE_DATABASE BETTER_AUTH_SECRET AUDIT_SIGNING_KEY \
+            AUDIT_SIGNING_KEY_ID EMAIL_FROM; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::notice title=Staging deploy skipped::Not set for the staging environment: ${missing[*]}. See handoffs/PLAT-32/ci-credentials.md."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/checkout@v4
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.credentials.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Deploy staging
+        id: deploy
+        if: steps.credentials.outputs.ready == 'true'
+        run: pnpm --filter @preprocess/infra staging:deploy
+
+  # Its check, "Staging smoke test", is what internal's production deploy
+  # requires. It only runs, and so only passes, after a real staging deploy.
+  smoke:
+    name: Staging smoke test
+    needs: staging
+    if: needs.staging.outputs.deployed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Smoke test staging
+        env:
+          STAGE: staging
+          OUTPUTS: ${{ needs.staging.outputs.outputs }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: pnpm --filter @preprocess/infra smoke
+
+  production:
+    name: Promote to production
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      APP_ID: ${{ vars.DEPLOY_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.DEPLOY_APP_PRIVATE_KEY }}
+    steps:
+      - name: Check credentials
+        id: credentials
+        run: |
+          missing=()
+          [ -n "$APP_ID" ] || missing+=(DEPLOY_APP_ID)
+          [ -n "$APP_PRIVATE_KEY" ] || missing+=(DEPLOY_APP_PRIVATE_KEY)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::notice title=Production promotion skipped::Not set in the production environment: ${missing[*]}. See handoffs/PLAT-32/ci-credentials.md."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A one-hour token that can only start workflows in preprocess/internal.
+      - name: Mint a token for preprocess/internal
+        id: token
+        if: steps.credentials.outputs.ready == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.APP_PRIVATE_KEY }}
+          owner: preprocess
+          repositories: internal
+
+      - name: Start internal's production deploy
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          gh workflow run deploy-preprocess.yml -R preprocess/internal -f sha="$GITHUB_SHA"
+          echo "Production deploy of $GITHUB_SHA requested: https://github.com/preprocess/internal/actions/workflows/deploy-preprocess.yml" >> "$GITHUB_STEP_SUMMARY"

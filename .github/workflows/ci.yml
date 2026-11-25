@@ -5,10 +5,14 @@ on:
   push:
     branches:
       - main
+  # deploy.yml runs these jobs before it deploys a push to main.
+  workflow_call:
 
+# Called from deploy.yml, github.workflow is "Deploy", so that run gets its own
+# group. Only pull requests cancel superseded runs; main's never are.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -21,6 +25,10 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # The migration check compares the branch with its base.
+          # (A string, because a bare 0 is falsy in an expression.)
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -38,6 +46,12 @@ jobs:
 
       - name: Validate workspace
         run: pnpm validate
+
+      # Expand and contract (AGENTS.md): every migration must work with the
+      # code already running when it is applied.
+      - name: Check migrations
+        if: github.event_name == 'pull_request'
+        run: pnpm check:migrations "origin/${{ github.base_ref }}"
 
       - name: Build Workers
         run: pnpm build

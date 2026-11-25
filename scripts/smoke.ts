@@ -1,5 +1,5 @@
 // Checks a deployed stage end to end: Postgres (seeded through Hyperdrive),
-// the Durable Object, the queue writing to R2, and the app Worker. OUTPUTS is the JSON infra/scripts/preview.ts printed.
+// the Durable Object, the queue writing to R2, and the app Worker. OUTPUTS is the JSON infra/scripts/stage.ts printed.
 
 const { api, app } = JSON.parse(process.env.OUTPUTS ?? "{}") as {
   api?: string;
@@ -39,8 +39,8 @@ for (let attempt = 0; attempt < 30 && !done; attempt++) {
 }
 expect(done, "queue consumer wrote the job to R2");
 
-// Deployed stages don't bind the app to the API yet, so check only that its
-// Worker answers.
+// The full sign-in and case flow is infra/scripts/smoke.ts; here, check only
+// that the app Worker answers.
 const page = await fetch(app, { redirect: "manual" });
 console.log(`GET ${app} -> ${page.status}`);
 expect(page.status < 500, "app Worker answers");
