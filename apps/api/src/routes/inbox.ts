@@ -210,7 +210,7 @@ export const inboxRoutes = new OpenAPIHono<{
             message: null,
           })),
           ...proposals.map((m) => ({
-            key: `memory:undefined`,
+            key: `memory:${m.memoryId}`,
             kind: "memory" as const,
             at: m.at.toISOString(),
             case: caseOf(m),

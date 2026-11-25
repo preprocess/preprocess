@@ -20,18 +20,6 @@ function Placeholder({
   );
 }
 
-/** Placeholder: what the agent keeps between cases. */
-export function AgentMemories() {
-  return (
-    <Placeholder
-      description="Facts and rules this agent keeps between cases, learned on a case or added by someone."
-      emptyDescription="Memories the agent learns, or that you add, will show up here."
-      emptyTitle="No memories yet"
-      title="Memories"
-    />
-  );
-}
-
 /** Placeholder: the agent's datasets, training runs and fine-tuned models. */
 export function AgentTraining() {
   return (
