@@ -29,9 +29,11 @@ organization"; it may never override an organization secret.
 
 ## Seeded scenarios
 
-There is no backend yet. In development, inbox, cases, and the case room chat
-load seeded data: `inbox-seed.ts` (reads stick in memory until restart),
-`case-seed.ts`, `agent-seed.ts` and `agent-store.ts`, `platform-store.ts`,
+The inbox reads the API (`inbox-api.ts`) in its `live` state and in every build
+outside dev. Cases and the case room chat have no backend yet. In development,
+the inbox's other states, cases, and the case room chat load seeded data:
+`inbox-seed.ts` (reads stick in memory until restart), `case-seed.ts`,
+`agent-seed.ts` and `agent-store.ts`, `platform-store.ts`,
 `case-room-transcripts.ts`, and the case room's Input files
 (`flue-lab-input-samples.ts`, one of each viewer's formats). Builds outside dev
 serve none.

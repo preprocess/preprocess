@@ -1,13 +1,13 @@
 import { currentScenario } from "../../scenarios/current-scenario";
+import { loadApiInbox, markApiInboxRead } from "./inbox-api";
 import { createInboxStore, type InboxLoad } from "./inbox-seed";
 import type { InboxCounts, MarkReadSelector } from "./notification";
 
 export type { InboxLoad } from "./inbox-seed";
 
-// Seeded records are a development aid; builds outside dev get the empty
-// scenario. The store lives per runtime (server render and browser), so
-// reads reset on a full page load. Swap these for API calls when the backend
-// lands.
+// The "live" scenario, and every build outside dev, read the API. The seeded
+// scenarios are a development aid: their store lives per runtime (server
+// render and browser), so reads reset on a full page load.
 const inboxStore = createInboxStore();
 
 export function resetInboxStore() {
@@ -15,13 +15,15 @@ export function resetInboxStore() {
 }
 
 export function loadInbox(): Promise<InboxLoad> {
-  return Promise.resolve(inboxStore.load(currentScenario().inbox));
+  const scenario = currentScenario().inbox;
+  if (scenario === "live") return loadApiInbox();
+  return Promise.resolve(inboxStore.load(scenario));
 }
 
 export function markInboxRead(
   selector: MarkReadSelector,
 ): Promise<InboxCounts> {
-  return Promise.resolve(
-    inboxStore.markRead(currentScenario().inbox, selector),
-  );
+  const scenario = currentScenario().inbox;
+  if (scenario === "live") return markApiInboxRead({ data: selector });
+  return Promise.resolve(inboxStore.markRead(scenario, selector));
 }

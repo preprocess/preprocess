@@ -27,6 +27,16 @@ export async function apiJson<T>(path: string, init?: RequestInit) {
   return (await response.json()) as T;
 }
 
+/** A /v1 path in the session's active organization. */
+export async function activeOrgPath(path: string) {
+  const session = await apiJson<{
+    session: { activeOrganizationId?: string | null };
+  } | null>("/api/auth/get-session");
+  const organizationId = session?.session.activeOrganizationId;
+  if (!organizationId) throw new Error("No active organization.");
+  return `/v1/orgs/${organizationId}${path}`;
+}
+
 /**
  * GET a /v1 route in the session's active organization. `notFound` is what
  * a 404 returns instead of throwing.
@@ -35,12 +45,7 @@ export async function activeOrgJson<T>(
   path: string,
   options: { notFound?: T } = {},
 ) {
-  const session = await apiJson<{
-    session: { activeOrganizationId?: string | null };
-  } | null>("/api/auth/get-session");
-  const organizationId = session?.session.activeOrganizationId;
-  if (!organizationId) throw new Error("No active organization.");
-  const response = await apiRequest(`/v1/orgs/${organizationId}${path}`);
+  const response = await apiRequest(await activeOrgPath(path));
   if (response.status === 404 && "notFound" in options)
     return options.notFound as T;
   if (!response.ok) throw new Error(`GET ${path}: ${response.status}`);

@@ -4,13 +4,25 @@ export const INBOX_KINDS = [
   "case-update",
   "agent",
   "overdue",
+  "approval",
+  "guardrail",
 ] as const;
 
 export type InboxKind = (typeof INBOX_KINDS)[number];
 
 export type NotificationLink =
   | { readonly kind: "case"; readonly agentId: string; readonly caseId: string }
-  | { readonly kind: "agent"; readonly agentId: string };
+  | { readonly kind: "agent"; readonly agentId: string }
+  /** Where a guardrail request is decided: the agent's settings, or the
+   * organization's guardrails when it covers every agent. */
+  | {
+      readonly kind: "guardrail";
+      readonly requestId: string;
+      readonly agentSlug: string | null;
+    };
+
+/** One labelled fact the reader lists, such as what an approval covers. */
+export type InboxDetail = { readonly label: string; readonly value: string };
 
 export type InboxItem = {
   readonly id: string;
@@ -21,6 +33,7 @@ export type InboxItem = {
   readonly createdAt: string;
   readonly unread: boolean;
   readonly link?: NotificationLink;
+  readonly details?: readonly InboxDetail[];
 };
 
 export type InboxPage = {
@@ -86,6 +99,15 @@ function decodeNotificationLink(value: unknown): NotificationLink {
       return {
         kind: "agent",
         agentId: readString(value.agentId, "InboxItem.link.agentId"),
+      };
+    case "guardrail":
+      return {
+        kind: "guardrail",
+        requestId: readString(value.requestId, "InboxItem.link.requestId"),
+        agentSlug:
+          value.agentSlug === null
+            ? null
+            : readString(value.agentSlug, "InboxItem.link.agentSlug"),
       };
     default:
       throw new InboxContractError("InboxItem.link.kind is invalid.");
@@ -204,6 +226,10 @@ export function inboxKindLabel(kind: InboxKind): string {
       return "Agent";
     case "overdue":
       return "Overdue";
+    case "approval":
+      return "Approval";
+    case "guardrail":
+      return "Guardrail request";
     default: {
       const _exhaustive: never = kind;
       return _exhaustive;
