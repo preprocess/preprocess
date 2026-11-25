@@ -7,8 +7,10 @@
 // creating or upgrading the account's Alchemy state store as it goes:
 //   pnpm --filter @preprocess/infra selfhost:plan selfhost
 //   pnpm --filter @preprocess/infra selfhost:deploy selfhost
-// Only preview stages can be destroyed here. With GITHUB_OUTPUT set, it also
-// writes the outputs there for the PR comment and the smoke test.
+// Only preview stages can be destroyed here, and their R2 buckets are emptied
+// first: R2 refuses to delete a bucket that still holds objects. With
+// GITHUB_OUTPUT set, it also writes the outputs there for the PR comment and
+// the smoke test.
 
 import { appendFileSync } from "node:fs";
 
@@ -16,7 +18,7 @@ import * as Alchemist from "alchemy/Alchemist";
 import * as Effect from "effect/Effect";
 
 import stack from "../alchemy.run.ts";
-import { isPreviewStage, isSelfHostStage } from "../src/stages.ts";
+import { isPreviewStage, isSelfHostStage, names } from "../src/stages.ts";
 
 const [operation, stage = ""] = process.argv.slice(2);
 const selfHost = isSelfHostStage(stage);
@@ -30,6 +32,43 @@ if (!allowed) {
     "usage: tsx scripts/stage.ts deploy <pr-<number>|staging|selfhost[-<name>]> | plan selfhost[-<name>] | destroy pr-<number>",
   );
   process.exit(2);
+}
+
+const emptyBucket = async (bucket: string) => {
+  const objects = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${bucket}/objects`;
+  const headers = {
+    authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+    "content-type": "application/json",
+  };
+  for (;;) {
+    const listed = await fetch(`${objects}?per_page=1000`, { headers });
+    if (listed.status === 404) return;
+    if (!listed.ok) {
+      throw new Error(
+        `listing ${bucket}: ${listed.status} ${await listed.text()}`,
+      );
+    }
+    const { result } = (await listed.json()) as { result: { key: string }[] };
+    if (result.length === 0) return;
+    const deleted = await fetch(objects, {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify(result.map((object) => object.key)),
+    });
+    if (!deleted.ok) {
+      throw new Error(
+        `emptying ${bucket}: ${deleted.status} ${await deleted.text()}`,
+      );
+    }
+    console.error(`emptied ${result.length} objects from ${bucket}`);
+  }
+};
+
+if (operation === "destroy") {
+  const n = names(stage);
+  await Promise.all(
+    [n.bucket, n.logs, n.auditBucket, n.runs, n.bundles].map(emptyBucket),
+  );
 }
 
 const output = await Effect.runPromise(
