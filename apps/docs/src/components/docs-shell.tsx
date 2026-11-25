@@ -9,6 +9,8 @@ import {
   isMacPlatform,
   type CommandMenuItemData,
 } from "@preprocess/ui/components/command-menu";
+import markBlack from "@preprocess/ui/assets/preprocess-icon-b.svg";
+import markWhite from "@preprocess/ui/assets/preprocess-icon-w.svg";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import {
   Sheet,
@@ -16,7 +18,15 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@preprocess/ui/components/sheet";
-import { fontWeights } from "@preprocess/ui/lib/font-weight";
+import {
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from "@preprocess/ui/components/sidebar-menu";
 import {
   BookOpen,
   ChevronRight,
@@ -27,6 +37,7 @@ import {
   SidebarLeftIcon,
   Sun,
 } from "@preprocess/ui/lib/icons";
+import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
 import type { TOCItemType } from "fumadocs-core/toc";
 import { TOCProvider } from "fumadocs-ui/components/toc";
@@ -111,19 +122,7 @@ export function PageLink({
   return <Link {...props} params={{ _splat: url.slice(1) }} to="/$" />;
 }
 
-const rowClass = (active: boolean) =>
-  cn(
-    typeClass("subtitle"),
-    "flex h-9 w-full min-w-0 items-center gap-2 rounded-full px-3 text-left transition-colors",
-    active
-      ? "bg-hover text-foreground"
-      : "text-muted-foreground hover:bg-hover hover:text-foreground",
-  );
-
-const weight = (active: boolean) => ({
-  fontVariationSettings: active ? fontWeights.semibold : fontWeights.normal,
-});
-
+// An API operation's row: its label, with the HTTP method as the row's badge.
 function PageRow({
   item,
   pathname,
@@ -131,28 +130,31 @@ function PageRow({
   item: PageTree.Item;
   pathname: string;
 }) {
-  const active = item.url === pathname;
   const { label, method } = rowLabel(item.name);
   return (
-    <li>
-      <PageLink
-        className={rowClass(active)}
-        style={weight(active)}
-        url={item.url}
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton
+        isActive={item.url === pathname}
+        render={<PageLink url={item.url} />}
       >
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {method ? (
-          <span
-            className={cn(
-              typeClass("micro"),
-              "shrink-0 font-mono text-muted-foreground",
-            )}
-          >
-            {method}
-          </span>
-        ) : null}
-      </PageLink>
-    </li>
+        {label}
+      </SidebarMenuSubButton>
+      {method ? (
+        <SidebarMenuBadge className="top-1 font-mono">
+          {method}
+        </SidebarMenuBadge>
+      ) : null}
+    </SidebarMenuSubItem>
+  );
+}
+
+function folderPages(folder: PageTree.Folder): PageTree.Item[] {
+  return folder.children.flatMap((child) =>
+    child.type === "page"
+      ? [child]
+      : child.type === "folder"
+        ? folderPages(child)
+        : [],
   );
 }
 
@@ -170,54 +172,54 @@ function FolderRow({
     if (current) setOpen(true);
   }, [current]);
   return (
-    <li>
-      <button
-        aria-expanded={open}
-        className={rowClass(false)}
-        onClick={() => setOpen(!open)}
-        type="button"
-      >
-        <span className="min-w-0 flex-1 truncate">{textOf(folder.name)}</span>
+    <SidebarMenuItem>
+      <SidebarMenuButton aria-expanded={open} onClick={() => setOpen(!open)}>
+        {textOf(folder.name)}
+      </SidebarMenuButton>
+      <SidebarMenuBadge>
         <ChevronRight
           className={cn(
-            "shrink-0 transition-transform duration-150",
+            "transition-transform duration-150",
             open && "rotate-90",
           )}
           size={14}
         />
-      </button>
-      {open ? (
-        <ul className="my-1 ml-4 flex flex-col gap-0.5 border-l border-border pl-2">
-          {folder.children.map((child, index) =>
-            child.type === "page" ? (
-              <PageRow item={child} key={child.url} pathname={pathname} />
-            ) : child.type === "folder" ? (
-              <FolderRow folder={child} key={index} pathname={pathname} />
-            ) : null,
-          )}
-        </ul>
-      ) : null}
-    </li>
+      </SidebarMenuBadge>
+      <SidebarMenuSub open={open}>
+        {folderPages(folder).map((page) => (
+          <PageRow item={page} key={page.url} pathname={pathname} />
+        ))}
+      </SidebarMenuSub>
+    </SidebarMenuItem>
   );
 }
 
 function Rows({
+  label,
   nodes,
   pathname,
 }: {
+  label: string;
   nodes: PageTree.Node[];
   pathname: string;
 }) {
   return (
-    <ul className="flex flex-col gap-0.5">
+    <SidebarMenu aria-label={label} className="gap-1">
       {nodes.map((node, index) =>
         node.type === "page" ? (
-          <PageRow item={node} key={node.url} pathname={pathname} />
+          <SidebarMenuItem key={node.url}>
+            <SidebarMenuButton
+              isActive={node.url === pathname}
+              render={<PageLink url={node.url} />}
+            >
+              {textOf(node.name)}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         ) : node.type === "folder" ? (
           <FolderRow folder={node} key={index} pathname={pathname} />
         ) : null,
       )}
-    </ul>
+    </SidebarMenu>
   );
 }
 
@@ -240,22 +242,18 @@ function SidebarBody({ tree }: { tree: PageTree.Root }) {
   const inReference = reference.some((folder) => contains(folder, pathname));
   const referenceUrl = reference[0] ? firstPage(reference[0]) : undefined;
 
+  // The app is pill-shaped; its sidebar rows are rounded, and so are these.
   return (
-    <>
-      <PageLink className="flex h-14 shrink-0 items-center gap-2 px-6" url="/">
-        <img
-          alt=""
-          className="size-5 dark:hidden"
-          src="/brand/favicon-light.svg"
-        />
-        <img
-          alt=""
-          className="hidden size-5 dark:block"
-          src="/brand/favicon-dark.svg"
-        />
+    <ShapeProvider defaultShape="rounded">
+      <PageLink
+        className="flex h-14 shrink-0 items-center gap-2.5 px-6"
+        url="/"
+      >
+        <img alt="" className="size-5 dark:hidden" src={markBlack} />
+        <img alt="" className="hidden size-5 dark:block" src={markWhite} />
         <span
-          className={cn(typeClass("title"), "text-foreground")}
-          style={{ fontVariationSettings: fontWeights.semibold }}
+          className="text-lg text-foreground tracking-[-0.02em]"
+          style={{ fontVariationSettings: '"wght" 450, "opsz" 16' }}
         >
           Preprocess
         </span>
@@ -268,42 +266,51 @@ function SidebarBody({ tree }: { tree: PageTree.Root }) {
           Docs
         </span>
       </PageLink>
-      <nav aria-label="Sections" className="flex flex-col gap-0.5 px-3 pt-4">
-        <PageLink
-          className={rowClass(!inReference)}
-          style={weight(!inReference)}
-          url="/"
-        >
-          <BookOpen className="shrink-0" size={16} />
-          Guides
-        </PageLink>
-        {referenceUrl ? (
-          <PageLink
-            className={rowClass(inReference)}
-            style={weight(inReference)}
-            url={referenceUrl}
-          >
-            <Code className="shrink-0" size={16} />
-            Reference
-          </PageLink>
-        ) : null}
-      </nav>
-      <div className="mx-6 my-4 border-t border-border" />
+      <div className="px-2 pt-4">
+        <SidebarMenu aria-label="Sections" className="gap-1">
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              icon={BookOpen}
+              isActive={!inReference}
+              render={<PageLink url="/" />}
+            >
+              Guides
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          {referenceUrl ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                icon={Code}
+                isActive={inReference}
+                render={<PageLink url={referenceUrl} />}
+              >
+                Reference
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
+        </SidebarMenu>
+      </div>
+      <div className="mx-4 my-4 border-t border-border" />
       <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
         <nav
           aria-label={inReference ? "Reference" : "Guides"}
-          className="w-72 px-3 pb-6"
+          className="w-72 px-2 pb-6"
         >
           {inReference ? (
             reference.map((folder, index) => (
-              <Rows key={index} nodes={folder.children} pathname={pathname} />
+              <Rows
+                key={index}
+                label={textOf(folder.name)}
+                nodes={folder.children}
+                pathname={pathname}
+              />
             ))
           ) : (
-            <Rows nodes={guides} pathname={pathname} />
+            <Rows label="Guides" nodes={guides} pathname={pathname} />
           )}
         </nav>
       </ScrollArea>
-    </>
+    </ShapeProvider>
   );
 }
 
