@@ -29,6 +29,7 @@ import {
   type WriteResult,
 } from "./case-room-state";
 import { CaseRoomApprovals } from "./case-room-approvals";
+import { CaseRoomMemories } from "./case-room-memories";
 import { useCaseWork, type CaseWorkActions } from "./case-work-context";
 
 const semibold = { fontVariationSettings: fontWeights.semibold };
@@ -46,7 +47,9 @@ function who(setBy: string) {
 
 /** Whether the Review view has anything to show. */
 export const hasReview = (room: CaseRoomState) =>
-  room.fields.length > 0 || room.approvals.length > 0;
+  room.fields.length > 0 ||
+  room.approvals.length > 0 ||
+  room.memories.length > 0;
 
 /** Where the case stands, above the fields: a wait, a halt, a failure. */
 export function CaseWorkNotice({
@@ -459,6 +462,7 @@ export function CaseRoomReview() {
           </ul>
         ) : null}
         <CaseRoomApprovals actions={actions} room={room} />
+        <CaseRoomMemories actions={actions} memories={room.memories} />
         {visible.length > 0 ? (
           <section className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">

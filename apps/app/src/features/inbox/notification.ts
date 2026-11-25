@@ -6,12 +6,19 @@ export const INBOX_KINDS = [
   "overdue",
   "approval",
   "guardrail",
+  "memory",
 ] as const;
 
 export type InboxKind = (typeof INBOX_KINDS)[number];
 
 export type NotificationLink =
-  | { readonly kind: "case"; readonly agentId: string; readonly caseId: string }
+  | {
+      readonly kind: "case";
+      readonly agentId: string;
+      readonly caseId: string;
+      /** Opens the case room on its Review view. */
+      readonly view?: "review";
+    }
   | { readonly kind: "agent"; readonly agentId: string }
   /** Where a guardrail request is decided: the agent's settings, or the
    * organization's guardrails when it covers every agent. */
@@ -94,6 +101,7 @@ function decodeNotificationLink(value: unknown): NotificationLink {
         kind: "case",
         agentId: readString(value.agentId, "InboxItem.link.agentId"),
         caseId: readString(value.caseId, "InboxItem.link.caseId"),
+        ...(value.view === "review" ? { view: "review" as const } : {}),
       };
     case "agent":
       return {
@@ -230,6 +238,8 @@ export function inboxKindLabel(kind: InboxKind): string {
       return "Approval";
     case "guardrail":
       return "Guardrail request";
+    case "memory":
+      return "Proposed memory";
     default: {
       const _exhaustive: never = kind;
       return _exhaustive;

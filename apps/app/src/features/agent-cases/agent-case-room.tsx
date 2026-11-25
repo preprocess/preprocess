@@ -71,6 +71,8 @@ export type AgentCaseRoomProps = {
   readonly neighbors?: CaseNeighbors;
   readonly onStatusChange?: (status: CaseStatus) => Promise<unknown>;
   readonly inputSamples?: ReadonlyArray<CaseInputSample>;
+  /** Opens on the Review view instead of Input, as inbox links ask. */
+  readonly initialView?: "review";
   /** The case's fields, answers, checks and thread, and what a person can do. */
   readonly work?: { room: CaseRoomState; actions: CaseWorkActions } | null;
 };
@@ -248,6 +250,7 @@ export function AgentCaseRoom({
   neighbors,
   onStatusChange,
   inputSamples,
+  initialView,
   work = null,
 }: AgentCaseRoomProps) {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -256,7 +259,7 @@ export function AgentCaseRoom({
   const [isChatPanelOpen, setIsChatPanelOpen] = useState(true);
   const [isPanelAnimating, setIsPanelAnimating] = useState(false);
   const [main, setMain] = useState<WorkspacePaneState>({
-    selectedId: INPUT_TAB,
+    selectedId: initialView ?? INPUT_TAB,
     openIds: [],
   });
   const [side, setSide] = useState<WorkspacePaneState | null>(null);

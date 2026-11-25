@@ -18,6 +18,7 @@ import {
   OrbitSparkle,
   ArrowRight,
   BadgeCheck,
+  Brain,
   CheckIcon,
   Clock,
   Folder4,
@@ -58,6 +59,7 @@ const KIND_ICON: Record<InboxKind, KindIcon> = {
   overdue: Clock,
   approval: BadgeCheck,
   guardrail: Shield,
+  memory: Brain,
 };
 
 /** Linked cases by `agentId/caseId`, as the route loads them. */
@@ -261,13 +263,16 @@ function ReaderAction({ item }: Readonly<{ item: InboxItem }>) {
                 agentId: parseAgentId(link.agentId),
                 caseId: parseCaseId(link.caseId),
               }}
+              search={link.view ? { view: link.view } : {}}
               to="/agents/$agentId/cases/$caseId"
             />
           }
           type="button"
           variant="secondary"
         >
-          {item.kind === "approval" ? "Review in case" : "Open case"}
+          {item.kind === "approval" || link.view === "review"
+            ? "Review in case"
+            : "Open case"}
         </Button>
       );
     case "agent":

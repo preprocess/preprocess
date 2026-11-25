@@ -173,5 +173,5 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
-          gh workflow run deploy-preprocess.yml -R preprocess/internal -f sha="$GITHUB_SHA"
+          gh workflow run deploy-preprocess.yml -R preprocess/internal --ref main -f sha="$GITHUB_SHA"
           echo "Production deploy of $GITHUB_SHA requested: https://github.com/preprocess/internal/actions/workflows/deploy-preprocess.yml" >> "$GITHUB_STEP_SUMMARY"
