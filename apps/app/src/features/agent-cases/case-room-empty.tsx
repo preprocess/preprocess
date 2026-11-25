@@ -7,11 +7,7 @@ import {
 } from "@preprocess/ui/components/empty";
 import type { ReactNode } from "react";
 
-import {
-  HourglassArt,
-  LuggageTagArt,
-  ScaleArt,
-} from "../../components/empty-art";
+import { HourglassArt, ScaleArt } from "../../components/empty-art";
 
 import type { INPUT_TAB } from "./case-input-workspace";
 import type { RoomViewId } from "./case-room-tabs";
@@ -28,15 +24,10 @@ export function CaseRoomViewEmpty({ viewId }: { viewId: CaseRoomEmptyViewId }) {
       title = "No review yet";
       description = "Confirm findings and actions the agent extracts.";
       break;
-    case "events":
+    case "run":
       graphic = <HourglassArt />;
-      title = "No events yet";
-      description = "Activity will show up here as this case progresses.";
-      break;
-    case "details":
-      graphic = <LuggageTagArt />;
-      title = "No details yet";
-      description = "Case details will show up here when they are available.";
+      title = "No runs yet";
+      description = "Each run and what happened in it shows up here.";
       break;
     default: {
       const _exhaustive: never = viewId;

@@ -10,7 +10,11 @@ import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { Tooltip } from "@preprocess/ui/components/tooltip";
-import { ChevronLeftIcon, ChevronRightIcon } from "@preprocess/ui/lib/icons";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  InfoIcon,
+} from "@preprocess/ui/lib/icons";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { PageHeader } from "../../components/page-header";
@@ -83,7 +87,12 @@ export function CaseRoomHeader({
   caseItem,
   neighbors,
   onStatusChange,
+  detailsOpen,
+  onToggleDetails,
 }: Readonly<{
+  /** Whether the Details inspector is open; undefined hides its toggle. */
+  detailsOpen?: boolean;
+  onToggleDetails?: () => void;
   agent: AgentSummary | null;
   caseRef: AgentCaseRef;
   caseItem: Case | null;
@@ -107,6 +116,23 @@ export function CaseRoomHeader({
           ) : null}
           {neighbors && neighbors.index > 0 ? (
             <CaseStepper neighbors={neighbors} />
+          ) : null}
+          {detailsOpen !== undefined && onToggleDetails ? (
+            <Tooltip
+              content={detailsOpen ? "Hide details" : "Show details"}
+              side="bottom"
+            >
+              <Button
+                aria-label={detailsOpen ? "Hide details" : "Show details"}
+                aria-pressed={detailsOpen}
+                onClick={onToggleDetails}
+                size="icon-compact"
+                type="button"
+                variant="ghost"
+              >
+                <InfoIcon aria-hidden="true" />
+              </Button>
+            </Tooltip>
           ) : null}
           {caseItem && onStatusChange ? (
             <LoadingButton

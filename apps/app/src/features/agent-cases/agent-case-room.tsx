@@ -47,12 +47,16 @@ import {
   openFileInPaneBackground,
   workspaceActiveIdOf,
 } from "./case-room-tabs";
-import {
-  CaseRoomDetails,
-  CaseRecordContext,
-  useCaseRecord,
-} from "./case-room-details";
+import { CaseRoomDetails, CaseRecordContext } from "./case-room-details";
 import { CaseRoomHeader } from "./case-room-header";
+import { CaseRoomReview } from "./case-room-review";
+import { CaseRoomRun } from "./case-room-run";
+import type { CaseRoomState } from "./case-room-state";
+import {
+  CaseWorkContext,
+  useCaseWork,
+  type CaseWorkActions,
+} from "./case-work-context";
 import type { CaseNeighbors } from "./list-org-cases";
 import type { AgentSummary } from "../agents/agent-store";
 import type { CaseInputSample } from "./flue-lab-input-samples";
@@ -66,6 +70,8 @@ export type AgentCaseRoomProps = {
   readonly neighbors?: CaseNeighbors;
   readonly onStatusChange?: (status: CaseStatus) => Promise<unknown>;
   readonly inputSamples?: ReadonlyArray<CaseInputSample>;
+  /** The case's fields, answers, checks and thread, and what a person can do. */
+  readonly work?: { room: CaseRoomState; actions: CaseWorkActions } | null;
 };
 
 const CHAT_PANEL_SIZE_STORAGE_KEY = "preprocess-agent-case-chat-panel-size";
@@ -141,7 +147,11 @@ function CaseWorkspacePane({
   readonly toolbar?: ReactNode;
 }) {
   const fileTabs = useCaseFileTabs(pane.openIds);
-  const record = useCaseRecord();
+  const room = useCaseWork()?.room;
+  const hasContent = (viewId: CaseRoomEmptyViewId) =>
+    viewId === "review"
+      ? (room?.fields.length ?? 0) > 0
+      : (room?.thread.length ?? 0) > 0;
   const emptyViewId =
     isRoomViewId(pane.selectedId) && pane.selectedId !== INPUT_TAB
       ? pane.selectedId
@@ -203,15 +213,15 @@ function CaseWorkspacePane({
       >
         {visitedEmptyViewsRef.current.map((viewId) => (
           <EmptyPresenceLayer
-            active={viewId === emptyViewId && !(viewId === "details" && record)}
+            active={viewId === emptyViewId && !hasContent(viewId)}
             key={viewId}
           >
             <CaseRoomViewEmpty viewId={viewId} />
           </EmptyPresenceLayer>
         ))}
-        {emptyViewId === "details" && record ? (
+        {emptyViewId && hasContent(emptyViewId) ? (
           <div className="absolute inset-0 flex flex-col">
-            <CaseRoomDetails item={record} />
+            {emptyViewId === "review" ? <CaseRoomReview /> : <CaseRoomRun />}
           </div>
         ) : null}
         <div
@@ -236,7 +246,9 @@ export function AgentCaseRoom({
   neighbors,
   onStatusChange,
   inputSamples,
+  work = null,
 }: AgentCaseRoomProps) {
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const idPrefix = `agent-case-${caseRef.agentId}-${caseRef.caseId}`;
   const chatPanelId = `${idPrefix}-chat-panel`;
   const [isChatPanelOpen, setIsChatPanelOpen] = useState(true);
@@ -486,162 +498,184 @@ export function AgentCaseRoom({
 
   return (
     <CaseRecordContext.Provider value={caseItem}>
-      <div
-        className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
-        data-testid="agent-case-room"
-      >
-        <CaseRoomHeader
-          agent={agent}
-          caseItem={caseItem}
-          caseRef={caseRef}
-          neighbors={neighbors}
-          onStatusChange={onStatusChange}
-        />
-        <ResizablePanelGroup
-          className="min-h-0 flex-1"
-          orientation="horizontal"
+      <CaseWorkContext.Provider value={work}>
+        <div
+          className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
+          data-testid="agent-case-room"
         >
-          <ResizablePanel
-            className="min-h-0 min-w-0 bg-surface-2"
-            id={`${idPrefix}-workspace`}
-            minSize={MIN_WORKSPACE_PANEL_SIZE}
-            suppressHydrationWarning
-          >
-            <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface-2">
-              <CaseInputWorkspace
-                idPrefix={idPrefix}
-                onOpenItem={openFileInFocusedPane}
-                onOpenItemInBackground={openFileInFocusedPaneBackground}
-                onOpenItemInOtherPane={openFileInOtherPane}
-                samples={inputSamples}
-              >
-                {isSplit && side ? (
-                  <ResizablePanelGroup
-                    className="min-h-0 flex-1"
-                    orientation="horizontal"
-                  >
-                    <ResizablePanel className="min-h-0 min-w-0" minSize={160}>
-                      <CaseWorkspacePane
-                        focused={focusedPane === "main"}
-                        idPrefix={`${idPrefix}-main`}
-                        label="Main case views"
-                        name="main"
-                        onCloseFile={(id) => closePaneFile("main", id)}
-                        onFocus={() => setFocusedPane("main")}
-                        onReorderFiles={(ids) =>
-                          setMain((current) => ({ ...current, openIds: ids }))
-                        }
-                        onSelect={(id) => selectTab("main", id)}
-                        onTransferFile={(id, from, index) =>
-                          transferFile(from, "main", id, index)
-                        }
-                        pane={main}
-                      />
-                    </ResizablePanel>
-                    <ResizableHandle aria-label="Resize split panel" />
-                    <ResizablePanel className="min-h-0 min-w-0" minSize={160}>
-                      <CaseWorkspacePane
-                        focused={focusedPane === "side"}
-                        idPrefix={`${idPrefix}-side`}
-                        label="Split case views"
-                        name="side"
-                        onCloseFile={(id) => closePaneFile("side", id)}
-                        onFocus={() => setFocusedPane("side")}
-                        onReorderFiles={(ids) =>
-                          setSide((current) =>
-                            current ? { ...current, openIds: ids } : current,
-                          )
-                        }
-                        onSelect={(id) => selectTab("side", id)}
-                        onTransferFile={(id, from, index) =>
-                          transferFile(from, "side", id, index)
-                        }
-                        pane={side}
-                        toolbar={roomToolbar}
-                      />
-                    </ResizablePanel>
-                  </ResizablePanelGroup>
-                ) : (
-                  <CaseWorkspacePane
-                    focused={false}
-                    idPrefix={`${idPrefix}-main`}
-                    label="Case views"
-                    name="main"
-                    onCloseFile={(id) => closePaneFile("main", id)}
-                    onFocus={() => setFocusedPane("main")}
-                    onReorderFiles={(ids) =>
-                      setMain((current) => ({ ...current, openIds: ids }))
-                    }
-                    onSelect={(id) => selectTab("main", id)}
-                    pane={main}
-                    toolbar={roomToolbar}
-                  />
-                )}
-              </CaseInputWorkspace>
-            </div>
-          </ResizablePanel>
-          <ResizableHandle
-            aria-label="Resize chat panel"
-            onPointerDown={stopPanelAnimation}
+          <CaseRoomHeader
+            agent={agent}
+            caseItem={caseItem}
+            caseRef={caseRef}
+            detailsOpen={caseItem ? isDetailsOpen : undefined}
+            neighbors={neighbors}
+            onStatusChange={onStatusChange}
+            onToggleDetails={() => setIsDetailsOpen((open) => !open)}
           />
-          <ResizablePanel
-            aria-hidden={!isChatPanelOpen}
-            aria-label="Chat"
-            className="h-full min-w-0 overflow-hidden bg-surface-2"
-            collapsedSize={0}
-            collapsible={chatPanelMinSize === 0}
-            data-state={isChatPanelOpen ? "open" : "closed"}
-            defaultSize={DEFAULT_CHAT_PANEL_SIZE}
-            groupResizeBehavior="preserve-pixel-size"
-            id={chatPanelId}
-            inert={!isChatPanelOpen}
-            maxSize="70%"
-            minSize={chatPanelMinSize}
-            onResize={(size) => {
-              if (
-                isClosingRef.current ||
-                isPanelAnimating ||
-                !hasRestoredChatPanelSizeRef.current
-              ) {
-                return;
-              }
-
-              const isOpen = size.inPixels > 0;
-              setIsChatPanelOpen(isOpen);
-              if (isOpen && size.inPixels >= MIN_CHAT_PANEL_SIZE) {
-                lastChatPanelSizeRef.current = size.inPixels;
-                setChatContentWidth(size.inPixels);
-                storeChatPanelSize(size.inPixels);
-              }
-            }}
-            panelRef={chatPanelRef}
-            role="complementary"
-            suppressHydrationWarning
+          <ResizablePanelGroup
+            className="min-h-0 flex-1"
+            orientation="horizontal"
           >
-            <motion.div
-              animate={{ opacity: isChatPanelOpen ? 1 : 0 }}
-              className="h-full min-h-0"
-              initial={false}
-              style={
-                lockChatContentWidth
-                  ? { width: chatContentWidth }
-                  : { width: "100%" }
-              }
-              transition={
-                isChatPanelOpen ? spring.moderate : spring.moderate.exit
-              }
+            <ResizablePanel
+              className="min-h-0 min-w-0 bg-surface-2"
+              id={`${idPrefix}-workspace`}
+              minSize={MIN_WORKSPACE_PANEL_SIZE}
+              suppressHydrationWarning
             >
-              <CaseRoomChat
-                agentId={caseRef.agentId}
-                caseLabel={caseRef.caseId}
+              <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface-2">
+                <CaseInputWorkspace
+                  idPrefix={idPrefix}
+                  onOpenItem={openFileInFocusedPane}
+                  onOpenItemInBackground={openFileInFocusedPaneBackground}
+                  onOpenItemInOtherPane={openFileInOtherPane}
+                  samples={inputSamples}
+                >
+                  {isSplit && side ? (
+                    <ResizablePanelGroup
+                      className="min-h-0 flex-1"
+                      orientation="horizontal"
+                    >
+                      <ResizablePanel className="min-h-0 min-w-0" minSize={160}>
+                        <CaseWorkspacePane
+                          focused={focusedPane === "main"}
+                          idPrefix={`${idPrefix}-main`}
+                          label="Main case views"
+                          name="main"
+                          onCloseFile={(id) => closePaneFile("main", id)}
+                          onFocus={() => setFocusedPane("main")}
+                          onReorderFiles={(ids) =>
+                            setMain((current) => ({ ...current, openIds: ids }))
+                          }
+                          onSelect={(id) => selectTab("main", id)}
+                          onTransferFile={(id, from, index) =>
+                            transferFile(from, "main", id, index)
+                          }
+                          pane={main}
+                        />
+                      </ResizablePanel>
+                      <ResizableHandle aria-label="Resize split panel" />
+                      <ResizablePanel className="min-h-0 min-w-0" minSize={160}>
+                        <CaseWorkspacePane
+                          focused={focusedPane === "side"}
+                          idPrefix={`${idPrefix}-side`}
+                          label="Split case views"
+                          name="side"
+                          onCloseFile={(id) => closePaneFile("side", id)}
+                          onFocus={() => setFocusedPane("side")}
+                          onReorderFiles={(ids) =>
+                            setSide((current) =>
+                              current ? { ...current, openIds: ids } : current,
+                            )
+                          }
+                          onSelect={(id) => selectTab("side", id)}
+                          onTransferFile={(id, from, index) =>
+                            transferFile(from, "side", id, index)
+                          }
+                          pane={side}
+                          toolbar={roomToolbar}
+                        />
+                      </ResizablePanel>
+                    </ResizablePanelGroup>
+                  ) : (
+                    <CaseWorkspacePane
+                      focused={false}
+                      idPrefix={`${idPrefix}-main`}
+                      label="Case views"
+                      name="main"
+                      onCloseFile={(id) => closePaneFile("main", id)}
+                      onFocus={() => setFocusedPane("main")}
+                      onReorderFiles={(ids) =>
+                        setMain((current) => ({ ...current, openIds: ids }))
+                      }
+                      onSelect={(id) => selectTab("main", id)}
+                      pane={main}
+                      toolbar={roomToolbar}
+                    />
+                  )}
+                </CaseInputWorkspace>
+              </div>
+            </ResizablePanel>
+            {caseItem && isDetailsOpen ? (
+              <>
+                <ResizableHandle aria-label="Resize details" />
+                <ResizablePanel
+                  aria-label="Details"
+                  className="flex min-h-0 min-w-0 flex-col bg-surface-2"
+                  defaultSize={360}
+                  id={`${idPrefix}-details`}
+                  maxSize="40%"
+                  minSize={300}
+                  role="complementary"
+                >
+                  <CaseRoomDetails item={caseItem} />
+                </ResizablePanel>
+              </>
+            ) : null}
+            <ResizableHandle
+              aria-label="Resize chat panel"
+              onPointerDown={stopPanelAnimation}
+            />
+            <ResizablePanel
+              aria-hidden={!isChatPanelOpen}
+              aria-label="Chat"
+              className="h-full min-w-0 overflow-hidden bg-surface-2"
+              collapsedSize={0}
+              collapsible={chatPanelMinSize === 0}
+              data-state={isChatPanelOpen ? "open" : "closed"}
+              defaultSize={DEFAULT_CHAT_PANEL_SIZE}
+              groupResizeBehavior="preserve-pixel-size"
+              id={chatPanelId}
+              inert={!isChatPanelOpen}
+              maxSize="70%"
+              minSize={chatPanelMinSize}
+              onResize={(size) => {
+                if (
+                  isClosingRef.current ||
+                  isPanelAnimating ||
+                  !hasRestoredChatPanelSizeRef.current
+                ) {
+                  return;
+                }
+
+                const isOpen = size.inPixels > 0;
+                setIsChatPanelOpen(isOpen);
+                if (isOpen && size.inPixels >= MIN_CHAT_PANEL_SIZE) {
+                  lastChatPanelSizeRef.current = size.inPixels;
+                  setChatContentWidth(size.inPixels);
+                  storeChatPanelSize(size.inPixels);
+                }
+              }}
+              panelRef={chatPanelRef}
+              role="complementary"
+              suppressHydrationWarning
+            >
+              <motion.div
+                animate={{ opacity: isChatPanelOpen ? 1 : 0 }}
                 className="h-full min-h-0"
-                key={`${caseRef.agentId}/${caseRef.caseId}`}
-              />
-            </motion.div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
-        <ScriptOnce>{getInitialChatPanelLayoutScript(chatPanelId)}</ScriptOnce>
-      </div>
+                initial={false}
+                style={
+                  lockChatContentWidth
+                    ? { width: chatContentWidth }
+                    : { width: "100%" }
+                }
+                transition={
+                  isChatPanelOpen ? spring.moderate : spring.moderate.exit
+                }
+              >
+                <CaseRoomChat
+                  agentId={caseRef.agentId}
+                  caseLabel={caseRef.caseId}
+                  className="h-full min-h-0"
+                  key={`${caseRef.agentId}/${caseRef.caseId}`}
+                />
+              </motion.div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+          <ScriptOnce>
+            {getInitialChatPanelLayoutScript(chatPanelId)}
+          </ScriptOnce>
+        </div>
+      </CaseWorkContext.Provider>
     </CaseRecordContext.Provider>
   );
 }
