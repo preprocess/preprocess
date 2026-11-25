@@ -254,8 +254,9 @@ export const caseApprovals = pgTable(
   ],
 );
 
-// What a person has read in the inbox, by item key:
-// "mention:<id>", "waiting:<caseId>:<since>" or "assigned:<caseId>:<at>".
+// What a person has read in the inbox, by item key: "mention:<id>",
+// "waiting:<caseId>:<since>", "assigned:<caseId>:<at>", "approval:<id>" or
+// "guardrail:<id>".
 export const inboxReads = pgTable(
   "inbox_reads",
   {

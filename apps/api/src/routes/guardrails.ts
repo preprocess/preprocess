@@ -71,7 +71,7 @@ const AgentRules = z
   })
   .openapi("AgentNetworkRules");
 
-const Change = z
+export const Change = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("network"), hosts: z.array(Pattern).min(1) }),
     z.object({ kind: z.literal("secret"), secret: z.string() }),
