@@ -73,9 +73,8 @@ export const needsName = (user: SessionUser) =>
  */
 export const loadAuthOptions = createServerFn({ method: "GET" }).handler(
   async () => {
-    const { signUpIsOpen, googleSignIn } = await import(
-      "../../server/run-mode.server"
-    );
+    const { signUpIsOpen, googleSignIn } =
+      await import("../../server/run-mode.server");
     return { signUpOpen: signUpIsOpen(), google: googleSignIn() };
   },
 );

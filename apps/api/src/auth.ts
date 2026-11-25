@@ -109,7 +109,8 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
   // `name`, which every other reader uses.
   const fullName = (user: Record<string, unknown>) => {
     if (user.firstName === undefined && user.lastName === undefined) return {};
-    const first = typeof user.firstName === "string" ? user.firstName.trim() : "";
+    const first =
+      typeof user.firstName === "string" ? user.firstName.trim() : "";
     const last = typeof user.lastName === "string" ? user.lastName.trim() : "";
     if (!first && !last) return { firstName: null, lastName: null };
     if (!first || !last)
@@ -179,9 +180,8 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
           },
         },
         update: {
-          async before(user) {
-            return { data: { ...user, ...fullName(user) } };
-          },
+          before: (user) =>
+            Promise.resolve({ data: { ...user, ...fullName(user) } }),
         },
       },
       session: {

@@ -3,7 +3,10 @@ import { AuthField } from "./auth-layout";
 export type PersonName = { firstName: string; lastName: string };
 export type NameErrors = { firstName?: string; lastName?: string };
 
-export const nameErrors = ({ firstName, lastName }: PersonName): NameErrors => ({
+export const nameErrors = ({
+  firstName,
+  lastName,
+}: PersonName): NameErrors => ({
   ...(firstName.trim() ? {} : { firstName: "Enter your first name." }),
   ...(lastName.trim() ? {} : { lastName: "Enter your last name." }),
 });

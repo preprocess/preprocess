@@ -18,7 +18,7 @@ export const Route = createFileRoute("/sign-in")({
     ...(typeof search.redirect === "string"
       ? { redirect: search.redirect }
       : {}),
-    ...(search.error ? { error: String(search.error) } : {}),
+    ...(typeof search.error === "string" ? { error: search.error } : {}),
   }),
   loader: () => loadAuthOptions(),
   component: SignInPage,

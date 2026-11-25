@@ -8,29 +8,102 @@ import {
   addMember,
   Client,
   createOrganization,
+  followEmailLink,
   sent,
+  signInByLink,
   signUp,
   testEnv,
   unique,
 } from "./helpers.ts";
 
 describe("sign-up and sign-in", () => {
-  it("creates a session, refuses a wrong password, and signs back in", async () => {
-    const { client, email } = await signUp("Ada");
-    const session = await client.call<{ user: { email: string } }>(
+  it("signs in by an emailed link that works once, back into the same account", async () => {
+    const { email, userId } = await signUp("Ada Lovelace");
+    const mail = [...sent].reverse().find((m) => m.to === email);
+    expect(mail?.subject).toBe("Your sign-in link for Preprocess");
+
+    const again = new Client();
+    await signInByLink(again, email);
+    const session = await again.call<{ user: { id: string } }>(
       "/api/auth/get-session",
     );
-    expect(session.body.user.email).toBe(email);
+    expect(session.body.user.id).toBe(userId);
 
-    const fresh = new Client();
-    const wrong = await fresh.call("/api/auth/sign-in/email", {
-      body: { email, password: "wrong password!" },
-    });
-    expect(wrong.status).toBe(401);
-    const right = await fresh.call("/api/auth/sign-in/email", {
+    const replay = new Client();
+    await followEmailLink(replay, email);
+    const none = await replay.call("/api/auth/get-session");
+    expect(none.body).toBeNull();
+  });
+
+  it("has no password sign-in or sign-up", async () => {
+    const { email } = await signUp("Pat");
+    const client = new Client();
+    const signIn = await client.call("/api/auth/sign-in/email", {
       body: { email, password: "correct horse battery" },
     });
-    expect(right.status).toBe(200);
+    expect(signIn.status).not.toBe(200);
+    const signUpByPassword = await client.call("/api/auth/sign-up/email", {
+      body: {
+        name: "Pat",
+        email: `${unique("pat")}@example.test`,
+        password: "correct horse battery",
+      },
+    });
+    expect(signUpByPassword.status).not.toBe(200);
+    expect((await client.call("/api/auth/get-session")).body).toBeNull();
+  });
+
+  it("lets an existing account sign in by link to the same email", async () => {
+    const environment = testEnv();
+    const email = `${unique("existing")}@example.test`;
+    const [existing] = await withoutOrg(environment, "test fixture", (tx) =>
+      tx
+        .insert(user)
+        .values({
+          id: unique("user"),
+          name: "Old Account",
+          email,
+          emailVerified: true,
+        })
+        .returning({ id: user.id }),
+    );
+    const client = new Client(environment);
+    await signInByLink(client, email);
+    const session = await client.call<{
+      user: { id: string; firstName: string | null };
+    }>("/api/auth/get-session");
+    expect(session.body.user.id).toBe(existing?.id);
+    expect(session.body.user.firstName).toBeNull();
+  });
+
+  it("keeps first and last name separate, both required, and spells out name", async () => {
+    const client = new Client();
+    const email = `${unique("names")}@example.test`;
+    await signInByLink(client, email);
+    const fresh = await client.call<{
+      user: { firstName: string | null; lastName: string | null };
+    }>("/api/auth/get-session");
+    expect(fresh.body.user).toMatchObject({ firstName: null, lastName: null });
+
+    const half = await client.call<{ message: string }>(
+      "/api/auth/update-user",
+      { body: { firstName: "Grace" } },
+    );
+    expect(half.status).toBe(400);
+    expect(half.body.message).toBe("Enter your first and last name.");
+
+    const named = await client.call("/api/auth/update-user", {
+      body: { firstName: " Grace ", lastName: "Hopper" },
+    });
+    expect(named.status).toBe(200);
+    const session = await client.call<{
+      user: { name: string; firstName: string; lastName: string };
+    }>("/api/auth/get-session");
+    expect(session.body.user).toMatchObject({
+      name: "Grace Hopper",
+      firstName: "Grace",
+      lastName: "Hopper",
+    });
   });
 
   it("refuses a session to a deactivated person", async () => {
@@ -42,44 +115,97 @@ describe("sign-up and sign-in", () => {
         .set({ deactivatedAt: new Date() })
         .where(eq(user.id, userId)),
     );
-    const result = await new Client(environment).call(
-      "/api/auth/sign-in/email",
-      {
-        body: { email, password: "correct horse battery" },
-      },
-    );
-    expect(result.status).toBe(403);
+    const client = new Client(environment);
+    await signInByLink(client, email);
+    expect((await client.call("/api/auth/get-session")).body).toBeNull();
   });
 
   it("is open on our cloud, and by invitation only on a self-hosted install with people", async () => {
     // Earlier tests have created people.
-    await signUp("Seed");
+    const { client: owner } = await signUp("Seed");
+    const org = await createOrganization(owner, "Self hosted");
     const selfHosted = testEnv({
       PREPROCESS_REGION: undefined,
     } as unknown as Partial<Env>);
-    const stranger = await new Client(selfHosted).call(
-      "/api/auth/sign-up/email",
-      {
-        body: {
-          name: "Stranger",
-          email: `${unique("stranger")}@example.test`,
-          password: "correct horse battery",
-        },
-      },
+
+    const stranger = await new Client(selfHosted).call<{ message: string }>(
+      "/api/auth/sign-in/magic-link",
+      { body: { email: `${unique("stranger")}@example.test` } },
     );
     expect(stranger.status).toBe(403);
+    expect(stranger.body.message).toBe(
+      "Sign-up on this install needs an invitation.",
+    );
+
+    const invitee = `${unique("invitee")}@example.test`;
+    const invited = await owner.call("/api/auth/organization/invite-member", {
+      body: { email: invitee, role: "member", organizationId: org },
+    });
+    expect(invited.status).toBe(200);
+    const welcome = new Client(selfHosted);
+    await signInByLink(welcome, invitee);
+    expect((await welcome.call("/api/auth/get-session")).body).not.toBeNull();
 
     const cloud = await new Client(testEnv({ PREPROCESS_REGION: "us" })).call(
-      "/api/auth/sign-up/email",
-      {
-        body: {
-          name: "Cloud",
-          email: `${unique("cloud")}@example.test`,
-          password: "correct horse battery",
-        },
-      },
+      "/api/auth/sign-in/magic-link",
+      { body: { email: `${unique("cloud")}@example.test` } },
     );
     expect(cloud.status).toBe(200);
+  });
+});
+
+describe("invitations", () => {
+  it("name the organization in the email and on the signed-out preview", async () => {
+    const { client, email: ownerEmail } = await signUp("Ada Lovelace");
+    const org = await createOrganization(client, "Analytical Engines");
+    const before = sent.length;
+    const invitee = `${unique("guest")}@example.test`;
+    const invited = await client.call<{ id: string }>(
+      "/api/auth/organization/invite-member",
+      { body: { email: invitee, role: "member", organizationId: org } },
+    );
+    const mail = sent.slice(before).find((m) => m.to === invitee);
+    expect(mail?.subject).toBe("Join Analytical Engines on Preprocess");
+    expect(mail?.text).toContain(
+      `Join Analytical Engines: ${client.environment.APP_URL}/invitations/${invited.body.id}`,
+    );
+
+    const preview = await new Client().call(
+      `/api/invitations/${invited.body.id}`,
+    );
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({
+      email: invitee,
+      organizationName: "Analytical Engines",
+      inviterName: "Ada Lovelace",
+      status: "pending",
+    });
+    expect(JSON.stringify(preview.body)).not.toContain(ownerEmail);
+
+    const missing = await new Client().call("/api/invitations/inv_missing");
+    expect(missing.status).toBe(404);
+  });
+
+  it("are accepted after signing in by link, with names the invitee enters", async () => {
+    const { client } = await signUp("Owner");
+    const org = await createOrganization(client, "Invites");
+    const before = sent.length;
+    const joined = await addMember(client, org, "Joiner Smith");
+    const mail = sent.slice(before).find((m) => m.to === joined.email);
+    expect(mail?.text).toContain(`/invitations/${joined.invitationId}`);
+    const members = await client.call<
+      { userId: string; role: string; name?: string }[]
+    >(`/v1/orgs/${org}/members`);
+    expect(members.body).toContainEqual(
+      expect.objectContaining({ userId: joined.userId, role: "member" }),
+    );
+    const session = await joined.client.call<{
+      user: { firstName: string; lastName: string };
+    }>("/api/auth/get-session");
+    expect(session.body.user).toMatchObject({
+      firstName: "Joiner",
+      lastName: "Smith",
+    });
   });
 });
 
@@ -105,21 +231,6 @@ describe("organizations", () => {
     expect(events.body.events.map((e) => e.action)).toEqual([
       "organization.created",
     ]);
-  });
-
-  it("invite by email with a link to accept", async () => {
-    const { client } = await signUp("Owner");
-    const org = await createOrganization(client, "Invites");
-    const before = sent.length;
-    const joined = await addMember(client, org, "Joiner");
-    const mail = sent.slice(before).find((m) => m.to === joined.email);
-    expect(mail?.text).toContain(`/invitations/${joined.invitationId}`);
-    const members = await client.call<{ userId: string; role: string }[]>(
-      `/v1/orgs/${org}/members`,
-    );
-    expect(members.body).toContainEqual(
-      expect.objectContaining({ userId: joined.userId, role: "member" }),
-    );
   });
 
   it("let only Owners and Admins manage groups", async () => {

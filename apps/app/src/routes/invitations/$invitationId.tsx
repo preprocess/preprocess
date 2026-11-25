@@ -174,7 +174,10 @@ function InvitationPage() {
               errors={nameErrorsShown}
               onChange={(value, field) => {
                 setName(value);
-                setNameErrors((current) => ({ ...current, [field]: undefined }));
+                setNameErrors((current) => ({
+                  ...current,
+                  [field]: undefined,
+                }));
               }}
               value={name}
             />
