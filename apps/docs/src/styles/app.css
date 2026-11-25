@@ -90,21 +90,23 @@ button:is(.bg-fd-primary, .bg-fd-secondary) {
   --docs-medium: "wght" 500, "opsz" 16.75;
 }
 
-/* The lockup, set as www.preprocess.com sets it. */
-.lockup,
-.lockup-compact {
+/* The lockup, set as www.preprocess.com sets it (brand guidelines §1):
+   the system UI face, not Inter. */
+.lockup {
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: 1.125rem;
+  line-height: 1.6875rem;
+  font-weight: 450;
   letter-spacing: -0.02em;
   font-variation-settings:
     "wght" 450,
     "opsz" 16;
-}
-.lockup {
-  font-size: 1.125rem;
-  line-height: 1.375rem;
-}
-.lockup-compact {
-  font-size: 1rem;
-  line-height: 1.25rem;
 }
 
 /* The docs reading step: the six roles re-set for prose on the article.

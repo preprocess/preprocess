@@ -600,16 +600,18 @@ function TopBar({
   );
 }
 
+// The lockup never truncates: when the bar is too narrow for "Docs" too,
+// "Docs" wraps onto a second line the bar's height hides.
 function Lockup({ onClick }: { onClick?: () => void }) {
   return (
     <PageLink
-      className="flex min-w-0 items-center gap-1.5"
+      className="flex h-[27px] min-w-0 flex-wrap items-center gap-x-1.5 overflow-hidden"
       onClick={onClick}
       url="/"
     >
-      <Wordmark compact />
+      <Wordmark className="shrink-0" />
       <span
-        className="lockup-compact shrink-0 text-muted-foreground"
+        className="lockup shrink-0 text-muted-foreground"
         style={{ fontVariationSettings: fontWeights.normal }}
       >
         Docs
@@ -637,16 +639,16 @@ function MobileBar({
   return (
     <header
       className={cn(
-        "relative z-20 flex h-13 shrink-0 items-center gap-1 bg-surface-2 pr-2 pl-1.5 lg:hidden",
+        "relative z-20 flex h-13 shrink-0 items-center gap-1 bg-surface-2 pr-5 pl-[11px] lg:hidden",
         className,
       )}
     >
       {leading}
-      <div className="min-w-0 flex-1 pl-1">{children}</div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="min-w-0 flex-1">{children}</div>
+      <div className="flex shrink-0 items-center">
         <Button
           aria-label="Search documentation"
-          className="text-muted-foreground"
+          className="w-8! text-muted-foreground"
           onClick={onSearch}
           size="icon"
           variant="ghost"
@@ -729,6 +731,7 @@ function MobileMenu({
             <X size={18} />
           </SheetClose>
         }
+        className="shadow-[inset_0_-1px_0_var(--border)]"
         onSearch={onSearch}
       >
         <Lockup onClick={onClose} />
@@ -737,7 +740,7 @@ function MobileMenu({
         <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
           <nav
             aria-label="Documentation"
-            className="flex flex-col px-3 pt-2 pb-8"
+            className="flex flex-col px-3 pt-2 pb-8 [&_[data-sidebar=menu-badge]]:top-3 [&_[data-sidebar=menu-button]]:h-11 [&_[data-sidebar=menu-sub-button]]:h-11"
             onClickCapture={(event) => {
               if (event.target instanceof Element && event.target.closest("a"))
                 onClose();
