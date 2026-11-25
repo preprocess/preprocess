@@ -49,9 +49,9 @@ const grant = async (admin: PostgresOrigin, user: string) => {
 
 export const GrantAppRole = Action(
   "Preprocess.GrantAppRole",
-  (input: { admin: PostgresOrigin; app: PostgresOrigin }) =>
+  (input: { admin: PostgresOrigin; app: PostgresOrigin; role: string }) =>
     Effect.tryPromise({
-      try: () => grant(input.admin, input.app.user),
+      try: () => grant(input.admin, input.role),
       catch: (error) =>
         new GrantFailed({
           message: `Granting preprocess_app failed: ${error instanceof Error ? error.message : String(error)}`,
