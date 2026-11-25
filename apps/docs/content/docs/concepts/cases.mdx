@@ -1,0 +1,147 @@
+---
+title: Cases
+description:
+  A case is one job for one agent, with one thread, one set of answers and one
+  status.
+---
+
+A case is one job for one agent: code this invoice, triage this claim, reconcile
+yesterday's orders. It has one thread, where people and the agent talk, one set
+of answers, shaped by the agent's [output schema](/concepts/output-schema), and
+one status. It isn't a chat: it starts from an input, runs until it's done or
+needs someone, and ends.
+
+## Why cases
+
+Agents that do real work need somewhere for people to step in, and something for
+other systems to track. The case is both. It's what the inbox lists, what a team
+waits on, what an approval belongs to, what a webhook reports and, once
+completed, what an eval replays.
+
+## Starting a case
+
+| From         | How                                                        |
+| ------------ | ---------------------------------------------------------- |
+| Your systems | `POST /v1/orgs/{org}/cases`, or `preprocess cases create`. |
+| A schedule   | A cron schedule declared in the agent's code.              |
+| The app      | The Add button on Cases or on an agent.                    |
+| MCP          | The `create_case` tool on the organization's MCP server.   |
+
+The API call names the agent and answers `202 Accepted` at once, with the case
+id and a status URL; it never waits for the agent. Send an `Idempotency-Key`
+header and a retry within 24 hours returns the same case. A case runs on the
+agent's production deployment unless the call names another one, such as a
+preview.
+
+There's no inbound email address and no separate inbound webhook: this call is
+what other systems use.
+
+**Schedules** fire on the agent's production deployment, in the timezone they
+declare (UTC by default), with the text they declare as input. They don't fire
+on previews unless the schedule sets `previews: true`. A paused schedule stays
+paused across deploys and promotions until someone resumes it. Each fire uses
+its own idempotency key, so a retried fire never makes a second case.
+
+## Input
+
+A case's input is plain text, files, or both. There is no input schema: the
+agent's instructions say what it expects.
+
+- Text: up to 1,000,000 characters.
+- Files: up to 100 per case, each up to 100 MB. Upload each one to
+  `POST /v1/orgs/{org}/files` first and pass its id.
+
+When the agent has OCR switched on, every file becomes text before the first
+model call. Otherwise the agent learns only the files' names and types. People
+can attach more files to a case later; the agent gets them on the next rerun.
+
+## Statuses
+
+```text
+  queued ──► running ──┬──► completed
+                       ├──► waiting ──► completed
+                       ├──► failed
+                       └──► halted
+
+  Rerun:  waiting, completed, failed or halted ──► running
+  Cancel: anything but completed ──► cancelled
+```
+
+| Status      | Meaning                                                                                                          |
+| ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| `queued`    | Accepted; the run hasn't started.                                                                                |
+| `running`   | The agent is working.                                                                                            |
+| `waiting`   | The run ended, but something holds the case: a team, a failing check, an unmet success condition or an approval. |
+| `completed` | Done: its checks pass, its success condition is met and nothing is waiting.                                      |
+| `failed`    | The run itself failed, for example by passing the agent's `timeoutSeconds`.                                      |
+| `halted`    | Stopped before a metered call because the organization reached its spending limit.                               |
+| `cancelled` | Someone cancelled it.                                                                                            |
+
+A case completes only when its success condition is met, whether the agent or a
+person did the work. An agent without an output schema completes when its run
+ends, unless it waits on a group or an approval.
+
+## Waiting on a team
+
+The agent's code decides which team a case waits on. A tool calls
+`ctx.waitOn("accounts-payable", { reason })` and, when the run ends, the case
+waits on that group with that reason. Every member sees it in their inbox and
+gets an email straight away, unless they turned those emails off, and your
+outbound webhooks get `case.needs_group` naming the group.
+
+A case can also wait with no team named: when a check fails, the success
+condition isn't met, or a person has to approve something. The reason says
+which.
+
+## The thread
+
+The thread is a conversation between people and the agent. The agent posts its
+messages there, and people reply. People never tag people: they reference a
+group with `@slug`, which notifies every member. The agent tags groups the same
+way, for example to flag a problem with a person's change, and it can only tag
+groups with access to the agent.
+
+To put a case in front of specific people, assign it. API keys, Owners and
+Admins can assign up to 50 people who can see the case. Agent code never assigns
+anyone.
+
+## Rerun, complete and cancel
+
+**Rerun** runs the agent again on the same case. It works on a case that is
+waiting, completed, failed or halted. The agent gets a prompt listing what
+changed since its last run: answers people edited or confirmed, answers that
+went stale, new messages in the thread and new files. Answers a person entered
+stay theirs.
+
+**Complete** finishes a waiting case as a person. It applies the agent's rule:
+the checks must pass and the success condition must be met, and any approval the
+code requires still applies.
+
+**Cancel** stops a case for good. It sends no webhook.
+
+## Halted cases
+
+An Admin can set a monthly spending limit for the organization, counted per
+calendar month in UTC. Once spend reaches it, new cases are refused with `402`,
+and a running case halts before its next model, OCR or `decide` call instead of
+making it. A halted case shows the reason and doesn't resume on its own: once
+the limit is raised or a new month starts, someone selects Rerun. A halt sends
+no webhook.
+
+## Who can do what
+
+| Action                               | Who                                                               |
+| ------------------------------------ | ----------------------------------------------------------------- |
+| See a case                           | Owners, Admins, Developers, and the agent's operators and viewers |
+| Start, edit, rerun, complete, cancel | Developers and the agent's operators, and API keys                |
+| Assign people                        | Owners, Admins and API keys                                       |
+
+Seeing every case doesn't make an Owner or Admin an operator: to work a case,
+they need an operator group too.
+
+## Related
+
+- [Output schema](/concepts/output-schema): the answers a case produces.
+- [Review and approvals](/concepts/review-and-approvals): how people act on a
+  case.
+- [How it works](/how-it-works): a case end to end.

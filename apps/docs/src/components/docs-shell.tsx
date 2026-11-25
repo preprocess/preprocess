@@ -198,23 +198,40 @@ function GuideRows({
   nodes: PageTree.Node[];
   pathname: string;
 }) {
-  return (
-    <SidebarMenu aria-label="Guides" className="gap-0.5">
-      {nodes.map((node) =>
-        node.type === "page" ? (
-          <SidebarMenuItem key={node.url}>
+  // Separators in the tree's meta.json split the guides into labelled
+  // sections, the way Endpoints sits under Reference.
+  const sections: { label?: string; pages: PageTree.Item[] }[] = [];
+  for (const node of nodes) {
+    if (node.type === "separator")
+      sections.push({ label: textOf(node.name), pages: [] });
+    else if (node.type === "page") {
+      if (sections.length === 0) sections.push({ pages: [] });
+      sections[sections.length - 1].pages.push(node);
+    }
+  }
+  return sections.map((section, index) => (
+    <SidebarGroup
+      className={cn("px-0", index > 0 ? "pt-4" : "pt-0")}
+      key={index}
+    >
+      {section.label ? (
+        <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+      ) : null}
+      <SidebarMenu aria-label={section.label ?? "Guides"} className="gap-0.5">
+        {section.pages.map((page) => (
+          <SidebarMenuItem key={page.url}>
             <SidebarMenuButton
-              icon={guideIcons[node.url] ?? FileText}
-              isActive={node.url === pathname}
-              render={<PageLink url={node.url} />}
+              icon={guideIcons[page.url] ?? FileText}
+              isActive={page.url === pathname}
+              render={<PageLink url={page.url} />}
             >
-              {guideLabel(node)}
+              {guideLabel(page)}
             </SidebarMenuButton>
           </SidebarMenuItem>
-        ) : null,
-      )}
-    </SidebarMenu>
-  );
+        ))}
+      </SidebarMenu>
+    </SidebarGroup>
+  ));
 }
 
 function ReferenceRows({

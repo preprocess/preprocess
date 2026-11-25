@@ -1,0 +1,142 @@
+---
+title: How it works
+description:
+  Follow one case from the call that opens it to the result going out.
+---
+
+Preprocess is a set of Cloudflare Workers around one idea: the model loop runs
+on the platform, and your agent's code runs only when the platform calls it.
+This page follows the invoice case from the [Quickstart](/quickstart) through
+every part of the system.
+
+## The parts
+
+| Part            | What it is                                                                            | Holds                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| App             | The product people use: inbox, cases, case room, agents and settings.                 | Nothing of its own; it serves sign-in and the API on its own origin.                     |
+| API             | A Worker serving `/v1`: deploys, cases, groups, settings, webhooks and the audit log. | Postgres, through Hyperdrive: people, groups, grants, secrets, the case index and audit. |
+| Case runtime    | A Durable Object per case that runs the model loop.                                   | The case's thread, answers, approvals and run state.                                     |
+| Your agent code | Each deployment's bundle, loaded into its own isolate as a Dynamic Worker.            | Nothing; it is stateless and called once per tool call or schema evaluation.             |
+| Storage         | R2 buckets and Queues.                                                                | Bundles, files, run capture, run logs and signed audit manifests.                        |
+| Model service   | The service that serves the agent models, `decide` and OCR.                           | Nothing; it answers each call.                                                           |
+
+```text
+API call, schedule, app or MCP
+   │
+   ▼
+API Worker ───queue───► case runtime ───tool calls───► your agent code
+   │      ◄───status───  (Durable Object)                (Dynamic Worker)
+   │                          │
+   │                          └───► model service
+   ▼
+webhooks, inbox, email
+```
+
+## The call that opens the case
+
+`POST /v1/orgs/{org}/cases` names the agent and carries text, file ids, or both.
+In one Postgres transaction, the API:
+
+1. Refuses the call with `402` if the organization has passed its monthly
+   spending limit.
+2. Picks the deployment: the one named in the call, or the agent's production
+   deployment. A deployment still waiting on a guardrail can't take cases.
+3. Writes the case to the index as `queued`, attaches the files, records an
+   audit event, and queues the start.
+
+It answers `202 Accepted` straight away, with the case id and a status URL. It
+never waits for the agent. An `Idempotency-Key` header makes a retry return the
+same case for 24 hours.
+
+A queue consumer then gathers what the run needs: the deployment, the files, the
+groups with access to the agent, the memory rules people have accepted, and the
+agent's settings as they stand now. It starts the case on the runtime.
+
+## The run starts
+
+Each case gets its own Durable Object, named for the organization, agent and
+case. It loads your deployment's bundle from R2, checks it against the hash
+recorded at deploy, and runs it as a Dynamic Worker. Only the secrets the agent
+declared and an Admin granted go into that Worker's `env`, and an outbound
+gateway applies the agent's network rules to everything the code fetches.
+
+The runtime reads the code's manifest (instructions, tools, schema, groups) and
+builds the first prompt from the case's text. With OCR switched on, each file is
+converted to text first; otherwise the agent learns only the files' names.
+
+## The agent works
+
+The runtime runs the model loop. Model calls go to the model service, and two
+kinds of tools are available to the model:
+
+- **Your tools.** The runtime calls your code's `/tools/{name}` with the model's
+  input. Your code runs, and the SDK strips secret values out of what it
+  returns. A tool that throws runs again up to the agent's `toolRetries`, unless
+  it is marked `sideEffects`. A tool that needs approval doesn't run until a
+  person approves it.
+- **Platform tools.** Reading and answering the output schema, searching long
+  option lists, `decide`, tagging a group, and proposing a memory rule. These
+  run inside the runtime, not in your code.
+
+Before every metered call (a model turn, OCR or `decide`), the runtime checks
+the spending limit. Over the limit, it stops the case as `halted` instead of
+making the call.
+
+## The run ends
+
+When the model stops, the runtime asks your code to evaluate the schema: which
+fields are visible, which need review, whether the checks pass and whether the
+success condition is met. Then it settles the case:
+
+- **completed**, when nothing holds it: the checks pass, the success condition
+  is met, no approval is open and the code isn't waiting on a group;
+- **waiting**, when something does, with the reason and the group it waits on,
+  if any;
+- **failed**, when the run itself failed, such as passing `timeoutSeconds`.
+
+The full run (model calls, tool calls and results, `decide` choices, tokens and
+timing) is sealed into the case's capture in R2. The runtime reports the new
+status to the API, which updates the case index, the inbox of every group the
+case waits on, and emails the people who asked for it.
+
+## People step in
+
+People work a waiting case in the app's case room, through the API or through
+MCP. They confirm or change answers, approve or reject what the code asked them
+to approve, and post in the thread. Every one of these actions is recorded as a
+review event.
+
+Then they either complete the case or rerun the agent. Complete applies the same
+rule the agent meets. Rerun starts another run with a prompt that lists what
+people changed since the last one. Answers a person entered stay theirs: if the
+agent disagrees, its value lands beside the person's as a suggestion. See
+[Review and approvals](/concepts/review-and-approvals).
+
+## The result goes out
+
+When the case completes, the API:
+
+- sends `case.completed`, with the answers, to every outbound webhook endpoint
+  that subscribes to it;
+- adds the case to the agent's automatic eval suite, with the corrected answers
+  as the expected result;
+- keeps the capture, the run logs and the audit events.
+
+A failed case sends `case.failed`, and a case that starts waiting on a new group
+sends `case.needs_group`, naming the group. Cancelled and halted cases send
+nothing.
+
+## Where your data lives
+
+| Data                                                    | Where                                    |
+| ------------------------------------------------------- | ---------------------------------------- |
+| People, organizations, groups, grants, API keys         | Postgres                                 |
+| Secrets                                                 | Postgres, encrypted per organization     |
+| The case index: status, team waited on, assignees, cost | Postgres                                 |
+| A case's thread, answers and approvals                  | The case's Durable Object                |
+| Agent bundles, uploaded files and run capture           | R2                                       |
+| Run logs                                                | R2, with summaries in Postgres           |
+| Audit events                                            | Postgres, with signed daily copies in R2 |
+
+On our cloud these live in our Cloudflare account. A self-hosted install creates
+the same resources in yours, on a Postgres database you choose.

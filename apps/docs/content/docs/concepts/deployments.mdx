@@ -1,0 +1,101 @@
+---
+title: Deployments
+description:
+  Every deploy is a stored, pinned version of an agent. Production serves cases;
+  previews let you try changes.
+---
+
+A deployment is one version of an agent: the bundled code, what that code
+declares, and where it came from. Every deploy creates a new one, and nothing
+about a deployment changes after it's created.
+
+## What a deployment pins
+
+- **The code.** The bundle is stored in R2 with its SHA-256, and the runtime
+  checks every load against it.
+- **The manifest.** What the code declares: instructions, model and reasoning
+  level, tools, schema, groups, secrets, MCP servers, network hosts, schedules.
+- **Its origin.** The git branch and commit, whether it came from the CLI or a
+  GitHub build, who deployed it, and the SDK version it was built with.
+
+A case runs on one deployment from start to finish. Promoting another
+deployment, or rolling back, never moves a case that has already started.
+
+## Two ways to deploy
+
+**The CLI.** `preprocess deploy` bundles your agent's entry module and uploads
+it with the current git branch and commit. The same command ships as a GitHub
+Action, `preprocess/preprocess/packages/cli`, for any CI that runs Actions.
+
+**The GitHub App.** Connect a repository and link it to an agent, optionally for
+one branch only. Every push to a linked repository starts a build: the commit is
+fetched outside the build sandbox, installed from your lockfile and bundled in a
+fresh container. Builds run one at a time per agent and branch, and a newer push
+replaces a queued build and stops a running one.
+
+Both paths end in the same deploy.
+
+## Production and previews
+
+Each agent has a production branch, `main`. A deploy from that branch is a
+**production** deployment; a deploy from any other branch, or with no branch at
+all, is a **preview**.
+
+The agent's production deployment is the production deployment promoted most
+recently. New cases run on it unless the caller names another deployment.
+
+|                             | Production                                   | Preview                              |
+| --------------------------- | -------------------------------------------- | ------------------------------------ |
+| Serves new cases by default | Yes, once promoted                           | No: name it when you start a case    |
+| Promoted                    | Automatically on deploy, unless it's waiting | Never                                |
+| Schedules                   | Run                                          | Only schedules with `previews: true` |
+
+To try a preview, start a case on it by id:
+
+```sh
+npx preprocess cases create --deployment dep_... --text "Code this invoice."
+```
+
+## Waiting deployments
+
+Some of what a deployment asks for is controlled by the organization's
+guardrails. A deployment that asks for more than they allow still builds, but
+its status is **waiting**, and it names what it waits for:
+
+- a secret the agent hasn't been granted;
+- an MCP server the agent hasn't been granted;
+- a network host the organization's rules don't allow;
+- a group the code names that has no access to the agent.
+
+Each of these opens a guardrail request for an Admin or Owner. A waiting
+deployment can't take cases or be promoted. When the last grant arrives, the
+deployment is checked again and becomes **ready**; a production deployment still
+needs promoting at that point.
+
+A deploy fails outright when the code doesn't serve a valid manifest, when a
+schedule's cron or timezone is invalid, or when the code names a group the
+organization doesn't have.
+
+## Promote and roll back
+
+Promoting makes a production deployment the one that serves. Do it from the
+agent's Deployments page in the app, the API or MCP. Only deployments from the
+production branch can be promoted; to ship a preview's change, merge it into
+`main` and deploy.
+
+Rolling back is promoting an earlier production deployment. It changes only
+which code serves: the runtime itself doesn't roll back, and cases already
+running stay where they are. An older deployment is checked against the current
+guardrails again when you promote it.
+
+Code is the truth at deploy. Promoting clears every dashboard override on the
+agent, and the deploy and promote output lists each override it cleared. Before
+a deploy would drop overrides you want to keep, run `preprocess config pull` to
+write them into `preprocess.config.json`.
+
+## Related
+
+- [Agents](/concepts/agents): what the code declares.
+- [Groups and access](/concepts/groups-and-access): why a group can hold a
+  deployment in waiting.
+- [CLI](/cli): `deploy`, `config pull` and `groups pull`.

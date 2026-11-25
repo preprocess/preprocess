@@ -1,3 +1,15 @@
 {
-  "pages": ["index", "sdk", "cli", "mcp", "api"]
+  "pages": [
+    "---Start here---",
+    "index",
+    "quickstart",
+    "how-it-works",
+    "---Concepts---",
+    "...concepts",
+    "---Tools---",
+    "sdk",
+    "cli",
+    "mcp",
+    "api"
+  ]
 }

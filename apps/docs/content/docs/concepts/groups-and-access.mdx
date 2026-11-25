@@ -1,0 +1,106 @@
+---
+title: Groups and access
+description:
+  Roles govern the organization; groups decide who works each agent's cases, and
+  which team a case waits on.
+---
+
+Preprocess has two kinds of access, and they don't overlap. A **role** is what a
+person can do in the organization: manage members, groups, secrets and settings.
+A **group** is what a person can do with an agent: work its cases, read them, or
+manage every agent. Nobody gets access to an agent on their own; they get it
+through a group.
+
+## Why groups and not people
+
+Agents hand work to teams, not to individuals. Code that names a person breaks
+the day that person moves on, and a case waiting on one person stalls when
+they're away. So the agent and its code only ever know groups: they wait on a
+group, tag a group and name a group to approve. To reach one person, make a
+group for them alone.
+
+Groups also keep access reviewable. Who can work an agent's cases is one list of
+grants, not a scatter of individual permissions.
+
+## Roles
+
+Everyone in an organization has exactly one fixed role.
+
+| Role   | Can                                                                                                                                                                          |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Owner  | Everything an Admin can, and owns the organization.                                                                                                                          |
+| Admin  | Manage members, groups and grants, secrets, API keys, webhooks, settings and guardrails; approve guardrail requests; archive agents; see every case and assign people to it. |
+| Member | Whatever their groups grant.                                                                                                                                                 |
+
+Seeing every case doesn't let an Owner or Admin work one. To edit, rerun or
+complete a case, they need an operator group like anyone else.
+
+## Groups
+
+A group has a slug (`accounts-payable`), a name, a description and members.
+Admins and Owners create and change groups, and the slug is what code uses.
+
+Each group can be granted access to an agent:
+
+| Access   | Can                                                                               |
+| -------- | --------------------------------------------------------------------------------- |
+| Operator | Work the agent's cases: start, edit answers, rerun, complete, cancel and approve. |
+| Viewer   | Read the agent's cases.                                                           |
+
+A person in several groups gets the highest access any of them has on that
+agent.
+
+**Developers** is a group every organization starts with. Its members manage
+every agent: they deploy, change settings, run evals and work every agent's
+cases. It needs no grants, takes none, and can't be deleted.
+
+## How code uses groups
+
+An agent lists the group slugs it uses in `groups`. Its code can then:
+
+- make a case wait on a group, with `ctx.waitOn(slug, { reason })`;
+- tag a group in the case thread, with `ctx.tag(slug, message)` or the agent's
+  `tag_group` tool;
+- name a group as the approver of a tool call, a field or the case.
+
+The agent sees groups, never people: `groups_list` returns the groups with
+access to the agent, and it can only wait on or tag those.
+
+Preprocess keeps code and access consistent at every step:
+
+- A deploy fails if the code names a group the organization doesn't have.
+- A deployment waits if the code names a group with no access to the agent, or
+  an approving group without operator access, until an Admin grants it.
+- While a live deployment names a group, the group can't be deleted and its
+  access to that agent can't be removed or lowered. Deploy code that stops
+  naming it first.
+
+`preprocess groups pull` writes the organization's groups into
+`preprocess.config.json`, and a deploy warns when the code names a group that
+isn't in it.
+
+## API keys
+
+An organization API key belongs to the organization, not a person. It acts with
+an Admin's rights across the API and works every agent's cases. It can't
+approve: approving is a person's act. Owners and Admins create keys in
+Developers → Keys & webhooks, and each key is shown once.
+
+## Identity
+
+Sign-in, organizations, members and API keys run on the open-source Better Auth
+library inside Preprocess's own Workers, with every record in your Postgres. No
+hosted identity service is involved, in our cloud or self-hosted.
+
+<Callout title="Coming">
+  Single sign-on, directory sync and groups synced from your identity provider
+  aren't available yet. Today, groups and their members are managed in
+  Preprocess.
+</Callout>
+
+## Related
+
+- [Review and approvals](/concepts/review-and-approvals): who can approve.
+- [Cases](/concepts/cases#who-can-do-what): who can see and work a case.
+- [Deployments](/concepts/deployments#waiting-deployments): why a group can hold
+  a deployment.
