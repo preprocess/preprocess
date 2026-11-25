@@ -1,10 +1,6 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
@@ -40,6 +36,10 @@ import {
 } from "../settings/kit";
 import { agentNetworkView, sortRules, validatePattern } from "./network-rules";
 import type { NetworkRule, NetworkRuleKind } from "./platform-store";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 const KIND = {
   allow: { label: "Allow", color: "green", icon: Check },
@@ -106,7 +106,7 @@ function AddRuleDialog({
   inherited?: readonly NetworkRule[];
   onAdd: (rule: NetworkRule) => Promise<unknown>;
 }>) {
-  const patternRef = useRef<InlineValidationHandle>(null);
+  const patternRef = useRef<ValidatedFieldHandle>(null);
   const saveRef = useRef<LoadingButtonHandle>(null);
   const [pattern, setPattern] = useState("");
   const [kind, setKind] = useState<NetworkRuleKind>("allow");
@@ -140,7 +140,7 @@ function AddRuleDialog({
           saveRef.current?.run();
         }}
       >
-        <InlineValidation
+        <ValidatedField
           autoFocus
           hint="A host, or *.example.com for every subdomain."
           id="network-pattern"

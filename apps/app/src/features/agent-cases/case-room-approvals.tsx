@@ -1,9 +1,5 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
-import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { AsyncActionAbortError } from "@preprocess/ui/hooks/use-async-action";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
@@ -18,6 +14,10 @@ import {
 } from "./case-room-state";
 import { groupName } from "./case-room-review";
 import type { CaseWorkActions } from "./case-work-context";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 const semibold = { fontVariationSettings: fontWeights.semibold };
 
@@ -105,7 +105,7 @@ function DecisionForm({
   actions: CaseWorkActions;
   onClose: () => void;
 }>) {
-  const textRef = useRef<InlineValidationHandle>(null);
+  const textRef = useRef<ValidatedFieldHandle>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const approve = decision === "approve";
@@ -126,7 +126,7 @@ function DecisionForm({
 
   return (
     <div className="flex flex-col gap-2">
-      <InlineValidation
+      <ValidatedField
         autoFocus
         id={`${approval.id}-${decision}`}
         label={approve ? "Note (optional)" : "Reason"}

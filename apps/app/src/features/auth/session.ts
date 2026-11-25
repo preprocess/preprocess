@@ -5,6 +5,9 @@ import type { UserOrganization } from "../organizations/user-organization";
 export type SessionUser = {
   id: string;
   name: string;
+  /** Null until the person enters it; the app asks before anything else. */
+  firstName: string | null;
+  lastName: string | null;
   email: string;
   emailVerified: boolean;
   image: string | null;
@@ -20,8 +23,10 @@ export type Session = {
 
 type BetterAuthSession = {
   session: { id: string; activeOrganizationId?: string | null };
-  user: Omit<SessionUser, "emailNotifications"> & {
+  user: Omit<SessionUser, "emailNotifications" | "firstName" | "lastName"> & {
     emailNotifications?: boolean | null;
+    firstName?: string | null;
+    lastName?: string | null;
   };
 } | null;
 
@@ -31,13 +36,23 @@ export const loadSession = createServerFn({ method: "GET" }).handler(
     const { apiJson } = await import("../../server/api.server");
     const body = await apiJson<BetterAuthSession>("/api/auth/get-session");
     if (!body) return null;
-    const { id, name, email, emailVerified, image, emailNotifications } =
-      body.user;
+    const {
+      id,
+      name,
+      firstName,
+      lastName,
+      email,
+      emailVerified,
+      image,
+      emailNotifications,
+    } = body.user;
     return {
       sessionId: body.session.id,
       user: {
         id,
         name,
+        firstName: firstName ?? null,
+        lastName: lastName ?? null,
         email,
         emailVerified,
         image: image ?? null,
@@ -48,13 +63,41 @@ export const loadSession = createServerFn({ method: "GET" }).handler(
   },
 );
 
-/** Whether anyone may create an account, for the sign-in and sign-up copy. */
-export const loadSignUpOpen = createServerFn({ method: "GET" }).handler(
+/** Whether a person still has to enter their first and last name. */
+export const needsName = (user: SessionUser) =>
+  !user.firstName?.trim() || !user.lastName?.trim();
+
+/**
+ * How people get in here: whether anyone may create an account (or only
+ * invitees), and whether Google sign-in is configured.
+ */
+export const loadAuthOptions = createServerFn({ method: "GET" }).handler(
   async () => {
-    const { signUpIsOpen } = await import("../../server/run-mode.server");
-    return signUpIsOpen();
+    const { signUpIsOpen, googleSignIn } =
+      await import("../../server/run-mode.server");
+    return { signUpOpen: signUpIsOpen(), google: googleSignIn() };
   },
 );
+
+export type InvitationPreview = {
+  email: string;
+  organizationName: string;
+  inviterName: string;
+  status: "pending" | "accepted" | "rejected" | "canceled" | "expired";
+  expiresAt: string;
+};
+
+/** What a signed-out invitee may see of their invitation, or null. */
+export const loadInvitationPreview = createServerFn({ method: "GET" })
+  .validator((id: string) => id)
+  .handler(async ({ data: id }): Promise<InvitationPreview | null> => {
+    const { apiRequest } = await import("../../server/api.server");
+    const response = await apiRequest(
+      `/api/invitations/${encodeURIComponent(id)}`,
+    );
+    if (!response.ok) return null;
+    return response.json<InvitationPreview>();
+  });
 
 export const loadOrganizations = createServerFn({ method: "GET" }).handler(
   async (): Promise<UserOrganization[]> => {

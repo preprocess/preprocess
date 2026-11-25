@@ -10,6 +10,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { handleAuthRequest } from "./auth.ts";
+import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
 import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
@@ -85,6 +86,13 @@ app.get("/", (c) =>
 app.on(["GET", "POST"], "/api/auth/*", (c) =>
   handleAuthRequest(c.env, c.req.raw),
 );
+
+// A signed-out invitee's view of their invitation, for the app's invitation
+// page. Not part of /v1.
+app.get("/api/invitations/:id", async (c) => {
+  const preview = await invitationPreview(c.env, c.req.param("id"));
+  return preview ? c.json(preview) : c.json({ error: "not_found" }, 404);
+});
 
 // The public half of the audit signing key, for checking manifests.
 app.get("/v1/audit/keys", async (c) => c.json(await publicKeys(c.env)));

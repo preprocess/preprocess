@@ -2,10 +2,6 @@
 
 import { Button } from "@preprocess/ui/components/button";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
 } from "@preprocess/ui/components/loading-button";
@@ -29,6 +25,10 @@ import {
   formatRelative,
 } from "./kit";
 import { SettingsStacked } from "./settings-widgets";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 /**
  * The organization's OpenTelemetry export (design doc 09): an OTLP/HTTP
@@ -174,8 +174,8 @@ function OtelExportForm({
   const [rows, setRows] = useState<HeaderRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const nextKey = useRef(0);
-  const endpointRef = useRef<InlineValidationHandle>(null);
-  const fieldRefs = useRef(new Map<string, InlineValidationHandle>());
+  const endpointRef = useRef<ValidatedFieldHandle>(null);
+  const fieldRefs = useRef(new Map<string, ValidatedFieldHandle>());
 
   const addRow = (name = "") =>
     setRows((current) => [
@@ -186,7 +186,7 @@ function OtelExportForm({
     setRows((current) =>
       current.map((row) => (row.key === key ? { ...row, ...patch } : row)),
     );
-  const field = (id: string) => (handle: InlineValidationHandle | null) => {
+  const field = (id: string) => (handle: ValidatedFieldHandle | null) => {
     if (handle) fieldRefs.current.set(id, handle);
     else fieldRefs.current.delete(id);
   };
@@ -231,7 +231,7 @@ function OtelExportForm({
           event.preventDefault();
         }}
       >
-        <InlineValidation
+        <ValidatedField
           ref={endpointRef}
           hint="Your collector's OTLP/HTTP base URL. It must be public and use https."
           id="otel-endpoint"
@@ -259,7 +259,7 @@ function OtelExportForm({
                   className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto] items-start gap-3"
                   key={row.key}
                 >
-                  <InlineValidation
+                  <ValidatedField
                     ref={field(`name-${row.key}`)}
                     autoComplete="off"
                     id={`otel-header-name-${row.key}`}
@@ -269,7 +269,7 @@ function OtelExportForm({
                     validate={validateHeaderName}
                     value={row.name}
                   />
-                  <InlineValidation
+                  <ValidatedField
                     ref={field(`value-${row.key}`)}
                     autoComplete="off"
                     id={`otel-header-value-${row.key}`}

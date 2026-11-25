@@ -5,6 +5,8 @@ declare global {
       API: Fetcher;
       /** Set on our cloud, unset on a self-hosted install (spec 16). */
       PREPROCESS_REGION?: string;
+      /** Set when Google sign-in is configured; shows its button. */
+      GOOGLE_CLIENT_ID?: string;
     }
   }
 }

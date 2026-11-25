@@ -1,10 +1,6 @@
 "use client";
 
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
@@ -23,6 +19,10 @@ import {
   SettingsRows,
   actionErrorMessage,
 } from "./kit";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 function validateName(value: string) {
   return value.trim() ? null : "Enter your name.";
@@ -35,7 +35,7 @@ function EditNameDialog({
   close: () => void;
   name: string;
 }) {
-  const nameRef = useRef<InlineValidationHandle>(null);
+  const nameRef = useRef<ValidatedFieldHandle>(null);
   const saveRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState(initialName);
   const [pending, setPending] = useState(false);
@@ -60,7 +60,7 @@ function EditNameDialog({
         saveRef.current?.run();
       }}
     >
-      <InlineValidation
+      <ValidatedField
         ref={nameRef}
         autoComplete="name"
         hint="Shown to people in your organizations."

@@ -1,10 +1,6 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
@@ -57,6 +53,10 @@ import type {
   GroupSummary,
   OrgPerson,
 } from "./group-store";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 /** Into a group and back out, with transitions.dev's page side-by-side. */
 export const PAGE_FORWARD = { types: ["page-forward"] };
@@ -154,7 +154,7 @@ function CreateGroupDialog({
   onOpenChange: (open: boolean) => void;
   onCreate: (name: string) => Promise<unknown>;
 }>) {
-  const nameRef = useRef<InlineValidationHandle>(null);
+  const nameRef = useRef<ValidatedFieldHandle>(null);
   const saveRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
@@ -191,7 +191,7 @@ function CreateGroupDialog({
           saveRef.current?.run();
         }}
       >
-        <InlineValidation
+        <ValidatedField
           autoFocus
           hint="Usually a team or role, like Finance."
           id="group-name"

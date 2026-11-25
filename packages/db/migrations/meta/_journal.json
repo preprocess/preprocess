@@ -141,6 +141,13 @@
       "when": 1795587488209,
       "tag": "0022_case_review_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1795632569049,
+      "tag": "0023_user_first_last_name",
+      "breakpoints": true
     }
   ]
 }
