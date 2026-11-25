@@ -19,6 +19,7 @@ import { and, asc, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
 
 import { agentGroups } from "./cases.ts";
 import type { Manifest } from "./deploy.ts";
+import { acceptedMemories } from "./memories.ts";
 import type { Env, StartCase } from "./env.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
@@ -245,6 +246,11 @@ export const createRuns = async (
     .select({ caseId: evalSuiteCases.caseId })
     .from(evalSuiteCases)
     .where(eq(evalSuiteCases.suiteId, input.suiteId));
+  const [suite] = await tx
+    .select({ agentId: evalSuites.agentId })
+    .from(evalSuites)
+    .where(eq(evalSuites.id, input.suiteId));
+  const memories = suite ? await acceptedMemories(tx, suite.agentId) : [];
   const runs: string[] = [];
   const outboxRows: { id: string; kind: "eval.start" }[] = [];
   for (const model of input.models) {
@@ -257,6 +263,7 @@ export const createRuns = async (
       deploymentId: input.deploymentId,
       model,
       trigger: input.trigger,
+      memories,
       status: suiteCases.length ? "running" : "completed",
       cases: suiteCases.length,
       createdBy: input.createdBy,
@@ -305,6 +312,7 @@ export const startQueuedEval = async (env: Env, message: OutboxMessage) => {
         manifest: deployments.manifest,
         input: evalSuiteCases.input,
         captureKey: evalSuiteCases.captureKey,
+        memories: evalRuns.memories,
       })
       .from(evalResults)
       .innerJoin(evalRuns, eq(evalRuns.id, evalResults.runId))
@@ -340,6 +348,7 @@ export const startQueuedEval = async (env: Env, message: OutboxMessage) => {
       settings: { ...settings, model: found.model },
       input: found.input as StartCase["input"],
       groups: await agentGroups(tx, found.agentId),
+      memories: found.memories ?? [],
       eval: { runId, sourceCaseId: caseId, captureKey: found.captureKey },
     } satisfies StartCase;
   });
