@@ -1,8 +1,9 @@
 "use client";
 
 // Settings' section sidebar (spec 14a): account and organization pages in
-// one grouped list inside the page, the current page a filled row. On a
-// narrow panel it becomes a switcher above the page.
+// one grouped list inside the page, the current page a filled row, and the
+// sections of a long page as anchors under it. On a narrow panel it becomes
+// a switcher above the page.
 
 import {
   Select,
@@ -14,6 +15,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
 } from "@preprocess/ui/components/sidebar-menu";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
@@ -25,9 +29,19 @@ type Page = {
     | "/settings/organization"
     | "/settings/organization/members"
     | "/settings/organization/groups"
+    | "/settings/organization/defaults"
+    | "/settings/organization/guardrails"
     | "/settings/organization/audit-logs";
   label: string;
+  anchors?: readonly { id: string; label: string }[];
 };
+
+export const GUARDRAIL_SECTIONS = [
+  { id: "requests", label: "Requests" },
+  { id: "network", label: "Network" },
+  { id: "spending", label: "Spending limit" },
+  { id: "models", label: "Model endpoints" },
+] as const;
 
 const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
   {
@@ -40,6 +54,12 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
       { to: "/settings/organization", label: "General" },
       { to: "/settings/organization/members", label: "Members" },
       { to: "/settings/organization/groups", label: "Groups" },
+      { to: "/settings/organization/defaults", label: "Defaults" },
+      {
+        to: "/settings/organization/guardrails",
+        label: "Guardrails",
+        anchors: GUARDRAIL_SECTIONS,
+      },
       { to: "/settings/organization/audit-logs", label: "Audit log" },
     ],
   },
@@ -63,6 +83,7 @@ function usePathname() {
 
 export function SettingsNav() {
   const current = currentSettingsPage(usePathname());
+  const hash = useRouterState({ select: (state) => state.location.hash });
   return (
     <ShapeProvider defaultShape="rounded">
       <nav
@@ -81,11 +102,25 @@ export function SettingsNav() {
               {group.pages.map((page) => (
                 <SidebarMenuItem key={page.to}>
                   <SidebarMenuButton
-                    isActive={page === current}
+                    isActive={page === current && !(page.anchors && hash)}
                     render={<Link to={page.to} />}
                   >
                     {page.label}
                   </SidebarMenuButton>
+                  {page.anchors && page === current ? (
+                    <SidebarMenuSub>
+                      {page.anchors.map((anchor) => (
+                        <SidebarMenuSubItem key={anchor.id}>
+                          <SidebarMenuSubButton
+                            isActive={hash === anchor.id}
+                            render={<Link hash={anchor.id} to={page.to} />}
+                          >
+                            {anchor.label}
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  ) : null}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
