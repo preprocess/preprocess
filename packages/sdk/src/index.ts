@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  DEFAULT_MODEL,
   MODELS,
   PROTOCOL,
   REASONING,
@@ -374,7 +375,7 @@ export const agent = <const S extends string = never>(
     protocol: PROTOCOL,
     sdk: { name: "@preprocess/sdk", version: SDK_VERSION },
     instructions: definition.instructions,
-    model: definition.model ?? "inkling-2-small",
+    model: definition.model ?? DEFAULT_MODEL,
     reasoning: definition.reasoning ?? "medium",
     secrets: [...(definition.secrets ?? [])],
     mcp: [...(definition.mcp ?? [])],

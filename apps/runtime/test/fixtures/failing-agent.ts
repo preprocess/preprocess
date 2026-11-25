@@ -6,7 +6,7 @@ import { z } from "zod";
 // outlasts any timeout instead.
 export default agent({
   instructions: "You check stock for Acme orders. Be brief.",
-  model: "inkling-2-small",
+  model: "deepseek-v4.1-flash",
   tools: {
     lookup_stock: tool({
       description: "Look up stock for a SKU in Acme's ERP",

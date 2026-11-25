@@ -11,7 +11,7 @@ import { z } from "zod";
 
 export default agent({
   instructions: "You answer stock questions for Acme.",
-  model: "inkling-2-small",
+  model: "deepseek-v4.1-flash",
   secrets: ["ERP_TOKEN"],
   mcp: ["crm"],
   tools: {

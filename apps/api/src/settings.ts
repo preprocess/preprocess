@@ -11,7 +11,12 @@ import {
   organizationDefaults,
 } from "@preprocess/db/schema/settings";
 import type { SettingValues } from "@preprocess/db/schema/settings";
-import { MODELS, REASONING } from "@preprocess/sdk/protocol";
+import {
+  currentModel,
+  DEFAULT_MODEL,
+  MODELS,
+  REASONING,
+} from "@preprocess/sdk/protocol";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -20,7 +25,7 @@ import type { Manifest } from "./deploy.ts";
 // Settings an organization can default. `fallback` is the platform's value
 // when nothing sets one; null means the runtime's own behavior.
 export const DEFAULTS = {
-  model: { schema: z.enum(MODELS), fallback: "inkling-2-small" },
+  model: { schema: z.enum(MODELS), fallback: DEFAULT_MODEL },
   reasoning: { schema: z.enum(REASONING), fallback: "medium" },
   ocr: { schema: z.boolean(), fallback: false },
   timeoutSeconds: { schema: z.number().int().positive(), fallback: null },
@@ -113,7 +118,7 @@ export const resolveSettings = async (
     const org = key in DEFAULTS ? organization[key] : undefined;
     const fallback =
       key in DEFAULTS ? DEFAULTS[key as DefaultKey].fallback : false;
-    const [value, source]: [unknown, Source] =
+    const [stored, source]: [unknown, Source] =
       overrides[key] !== undefined
         ? [overrides[key], "override"]
         : code !== undefined
@@ -121,6 +126,10 @@ export const resolveSettings = async (
           : org !== undefined
             ? [org, "organization"]
             : [fallback, "default"];
+    const value =
+      key === "model" && typeof stored === "string"
+        ? currentModel(stored)
+        : stored;
     return {
       key,
       value,

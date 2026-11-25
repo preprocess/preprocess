@@ -81,7 +81,7 @@ describe("effective settings", () => {
     const view = await run(
       "org_ocr",
       {
-        model: "inkling-2-small",
+        model: "deepseek-v4.1-flash",
         reasoning: "medium",
         ocr: true,
         timeoutSeconds: null,

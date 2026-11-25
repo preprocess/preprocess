@@ -69,7 +69,7 @@ describe("manifest", () => {
     expect(manifest).toMatchObject({
       protocol: 1,
       sdk: { name: "@preprocess/sdk", version: SDK_VERSION },
-      model: "inkling-2-small",
+      model: "deepseek-v4.1-flash",
       reasoning: "medium",
       secrets: ["ERP_TOKEN"],
       mcp: ["crm"],
@@ -127,7 +127,7 @@ describe("settings", () => {
       }),
     );
     expect(manifest).toMatchObject({
-      model: "inkling-2-small",
+      model: "deepseek-v4.1-flash",
       reasoning: "high",
       network: ["api.erp.test"],
       timeoutSeconds: 300,

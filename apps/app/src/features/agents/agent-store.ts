@@ -1,3 +1,5 @@
+import { MODEL_CATALOG, type Model } from "@preprocess/sdk/protocol";
+
 import type {
   SecretScope,
   McpServer,
@@ -18,20 +20,13 @@ import {
 
 export type DeploymentStatus = "ready" | "failed";
 
-/** Claude models an agent can run on. */
-export const AGENT_MODELS = [
-  { id: "claude-opus-5-5", label: "Opus 5.5" },
-  { id: "claude-sonnet-5-5", label: "Sonnet 5.5" },
-  { id: "claude-haiku-5-5", label: "Haiku 5.5" },
-  { id: "claude-fable-5-1", label: "Fable 5.1" },
-] as const;
-export type AgentModel = (typeof AGENT_MODELS)[number]["id"];
+export type AgentModel = Model;
 
 export const REASONING_LEVELS = ["low", "medium", "high"] as const;
 export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
 
 export function modelLabel(model: AgentModel): string {
-  return AGENT_MODELS.find((item) => item.id === model)?.label ?? model;
+  return MODEL_CATALOG[model].label;
 }
 
 /**
@@ -186,9 +181,10 @@ function seedDeployments(seed: AgentSeed): AgentDeployment[] {
         deployedAt - index * (2 * 86_400_000 + index * 3_600_000),
       ).toISOString(),
       durationSeconds: failed ? 23 : 40 + ((build * 7) % 50),
-      // The four newest deployments moved from Haiku to Sonnet; the two newest
-      // stepped reasoning up, so the list shows what a config change looks like.
-      model: index < 4 ? "claude-sonnet-5-5" : "claude-haiku-5-5",
+      // The four newest deployments moved from DeepSeek V4.1 Flash to Kimi
+      // K3.1 Pro; the two newest stepped reasoning up, so the list shows what a
+      // config change looks like.
+      model: index < 4 ? "kimi-k3.1-pro" : "deepseek-v4.1-flash",
       reasoning: index < 2 ? "high" : "medium",
     };
   });
@@ -197,7 +193,7 @@ function seedDeployments(seed: AgentSeed): AgentDeployment[] {
 function seedEnv(seed: AgentSeed): AgentEnvVar[] {
   const updatedAt = seed.deployedAt;
   return [
-    { key: "MODEL", value: "claude-sonnet-5-5", scope: "all", updatedAt },
+    { key: "MODEL", value: "kimi-k3.1-pro", scope: "all", updatedAt },
     { key: "MAX_STEPS", value: "40", scope: "all", updatedAt },
     {
       key: "REVIEW_WEBHOOK_URL",
