@@ -6,6 +6,8 @@
   "scripts": {
     "deploy:staging": "pnpm --filter @preprocess/app build:staging && alchemy deploy --stage staging",
     "plan:staging": "pnpm --filter @preprocess/app build:staging && alchemy plan --stage staging",
+    "deploy:production": "pnpm --filter @preprocess/app build:production && alchemy deploy --stage production",
+    "plan:production": "pnpm --filter @preprocess/app build:production && alchemy plan --stage production",
     "preview:deploy": "pnpm --filter @preprocess/app build:development && tsx scripts/preview.ts deploy",
     "preview:destroy": "tsx scripts/preview.ts destroy",
     "wrangler:generate": "tsx scripts/wrangler-config.ts",

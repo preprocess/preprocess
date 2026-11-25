@@ -4,9 +4,10 @@
 // never drift.
 //
 // Stages:
-// - "staging": our shared test cloud. Today it deploys the app Worker only;
-//   the backend joins it once its PlanetScale database exists. Production
-//   deployment config for our cloud is private and lives elsewhere.
+// - "staging": our shared test cloud, deployed from every push to main.
+// - "production": deployed from a commit that passed staging. Its hostname
+//   and credentials come from the deploy environment (APP_DOMAIN and the
+//   rest), so our cloud's production configuration stays private.
 // - "pr-<number>": one per pull request, fully isolated (spec 16c).
 // - "development": local only (`pnpm dev`), never deployed.
 
@@ -17,13 +18,13 @@ export const compatibility = {
 
 export const LOCAL = "development";
 
-export type Stage = "staging" | `pr-${number}`;
+export type Stage = "staging" | "production" | `pr-${number}`;
 
 export const isPreviewStage = (stage: string): stage is `pr-${number}` =>
   /^pr-\d+$/.test(stage);
 
 export const isStage = (stage: string): stage is Stage =>
-  stage === "staging" || isPreviewStage(stage);
+  stage === "staging" || stage === "production" || isPreviewStage(stage);
 
 export const names = (stage: string) => ({
   app: `preprocess-app-${stage}`,
@@ -53,6 +54,9 @@ export const names = (stage: string) => ({
   // PDF pages to images for OCR, in a sandbox container (design doc 07).
   pdfRender: `preprocess-pdf-render-${stage}`,
   runs: `preprocess-runs-${stage}`,
+  // The API's SECRETS_MASTER_KEY in the account's Secrets Store, whose names
+  // allow letters, digits and underscores only.
+  secretsMasterKey: `preprocess_secrets_master_key_${stage.replace(/\W/g, "_")}`,
   branch: stage,
 });
 

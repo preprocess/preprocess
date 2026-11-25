@@ -43,7 +43,10 @@ const configs: Record<string, object> = {
     // its own origin, so session cookies stay first-party.
     services: [{ binding: "API", service: local.api }],
     // The app builds per stage (CLOUDFLARE_ENV selects the environment).
-    env: { staging: { name: names("staging").app, workers_dev: true } },
+    env: {
+      staging: { name: names("staging").app, workers_dev: true },
+      production: { name: names("production").app, workers_dev: false },
+    },
   },
   "apps/api": {
     $schema: "node_modules/wrangler/config-schema.json",
