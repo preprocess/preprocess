@@ -13,6 +13,7 @@ import type {
   CaseRoomState,
   RoomApproval,
   RoomMemory,
+  RoomOption,
   WriteResult,
 } from "./case-room-state";
 
@@ -389,6 +390,17 @@ type ApiMemory = Omit<RoomMemory, "decidedByName"> & {
 };
 
 /**
+ * A field's options as the room lists them: the API sends an inline list as
+ * `{ kind: "inline", items }` and a searched source as `{ kind: "source" }`,
+ * whose options only the search returns.
+ */
+function inlineOptions(options: unknown): RoomOption[] | null {
+  if (Array.isArray(options)) return options as RoomOption[];
+  const meta = options as { kind?: string; items?: RoomOption[] } | null;
+  return meta?.kind === "inline" ? (meta.items ?? []) : null;
+}
+
+/**
  * Fills what a queued case's room leaves out, adds the rules the agent
  * proposed on the case, and names who decided.
  */
@@ -408,7 +420,10 @@ async function roomOf(
     run: room.run ?? 0,
     waitingOn: room.waitingOn ?? null,
     reason: room.reason ?? null,
-    fields: room.fields ?? [],
+    fields: (room.fields ?? []).map((field) => ({
+      ...field,
+      options: inlineOptions(field.options),
+    })),
     checks: room.checks ?? [],
     answers: room.answers ?? null,
     thread: room.thread ?? [],
@@ -508,6 +523,22 @@ export const liveCaseCommand = createServerFn({ method: "POST" })
   });
 
 /**
+ * Completes a waiting case as a person. The API refuses with 409 when the case
+ * is not waiting or its checks fail; refusals come back as data so the Review
+ * tab shows the message beside the button.
+ */
+export const liveCompleteCase = createServerFn({ method: "POST" })
+  .validator((caseId: string) => caseId)
+  .handler(async ({ data: caseId }): Promise<ApprovalDecision> => {
+    const response = await send(
+      `/cases/${encodeURIComponent(caseId)}/complete`,
+      { method: "POST" },
+    );
+    if (response.ok) return { ok: true };
+    return { ok: false, ...(await apiError(response)) };
+  });
+
+/**
  * Accepts or dismisses a rule the agent proposed. Refusals come back as data
  * so the Review tab shows them beside the rule.
  */
@@ -570,4 +601,228 @@ export const liveApprovalDecision = createServerFn({ method: "POST" })
     );
     if (response.ok) return { ok: true };
     return { ok: false, ...(await apiError(response)) };
+  });
+
+type ApiOrgMember = ApiMember & { role: "owner" | "admin" | "member" };
+type ApiOrgGroup = ApiGroup & { isDevelopers: boolean };
+type ApiAgentRef = { id: string; slug: string; archived: boolean };
+type ApiGrant = {
+  agentSlug: string;
+  groupId: string;
+  access: "operator" | "viewer";
+};
+
+/**
+ * What the signed-in person may do to cases, by the API's access rules:
+ * Owners and Admins assign, and Developers or an operator group's members
+ * start an agent's cases.
+ */
+export type CaseAccess = {
+  readonly canAssign: boolean;
+  /** Slugs of the agents whose cases the person may start. */
+  readonly startAgents: readonly string[];
+};
+
+export const liveCaseAccess = createServerFn({ method: "GET" }).handler(
+  async (): Promise<CaseAccess> => {
+    const { apiJson } = await server();
+    const [session, members, groups, agents] = await Promise.all([
+      apiJson<{ user: { id: string } } | null>("/api/auth/get-session"),
+      getJson<ApiOrgMember[]>("/members"),
+      getJson<ApiOrgGroup[]>("/groups"),
+      getJson<ApiAgentRef[]>("/agents"),
+    ]);
+    const me = members.find((member) => member.userId === session?.user.id);
+    if (!me) return { canAssign: false, startAgents: [] };
+    const canAssign = me.role === "owner" || me.role === "admin";
+    const open = agents.filter((agent) => !agent.archived);
+    const mine = new Set(me.groups.map((group) => group.id));
+    if (groups.some((group) => group.isDevelopers && mine.has(group.id)))
+      return { canAssign, startAgents: open.map((agent) => agent.slug) };
+    const grants = (
+      await Promise.all(
+        [...mine].map((id) =>
+          getJson<{ grants: ApiGrant[] }>(`/groups/${encodeURIComponent(id)}`),
+        ),
+      )
+    ).flatMap((detail) => detail.grants);
+    const operated = new Set(
+      grants
+        .filter((grant) => grant.access === "operator")
+        .map((grant) => grant.agentSlug),
+    );
+    return {
+      canAssign,
+      startAgents: open
+        .filter((agent) => operated.has(agent.slug))
+        .map((agent) => agent.slug),
+    };
+  },
+);
+
+/** Someone a case can be assigned to. */
+export type AssigneeCandidate = {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
+};
+
+/**
+ * The people who can see the agent's cases, the API's rule for assignees:
+ * Owners and Admins, Developers, and members of a group with access to it.
+ */
+export const liveAssigneeCandidates = createServerFn({ method: "GET" })
+  .validator((agentSlug: string) => agentSlug)
+  .handler(async ({ data: agentSlug }): Promise<AssigneeCandidate[]> => {
+    const agent = await getJson<ApiAgentRef>(
+      `/agents/${encodeURIComponent(agentSlug)}`,
+    );
+    const [grants, groups, members] = await Promise.all([
+      getJson<ApiGrant[]>(`/agents/${encodeURIComponent(agent.id)}/grants`),
+      getJson<ApiOrgGroup[]>("/groups"),
+      getJson<ApiOrgMember[]>("/members"),
+    ]);
+    const access = new Set([
+      ...grants.map((grant) => grant.groupId),
+      ...groups.filter((group) => group.isDevelopers).map((group) => group.id),
+    ]);
+    return members
+      .filter(
+        (member) =>
+          member.role === "owner" ||
+          member.role === "admin" ||
+          member.groups.some((group) => access.has(group.id)),
+      )
+      .map((member) => ({
+        id: member.userId,
+        name: member.name,
+        email: member.email,
+      }));
+  });
+
+/** Replaces a case's assignees. Refusals come back as data. */
+export const liveSetAssignees = createServerFn({ method: "POST" })
+  .validator((input: { caseId: string; userIds: string[] }) => input)
+  .handler(async ({ data }): Promise<ApprovalDecision> => {
+    const response = await send(
+      `/cases/${encodeURIComponent(data.caseId)}/assignees`,
+      { method: "PUT", body: JSON.stringify({ userIds: data.userIds }) },
+    );
+    if (response.ok) return { ok: true };
+    return { ok: false, ...(await apiError(response)) };
+  });
+
+/** Stores one file to start a case with; the form carries it as "file". */
+export const liveUploadFile = createServerFn({ method: "POST" })
+  .validator((form: FormData) => {
+    if (!(form instanceof FormData) || !(form.get("file") instanceof File))
+      throw new Error("Send the file as a form.");
+    return form;
+  })
+  .handler(async ({ data: form }): Promise<string> => {
+    const response = await send("/files", { method: "POST", body: form });
+    if (!response.ok) throw new Error((await apiError(response)).message);
+    return (await response.json<{ id: string }>()).id;
+  });
+
+/** A file attached to a case; its bytes come from the download route. */
+export type CaseFile = {
+  readonly id: string;
+  readonly name: string;
+  readonly contentType: string;
+  readonly size: number;
+  readonly createdAt: string;
+};
+
+/** The case's files, oldest first. */
+export const liveCaseFiles = createServerFn({ method: "GET" })
+  .validator((caseId: string) => caseId)
+  .handler(async ({ data: caseId }): Promise<CaseFile[]> => {
+    const response = await send(`/cases/${encodeURIComponent(caseId)}/files`);
+    if (!response.ok) throw new Error((await apiError(response)).message);
+    return (await response.json<{ files: CaseFile[] }>()).files;
+  });
+
+/**
+ * Attaches uploaded files to the case. Refusals (a cancelled case, files that
+ * already belong to a case) come back as data for the Input tab.
+ */
+export const liveAttachFiles = createServerFn({ method: "POST" })
+  .validator((input: { caseId: string; files: string[] }) => input)
+  .handler(async ({ data }): Promise<ApprovalDecision> => {
+    const response = await send(
+      `/cases/${encodeURIComponent(data.caseId)}/files`,
+      { method: "POST", body: JSON.stringify({ files: data.files }) },
+    );
+    if (response.ok) return { ok: true };
+    return { ok: false, ...(await apiError(response)) };
+  });
+
+/**
+ * Starts a case by hand. The key makes a retried submit start one case, not
+ * two; each submit sends a fresh one.
+ */
+export const liveStartCase = createServerFn({ method: "POST" })
+  .validator(
+    (input: {
+      agent: string;
+      text: string;
+      files: string[];
+      idempotencyKey: string;
+    }) => input,
+  )
+  .handler(async ({ data }): Promise<string> => {
+    const response = await send("/cases", {
+      method: "POST",
+      headers: { "idempotency-key": data.idempotencyKey },
+      body: JSON.stringify({
+        agent: data.agent,
+        ...(data.text && { text: data.text }),
+        files: data.files,
+      }),
+    });
+    if (!response.ok) throw new Error((await apiError(response)).message);
+    return (await response.json<{ id: string }>()).id;
+  });
+
+/** A page of a field's options, searched across its full list. */
+export type OptionPage = {
+  readonly items: readonly RoomOption[];
+  /** Every option the search matches, when the agent's code counts them. */
+  readonly total: number | null;
+  /** Whether more options match than the page holds. */
+  readonly more: boolean;
+};
+
+export const OPTION_PAGE_SIZE = 50;
+
+export const liveSearchOptions = createServerFn({ method: "POST" })
+  .validator((input: { caseId: string; path: string; query: string }) => input)
+  .handler(async ({ data }): Promise<OptionPage> => {
+    const response = await send(
+      `/cases/${encodeURIComponent(data.caseId)}/options`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          path: data.path,
+          ...(data.query && { query: data.query }),
+          limit: OPTION_PAGE_SIZE,
+        }),
+      },
+    );
+    if (!response.ok) throw new Error((await apiError(response)).message);
+    const page = await response.json<{
+      items: RoomOption[];
+      cursor?: string;
+      total?: number;
+    }>();
+    return {
+      items: page.items.map(({ id, label, description }) => ({
+        id,
+        label,
+        ...(description && { description }),
+      })),
+      total: page.total ?? null,
+      more: page.cursor !== undefined,
+    };
   });

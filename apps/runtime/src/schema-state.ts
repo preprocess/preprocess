@@ -320,7 +320,9 @@ export class SchemaState {
   }
 
   async evaluate(targets: Path[] | "all", depth = 0): Promise<void> {
-    if (!this.enabled || (targets !== "all" && targets.length === 0)) return;
+    // No targets still runs the checks: they read answers no field depends
+    // on, so a change nothing reads must refresh them too.
+    if (!this.enabled) return;
     const request: EvaluateRequest = {
       caseId: this.caseId,
       answers: this.values(),

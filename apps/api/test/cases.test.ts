@@ -754,6 +754,87 @@ describe("files and OCR", () => {
     ).toBe(404);
   });
 
+  it("attaches files to a started case for people who work it, and hands them to the next run", async () => {
+    const created = await operator.call<Accepted>(`/v1/orgs/${org}/cases`, {
+      body: { agent: "invoices", text: "Invoice 2004" },
+    });
+    const caseId = created.body.id;
+    await startQueuedCase(environment, queued.at(-1)!);
+    await recordCaseEvent(environment, {
+      organizationId: org,
+      agentId,
+      caseId,
+      type: "status",
+      status: "waiting",
+      waitingOn: null,
+      reason: null,
+      answers: null,
+      error: null,
+    });
+    const file = await upload("receipt", "receipt.txt", "text/plain");
+    const path = `/v1/orgs/${org}/cases/${caseId}/files`;
+    expect(
+      (await admin.call(path, { body: { files: [file.id] } })).status,
+    ).toBe(403);
+    expect(
+      (await outsider.call(path, { body: { files: [file.id] } })).status,
+    ).toBe(404);
+    const attached = await operator.call<{ files: { id: string }[] }>(path, {
+      body: { files: [file.id] },
+    });
+    expect(attached.status).toBe(200);
+    expect(attached.body.files.map((f) => f.id)).toEqual([file.id]);
+    const again = await operator.call<{ error: { code: string } }>(path, {
+      body: { files: [file.id] },
+    });
+    expect(again.status).toBe(422);
+    expect(again.body.error.code).toBe("invalid_files");
+    const listed = await owner.call<{ files: { id: string; name: string }[] }>(
+      path,
+    );
+    expect(listed.body.files).toMatchObject([
+      { id: file.id, name: "receipt.txt" },
+    ]);
+
+    // Anyone who sees the case downloads it, always as a sandboxed attachment.
+    const download = (cookie: string, fileId = file.id) =>
+      worker.fetch(
+        new Request(new URL(`${path}/${fileId}`, environment.APP_URL), {
+          headers: { cookie, origin: environment.APP_URL },
+        }),
+        environment,
+        { waitUntil: () => {}, passThroughOnException: () => {}, props: {} },
+      );
+    const bytes = await download(owner.cookie);
+    expect(bytes.status).toBe(200);
+    expect(await bytes.text()).toBe("receipt");
+    expect(bytes.headers.get("content-type")).toBe("text/plain");
+    expect(bytes.headers.get("content-disposition")).toBe(
+      "attachment; filename*=UTF-8''receipt.txt",
+    );
+    expect(bytes.headers.get("content-security-policy")).toBe("sandbox");
+    expect((await download(outsider.cookie)).status).toBe(404);
+    const loose = await upload("loose", "loose.txt", "text/plain");
+    expect((await download(owner.cookie, loose.id)).status).toBe(404);
+
+    calls.length = 0;
+    expect(
+      (
+        await operator.call(`/v1/orgs/${org}/cases/${caseId}/rerun`, {
+          body: {},
+        })
+      ).status,
+    ).toBe(200);
+    expect(calls.find((c) => c.method === "rerun")?.input.notes).toEqual([
+      {
+        kind: "file.added",
+        path: null,
+        before: null,
+        after: { id: file.id, name: "receipt.txt", contentType: "text/plain" },
+      },
+    ]);
+  });
+
   it("reads a page image, and a PDF page by page through the renderer", async () => {
     // The model service is the stub, called in this isolate.
     const fetch = globalThis.fetch;

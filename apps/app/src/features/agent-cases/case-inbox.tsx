@@ -56,6 +56,7 @@ import {
   type FilterFacetDef,
 } from "../../components/list-controls";
 import { PageHeader, PageTitle } from "../../components/page-header";
+import { AddCaseButton } from "./case-start-dialog";
 import { Toolbar, ToolbarButton } from "../../components/toolbar";
 import { useHotkeys } from "../../components/use-hotkeys";
 import { AgentPage } from "../agents/agent-page";
@@ -837,9 +838,12 @@ export function CaseInbox({
   search,
   onSearchChange,
   agent,
+  startAgents,
 }: Readonly<{
   /** Shows one agent's cases inside its page, under its Cases section. */
   agent?: OrgAgentDetail;
+  /** The agents the person may start cases for; the Add button shows for them. */
+  startAgents: readonly string[];
   page: CaseListPage;
   search: CasesInboxSearch;
   onSearchChange: (
@@ -961,6 +965,7 @@ export function CaseInbox({
           toolbarIndex={1}
         />
       </Toolbar>
+      <AddCaseButton agentId={agent?.id} agents={startAgents} />
     </div>
   );
   const scope = (

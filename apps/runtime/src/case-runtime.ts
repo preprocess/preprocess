@@ -33,6 +33,7 @@ import {
 import { agentWorker } from "./dispatch.ts";
 import type {
   CaseEvent,
+  CaseFile,
   CaseStatus,
   Env,
   EvalEvent,
@@ -1061,24 +1062,29 @@ export class CaseRuntime extends DurableObject<Env> {
     if (files.length === 0) return meta.input.text;
     const parts: string[] = [];
     for (const file of files) {
-      if (!meta.manifest.ocr || !this.env.PLATFORM) {
-        parts.push(`- ${file.name} (${file.contentType})`);
-        continue;
-      }
-      if (await this.overLimit()) return null;
-      try {
-        const { markdown } = await this.env.PLATFORM.ocrFile({
-          organizationId: meta.organizationId,
-          fileId: file.id,
-        });
-        this.record("ocr", { fileId: file.id, chars: markdown.length });
-        parts.push(`<file name="${file.name}">\n${markdown}\n</file>`);
-      } catch (error) {
-        this.record("ocr", { fileId: file.id, error: String(error) });
-        parts.push(`- ${file.name} (${file.contentType}; OCR failed)`);
-      }
+      if (meta.manifest.ocr && this.env.PLATFORM && (await this.overLimit()))
+        return null;
+      parts.push(await this.filePart(meta, file));
     }
     return `${meta.input.text}\n\nFiles:\n${parts.join("\n")}`;
+  }
+
+  // One file for a prompt: its text by OCR when the agent switched OCR on,
+  // else its name.
+  private async filePart(meta: Meta, file: CaseFile) {
+    if (!meta.manifest.ocr || !this.env.PLATFORM)
+      return `- ${file.name} (${file.contentType})`;
+    try {
+      const { markdown } = await this.env.PLATFORM.ocrFile({
+        organizationId: meta.organizationId,
+        fileId: file.id,
+      });
+      this.record("ocr", { fileId: file.id, chars: markdown.length });
+      return `<file name="${file.name}">\n${markdown}\n</file>`;
+    } catch (error) {
+      this.record("ocr", { fileId: file.id, error: String(error) });
+      return `- ${file.name} (${file.contentType}; OCR failed)`;
+    }
   }
 
   private async sourceReplay(key: string, manifest: Manifest) {
@@ -1408,8 +1414,25 @@ export class CaseRuntime extends DurableObject<Env> {
     const meta = this.meta();
     if (!meta) throw new Error("case has not started");
     if (meta.status === "running") throw new Error("case is running");
+    // Files people attached since the last run join the case's input and
+    // reach the agent in this run's prompt.
+    const added = notes
+      .filter((n) => n.kind === "file.added")
+      .map((n) => n.after as CaseFile);
+    const addedParts: string[] = [];
+    for (const file of added) addedParts.push(await this.filePart(meta, file));
+    notes = notes.filter((n) => n.kind !== "file.added");
     // Rules accepted or deleted since the last run apply from this one.
-    if (memories) this.save({ ...meta, memories });
+    this.save({
+      ...meta,
+      ...(memories && { memories }),
+      ...(added.length && {
+        input: {
+          ...meta.input,
+          files: [...(meta.input.files ?? []), ...added],
+        },
+      }),
+    });
     return this.continueWith((schema) => {
       const messages = this.thread().filter(
         (m) => m.kind === "person" && this.messageRun(m.id) >= meta.run,
@@ -1426,6 +1449,9 @@ export class CaseRuntime extends DurableObject<Env> {
                   `- ${n.kind}${n.path ? ` ${n.path}` : ""}${n.kind === "field.confirmed" ? "" : `: ${JSON.stringify(n.before)} → ${JSON.stringify(n.after)}`}`,
               ),
             ]
+          : []),
+        ...(addedParts.length
+          ? ["", "Files people added to the case:", ...addedParts]
           : []),
         ...(stale.length
           ? [

@@ -28,6 +28,8 @@ import { casesSearchForUrl, rememberedCasesSearch } from "./case-inbox-search";
 import { CaseStatusIcon, caseStatusColor } from "./case-status-icon";
 import type { CaseNeighbors } from "./list-org-cases";
 import { AssigneeStack, NeedsAssignmentTag } from "./assignee-stack";
+import type { AssigneeCandidate } from "./case-api";
+import { AssignCaseButton } from "./case-assign";
 
 function CaseStepper({ neighbors }: Readonly<{ neighbors: CaseNeighbors }>) {
   const navigate = useNavigate();
@@ -88,9 +90,15 @@ export function CaseRoomHeader({
   caseItem,
   neighbors,
   onStatusChange,
+  assign,
   detailsOpen,
   onToggleDetails,
 }: Readonly<{
+  /** Setting the assignees, for Owners and Admins; undefined hides it. */
+  assign?: {
+    candidates: (item: Case) => Promise<readonly AssigneeCandidate[]>;
+    save: (ids: readonly string[]) => Promise<unknown>;
+  };
   /** Whether the Details inspector is open; undefined hides its toggle. */
   detailsOpen?: boolean;
   onToggleDetails?: () => void;
@@ -117,8 +125,15 @@ export function CaseRoomHeader({
     <PageHeader
       trailing={
         <>
-          {caseItem && caseItem.assignees.length > 0 ? (
+          {caseItem && (caseItem.assignees.length > 0 || assign) ? (
             <AssigneeStack assignees={caseItem.assignees} className="mr-1" />
+          ) : null}
+          {caseItem && assign ? (
+            <AssignCaseButton
+              candidates={assign.candidates}
+              item={caseItem}
+              onSave={assign.save}
+            />
           ) : null}
           {neighbors && neighbors.index > 0 ? (
             <CaseStepper neighbors={neighbors} />

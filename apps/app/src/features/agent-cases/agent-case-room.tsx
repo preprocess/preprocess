@@ -21,6 +21,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ComponentProps,
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
@@ -32,6 +33,7 @@ import {
   CaseInputPane,
   CaseInputWorkspace,
   INPUT_TAB,
+  type CaseFiles,
   useCaseFileTabs,
 } from "./case-input-workspace";
 import { CaseRoomViewEmpty, type CaseRoomEmptyViewId } from "./case-room-empty";
@@ -70,7 +72,11 @@ export type AgentCaseRoomProps = {
   readonly caseItem: Case | null;
   readonly neighbors?: CaseNeighbors;
   readonly onStatusChange?: (status: CaseStatus) => Promise<unknown>;
+  /** Setting the assignees, for Owners and Admins. */
+  readonly assign?: ComponentProps<typeof CaseRoomHeader>["assign"];
   readonly inputSamples?: ReadonlyArray<CaseInputSample>;
+  /** The case's attached files, and attaching more when the person may. */
+  readonly caseFiles?: CaseFiles;
   /** Opens on the Review view instead of Input, as inbox links ask. */
   readonly initialView?: "review";
   /** The case's fields, answers, checks and thread, and what a person can do. */
@@ -249,7 +255,9 @@ export function AgentCaseRoom({
   caseItem,
   neighbors,
   onStatusChange,
+  assign,
   inputSamples,
+  caseFiles,
   initialView,
   work = null,
 }: AgentCaseRoomProps) {
@@ -515,6 +523,7 @@ export function AgentCaseRoom({
             detailsOpen={caseItem ? isDetailsOpen : undefined}
             neighbors={neighbors}
             onStatusChange={onStatusChange}
+            assign={assign}
             onToggleDetails={() => setIsDetailsOpen((open) => !open)}
           />
           <div className="flex min-h-0 flex-1">
@@ -531,6 +540,7 @@ export function AgentCaseRoom({
               >
                 <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface-2">
                   <CaseInputWorkspace
+                    caseFiles={caseFiles}
                     idPrefix={idPrefix}
                     onOpenItem={openFileInFocusedPane}
                     onOpenItemInBackground={openFileInFocusedPaneBackground}

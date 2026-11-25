@@ -107,7 +107,10 @@ describe("a case with an output schema", () => {
       amount: 1285,
       currency: "USD",
     });
-    expect(first.checks).toEqual([{ name: "amountPositive", ok: true }]);
+    expect(first.checks).toEqual([
+      { name: "amountPositive", ok: true },
+      { name: "noteShort", ok: true },
+    ]);
     expect(first.thread.map((m) => m.kind)).toEqual(["input", "tag", "agent"]);
     expect(first.thread[1]).toMatchObject({ group: "accounts-payable" });
 
@@ -261,6 +264,13 @@ describe("completing a case", () => {
       });
     };
     await edit(-5);
+    // Nothing reads the amount, but the checks see the change at once.
+    expect((await runtime.caseState(c)).checks).toContainEqual({
+      name: "amountPositive",
+      ok: false,
+      field: "amount",
+      message: "must be positive",
+    });
     await runtime.rerun(c);
     const second = await settle(c);
     expect(second.status).toBe("waiting");
@@ -279,6 +289,28 @@ describe("completing a case", () => {
       message: "Checks failing: amountPositive",
     });
     await edit(1285);
+    // Nothing reads the approver's note, yet its check updates at once.
+    const note = async (value: string) => {
+      const state = await runtime.caseState(c);
+      await runtime.editAnswer({
+        ...c,
+        path: "approverNote",
+        value,
+        version: field(state, "approverNote").answer?.version ?? 0,
+        userId: "usr_ana",
+      });
+      return (await runtime.caseState(c)).checks;
+    };
+    expect(await note("x".repeat(300))).toContainEqual({
+      name: "noteShort",
+      ok: false,
+      field: "approverNote",
+      message: "keep it under 200 characters",
+    });
+    expect(await note("Approved by finance")).toEqual([
+      { name: "amountPositive", ok: true },
+      { name: "noteShort", ok: true },
+    ]);
     const done = await runtime.completeCase(c);
     expect(done).toMatchObject({
       result: "ok",

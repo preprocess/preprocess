@@ -5,14 +5,30 @@ import {
   unassignedGroups,
   type Case,
 } from "./case";
-import { liveCase, liveCaseList } from "./case-api";
+import {
+  liveAssigneeCandidates,
+  liveCase,
+  liveCaseAccess,
+  liveCaseList,
+  liveSetAssignees,
+  liveStartCase,
+  liveUploadFile,
+  type AssigneeCandidate,
+  type CaseAccess,
+} from "./case-api";
 import {
   AWAITING_NONE,
   UNASSIGNED_ANY,
   type CasesGrouping,
   type CasesInboxSearch,
 } from "./case-inbox-search";
-import { createCaseSeed } from "./case-seed";
+import {
+  parseAgentId,
+  parseCaseId,
+  type AgentId,
+  type CaseId,
+} from "./agent-case-ref";
+import { SEED_AGENTS, SEED_PEOPLE, createCaseSeed } from "./case-seed";
 import { getOrgAgent, type OrgAgentDetail } from "../agents/list-org-agents";
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { ScenarioState } from "../../scenarios/scenarios";
@@ -381,4 +397,104 @@ export async function getOrgCaseNeighbors(
     index: index + 1,
     total: page ? page.total : ordered.length,
   };
+}
+
+/**
+ * What the signed-in person may do to cases. Seeded scenarios act as an
+ * Admin who operates every seeded agent.
+ */
+export function getCaseAccess(): Promise<CaseAccess> {
+  if (live()) return liveCaseAccess();
+  return Promise.resolve({ canAssign: true, startAgents: [...SEED_AGENTS] });
+}
+
+/**
+ * Starts a case by hand: uploads the files, then starts the case with them
+ * and the text. Seeded, the case joins the seeded list until the dev server
+ * restarts.
+ */
+export async function startCase(input: {
+  agentId: string;
+  text: string;
+  files: readonly File[];
+}): Promise<{ agentId: AgentId; caseId: CaseId }> {
+  const text = input.text.trim();
+  if (!live()) {
+    const now = new Date().toISOString();
+    const item: Case = {
+      id: parseCaseId(
+        `cas_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`,
+      ),
+      agentId: parseAgentId(input.agentId),
+      orgId: SEED_ORG,
+      title: null,
+      status: "Active",
+      awaiting: [],
+      assignees: [],
+      externalId: null,
+      costCents: 0,
+      previewBranch: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    seeded.set(currentScenario().cases, [item, ...seededCases()]);
+    return { agentId: item.agentId, caseId: item.id };
+  }
+  const files: string[] = [];
+  for (const file of input.files) {
+    const form = new FormData();
+    form.set("file", file);
+    files.push(await liveUploadFile({ data: form }));
+  }
+  const caseId = await liveStartCase({
+    data: {
+      agent: input.agentId,
+      text,
+      files,
+      idempotencyKey: crypto.randomUUID(),
+    },
+  });
+  return { agentId: parseAgentId(input.agentId), caseId: parseCaseId(caseId) };
+}
+
+/** The people a case can be assigned to: everyone who can see it. */
+export function assigneeCandidates(
+  item: Case,
+): Promise<readonly AssigneeCandidate[]> {
+  if (live()) return liveAssigneeCandidates({ data: item.agentId });
+  return Promise.resolve(
+    SEED_PEOPLE.map((person) => ({
+      id: person.email,
+      name: person.name,
+      email: person.email,
+    })),
+  );
+}
+
+/** Replaces a case's assignees; seeded, until the dev server restarts. */
+export async function setCaseAssignees(
+  item: Case,
+  ids: readonly string[],
+): Promise<void> {
+  if (live()) {
+    const result = await liveSetAssignees({
+      data: { caseId: item.id, userIds: [...ids] },
+    });
+    if (!result.ok) throw new Error(result.message);
+    return;
+  }
+  seeded.set(
+    currentScenario().cases,
+    seededCases().map((row) =>
+      row.agentId === item.agentId && row.id === item.id
+        ? {
+            ...row,
+            assignees: SEED_PEOPLE.filter((person) =>
+              ids.includes(person.email),
+            ),
+            updatedAt: new Date().toISOString(),
+          }
+        : row,
+    ),
+  );
 }

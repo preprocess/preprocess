@@ -48,6 +48,14 @@ export const loadSession = createServerFn({ method: "GET" }).handler(
   },
 );
 
+/** Whether anyone may create an account, for the sign-in and sign-up copy. */
+export const loadSignUpOpen = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const { signUpIsOpen } = await import("../../server/run-mode.server");
+    return signUpIsOpen();
+  },
+);
+
 export const loadOrganizations = createServerFn({ method: "GET" }).handler(
   async (): Promise<UserOrganization[]> => {
     const { apiJson } = await import("../../server/api.server");
