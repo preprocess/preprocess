@@ -44,6 +44,28 @@ export const canSeeCase = (caller: Caller, role: AgentRole) =>
 
 // Working a case (start, edit, rerun, cancel) needs an operator group or
 // Developers.
+// The agents whose cases the caller may see (the rule canSeeCase applies to
+// one case), or null for every agent.
+export const visibleAgents = async (
+  tx: Tx,
+  caller: Caller,
+): Promise<string[] | null> => {
+  if (
+    caller.type === "api_key" ||
+    caller.role === "owner" ||
+    caller.role === "admin"
+  )
+    return null;
+  const rows = await tx
+    .select({ isDevelopers: groups.isDevelopers, agentId: agentGrants.agentId })
+    .from(groupMembers)
+    .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+    .leftJoin(agentGrants, eq(agentGrants.groupId, groups.id))
+    .where(eq(groupMembers.userId, caller.userId));
+  if (rows.some((r) => r.isDevelopers)) return null;
+  return [...new Set(rows.flatMap((r) => (r.agentId ? [r.agentId] : [])))];
+};
+
 export const canWorkCase = (role: AgentRole) =>
   role === "manage" || role === "operator";
 
