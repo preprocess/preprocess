@@ -19,7 +19,6 @@ import {
   ArrowLeft,
   ChevronRight,
   Plus,
-  ShareUpRight,
   Users,
   X,
 } from "@preprocess/ui/lib/icons";
@@ -101,11 +100,11 @@ export function GroupsList({
           New group
         </Button>
       }
-      description="Groups decide who can see and operate each agent. Groups mapped to your identity provider keep their members in sync on their own."
+      description="Groups decide who can see and operate each agent. The built-in Developers group manages every agent."
     >
       {groups.length === 0 ? (
         <SettingsEmpty
-          description="Create a group, or map groups from your identity provider in Authentication."
+          description="Create a group to give its members access to agents."
           title="No groups yet"
         />
       ) : (
@@ -270,7 +269,6 @@ export function GroupDetailView({
           onRemoveMember={onRemoveMember}
         />
         <GroupAccess group={group} onAccessChange={onAccessChange} />
-        <GroupIdentity group={group} />
         {group.source.kind === "directory" || group.managesAgents ? null : (
           <GroupDelete group={group} onDelete={onDelete} />
         )}
@@ -450,48 +448,6 @@ function GroupAccess({
           ))}
         </SettingsRows>
       )}
-    </SettingsSection>
-  );
-}
-
-function GroupIdentity({ group }: Readonly<{ group: GroupDetail }>) {
-  const { source } = group;
-  return (
-    <SettingsSection
-      description="Which identity-provider groups feed this one. The mapping is edited in WorkOS's Admin Portal, opened from Authentication."
-      title="Identity provider"
-    >
-      <SettingsRows>
-        <SettingsRow
-          description={
-            source.kind === "directory"
-              ? `Members sync from ${source.provider}`
-              : "Not mapped; members are managed here"
-          }
-          label={
-            source.kind === "directory" ? (
-              <span className="flex flex-wrap items-center gap-1.5">
-                {source.idpGroups.map((name) => (
-                  <Badge color="gray" key={name} size="sm">
-                    {name}
-                  </Badge>
-                ))}
-              </span>
-            ) : (
-              "No mapped groups"
-            )
-          }
-        >
-          <Button
-            render={<Link to="/settings/organization/authentication" />}
-            size="compact"
-            trailingIcon={ShareUpRight}
-            variant="secondary"
-          >
-            {source.kind === "directory" ? "Edit mapping" : "Map groups"}
-          </Button>
-        </SettingsRow>
-      </SettingsRows>
     </SettingsSection>
   );
 }

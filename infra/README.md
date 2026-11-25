@@ -37,8 +37,10 @@ database exists (build step 1). Production deployment config for our cloud is
 private and is not part of this repository; a self-hosted install deploys its
 own stages.
 
-The app's WorkOS secrets are required on staging and optional on previews, where
-sign-in stays unavailable until Better Auth replaces WorkOS.
+Locally the app reaches the API Worker through a service binding and serves
+Better Auth (`/api/auth/*`) and `/v1` on its own origin. Deployed stages don't
+bind the app to the API yet, so sign-in works only under `pnpm dev` until
+previews and staging are wired (build step 2).
 
 ## Regions
 

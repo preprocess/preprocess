@@ -1,7 +1,7 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+
+import { AuditLogPanel } from "../../../features/settings/audit-log-panel";
 
 export const Route = createFileRoute("/settings/organization/audit-logs")({
-  beforeLoad: () => {
-    throw redirect({ to: "/settings/organization/authentication" });
-  },
+  component: AuditLogPanel,
 });

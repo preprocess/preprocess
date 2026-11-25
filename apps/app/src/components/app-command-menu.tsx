@@ -16,13 +16,11 @@ import {
 } from "@preprocess/ui/components/sidebar";
 import {
   BadgeCheck,
-  Clock,
   OrbitSparkle,
   Folder4,
   Gauge,
   Globe,
   Inbox,
-  Lock,
   Monitor,
   Moon,
   OpenRectArrowOut,
@@ -32,12 +30,11 @@ import {
   Settings,
   Shield,
   Sun,
-  Tags,
   User,
   Users,
 } from "@preprocess/ui/lib/icons";
 import { useNavigate } from "@tanstack/react-router";
-import { useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { useAuth } from "../features/auth/auth-context";
 import { useEffect, useMemo, useState } from "react";
 
 import type { OrganizationSwitcher } from "./product-shell";
@@ -48,13 +45,10 @@ type AppPath =
   | "/cases"
   | "/agents"
   | "/settings/account"
-  | "/settings/account/security"
-  | "/settings/account/sessions"
-  | "/settings/account/api-keys"
   | "/settings/organization"
   | "/settings/organization/members"
-  | "/settings/organization/authentication"
-  | "/settings/organization/billing"
+  | "/settings/organization/groups"
+  | "/settings/organization/audit-logs"
   | "/developers/api"
   | "/developers/integrations"
   | "/developers/sandboxes"
@@ -80,25 +74,6 @@ const PAGES: readonly {
   { to: "/agents", label: "Agents", group: "Go to", icon: OrbitSparkle },
   { to: "/settings/account", label: "Profile", group: "Account", icon: User },
   {
-    to: "/settings/account/security",
-    label: "Security",
-    group: "Account",
-    icon: Lock,
-    keywords: ["password", "mfa"],
-  },
-  {
-    to: "/settings/account/sessions",
-    label: "Sessions",
-    group: "Account",
-    icon: Clock,
-  },
-  {
-    to: "/settings/account/api-keys",
-    label: "Personal API keys",
-    group: "Account",
-    icon: BadgeCheck,
-  },
-  {
     to: "/settings/organization",
     label: "Organization settings",
     group: "Organization",
@@ -112,17 +87,18 @@ const PAGES: readonly {
     keywords: ["invite", "team"],
   },
   {
-    to: "/settings/organization/authentication",
-    label: "Authentication",
+    to: "/settings/organization/groups",
+    label: "Groups",
     group: "Organization",
-    icon: Shield,
-    keywords: ["sso", "directory", "domains", "audit logs"],
+    icon: Users,
+    keywords: ["developers", "access"],
   },
   {
-    to: "/settings/organization/billing",
-    label: "Billing",
+    to: "/settings/organization/audit-logs",
+    label: "Audit log",
     group: "Organization",
-    icon: Tags,
+    icon: Shield,
+    keywords: ["audit", "events", "verify"],
   },
   {
     to: "/developers/observability",

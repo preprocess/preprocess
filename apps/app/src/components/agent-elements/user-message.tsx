@@ -34,17 +34,15 @@ export function initialsOf(name: string): string {
 
 export function senderFromUser(user: {
   id?: string;
-  firstName?: string | null;
-  lastName?: string | null;
+  name?: string | null;
   email?: string | null;
-  profilePictureUrl?: string | null;
+  image?: string | null;
 }): MessageSender {
-  const name = [user.firstName, user.lastName].filter(Boolean).join(" ");
   return {
     id: user.id,
-    name: name || FALLBACK_SENDER.name,
+    name: user.name || FALLBACK_SENDER.name,
     email: user.email,
-    imageUrl: user.profilePictureUrl,
+    imageUrl: user.image,
   };
 }
 

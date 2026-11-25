@@ -39,8 +39,8 @@ for (let attempt = 0; attempt < 30 && !done; attempt++) {
 }
 expect(done, "queue consumer wrote the job to R2");
 
-// The app has no backend calls yet and signs in with WorkOS until Better Auth
-// lands (step 1), so check only that its Worker answers.
+// Deployed stages don't bind the app to the API yet, so check only that its
+// Worker answers.
 const page = await fetch(app, { redirect: "manual" });
 console.log(`GET ${app} -> ${page.status}`);
 expect(page.status < 500, "app Worker answers");

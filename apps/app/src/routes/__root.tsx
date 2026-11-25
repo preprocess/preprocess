@@ -8,41 +8,29 @@ import {
 } from "@tanstack/react-router";
 import { FluidProvider } from "@preprocess/ui/lib/fluid-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { getAuth } from "@workos/authkit-tanstack-react-start";
-import { AuthKitProvider } from "@workos/authkit-tanstack-react-start/client";
-import type { AuthKitProviderProps } from "@workos/authkit-tanstack-react-start/client";
 import type { ReactNode } from "react";
 
 import { ProductShell } from "../components/product-shell";
 import { loadProductSidebarOpen } from "../components/product-sidebar-open";
 import { ProductSidebarOpenProvider } from "../components/product-sidebar-state";
 import { ThemeProvider, ThemeScript } from "../components/theme-provider";
+import { AuthProvider } from "../features/auth/auth-context";
+import {
+  activateOrganization,
+  loadOrganizations,
+  loadSession,
+} from "../features/auth/session";
 import { loadInbox } from "../features/inbox/load-inbox";
 import { OrganizationsProvider } from "../features/organizations/organizations-context";
-import { loadUserOrganizations } from "../features/organizations/user-organizations";
-import { ClientApiSessionProvider } from "../features/workos-client-api/client-api-session";
 import { isOnboardingPath } from "../server/onboarding-path";
 import { ScenarioToolbar } from "../scenarios/scenario-toolbar";
-import { isPublicAuthPath, isPublicCasePath } from "../server/public-auth-path";
+import { isPublicAuthPath } from "../server/public-auth-path";
 
 import "@preprocess/ui/styles.css";
 import "../styles.css";
 
 const FAVICON_LIGHT = "/brand/favicon-light.png";
 const FAVICON_DARK = "/brand/favicon-dark.png";
-
-type AuthResult = Awaited<ReturnType<typeof getAuth>>;
-type InitialAuth = NonNullable<AuthKitProviderProps["initialAuth"]>;
-
-/** Strip the access token before shipping auth into the client provider. */
-function toInitialAuth(auth: AuthResult): InitialAuth {
-  if (!auth.user) {
-    return { user: null };
-  }
-
-  const { accessToken: _accessToken, ...initialAuth } = auth;
-  return initialAuth;
-}
 
 export const Route = createRootRoute({
   head: () => ({
@@ -84,47 +72,54 @@ export const Route = createRootRoute({
       },
     ],
   }),
+  // Loaders run in parallel, so the active organization has to be set
+  // before any of them asks the API for it. Only the document load needs it:
+  // sign-in, invitations, and organization switches all reload the page.
+  beforeLoad: async ({ location }) => {
+    if (typeof document !== "undefined") return;
+    if (isPublicAuthPath(location.pathname)) return;
+    const session = await loadSession();
+    if (!session || session.organizationId) return;
+    const [first] = await loadOrganizations();
+    if (first)
+      await activateOrganization({ data: { organizationId: first.id } });
+  },
   loader: async ({ location }) => {
     const sidebarOpen = await loadProductSidebarOpen();
 
-    if (
-      isPublicAuthPath(location.pathname) ||
-      isPublicCasePath(location.pathname)
-    ) {
+    if (isPublicAuthPath(location.pathname)) {
       return {
-        initialAuth: { user: null } satisfies InitialAuth,
+        session: null,
         inboxUnread: 0,
         organizations: [],
         sidebarOpen,
       };
     }
 
-    const auth = await getAuth();
-    if (!auth.user) {
-      const returnPathname = `${location.pathname}${location.searchStr}`;
+    const session = await loadSession();
+    if (!session) {
+      const redirectTo = `${location.pathname}${location.searchStr}`;
       // TanStack Router redirects are Response objects, not Error instances.
       throw redirect({
-        href: `/api/auth/sign-in?returnPathname=${encodeURIComponent(returnPathname)}`,
+        href: `/sign-in?redirect=${encodeURIComponent(redirectTo)}`,
       });
     }
 
-    const organizationId = auth.organizationId ?? null;
-    const onOnboarding = isOnboardingPath(location.pathname);
+    const organizations = await loadOrganizations();
 
-    if (!organizationId && !onOnboarding) {
+    const onOnboarding = isOnboardingPath(location.pathname);
+    if (!session.organizationId && !onOnboarding) {
       throw redirect({ to: "/onboarding" });
     }
-
-    if (organizationId && onOnboarding) {
+    if (session.organizationId && onOnboarding) {
       throw redirect({ to: "/" });
     }
 
-    const [organizations, inbox] = await Promise.all([
-      loadUserOrganizations(),
-      organizationId ? loadInbox() : Promise.resolve({ unreadCount: 0 }),
-    ]);
+    const inbox = session.organizationId
+      ? await loadInbox()
+      : { unreadCount: 0 };
     return {
-      initialAuth: toInitialAuth(auth),
+      session,
       inboxUnread: inbox.unreadCount,
       organizations,
       sidebarOpen,
@@ -138,13 +133,13 @@ export const Route = createRootRoute({
   component: RootComponent,
 });
 
-// Settings data from the WorkOS Client API. One client per browser tab.
+// Settings data from the API. One client per browser tab.
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: false } },
 });
 
 function RootComponent() {
-  const { inboxUnread, initialAuth, organizations, sidebarOpen } =
+  const { inboxUnread, session, organizations, sidebarOpen } =
     Route.useLoaderData();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
@@ -161,16 +156,14 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthKitProvider initialAuth={initialAuth}>
-        <ClientApiSessionProvider>
-          <OrganizationsProvider organizations={organizations}>
-            <ProductSidebarOpenProvider open={sidebarOpen}>
-              {outlet}
-              {import.meta.env.DEV ? <ScenarioToolbar /> : null}
-            </ProductSidebarOpenProvider>
-          </OrganizationsProvider>
-        </ClientApiSessionProvider>
-      </AuthKitProvider>
+      <AuthProvider session={session}>
+        <OrganizationsProvider organizations={organizations}>
+          <ProductSidebarOpenProvider open={sidebarOpen}>
+            {outlet}
+            {import.meta.env.DEV ? <ScenarioToolbar /> : null}
+          </ProductSidebarOpenProvider>
+        </OrganizationsProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

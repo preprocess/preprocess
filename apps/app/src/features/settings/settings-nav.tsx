@@ -22,26 +22,17 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 type Page = {
   to:
     | "/settings/account"
-    | "/settings/account/security"
-    | "/settings/account/sessions"
-    | "/settings/account/api-keys"
     | "/settings/organization"
-    | "/settings/organization/authentication"
-    | "/settings/organization/billing"
     | "/settings/organization/members"
-    | "/settings/organization/groups";
+    | "/settings/organization/groups"
+    | "/settings/organization/audit-logs";
   label: string;
 };
 
 const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
   {
     label: "Account",
-    pages: [
-      { to: "/settings/account", label: "Profile" },
-      { to: "/settings/account/security", label: "Security" },
-      { to: "/settings/account/sessions", label: "Sessions" },
-      { to: "/settings/account/api-keys", label: "API keys" },
-    ],
+    pages: [{ to: "/settings/account", label: "Profile" }],
   },
   {
     label: "Organization",
@@ -49,11 +40,7 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
       { to: "/settings/organization", label: "General" },
       { to: "/settings/organization/members", label: "Members" },
       { to: "/settings/organization/groups", label: "Groups" },
-      {
-        to: "/settings/organization/authentication",
-        label: "Authentication",
-      },
-      { to: "/settings/organization/billing", label: "Billing" },
+      { to: "/settings/organization/audit-logs", label: "Audit log" },
     ],
   },
 ];

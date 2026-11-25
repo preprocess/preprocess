@@ -44,8 +44,8 @@ files from `infra/src/stages.ts`, creates the `preprocess_development` database,
 applies migrations, loads the seed, and starts the apps behind
 [portless](https://github.com/vercel-labs/portless):
 
-- https://app.preprocess.localhost: the product app. Without WorkOS credentials
-  it runs in preview mode, with a one-button sign-in and seeded scenarios.
+- https://app.preprocess.localhost: the product app. Sign up there; the app
+  serves Better Auth (`/api/auth/*`) and `/v1` from the API on its own origin.
 - https://api.preprocess.localhost: the API (`/v1/orgs/{org}/…`, with its
   OpenAPI document at `/v1/openapi.json`).
 - https://runtime.preprocess.localhost: the case runtime the API starts cases

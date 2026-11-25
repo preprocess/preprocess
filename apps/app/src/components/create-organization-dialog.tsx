@@ -16,11 +16,9 @@ import {
   LoadingButton,
   type LoadingButtonHandle,
 } from "@preprocess/ui/components/loading-button";
-import { useServerFn } from "@tanstack/react-start";
-import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import { useRef, useState, type FormEvent } from "react";
 
-import { createUserOrganization } from "../features/organizations/user-organizations";
+import { createOrganization } from "../features/organizations/user-organizations";
 import { validateOrganizationName } from "../server/organization-name";
 
 function validateOrgName(value: string) {
@@ -35,8 +33,6 @@ function CreateOrganizationDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const createOrg = useServerFn(createUserOrganization);
-  const { switchToOrganization } = useAuth();
   const nameFieldRef = useRef<InlineValidationHandle>(null);
   const createRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState("");
@@ -56,11 +52,7 @@ function CreateOrganizationDialog({
     }
 
     try {
-      const { organizationId } = await createOrg({ data: { name } });
-      const switched = await switchToOrganization(organizationId);
-      if (switched && "error" in switched && switched.error) {
-        throw new Error(switched.error);
-      }
+      await createOrganization(name);
       window.location.reload();
     } catch (cause) {
       const message =

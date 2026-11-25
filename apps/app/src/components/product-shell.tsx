@@ -39,12 +39,11 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { useAuth } from "../features/auth/auth-context";
 import { useContext, useState, type ReactNode } from "react";
 
 import { useOrganizations } from "../features/organizations/organizations-context";
 import type { UserOrganization } from "../features/organizations/user-organization";
-import { useOptionalClientApiSession } from "../features/workos-client-api/client-api-session";
 import { AppCommandMenu, AppCommandSearchTrigger } from "./app-command-menu";
 import { CreateOrganizationDialog } from "./create-organization-dialog";
 import { ProductSidebarOpenContext } from "./product-sidebar-state";
@@ -86,13 +85,8 @@ function initialsOf(name: string): string {
   return (first ?? name).slice(0, 2).toUpperCase() || "?";
 }
 
-function displayName(user: {
-  firstName: string | null;
-  lastName: string | null;
-  email: string;
-}) {
-  const name = [user.firstName, user.lastName].filter(Boolean).join(" ");
-  return name || user.email;
+function displayName(user: { name: string; email: string }) {
+  return user.name || user.email;
 }
 
 function resolveCurrentOrganization(
@@ -119,13 +113,8 @@ function useOrganizationSwitcher(
   organizationsProp?: UserOrganization[],
 ): OrganizationSwitcher {
   const { organizationId, switchToOrganization } = useAuth();
-  const client = useOptionalClientApiSession();
   const contextOrganizations = useOrganizations();
-  const organizations =
-    organizationsProp ??
-    (client?.organizations.length
-      ? client.organizations
-      : contextOrganizations);
+  const organizations = organizationsProp ?? contextOrganizations;
   const current = resolveCurrentOrganization(organizations, organizationId);
   const [switching, setSwitching] = useState(false);
 
@@ -133,11 +122,7 @@ function useOrganizationSwitcher(
     if (!nextId || nextId === organizationId || switching) return;
     setSwitching(true);
     try {
-      const switched = await switchToOrganization(nextId);
-      if (switched && "error" in switched && switched.error) {
-        setSwitching(false);
-        return;
-      }
+      await switchToOrganization(nextId);
       window.location.reload();
     } catch {
       setSwitching(false);
@@ -200,21 +185,12 @@ function OrganizationHeader({
   );
 }
 
-let lastProfilePictureUrl: string | null = null;
-
 function UserFooter() {
-  const { user, loading, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
-  const name = user ? displayName(user) : loading ? "Loading…" : "Account";
-  if (user?.profilePictureUrl) {
-    lastProfilePictureUrl = user.profilePictureUrl;
-  }
-  const profilePictureUrl = user
-    ? user.profilePictureUrl
-    : loading
-      ? lastProfilePictureUrl
-      : null;
+  const name = user ? displayName(user) : "Account";
+  const profilePictureUrl = user?.image ?? null;
   const dark = resolvedTheme === "dark";
 
   return (
