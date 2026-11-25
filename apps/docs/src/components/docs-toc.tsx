@@ -93,7 +93,7 @@ export function OnThisPagePopover() {
 
 // Below lg, once the title scrolls away, the header's left side becomes the
 // mark and the section in view; tapping it opens the contents over the page.
-export function MobileContents() {
+export function MobileContents({ title }: { title?: string }) {
   const [open, setOpen] = useState(false);
   const current = useCurrentSection();
   return (
@@ -113,7 +113,7 @@ export function MobileContents() {
           className="min-w-0 truncate text-foreground"
           style={{ fontVariationSettings: fontWeights.medium }}
         >
-          {current ?? "On this page"}
+          {current ?? title}
         </span>
         <ChevronDown
           className={cn(

@@ -69,7 +69,13 @@ function Content({
   const { toc } = use(page.load());
   const MDX = page.body;
   return (
-    <DocsShell appUrl={appUrl} markdown={markdown} toc={toc} tree={tree}>
+    <DocsShell
+      appUrl={appUrl}
+      markdown={markdown}
+      title={page.title}
+      toc={toc}
+      tree={tree}
+    >
       <DocsArticle
         description={page.description}
         layout={url === "/" ? "home" : "guide"}

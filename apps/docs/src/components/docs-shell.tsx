@@ -34,6 +34,7 @@ import {
   SidebarMenuSubItem,
 } from "@preprocess/ui/components/sidebar-menu";
 import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
+import { useTouchPrimary } from "@preprocess/ui/hooks/use-touch-primary";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
   ArrowUpRight,
@@ -615,12 +616,14 @@ function MobileHeader({
   hasToc,
   onSearch,
   panel,
+  title,
   tree,
 }: {
   appUrl: string;
   hasToc: boolean;
   onSearch: () => void;
   panel: RefObject<HTMLElement | null>;
+  title?: string;
   tree: PageTree.Root;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -658,7 +661,7 @@ function MobileHeader({
     >
       <div className="min-w-0 flex-1">
         {folded ? (
-          <MobileContents />
+          <MobileContents title={title} />
         ) : (
           <PageLink className="flex min-w-0 items-center gap-1.5" url="/">
             <Wordmark compact />
@@ -720,16 +723,20 @@ export function DocsShell({
   tree,
   appUrl,
   markdown,
+  title,
   toc = [],
   children,
 }: {
   tree: PageTree.Root;
   appUrl: string;
   markdown?: string;
+  title?: string;
   toc?: TOCItemType[];
   children: ReactNode;
 }) {
   const panel = useRef<HTMLElement>(null);
+  const touch = useTouchPrimary();
+  const headings = useMemo(() => (touch ? [...toc] : toc), [toc, touch]);
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -744,28 +751,29 @@ export function DocsShell({
   const openSearch = () => setSearchOpen(true);
 
   return (
-    <TOCProvider toc={toc}>
-      <SidebarProvider
-        className="h-svh"
-        mobileBreakpoint={1024}
-        persist={false}
-        shortcut={null}
+    <SidebarProvider
+      className="h-svh"
+      mobileBreakpoint={1024}
+      persist={false}
+      shortcut={null}
+    >
+      <ShapeProvider defaultShape="rounded">
+        <Sidebar rail={false} variant="inset">
+          <SidebarBody appUrl={appUrl} onSearch={openSearch} tree={tree} />
+        </Sidebar>
+      </ShapeProvider>
+      <SidebarInset
+        className="min-h-0 overflow-hidden max-lg:m-0! max-lg:rounded-none! max-lg:bg-surface-2 max-lg:shadow-none!"
+        ref={panel}
       >
-        <ShapeProvider defaultShape="rounded">
-          <Sidebar rail={false} variant="inset">
-            <SidebarBody appUrl={appUrl} onSearch={openSearch} tree={tree} />
-          </Sidebar>
-        </ShapeProvider>
-        <SidebarInset
-          className="min-h-0 overflow-hidden max-lg:m-0! max-lg:rounded-none! max-lg:bg-surface-2 max-lg:shadow-none!"
-          ref={panel}
-        >
+        <TOCProvider toc={headings}>
           <SurfaceProvider value={2}>
             <MobileHeader
               appUrl={appUrl}
               hasToc={toc.length > 0}
               onSearch={openSearch}
               panel={panel}
+              title={title}
               tree={tree}
             />
             <TopBar appUrl={appUrl} markdown={markdown} tree={tree} />
@@ -777,13 +785,9 @@ export function DocsShell({
               {children}
             </ScrollArea>
           </SurfaceProvider>
-        </SidebarInset>
-        <DocsSearch
-          onOpenChange={setSearchOpen}
-          open={searchOpen}
-          tree={tree}
-        />
-      </SidebarProvider>
-    </TOCProvider>
+        </TOCProvider>
+      </SidebarInset>
+      <DocsSearch onOpenChange={setSearchOpen} open={searchOpen} tree={tree} />
+    </SidebarProvider>
   );
 }
