@@ -22,7 +22,7 @@ catalogs:
       specifier: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051
       version: 0.1.0
     '@preprocess/ui':
-      specifier: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d94844d
+      specifier: https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520
       version: 0.1.0
     '@tailwindcss/vite':
       specifier: ^4.3.3
@@ -221,7 +221,7 @@ importers:
         version: link:../../packages/sdk
       '@preprocess/ui':
         specifier: 'catalog:'
-        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d94844d(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
+        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
       '@streamdown/code':
         specifier: ^1.1.1
         version: 1.1.1(react@19.2.8)
@@ -333,7 +333,7 @@ importers:
         version: link:../../packages/cli
       '@preprocess/ui':
         specifier: 'catalog:'
-        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d94844d(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
+        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
       '@tanstack/react-router':
         specifier: 'catalog:'
         version: 1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -352,6 +352,9 @@ importers:
       fumadocs-ui:
         specifier: npm:@fumadocs/base-ui@16.19.7
         version: '@fumadocs/base-ui@16.19.7(@date-fns/tz@1.5.0)(@types/mdx@2.0.14)(@types/react@19.2.17)(date-fns@4.4.0)(fumadocs-core@16.19.7(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.17)(lucide-react@1.77.0(@types/react@19.2.17)(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.6.7))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)'
+      motion:
+        specifier: 'catalog:'
+        version: 14.6.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -2702,8 +2705,8 @@ packages:
     resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051}
     version: 0.1.0
 
-  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@d94844d':
-    resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d94844d}
+  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520':
+    resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520}
     version: 0.1.0
     peerDependencies:
       react: ^19.2.0
@@ -8647,7 +8650,7 @@ snapshots:
 
   '@preprocess/runmode@https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051': {}
 
-  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@d94844d(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)':
+  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)':
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       boring-avatars: 2.0.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

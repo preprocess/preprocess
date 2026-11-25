@@ -54,9 +54,9 @@
   --text-2xl--line-height: var(--lh-display);
   --text-3xl: var(--fs-display);
   --text-3xl--line-height: var(--lh-display);
-  --font-weight-medium: 550;
-  --font-weight-semibold: 550;
-  --font-weight-bold: 700;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 500;
+  --font-weight-bold: 500;
 }
 
 /* Code blocks take their spacing from the typeset around them. */
@@ -70,18 +70,12 @@
   text-decoration-line: none;
 }
 
-/* Fumadocs' weight utilities take the app's weights with their optical
-   sizes, as the type roles do. */
+/* Fumadocs' weight utilities take the app's heading weight with its optical
+   size, as the type roles do. Nothing in the docs is set heavier. Mirrors
+   kit's fontWeights.medium. */
 @layer utilities {
-  :is(.font-medium, .font-semibold) {
-    font-variation-settings:
-      "wght" 550,
-      "opsz" 18;
-  }
-  .font-bold {
-    font-variation-settings:
-      "wght" 700,
-      "opsz" 25;
+  :is(.font-medium, .font-semibold, .font-bold) {
+    font-variation-settings: var(--docs-medium);
   }
 }
 
@@ -91,12 +85,283 @@ button:is(.bg-fd-primary, .bg-fd-secondary) {
   border-radius: 9999px;
 }
 
-/* Docs prose reads at the subtitle size with a relaxed measure, and sections
-   breathe more than they do in the app. */
+/* The one weight above normal in the docs, kit's fontWeights.medium. */
+:root {
+  --docs-medium: "wght" 500, "opsz" 16.75;
+}
+
+/* The lockup, set as www.preprocess.com sets it. */
+.lockup,
+.lockup-compact {
+  letter-spacing: -0.02em;
+  font-variation-settings:
+    "wght" 450,
+    "opsz" 16;
+}
+.lockup {
+  font-size: 1.125rem;
+  line-height: 1.375rem;
+}
+.lockup-compact {
+  font-size: 1rem;
+  line-height: 1.25rem;
+}
+
+/* The docs reading step: the six roles re-set for prose on the article.
+   The chrome keeps the app step. */
+.docs-article {
+  --fs-display: 32px;
+  --lh-display: 40px;
+  --fs-title: 20px;
+  --lh-title: 28px;
+  --fs-subtitle: 16px;
+  --lh-subtitle: 24px;
+  --fs-body: 15px;
+  --lh-body: 26px;
+  --fs-caption: 13px;
+  --lh-caption: 20px;
+}
+@media (width < 40rem) {
+  .docs-article {
+    --fs-display: 28px;
+    --lh-display: 34px;
+  }
+}
+
+/* Chrome inside the article (block headers, labels) returns to the app
+   step: the roles fall back to kit's own sizes. */
+.docs-app-step {
+  --fs-display: 28px;
+  --lh-display: 34px;
+  --fs-title: 16px;
+  --lh-title: 22px;
+  --fs-subtitle: 14px;
+  --lh-subtitle: 20px;
+  --fs-body: 13px;
+  --lh-body: 20px;
+  --fs-caption: 12px;
+  --lh-caption: 16px;
+}
+
 .docs-prose {
-  --typeset-body: var(--fs-subtitle);
-  --typeset-body-leading: calc(var(--fs-subtitle) * 1.75);
+  --typeset-body: var(--fs-body);
+  --typeset-body-leading: var(--lh-body);
   --typeset-space-block: 1rem;
   --typeset-space-section: 2.5rem;
-  --typeset-space-subsection: 2rem;
+  --typeset-space-subsection: 1.5rem;
+}
+
+.docs-prose :where(h1, h2, h3, h4) {
+  font-variation-settings: var(--docs-medium);
+}
+.docs-prose :where(h2, h3) + * {
+  margin-top: 1rem;
+}
+
+.docs-prose :where(a):not(:where(.not-typeset, .not-typeset *)) {
+  text-decoration-color: var(--surface-6);
+  text-underline-offset: 3px;
+  font-variation-settings: var(--docs-medium);
+}
+.docs-prose :where(a):not(:where(.not-typeset, .not-typeset *)):hover {
+  text-decoration-color: var(--foreground);
+}
+
+.docs-prose :where(:not(pre) > code):not(:where(.not-typeset, .not-typeset *)) {
+  border: 0;
+  border-radius: 4px;
+  background: var(--tint);
+  padding: 0 6px;
+  font-size: 13.5px;
+  font-variation-settings: var(--docs-medium);
+}
+
+/* Code: mono 13/22 everywhere it is set as a block. */
+.docs-code,
+figure.shiki pre {
+  font-size: 13px;
+  line-height: 22px;
+}
+
+/* Shiki emits bold for keywords; the docs top out at the heading weight. */
+.shiki span[style*="font-weight:bold"] {
+  font-weight: 500;
+}
+
+/* Prose reads in the foreground; muted is for leads and labels. */
+.docs-prose :where(p, li):not(:where(.not-typeset, .not-typeset *)) {
+  color: var(--foreground);
+}
+
+/* Code block chrome: a 40px header with a hairline, at the app step. */
+figure.docs-codeblock > div:first-child:has(figcaption) {
+  height: 40px;
+  gap: 8px;
+  padding: 0 6px 0 14px;
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--border);
+  font-size: 13px;
+  line-height: 20px;
+}
+figure.docs-codeblock .line {
+  padding-inline: 16px;
+}
+
+/* The reference index's labels over their one-line blocks. */
+.docs-prose :is(h2#base-url, h2#authentication) {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.docs-prose :is(h2#base-url, h2#authentication) + * {
+  margin-top: 8px;
+}
+
+/* API pages: the endpoint pill. */
+.docs-api-pill > div:first-child {
+  min-height: 44px;
+  gap: 10px;
+  padding: 0 6px 0 8px;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.docs-api-pill > div:first-child > span:first-child {
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 9999px;
+  background: color-mix(in oklab, currentColor 12%, transparent);
+  font-size: 11px;
+  line-height: 14px;
+}
+.docs-api-pill [class*="bg-fd-primary/10"] {
+  padding: 0;
+  background: none;
+  color: var(--muted-foreground);
+}
+.docs-api-pill button[aria-haspopup="dialog"] {
+  height: 32px;
+  border-radius: 9999px;
+  background: var(--tint);
+  color: var(--foreground);
+}
+.docs-api-pill button[aria-haspopup="dialog"]:hover {
+  background: var(--tint-hover);
+}
+
+/* HTTP methods take the status hues, as the sidebar badges do. */
+.docs-api :is([class*="text-green-"]) {
+  color: var(--success);
+}
+.docs-api :is([class*="text-blue-"]) {
+  color: var(--info);
+}
+.docs-api :is([class*="text-yellow-"], [class*="text-orange-"]) {
+  color: var(--warning);
+}
+.docs-api :is([class*="text-red-5"], [class*="text-red-6"]) {
+  color: var(--destructive);
+}
+
+/* Section headings with a hairline under them. */
+.docs-api div:has(> h2) {
+  margin-top: 36px;
+  margin-bottom: 0;
+  padding-bottom: 8px;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+.docs-api h2,
+.docs-api h2 a {
+  color: var(--foreground);
+}
+.docs-api h2 {
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  font-variation-settings: var(--docs-medium);
+}
+
+/* Parameters are rows, not boxed cards. */
+.docs-api
+  [class*="rounded-xl"][class*="border"][class*="bg-fd-card"][class*="px-3"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.docs-api [class*="group/property"] {
+  padding-block: 16px;
+  border-top: 0;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+.docs-api [class*="group/property"] code {
+  display: contents;
+}
+.docs-api [class*="group/property"] code > .text-fd-primary {
+  padding: 0;
+  background: none;
+  color: var(--foreground);
+  font-variation-settings: var(--docs-medium);
+}
+.docs-api [class*="group/property"] code > .text-red-400 {
+  order: 1;
+}
+.docs-api [class*="group/property"] > div > button {
+  order: 2;
+}
+.docs-api [class*="group/property"] code > .text-fd-muted-foreground {
+  display: none;
+}
+.docs-api [class*="group/property"] code > .text-red-400 {
+  font-size: 0;
+}
+.docs-api [class*="group/property"] code > .text-red-400::after {
+  content: "required";
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 9999px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 14px;
+  vertical-align: middle;
+}
+.docs-api [class*="group/property"] [class*="bg-fd-secondary"] {
+  border: 0;
+  border-radius: 9999px;
+  background: var(--tint);
+  padding-inline: 8px;
+}
+
+/* The examples column: the code block's recessed well. */
+.docs-api-examples [class*="rounded-xl"][class*="border"] {
+  border: 0;
+  border-radius: 16px;
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+/* The request body's schema sits in rows too, not in a card. */
+.docs-api
+  > div:first-child
+  [class*="rounded-xl"][class*="border"]:not(.docs-api-pill *) {
+  border: 0;
+  background: none;
+}
+
+/* Below sm the playground trigger is an icon button. */
+@media (width < 40rem) {
+  .docs-api-pill button[aria-haspopup="dialog"] {
+    width: 32px;
+    padding: 0;
+    font-size: 0;
+    gap: 0;
+  }
 }

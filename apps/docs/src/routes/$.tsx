@@ -9,15 +9,17 @@ import { ApiUrlContext } from "@/components/configured";
 import { DocsArticle } from "@/components/docs-article";
 import { DocsShell } from "@/components/docs-shell";
 import { useMDXComponents } from "@/components/mdx";
+import { NotFound } from "@/components/not-found";
+import { TreeContext } from "@/components/page-tree";
 import { docs } from "@/lib/collections";
 import { source } from "@/lib/source";
 
 const loadPage = createServerFn({ method: "GET" })
   .validator((slugs: string[]) => slugs)
   .handler(async ({ data: slugs }) => {
-    const page = source.getPage(slugs);
-    if (!page) throw notFound();
     const pageTree = await source.serializePageTree(source.getPageTree());
+    const page = source.getPage(slugs);
+    if (!page) throw notFound({ data: { apiUrl: env.API_URL, pageTree } });
     if (page.type === "openapi")
       return {
         type: "openapi" as const,
@@ -32,6 +34,7 @@ const loadPage = createServerFn({ method: "GET" })
       url: page.url,
       path: page.path,
       apiUrl: env.API_URL,
+      markdown: await page.data.getText("processed"),
       pageTree,
     };
   });
@@ -45,15 +48,18 @@ export const Route = createFileRoute("/$")({
     return data;
   },
   component: Page,
+  notFoundComponent: ({ data }) => <NotFound data={data} />,
 });
 
 function Content({
   appUrl,
+  markdown,
   path,
   tree,
   url,
 }: {
   appUrl: string;
+  markdown: string;
   path: string;
   tree: Parameters<typeof DocsArticle>[0]["tree"];
   url: string;
@@ -63,14 +69,17 @@ function Content({
   const { toc } = use(page.load());
   const MDX = page.body;
   return (
-    <DocsShell appUrl={appUrl} toc={toc} tree={tree}>
+    <DocsShell appUrl={appUrl} markdown={markdown} toc={toc} tree={tree}>
       <DocsArticle
         description={page.description}
+        layout={url === "/" ? "home" : "guide"}
         title={page.title}
         tree={tree}
         url={url}
       >
-        <MDX components={useMDXComponents()} />
+        <TreeContext value={tree}>
+          <MDX components={useMDXComponents()} />
+        </TreeContext>
       </DocsArticle>
     </DocsShell>
   );
@@ -82,7 +91,12 @@ function Page() {
   if (page.type === "openapi")
     return (
       <DocsShell appUrl={appUrl} tree={page.pageTree}>
-        <DocsArticle title={page.title} tree={page.pageTree} url={page.url}>
+        <DocsArticle
+          layout="api"
+          title={page.title}
+          tree={page.pageTree}
+          url={page.url}
+        >
           <div className="not-typeset">
             <OpenAPIPage {...page.props} />
           </div>
@@ -94,6 +108,7 @@ function Page() {
       <Suspense>
         <Content
           appUrl={appUrl}
+          markdown={page.markdown}
           path={page.path}
           tree={page.pageTree}
           url={page.url}

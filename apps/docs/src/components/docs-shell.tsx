@@ -9,15 +9,21 @@ import {
   isMacPlatform,
   type CommandMenuItemData,
 } from "@preprocess/ui/components/command-menu";
-import markBlack from "@preprocess/ui/assets/preprocess-icon-b.svg";
-import markWhite from "@preprocess/ui/assets/preprocess-icon-w.svg";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import {
   Sheet,
   SheetContent,
   SheetTitle,
-  SheetTrigger,
 } from "@preprocess/ui/components/sheet";
+import {
+  Sidebar,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+} from "@preprocess/ui/components/sidebar";
 import {
   SidebarMenu,
   SidebarMenuBadge,
@@ -27,101 +33,83 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@preprocess/ui/components/sidebar-menu";
+import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
+import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
+  ArrowUpRight,
   BookOpen,
+  Braces,
+  Check,
   ChevronRight,
   Code,
-  FileIcon,
+  Copy,
+  FileText,
+  Hash,
+  Home,
+  Menu,
+  Monitor,
   Moon,
+  Plug,
   Search,
-  SidebarLeftIcon,
   Sun,
+  Terminal,
 } from "@preprocess/ui/lib/icons";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
+import { SurfaceProvider } from "@preprocess/ui/lib/surface-context";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
-import type { TOCItemType } from "fumadocs-core/toc";
-import { TOCProvider } from "fumadocs-ui/components/toc";
 import { cn } from "@preprocess/ui/lib/utils";
-import { Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { useRouter, useRouterState } from "@tanstack/react-router";
+import type { TOCItemType } from "fumadocs-core/toc";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { useDocsSearch } from "fumadocs-core/search/client";
+import { TOCProvider } from "fumadocs-ui/components/toc";
 import { useTheme } from "next-themes";
 import {
-  isValidElement,
+  Fragment,
   useEffect,
   useMemo,
+  useRef,
   useState,
-  type ComponentProps,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from "react";
 
-import { OnThisPagePopover } from "./docs-toc";
+import {
+  contains,
+  crumbsFor,
+  firstPage,
+  folderPages,
+  guideLabel,
+  PageLink,
+  rowLabel,
+  splitTree,
+  textOf,
+} from "./page-tree";
+import { MobileContents, OnThisPagePopover } from "./docs-toc";
+import { Wordmark } from "./wordmark";
 
-// The docs read as a document: a plain section list on the left, a top bar
-// with search and the way into the app, and the page in a centered column.
-// Fumadocs supplies the page tree and the search index.
+// The docs use the app's own shell: a sidebar on the surface-1 chrome and the
+// page on an inset surface-2 panel. Fumadocs supplies the page tree and the
+// search index.
 
-// Page tree names reach the client as spans of escaped HTML; labels, crumbs
-// and the command menu want their text.
-export function textOf(node: ReactNode): string {
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(textOf).join("");
-  if (
-    !isValidElement<{
-      children?: ReactNode;
-      dangerouslySetInnerHTML?: { __html: string };
-    }>(node)
-  )
-    return "";
-  const html = node.props.dangerouslySetInnerHTML?.__html;
-  if (html === undefined) return textOf(node.props.children);
-  return html
-    .replace(/<[^>]*>/g, "")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&#39;", "'")
-    .replaceAll("&#x27;", "'")
-    .replaceAll("&amp;", "&");
-}
+const guideIcons: Record<string, typeof Home> = {
+  "/": Home,
+  "/sdk": Code,
+  "/cli": Terminal,
+  "/mcp": Plug,
+};
 
-// API operation names end with their HTTP method; rows show it apart from
-// the label so a long label truncates instead of wrapping.
-function rowLabel(node: ReactNode) {
-  const text = textOf(node).replace(/\s+/g, " ").trim();
-  const match = /^(.*) (GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.exec(text);
-  return match ? { label: match[1], method: match[2] } : { label: text };
-}
+// HTTP methods take the status hues, the docs' only use of them.
+const methodHue: Record<string, string> = {
+  GET: "var(--success)",
+  POST: "var(--info)",
+  PUT: "var(--warning)",
+  PATCH: "var(--warning)",
+  DELETE: "var(--destructive)",
+};
 
-export function contains(node: PageTree.Node, url: string): boolean {
-  if (node.type === "page") return node.url === url;
-  if (node.type === "folder")
-    return (
-      node.index?.url === url || node.children.some((c) => contains(c, url))
-    );
-  return false;
-}
-
-export function firstPage(node: PageTree.Folder): string | undefined {
-  if (node.index) return node.index.url;
-  for (const child of node.children) {
-    if (child.type === "page") return child.url;
-    if (child.type === "folder") {
-      const url = firstPage(child);
-      if (url) return url;
-    }
-  }
-  return undefined;
-}
-
-// Every docs page is the splat route; links go through the router.
-export function PageLink({
-  url,
-  ...props
-}: { url: string } & ComponentProps<"a">) {
-  return <Link {...props} params={{ _splat: url.slice(1) }} to="/$" />;
-}
+const methodLabel = (method: string) => (method === "DELETE" ? "DEL" : method);
 
 // The method badge is a fixed 2.5rem at the row's right inset; the label
 // truncates a step before it.
@@ -149,21 +137,20 @@ function PageRow({
         {label}
       </SidebarMenuSubButton>
       {method ? (
-        <SidebarMenuBadge className="top-1 w-10 justify-end font-mono">
-          {method}
+        <SidebarMenuBadge
+          className={cn(
+            typeClass("micro", "compact"),
+            "top-1 w-10 justify-end font-mono",
+          )}
+          style={{
+            color: methodHue[method],
+            fontVariationSettings: fontWeights.medium,
+          }}
+        >
+          {methodLabel(method)}
         </SidebarMenuBadge>
       ) : null}
     </SidebarMenuSubItem>
-  );
-}
-
-function folderPages(folder: PageTree.Folder): PageTree.Item[] {
-  return folder.children.flatMap((child) =>
-    child.type === "page"
-      ? [child]
-      : child.type === "folder"
-        ? folderPages(child)
-        : [],
   );
 }
 
@@ -203,155 +190,65 @@ function FolderRow({
   );
 }
 
-function Rows({
-  label,
+function GuideRows({
   nodes,
   pathname,
 }: {
-  label: string;
   nodes: PageTree.Node[];
   pathname: string;
 }) {
   return (
-    <SidebarMenu aria-label={label} className="gap-1">
-      {nodes.map((node, index) =>
+    <SidebarMenu aria-label="Guides" className="gap-0.5">
+      {nodes.map((node) =>
         node.type === "page" ? (
           <SidebarMenuItem key={node.url}>
             <SidebarMenuButton
+              icon={guideIcons[node.url] ?? FileText}
               isActive={node.url === pathname}
               render={<PageLink url={node.url} />}
             >
-              {textOf(node.name)}
+              {guideLabel(node)}
             </SidebarMenuButton>
           </SidebarMenuItem>
-        ) : node.type === "folder" ? (
-          <FolderRow folder={node} key={index} pathname={pathname} />
         ) : null,
       )}
     </SidebarMenu>
   );
 }
 
-// The two halves of the docs: prose guides at the top level of the tree,
-// and the reference folders (the API) beneath them.
-export function splitTree(tree: PageTree.Root) {
-  return {
-    guides: tree.children.filter((node) => node.type !== "folder"),
-    reference: tree.children.filter(
-      (node): node is PageTree.Folder => node.type === "folder",
-    ),
-  };
-}
-
-// The sidebar's contents: beside the page on wide screens, in a sheet below
-// lg.
-function SidebarBody({ tree }: { tree: PageTree.Root }) {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { guides, reference } = splitTree(tree);
-  const inReference = reference.some((folder) => contains(folder, pathname));
-  const referenceUrl = reference[0] ? firstPage(reference[0]) : undefined;
-
-  // The app is pill-shaped; its sidebar rows are rounded, and so are these.
+function ReferenceRows({
+  folder,
+  pathname,
+}: {
+  folder: PageTree.Folder;
+  pathname: string;
+}) {
   return (
-    <ShapeProvider defaultShape="rounded">
-      <PageLink
-        className="flex h-14 shrink-0 items-center gap-2.5 px-6"
-        url="/"
-      >
-        <img alt="" className="size-5 dark:hidden" src={markBlack} />
-        <img alt="" className="hidden size-5 dark:block" src={markWhite} />
-        <span
-          className="text-foreground"
-          style={{
-            fontFamily: "ui-sans-serif, system-ui, sans-serif",
-            fontSize: "1.125rem",
-            fontVariationSettings: '"wght" 450, "opsz" 16',
-            fontWeight: 450,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Preprocess
-        </span>
-        <span
-          className={cn(
-            typeClass("caption"),
-            "rounded-full border border-border px-2 text-muted-foreground",
-          )}
-        >
-          Docs
-        </span>
-      </PageLink>
-      <div className="px-2 pt-4">
-        <SidebarMenu aria-label="Sections" className="gap-1">
+    <>
+      {folder.index ? (
+        <SidebarMenu aria-label="Reference" className="gap-0.5">
           <SidebarMenuItem>
             <SidebarMenuButton
-              icon={BookOpen}
-              isActive={!inReference}
-              render={<PageLink url="/" />}
+              icon={Braces}
+              isActive={folder.index.url === pathname}
+              render={<PageLink url={folder.index.url} />}
             >
-              Guides
+              Introduction
             </SidebarMenuButton>
           </SidebarMenuItem>
-          {referenceUrl ? (
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                icon={Code}
-                isActive={inReference}
-                render={<PageLink url={referenceUrl} />}
-              >
-                Reference
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ) : null}
         </SidebarMenu>
-      </div>
-      <div className="mx-4 my-4 border-t border-border" />
-      <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
-        <nav
-          aria-label={inReference ? "Reference" : "Guides"}
-          className="w-72 pt-2 pr-4 pb-6 pl-2"
-        >
-          {inReference ? (
-            reference.map((folder, index) => (
-              <Rows
-                key={index}
-                label={textOf(folder.name)}
-                nodes={folder.children}
-                pathname={pathname}
-              />
-            ))
-          ) : (
-            <Rows label="Guides" nodes={guides} pathname={pathname} />
+      ) : null}
+      <SidebarGroup className="px-0 pt-4">
+        <SidebarGroupLabel>Endpoints</SidebarGroupLabel>
+        <SidebarMenu aria-label="Endpoints" className="gap-0.5">
+          {folder.children.map((node, index) =>
+            node.type === "folder" ? (
+              <FolderRow folder={node} key={index} pathname={pathname} />
+            ) : null,
           )}
-        </nav>
-      </ScrollArea>
-    </ShapeProvider>
-  );
-}
-
-function MobileMenu({ tree }: { tree: PageTree.Root }) {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const [open, setOpen] = useState(false);
-  useEffect(() => setOpen(false), [pathname]);
-  return (
-    <Sheet onOpenChange={setOpen} open={open}>
-      <SheetTrigger
-        render={
-          <Button
-            aria-label="Open navigation"
-            className="lg:hidden"
-            size="icon"
-            variant="ghost"
-          />
-        }
-      >
-        <SidebarLeftIcon size={16} />
-      </SheetTrigger>
-      <SheetContent className="w-72 gap-0 bg-background p-0" side="left">
-        <SheetTitle className="sr-only">Navigation</SheetTitle>
-        <SidebarBody tree={tree} />
-      </SheetContent>
-    </Sheet>
+        </SidebarMenu>
+      </SidebarGroup>
+    </>
   );
 }
 
@@ -361,6 +258,195 @@ function useShortcutLabel() {
     if (!isMacPlatform()) setLabel("Ctrl K");
   }, []);
   return label;
+}
+
+function SearchTrigger({ onOpen }: { onOpen: () => void }) {
+  const shortcut = useShortcutLabel();
+  return (
+    <button
+      className={cn(
+        typeClass("body"),
+        "flex h-9 w-full items-center gap-2 rounded-[10px] bg-surface-2 pr-1.5 pl-2.5 text-muted-foreground shadow-surface-2 transition-colors hover:text-foreground",
+      )}
+      onClick={onOpen}
+      type="button"
+    >
+      <Search className="shrink-0" size={16} />
+      <span className="min-w-0 flex-1 truncate text-left">
+        Search documentation
+      </span>
+      <kbd
+        className={cn(
+          typeClass("micro"),
+          "flex h-5 items-center rounded-md bg-surface-1 px-1.5 font-sans text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)]",
+        )}
+      >
+        {shortcut}
+      </kbd>
+    </button>
+  );
+}
+
+// Guides or Reference: a segmented switch whose segments are links.
+function SectionSwitch({
+  inReference,
+  referenceUrl,
+}: {
+  inReference: boolean;
+  referenceUrl?: string;
+}) {
+  const router = useRouter();
+  return (
+    <Tabs
+      className="w-full"
+      onValueChange={(value) => {
+        const url = value === "reference" ? referenceUrl : "/";
+        if (url) void router.navigate({ href: url });
+      }}
+      size="compact"
+      value={inReference ? "reference" : "guides"}
+    >
+      <TabsList className="w-full *:flex-1">
+        <TabItem icon={BookOpen} label="Guides" value="guides" />
+        {referenceUrl ? (
+          <TabItem icon={Code} label="Reference" value="reference" />
+        ) : null}
+      </TabsList>
+    </Tabs>
+  );
+}
+
+// System, light or dark, as an icon-only segmented switch.
+function ThemeSwitch() {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return (
+    <Tabs
+      onValueChange={setTheme}
+      size="compact"
+      value={mounted ? (theme ?? "system") : "system"}
+    >
+      <TabsList aria-label="Theme">
+        <TabItem
+          aria-label="System theme"
+          icon={Monitor}
+          label=""
+          value="system"
+        />
+        <TabItem aria-label="Light theme" icon={Sun} label="" value="light" />
+        <TabItem aria-label="Dark theme" icon={Moon} label="" value="dark" />
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function OpenApp({ appUrl, compact }: { appUrl: string; compact?: boolean }) {
+  return (
+    <Button
+      render={<a href={appUrl} />}
+      size={compact ? "compact" : undefined}
+      trailingIcon={ArrowUpRight}
+    >
+      Open the app
+    </Button>
+  );
+}
+
+// The sidebar's contents: beside the page on wide screens, in a sheet below
+// lg.
+function SidebarBody({
+  appUrl,
+  mobile = false,
+  onSearch,
+  tree,
+}: {
+  appUrl: string;
+  mobile?: boolean;
+  onSearch: () => void;
+  tree: PageTree.Root;
+}) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { guides, reference } = splitTree(tree);
+  const root = reference[0];
+  const inReference = reference.some((folder) => contains(folder, pathname));
+  const referenceUrl = root ? firstPage(root) : undefined;
+
+  return (
+    <>
+      <SidebarHeader className="gap-3 px-3 pt-0 pb-3">
+        <PageLink className="flex h-14 items-center gap-2 px-1.5" url="/">
+          <Wordmark />
+          <span
+            className="lockup text-muted-foreground"
+            style={{ fontVariationSettings: fontWeights.normal }}
+          >
+            Docs
+          </span>
+        </PageLink>
+        <SearchTrigger onOpen={onSearch} />
+        <SectionSwitch inReference={inReference} referenceUrl={referenceUrl} />
+      </SidebarHeader>
+      <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
+        <nav
+          aria-label={inReference ? "Reference" : "Guides"}
+          className="w-64 pt-2 pr-4 pb-6 pl-3"
+        >
+          {inReference && root ? (
+            <ReferenceRows folder={root} pathname={pathname} />
+          ) : (
+            <GuideRows nodes={guides} pathname={pathname} />
+          )}
+        </nav>
+      </ScrollArea>
+      <SidebarFooter
+        className={cn(
+          "flex-row items-center px-4 pt-3 pb-4",
+          mobile ? "justify-between" : "justify-start",
+        )}
+      >
+        {mobile ? <OpenApp appUrl={appUrl} compact /> : null}
+        <ThemeSwitch />
+      </SidebarFooter>
+    </>
+  );
+}
+
+type SearchItem = CommandMenuItemData & { url: string };
+
+// Where each page sits, for the line under a search hit.
+function pageIndex(tree: PageTree.Root) {
+  const { guides, reference } = splitTree(tree);
+  const pages = new Map<
+    string,
+    { label: string; group: string; path: string }
+  >();
+  for (const node of guides)
+    if (node.type === "page")
+      pages.set(node.url, {
+        label: guideLabel(node),
+        group: "Guides",
+        path: "Guides",
+      });
+  for (const root of reference) {
+    if (root.index)
+      pages.set(root.index.url, {
+        label: "Introduction",
+        group: "Reference",
+        path: "Reference",
+      });
+    for (const tag of root.children)
+      if (tag.type === "folder")
+        for (const page of folderPages(tag)) {
+          const { label, method } = rowLabel(page.name);
+          pages.set(page.url, {
+            label,
+            group: "Reference",
+            path: method ? `${textOf(tag.name)} · ${method}` : textOf(tag.name),
+          });
+        }
+  }
+  return pages;
 }
 
 function DocsSearch({
@@ -374,26 +460,43 @@ function DocsSearch({
 }) {
   const router = useRouter();
   const { search, setSearch, query } = useDocsSearch({ type: "fetch" });
-  const items = useMemo((): CommandMenuItemData[] => {
+  const pages = useMemo(() => pageIndex(tree), [tree]);
+  const items = useMemo((): SearchItem[] => {
     const go = (url: string) => () => {
       void router.navigate({ href: url });
     };
     if (search === "" || query.data === "empty")
-      return splitTree(tree)
-        .guides.filter((node): node is PageTree.Item => node.type === "page")
-        .map((page) => ({
-          value: page.url,
-          label: rowLabel(page.name).label,
-          icon: FileIcon,
-          onSelect: go(page.url),
+      return [...pages]
+        .filter(
+          ([, page]) => page.group === "Guides" || page.path === "Reference",
+        )
+        .map(([url, page]) => ({
+          url,
+          value: url,
+          label: page.label,
+          description: page.path,
+          group: page.group,
+          icon: page.group === "Reference" ? Braces : FileText,
+          onSelect: go(url),
         }));
-    return (query.data ?? []).map((result) => ({
-      value: result.id,
-      label: result.content,
-      icon: result.type === "page" ? FileIcon : undefined,
-      onSelect: go(result.url),
-    }));
-  }, [query.data, router, search, tree]);
+    return (query.data ?? []).map((result) => {
+      const url = result.url.split("#")[0] ?? result.url;
+      const page = pages.get(url);
+      const reference = page?.group === "Reference";
+      const heading = result.type !== "page";
+      return {
+        url: result.url,
+        value: result.id,
+        label: heading
+          ? textOf(result.content)
+          : (page?.label ?? textOf(result.content)),
+        description: heading ? (page?.label ?? "") : (page?.path ?? ""),
+        group: page?.group ?? "Guides",
+        icon: heading ? Hash : reference ? Braces : FileText,
+        onSelect: go(result.url),
+      };
+    });
+  }, [pages, query.data, router, search]);
 
   return (
     <CommandMenuDialog
@@ -418,26 +521,215 @@ function DocsSearch({
   );
 }
 
-function ThemeButton() {
-  const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const dark = mounted && resolvedTheme === "dark";
-  const Icon = dark ? Sun : Moon;
+function Crumbs({ tree }: { tree: PageTree.Root }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const crumbs = crumbsFor(tree, pathname);
+  return (
+    <nav aria-label="Breadcrumb" className="min-w-0">
+      <ol
+        className={cn(typeClass("body"), "flex min-w-0 items-center gap-1.5")}
+      >
+        {crumbs.map((crumb, index) => {
+          const last = index === crumbs.length - 1;
+          return (
+            <Fragment key={index}>
+              {index > 0 ? (
+                <ChevronRight
+                  aria-hidden
+                  className="shrink-0 text-muted-foreground"
+                  size={14}
+                />
+              ) : null}
+              <li className={cn("truncate", last ? "min-w-0" : "shrink-0")}>
+                {last ? (
+                  <span
+                    aria-current="page"
+                    className="text-foreground"
+                    style={{ fontVariationSettings: fontWeights.medium }}
+                  >
+                    {crumb.label}
+                  </span>
+                ) : crumb.url ? (
+                  <PageLink
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                    url={crumb.url}
+                  >
+                    {crumb.label}
+                  </PageLink>
+                ) : (
+                  <span className="text-muted-foreground">{crumb.label}</span>
+                )}
+              </li>
+            </Fragment>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+function CopyPage({ markdown }: { markdown: string }) {
+  const [copied, setCopied] = useState(false);
   return (
     <Button
-      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-      onClick={() => setTheme(dark ? "light" : "dark")}
-      size="icon"
+      leadingIcon={copied ? Check : Copy}
+      onClick={() => {
+        void navigator.clipboard.writeText(markdown).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
       variant="ghost"
     >
-      <Icon size={16} />
+      {copied ? "Copied" : "Copy page"}
     </Button>
   );
 }
 
-function TopBar({ tree, appUrl }: { tree: PageTree.Root; appUrl: string }) {
-  const shortcut = useShortcutLabel();
+// The panel's top bar on wide screens: where the page sits, and the way into
+// the app. The page dissolves under it through the scroll fade.
+function TopBar({
+  appUrl,
+  markdown,
+  tree,
+}: {
+  appUrl: string;
+  markdown?: string;
+  tree: PageTree.Root;
+}) {
+  return (
+    <header className="hidden h-14 shrink-0 items-center gap-4 pr-2.5 pl-6 lg:flex">
+      <Crumbs tree={tree} />
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {markdown ? <CopyPage markdown={markdown} /> : null}
+        <OpenApp appUrl={appUrl} />
+      </div>
+    </header>
+  );
+}
+
+// Below lg: one compact bar. The lockup sits left until the title scrolls
+// away, then folds to the mark and the section in view.
+function MobileHeader({
+  appUrl,
+  hasToc,
+  onSearch,
+  panel,
+  tree,
+}: {
+  appUrl: string;
+  hasToc: boolean;
+  onSearch: () => void;
+  panel: RefObject<HTMLElement | null>;
+  tree: PageTree.Root;
+}) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [folded, setFolded] = useState(false);
+  useEffect(() => setMenuOpen(false), [pathname]);
+
+  // The header hairline appears once the page scrolls, and the lockup folds
+  // into the contents once the title has scrolled under the header.
+  useEffect(() => {
+    const element = panel.current;
+    if (!element) return;
+    setScrolled(false);
+    setFolded(false);
+    const onScroll = (event: Event) => {
+      if (!(event.target instanceof HTMLElement)) return;
+      setScrolled(event.target.scrollTop > 0);
+      const title = element.querySelector("[data-page-title]");
+      if (!hasToc || !title) return;
+      const header = element.getBoundingClientRect().top + 52;
+      setFolded(title.getBoundingClientRect().bottom < header);
+    };
+    element.addEventListener("scroll", onScroll, { capture: true });
+    return () =>
+      element.removeEventListener("scroll", onScroll, { capture: true });
+  }, [hasToc, panel, pathname]);
+
+  return (
+    <header
+      className={cn(
+        "relative z-20 flex h-13 shrink-0 items-center gap-2 bg-surface-2 pr-1.5 pl-4 transition-shadow lg:hidden",
+        scrolled && "shadow-[inset_0_-1px_0_var(--border)]",
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        {folded ? (
+          <MobileContents />
+        ) : (
+          <PageLink className="flex min-w-0 items-center gap-1.5" url="/">
+            <Wordmark compact />
+            <span
+              className="lockup-compact shrink-0 text-muted-foreground"
+              style={{ fontVariationSettings: fontWeights.normal }}
+            >
+              Docs
+            </span>
+          </PageLink>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center">
+        <Button
+          aria-label="Search documentation"
+          className="text-muted-foreground"
+          onClick={onSearch}
+          size="icon"
+          variant="ghost"
+        >
+          <Search size={18} />
+        </Button>
+        <Button
+          aria-label="Open navigation"
+          className="text-muted-foreground"
+          onClick={() => setMenuOpen(true)}
+          size="icon"
+          variant="ghost"
+        >
+          <Menu size={18} />
+        </Button>
+      </div>
+      <Sheet onOpenChange={setMenuOpen} open={menuOpen}>
+        <SheetContent
+          className="w-[300px] max-w-[calc(100vw-3rem)] gap-0 rounded-l-3xl bg-background p-0 shadow-surface-5"
+          side="right"
+        >
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          <ShapeProvider defaultShape="rounded">
+            <div className="flex h-full min-h-0 flex-col">
+              <SidebarBody
+                appUrl={appUrl}
+                mobile
+                onSearch={() => {
+                  setMenuOpen(false);
+                  onSearch();
+                }}
+                tree={tree}
+              />
+            </div>
+          </ShapeProvider>
+        </SheetContent>
+      </Sheet>
+    </header>
+  );
+}
+
+export function DocsShell({
+  tree,
+  appUrl,
+  markdown,
+  toc = [],
+  children,
+}: {
+  tree: PageTree.Root;
+  appUrl: string;
+  markdown?: string;
+  toc?: TOCItemType[];
+  children: ReactNode;
+}) {
+  const panel = useRef<HTMLElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -449,65 +741,49 @@ function TopBar({ tree, appUrl }: { tree: PageTree.Root; appUrl: string }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  const openSearch = () => setSearchOpen(true);
 
-  return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
-      <MobileMenu tree={tree} />
-      <button
-        className={cn(
-          typeClass("body"),
-          "flex h-9 min-w-0 flex-1 items-center gap-2 rounded-full border border-border bg-card px-3 text-muted-foreground transition-colors hover:text-foreground sm:max-w-xs",
-        )}
-        onClick={() => setSearchOpen(true)}
-        type="button"
-      >
-        <Search className="shrink-0" size={16} />
-        <span className="min-w-0 flex-1 truncate text-left">
-          Search documentation
-        </span>
-        <kbd className={cn(typeClass("micro"), "hidden font-sans sm:inline")}>
-          {shortcut}
-        </kbd>
-      </button>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <ThemeButton />
-        <Button render={<a href={appUrl} />} trailingIcon={ChevronRight}>
-          Open the app
-        </Button>
-      </div>
-      <DocsSearch onOpenChange={setSearchOpen} open={searchOpen} tree={tree} />
-    </header>
-  );
-}
-
-export function DocsShell({
-  tree,
-  appUrl,
-  toc = [],
-  children,
-}: {
-  tree: PageTree.Root;
-  appUrl: string;
-  toc?: TOCItemType[];
-  children: ReactNode;
-}) {
   return (
     <TOCProvider toc={toc}>
-      <div className="flex h-svh bg-background">
-        <aside className="hidden w-72 shrink-0 flex-col border-r border-border lg:flex">
-          <SidebarBody tree={tree} />
-        </aside>
-        <main className="flex min-w-0 flex-1 flex-col">
-          <TopBar appUrl={appUrl} tree={tree} />
-          {toc.length > 0 ? <OnThisPagePopover /> : null}
-          <ScrollArea
-            className="min-h-0 flex-1"
-            viewportClassName="scroll-fade"
-          >
-            {children}
-          </ScrollArea>
-        </main>
-      </div>
+      <SidebarProvider
+        className="h-svh"
+        mobileBreakpoint={1024}
+        persist={false}
+        shortcut={null}
+      >
+        <ShapeProvider defaultShape="rounded">
+          <Sidebar rail={false} variant="inset">
+            <SidebarBody appUrl={appUrl} onSearch={openSearch} tree={tree} />
+          </Sidebar>
+        </ShapeProvider>
+        <SidebarInset
+          className="min-h-0 overflow-hidden max-lg:m-0! max-lg:rounded-none! max-lg:bg-surface-2 max-lg:shadow-none!"
+          ref={panel}
+        >
+          <SurfaceProvider value={2}>
+            <MobileHeader
+              appUrl={appUrl}
+              hasToc={toc.length > 0}
+              onSearch={openSearch}
+              panel={panel}
+              tree={tree}
+            />
+            <TopBar appUrl={appUrl} markdown={markdown} tree={tree} />
+            {toc.length > 0 ? <OnThisPagePopover /> : null}
+            <ScrollArea
+              className="min-h-0 flex-1"
+              viewportClassName="scroll-fade"
+            >
+              {children}
+            </ScrollArea>
+          </SurfaceProvider>
+        </SidebarInset>
+        <DocsSearch
+          onOpenChange={setSearchOpen}
+          open={searchOpen}
+          tree={tree}
+        />
+      </SidebarProvider>
     </TOCProvider>
   );
 }

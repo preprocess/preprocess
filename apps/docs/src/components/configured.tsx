@@ -1,6 +1,9 @@
 import { DynamicCodeBlock } from "fumadocs-ui/components/dynamic-codeblock";
 import { createContext, use } from "react";
 
+import { Pre } from "./code-block";
+import { monochrome } from "@/lib/shiki-theme";
+
 // The API URL this deployment documents (the Worker's API_URL), so examples
 // show a self-hosted install its own origin rather than ours.
 export const ApiUrlContext = createContext("");
@@ -16,8 +19,12 @@ export function Configured({ lang, code }: { lang: string; code: string }) {
   return (
     <div className="not-typeset">
       <DynamicCodeBlock
-        lang={lang}
         code={configure(code, use(ApiUrlContext))}
+        lang={lang}
+        options={{
+          themes: { light: monochrome, dark: monochrome },
+          components: { pre: Pre },
+        }}
       />
     </div>
   );
