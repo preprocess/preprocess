@@ -174,9 +174,9 @@ function AgentIdCopy({ id }: Readonly<{ id: string }>) {
   );
 }
 
-function DeploymentStatus({
+export function DeploymentStatus({
   deployment,
-}: Readonly<{ deployment: AgentDeploymentSummary }>) {
+}: Readonly<{ deployment: Pick<AgentDeploymentSummary, "status"> }>) {
   switch (deployment.status) {
     case "ready":
       return <SettingsStatus state="success">Ready</SettingsStatus>;

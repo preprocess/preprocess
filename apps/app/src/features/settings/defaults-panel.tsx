@@ -43,7 +43,7 @@ type Key = keyof Defaults;
 // Empty is the platform's own default.
 type Draft = Record<Key, string>;
 
-type Field = {
+export type Field = {
   key: Key;
   label: string;
   description: string;
@@ -57,7 +57,7 @@ const BOOLEAN = [
   { value: "false", label: "Off" },
 ] as const;
 
-const FIELDS: readonly Field[] = [
+export const FIELDS: readonly Field[] = [
   {
     key: "model",
     label: "Model",
