@@ -107,7 +107,7 @@ let session = { body: null } as Awaited<
 for (const at of [minute, minute - 1]) {
   await call(
     "GET",
-    `/api/auth/magic-link/verify?${new URLSearchParams({ token: tokenFor(at), callbackURL: "/" })}`,
+    `/api/auth/magic-link/verify?${new URLSearchParams({ token: tokenFor(at), callbackURL: "/" }).toString()}`,
   );
   session = await call("GET", "/api/auth/get-session");
   if (session.body?.user) break;
