@@ -83,10 +83,10 @@ pnpm --filter @preprocess/infra plan:staging -- --env-file .env.staging
 pnpm --filter @preprocess/infra deploy:staging -- --env-file .env.staging
 ```
 
-`plan:production` and `deploy:production` work the same way. Production also
-needs `PLANETSCALE_CLUSTER_SIZE`, the current size of its database, which the
-stack adopts on first deploy and must never resize, and usually `APP_DOMAIN` and
-`DOCS_DOMAIN`.
+`plan:production` and `deploy:production` work the same way. Production adopts
+the default branch of a database created by hand and only migrates it; its size
+and settings are never managed by the stack. It usually also needs `APP_DOMAIN`
+and `DOCS_DOMAIN`.
 
 Always read the plan first. Secrets come only from the deploy environment and
 are bound as `secret_text`; Alchemy keeps the deployed values in its state,
