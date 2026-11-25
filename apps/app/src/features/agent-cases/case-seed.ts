@@ -20,7 +20,7 @@ type SeedCase = {
   readonly updatedAt: string;
 };
 
-const AGENTS = [
+export const SEED_AGENTS = [
   "lab",
   "intake",
   "review",
@@ -101,7 +101,7 @@ function createSeedRows(count: number): SeedCase[] {
       MATTERS[Math.floor(index / COMPANIES.length) % MATTERS.length];
     seed.push({
       id: `cas_gen_${String(index).padStart(4, "0")}`,
-      agentId: AGENTS[index % AGENTS.length],
+      agentId: SEED_AGENTS[index % SEED_AGENTS.length],
       title: `${company} ${matter} ${index}`,
       createdAt: isoDaysAgo(30 + (index % 400), 8 + (index % 10)),
       updatedAt: isoDaysAgo(index % 120, 10 + (index % 12)),
@@ -112,7 +112,7 @@ function createSeedRows(count: number): SeedCase[] {
 
 /** Seeded people and their groups. Groups nobody here belongs to (Review,
  *  Compliance, Design, People) always leave a case needing assignment. */
-const ASSIGNEES: readonly CaseAssignee[] = [
+export const SEED_PEOPLE: readonly CaseAssignee[] = [
   { name: "Ada Park", email: "ada@example.com", groups: ["Legal", "Counsel"] },
   {
     name: "Theo Grant",
@@ -181,10 +181,10 @@ function seedCost(hash: number, status: CaseStatus): number {
 /** Nobody, one person, or a few: stable per case id. */
 function seedAssignees(hash: number): CaseAssignee[] {
   const count = [0, 1, 1, 1, 2, 2, 3, 4][(hash >> 5) % 8] ?? 1;
-  const start = (hash >> 9) % ASSIGNEES.length;
+  const start = (hash >> 9) % SEED_PEOPLE.length;
   return Array.from(
     { length: count },
-    (_, offset) => ASSIGNEES[(start + offset) % ASSIGNEES.length],
+    (_, offset) => SEED_PEOPLE[(start + offset) % SEED_PEOPLE.length],
   ).filter((assignee): assignee is CaseAssignee => assignee !== undefined);
 }
 

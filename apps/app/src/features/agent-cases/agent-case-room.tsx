@@ -21,6 +21,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ComponentProps,
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
@@ -70,6 +71,8 @@ export type AgentCaseRoomProps = {
   readonly caseItem: Case | null;
   readonly neighbors?: CaseNeighbors;
   readonly onStatusChange?: (status: CaseStatus) => Promise<unknown>;
+  /** Setting the assignees, for Owners and Admins. */
+  readonly assign?: ComponentProps<typeof CaseRoomHeader>["assign"];
   readonly inputSamples?: ReadonlyArray<CaseInputSample>;
   /** Opens on the Review view instead of Input, as inbox links ask. */
   readonly initialView?: "review";
@@ -249,6 +252,7 @@ export function AgentCaseRoom({
   caseItem,
   neighbors,
   onStatusChange,
+  assign,
   inputSamples,
   initialView,
   work = null,
@@ -515,6 +519,7 @@ export function AgentCaseRoom({
             detailsOpen={caseItem ? isDetailsOpen : undefined}
             neighbors={neighbors}
             onStatusChange={onStatusChange}
+            assign={assign}
             onToggleDetails={() => setIsDetailsOpen((open) => !open)}
           />
           <div className="flex min-h-0 flex-1">

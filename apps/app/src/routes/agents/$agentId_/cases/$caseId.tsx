@@ -13,10 +13,13 @@ import {
 import { FLUE_LAB_INPUT_SAMPLES } from "../../../../features/agent-cases/flue-lab-input-samples";
 import { currentScenario } from "../../../../scenarios/current-scenario";
 import {
+  assigneeCandidates,
+  getCaseAccess,
   getCaseAgent,
   getOrgCase,
   getOrgCaseNeighbors,
   orgCaseStatusSetter,
+  setCaseAssignees,
 } from "../../../../features/agent-cases/list-org-cases";
 
 /** `view=review` opens the room on its Review view. */
@@ -33,7 +36,7 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
   validateSearch: (search: Record<string, unknown>): CaseRoomSearch =>
     search.view === "review" ? { view: "review" } : {},
   loader: async ({ params }) => {
-    const [agent, item, neighbors, room] = await Promise.all([
+    const [agent, item, neighbors, room, access] = await Promise.all([
       getCaseAgent(params.agentId),
       getOrgCase(params.agentId, params.caseId),
       // Prev/next step through the list as it was last shown.
@@ -43,9 +46,10 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
         params.caseId,
       ),
       getCaseRoom(params.agentId, params.caseId),
+      getCaseAccess(),
     ]);
     if (!agent) throw notFound();
-    return { agent, item, neighbors, room };
+    return { agent, item, neighbors, room, access };
   },
   component: AgentCasePage,
   errorComponent: AgentCaseParamsError,
@@ -57,7 +61,7 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
 function AgentCasePage() {
   const caseRef = Route.useParams();
   const { view } = Route.useSearch();
-  const { agent, item, neighbors, room } = Route.useLoaderData();
+  const { agent, item, neighbors, room, access } = Route.useLoaderData();
   const router = useRouter();
   const { agentId, caseId } = caseRef;
   const refresh = async <T,>(result: Promise<T>) => {
@@ -70,6 +74,14 @@ function AgentCasePage() {
   return (
     <AgentCaseRoom
       agent={agent}
+      assign={
+        access.canAssign && item
+          ? {
+              candidates: assigneeCandidates,
+              save: (ids) => refresh(setCaseAssignees(item, ids)),
+            }
+          : undefined
+      }
       caseItem={item}
       caseRef={caseRef}
       initialView={view}
@@ -81,7 +93,15 @@ function AgentCasePage() {
           : undefined
       }
       neighbors={neighbors}
-      work={{ room, actions: caseWorkActions(agentId, caseId, refresh) }}
+      work={{
+        room,
+        actions: caseWorkActions(
+          agentId,
+          caseId,
+          refresh,
+          access.startAgents.includes(agentId),
+        ),
+      }}
       onStatusChange={
         setStatus
           ? (status) => refresh(setStatus(agentId, caseId, status))

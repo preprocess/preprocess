@@ -1,14 +1,16 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@preprocess/ui/components/combobox";
 import { Input } from "@preprocess/ui/components/input";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@preprocess/ui/components/select";
 import { AsyncActionAbortError } from "@preprocess/ui/hooks/use-async-action";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
@@ -17,7 +19,7 @@ import {
   TriangleAlertIcon,
 } from "@preprocess/ui/lib/icons";
 import { cn } from "@preprocess/ui/lib/utils";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   HALT_REASONS,
@@ -26,10 +28,12 @@ import {
   isEditable,
   type CaseRoomState,
   type RoomField,
+  type RoomOption,
   type WriteResult,
 } from "./case-room-state";
 import { CaseRoomApprovals } from "./case-room-approvals";
 import { CaseRoomMemories } from "./case-room-memories";
+import type { OptionPage } from "./case-api";
 import { useCaseWork, type CaseWorkActions } from "./case-work-context";
 
 const semibold = { fontVariationSettings: fontWeights.semibold };
@@ -168,6 +172,121 @@ async function settle(result: Promise<WriteResult>, onConflict: () => void) {
   if (written.result === "refused") throw new Error(written.reason);
 }
 
+const optionCount = new Intl.NumberFormat("en");
+
+/**
+ * A select field's value, picked from its full option list: the search runs
+ * on the agent's options, not only the ones the room lists for the field.
+ */
+function OptionSearch({
+  field,
+  value,
+  onChange,
+  search,
+}: Readonly<{
+  field: RoomField;
+  value: string;
+  onChange: (value: string) => void;
+  search: CaseWorkActions["searchOptions"];
+}>) {
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState<OptionPage | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [picked, setPicked] = useState<RoomOption | null>(() =>
+    value
+      ? (field.options?.find((option) => option.id === value) ?? {
+          id: value,
+          label: value,
+        })
+      : null,
+  );
+  const searchRef = useRef(search);
+  searchRef.current = search;
+
+  useEffect(() => {
+    let current = true;
+    const timer = setTimeout(
+      () => {
+        searchRef.current({ path: field.path, query: query.trim() }).then(
+          (next) => {
+            if (!current) return;
+            setPage(next);
+            setFailed(null);
+          },
+          (cause: unknown) => {
+            if (!current) return;
+            setFailed(
+              cause instanceof Error
+                ? cause.message
+                : "Could not load the options.",
+            );
+          },
+        );
+      },
+      query ? 200 : 0,
+    );
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [field.path, query]);
+
+  const options = page?.items ?? [];
+  const items = [
+    ...(picked && !options.some((option) => option.id === picked.id)
+      ? [picked]
+      : []),
+    ...options,
+  ].map((option) => ({ value: option.id, label: option.label }));
+
+  return (
+    <div className="flex min-w-40 flex-1 flex-col gap-1">
+      <Combobox
+        filter={() => true}
+        items={items}
+        onValueChange={(next) => {
+          setPicked(
+            options.find((option) => option.id === next) ??
+              (picked?.id === next ? picked : null),
+          );
+          onChange(next);
+        }}
+        size="compact"
+        value={value}
+      >
+        <ComboboxInput
+          aria-label={fieldLabel(field.path)}
+          autoFocus
+          className="[&_input]:w-full"
+          onInput={(event) => setQuery(event.currentTarget.value)}
+          placeholder="Search options"
+        />
+        <ComboboxContent>
+          <ComboboxEmpty>
+            {failed ?? (page ? "No options match." : "Loading options…")}
+          </ComboboxEmpty>
+          <ComboboxList>
+            {(item) =>
+              typeof item === "string" ? null : (
+                <ComboboxItem key={item.value} value={item.value}>
+                  {item.label}
+                </ComboboxItem>
+              )
+            }
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+      {page?.more ? (
+        <span className="text-body text-muted-foreground">
+          {page.total === null
+            ? `Showing the first ${optionCount.format(options.length)} options. Search to find the rest.`
+            : `Showing ${optionCount.format(options.length)} of ${optionCount.format(page.total)} options. Search to find the rest.`}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function FieldEditor({
   field,
   actions,
@@ -212,24 +331,14 @@ function FieldEditor({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5">
-        {field.kind === "select" && field.options ? (
-          <Select
-            onValueChange={(next) => setValue(String(next))}
+      <div className="flex flex-wrap items-start gap-1.5">
+        {field.kind === "select" ? (
+          <OptionSearch
+            field={field}
+            onChange={setValue}
+            search={actions.searchOptions}
             value={value}
-          >
-            <SelectTrigger
-              aria-label={fieldLabel(field.path)}
-              className="min-w-0 flex-1"
-            />
-            <SelectContent>
-              {field.options.map((option, index) => (
-                <SelectItem index={index} key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         ) : (
           <Input
             aria-invalid={error ? true : undefined}
@@ -434,6 +543,61 @@ function FieldRow({
   );
 }
 
+/**
+ * Rerun, and Complete while the case waits for someone who works it. The
+ * API's refusal, such as the checks still failing, shows under the buttons.
+ */
+function RunActions({
+  rerun,
+  complete,
+}: Readonly<{
+  rerun: CaseWorkActions["rerun"];
+  complete: CaseWorkActions["complete"];
+}>) {
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-body text-muted-foreground">
+          Rerun sends the agent what changed since its last run.
+        </span>
+        <LoadingButton
+          className="w-auto shrink-0"
+          onAction={rerun}
+          pendingLabel="Starting"
+          size="compact"
+          successLabel="Started"
+          variant={complete ? "secondary" : undefined}
+        >
+          Rerun
+        </LoadingButton>
+        {complete ? (
+          <LoadingButton
+            className="w-auto shrink-0"
+            onAction={async () => {
+              setError(null);
+              const result = await complete();
+              if (result.ok) return;
+              setError(result.message);
+              throw new AsyncActionAbortError();
+            }}
+            pendingLabel="Completing"
+            size="compact"
+            successLabel="Completed"
+          >
+            Complete
+          </LoadingButton>
+        ) : null}
+      </div>
+      {error ? (
+        <span className="text-body text-destructive" role="alert">
+          {error}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /** The Review view: approvals, the case's answers, what to check, and Rerun. */
 export function CaseRoomReview() {
   const work = useCaseWork();
@@ -509,20 +673,10 @@ export function CaseRoomReview() {
           </section>
         ) : null}
         {canRerun ? (
-          <div className="flex items-center justify-end gap-2">
-            <span className="text-body text-muted-foreground">
-              Rerun sends the agent what changed since its last run.
-            </span>
-            <LoadingButton
-              className="w-auto shrink-0"
-              onAction={actions.rerun}
-              pendingLabel="Starting"
-              size="compact"
-              successLabel="Started"
-            >
-              Rerun
-            </LoadingButton>
-          </div>
+          <RunActions
+            complete={room.status === "waiting" ? actions.complete : undefined}
+            rerun={actions.rerun}
+          />
         ) : null}
       </div>
     </ScrollArea>
