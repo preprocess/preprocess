@@ -53,8 +53,9 @@ jobs:
       AUDIT_SIGNING_KEY: ${{ secrets.AUDIT_SIGNING_KEY }}
       AUDIT_SIGNING_KEY_ID: ${{ secrets.AUDIT_SIGNING_KEY_ID }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-      # Optional: Google sign-in shows only when both are set.
-      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      # Optional: Google sign-in shows only when both are set. The client id is
+      # not secret, so it may be stored as either.
+      GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID || secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
     steps:
       - name: Check credentials
