@@ -47,7 +47,7 @@ function SignUpPage() {
     <AuthLayout
       description={
         signUpOpen || invited
-          ? "No password needed. We'll email you a link to sign in."
+          ? undefined
           : "Joining your team? Use the address your invitation was sent to."
       }
       footer={
@@ -74,6 +74,7 @@ function SignUpPage() {
         google={google}
         next={next}
         onSent={setSent}
+        submitLabel="Sign up"
       />
     </AuthLayout>
   );

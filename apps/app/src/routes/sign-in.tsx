@@ -66,7 +66,12 @@ function SignInPage() {
       }
       title={invited ? "Welcome aboard." : "Welcome back."}
     >
-      <PasswordlessForm google={google} next={next} onSent={setSent} />
+      <PasswordlessForm
+        google={google}
+        next={next}
+        onSent={setSent}
+        submitLabel="Sign in"
+      />
     </AuthLayout>
   );
 }

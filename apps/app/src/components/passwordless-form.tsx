@@ -21,10 +21,13 @@ export function PasswordlessForm({
   next,
   google,
   defaultEmail = "",
+  submitLabel,
   onSent,
 }: Readonly<{
   next: string;
   google: boolean;
+  /** The primary button: "Sign in" or "Sign up". */
+  submitLabel: string;
   defaultEmail?: string;
   /** The address the link went to, or null to ask again. */
   onSent: (email: string | null) => void;
@@ -141,7 +144,7 @@ export function PasswordlessForm({
           successLabel="Sent"
           type="submit"
         >
-          Email me a sign-in link
+          {submitLabel}
         </LoadingButton>
       </form>
     </div>

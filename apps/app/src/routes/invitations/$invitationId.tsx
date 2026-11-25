@@ -113,7 +113,7 @@ function InvitationPage() {
       );
     return (
       <AuthLayout
-        description={`${preview.inviterName} invited ${preview.email} to join ${preview.organizationName}. Sign in with that address to accept. No password needed.`}
+        description={`${preview.inviterName} invited ${preview.email} to join ${preview.organizationName}. Sign in with that address to accept.`}
         subtitle={`Join ${preview.organizationName} on Preprocess.`}
         title="You're invited."
       >
@@ -122,6 +122,7 @@ function InvitationPage() {
           google={google}
           next={here}
           onSent={setSent}
+          submitLabel="Sign in"
         />
       </AuthLayout>
     );
