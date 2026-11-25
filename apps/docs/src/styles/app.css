@@ -340,6 +340,67 @@ figure.docs-codeblock .line {
   padding-inline: 8px;
 }
 
+/* The schema filter: the recessed field the search uses. */
+.docs-api label:has(> input[aria-label="Filter Properties"]) {
+  height: 32px;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-2);
+}
+.docs-api label:has(> input[aria-label="Filter Properties"]) svg {
+  width: 14px;
+  height: 14px;
+}
+.docs-api label:has(> input[aria-label="Filter Properties"]) input {
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+/* Response status chips: pills with a dot in the status hue. */
+.docs-api div:has(> h2#response-body) [role="tablist"] {
+  gap: 6px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+.docs-api div:has(> h2#response-body) [role="tablist"] > span {
+  display: none;
+}
+.docs-api div:has(> h2#response-body) [role="tab"] {
+  height: 28px;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.docs-api div:has(> h2#response-body) [role="tab"][data-active] {
+  background: var(--tint);
+  box-shadow: none;
+  color: var(--foreground);
+}
+.docs-api div:has(> h2#response-body) [role="tab"]::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--muted-foreground);
+}
+.docs-api div:has(> h2#response-body) [role="tab"][data-status="2"]::before {
+  background: var(--success);
+}
+.docs-api div:has(> h2#response-body) [role="tab"][data-status="4"]::before {
+  background: var(--warning);
+}
+.docs-api div:has(> h2#response-body) [role="tab"][data-status="5"]::before {
+  background: var(--destructive);
+}
+
 /* The examples column: the code block's recessed well. */
 .docs-api-examples [class*="rounded-xl"][class*="border"] {
   border: 0;
