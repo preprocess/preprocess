@@ -284,19 +284,25 @@ function ReaderAction({ item }: Readonly<{ item: InboxItem }>) {
       return (
         <Button
           render={
-            link.agentId ? (
+            link.agentSlug ? (
               <Link
-                params={{ agentId: link.agentId }}
+                hash="requests"
+                params={{ agentId: link.agentSlug }}
+                search={{ request: link.requestId }}
                 to="/agents/$agentId/settings"
               />
             ) : (
-              <Link to="/developers/network" />
+              <Link
+                hash="requests"
+                search={{ request: link.requestId }}
+                to="/settings/organization/guardrails"
+              />
             )
           }
           type="button"
           variant="secondary"
         >
-          {link.agentId ? "Open agent settings" : "Open network rules"}
+          Review request
         </Button>
       );
     default: {

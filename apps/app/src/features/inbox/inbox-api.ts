@@ -148,11 +148,7 @@ function toItem(item: ApiInboxItem): InboxItem {
       title,
       summary: guardrailSummary(guardrail.change, agent),
       body: guardrail.reason ?? "No reason was given.",
-      link: guardrail.agent
-        ? { kind: "guardrail", agentId: guardrail.agent.id }
-        : guardrail.change.kind === "network"
-          ? { kind: "guardrail", agentId: null }
-          : undefined,
+      link: { kind: "guardrail", requestId: guardrail.id, agentSlug: agent },
       details: [{ label: "Agent", value: agent ?? "Every agent" }],
     };
   }

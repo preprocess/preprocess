@@ -82,7 +82,7 @@ export const INBOX_GUARDRAIL_ITEM: InboxItem = {
   kind: "guardrail",
   createdAt: "2026-08-19T10:20:00.000Z",
   unread: true,
-  link: { kind: "guardrail", agentId: "lab" },
+  link: { kind: "guardrail", requestId: "grq_seed_network", agentSlug: "lab" },
   details: [
     { label: "Agent", value: "lab" },
     { label: "Hosts", value: "erp.example.com" },

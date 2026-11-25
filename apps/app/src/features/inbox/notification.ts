@@ -13,9 +13,13 @@ export type InboxKind = (typeof INBOX_KINDS)[number];
 export type NotificationLink =
   | { readonly kind: "case"; readonly agentId: string; readonly caseId: string }
   | { readonly kind: "agent"; readonly agentId: string }
-  /** Where a guardrail request is reviewed: the agent's settings, or the
-   * organization's network rules when it covers every agent. */
-  | { readonly kind: "guardrail"; readonly agentId: string | null };
+  /** Where a guardrail request is decided: the agent's settings, or the
+   * organization's guardrails when it covers every agent. */
+  | {
+      readonly kind: "guardrail";
+      readonly requestId: string;
+      readonly agentSlug: string | null;
+    };
 
 /** One labelled fact the reader lists, such as what an approval covers. */
 export type InboxDetail = { readonly label: string; readonly value: string };
@@ -99,10 +103,11 @@ function decodeNotificationLink(value: unknown): NotificationLink {
     case "guardrail":
       return {
         kind: "guardrail",
-        agentId:
-          value.agentId === null
+        requestId: readString(value.requestId, "InboxItem.link.requestId"),
+        agentSlug:
+          value.agentSlug === null
             ? null
-            : readString(value.agentId, "InboxItem.link.agentId"),
+            : readString(value.agentSlug, "InboxItem.link.agentSlug"),
       };
     default:
       throw new InboxContractError("InboxItem.link.kind is invalid.");
