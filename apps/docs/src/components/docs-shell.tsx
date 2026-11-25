@@ -52,6 +52,7 @@ import {
   useMemo,
   useState,
   type ComponentProps,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 
@@ -122,6 +123,13 @@ export function PageLink({
   return <Link {...props} params={{ _splat: url.slice(1) }} to="/$" />;
 }
 
+// The method badge is a fixed 2.5rem at the row's right inset; the label
+// truncates a step before it.
+const methodGutter = {
+  "--row-gutter": "3.5rem",
+  "--row-gutter-hover": "3.5rem",
+} as CSSProperties;
+
 // An API operation's row: its label, with the HTTP method as the row's badge.
 function PageRow({
   item,
@@ -136,11 +144,12 @@ function PageRow({
       <SidebarMenuSubButton
         isActive={item.url === pathname}
         render={<PageLink url={item.url} />}
+        style={method ? methodGutter : undefined}
       >
         {label}
       </SidebarMenuSubButton>
       {method ? (
-        <SidebarMenuBadge className="top-1 font-mono">
+        <SidebarMenuBadge className="top-1 w-10 justify-end font-mono">
           {method}
         </SidebarMenuBadge>
       ) : null}
@@ -300,7 +309,7 @@ function SidebarBody({ tree }: { tree: PageTree.Root }) {
       <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
         <nav
           aria-label={inReference ? "Reference" : "Guides"}
-          className="w-72 px-2 pb-6"
+          className="w-72 pt-2 pr-4 pb-6 pl-2"
         >
           {inReference ? (
             reference.map((folder, index) => (
