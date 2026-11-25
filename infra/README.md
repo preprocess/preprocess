@@ -17,30 +17,41 @@ deliberately and read its changelog first.
 
 ## Stages
 
-| Stage         | What it deploys                                             |
-| ------------- | ----------------------------------------------------------- |
-| `staging`     | App Worker on workers.dev                                   |
-| `pr-<number>` | App Worker plus the full backend, isolated per pull request |
-| `development` | Never deployed; the names `pnpm dev` uses locally           |
+| Stage         | Database                                                      | On destroy         |
+| ------------- | ------------------------------------------------------------- | ------------------ |
+| `pr-<number>` | Its own branch of `main`, migrated and seeded                 | Everything removed |
+| `staging`     | Long-lived `staging` branch of `main`, migrated, never seeded | Data is protected  |
+| `production`  | Default branch of its own database, migrated, never seeded    | Data is protected  |
+| `development` | Never deployed; the names `pnpm dev` uses locally             |                    |
 
-A preview stage gets its own API Worker (with the `Counter` Durable Object
-namespace), R2 bucket, queue and consumer, the Tail Worker for agent code's
-console output, the stub model service (`apps/model-stub`) the API calls for
-`decide` and OCR unless `MODEL_SERVICE_URL` and `MODEL_SERVICE_KEY` name
-another, Hyperdrive configs (caching off), an audit R2 bucket, the daily
-audit-anchor cron, an email binding, and PlanetScale Postgres branch
-`pr-<number>` forked from the database's `main`, with `packages/db/migrations`
-applied and `packages/db/seed.sql` imported. Everything is served on
-workers.dev, so a preview needs no DNS. `destroy` removes all of it, the
-PlanetScale branch included. Staging gets the backend once its PlanetScale
-database exists (build step 1). Production deployment config for our cloud is
-private and is not part of this repository; a self-hosted install deploys its
-own stages.
+Every stage deploys the whole product, the same way:
 
-Locally the app reaches the API Worker through a service binding and serves
-Better Auth (`/api/auth/*`) and `/v1` on its own origin. Deployed stages don't
-bind the app to the API yet, so sign-in works only under `pnpm dev` until
-previews and staging are wired (build step 2).
+- the app Worker, bound to the API, so Better Auth (`/api/auth/*`) and `/v1` are
+  served on the app's own origin, as under `pnpm dev`;
+- the API Worker with its Durable Objects (`Counter`, `BuildQueue`,
+  `Scheduler`), crons, queues and consumers, R2 buckets (files, logs, audit),
+  the email binding, and `SECRETS_MASTER_KEY`, which the stack generates once
+  per stage into the account's Secrets Store;
+- the case runtime (`apps/runtime`): the `CaseRuntime` Durable Object, its runs
+  and bundles buckets, and the Worker Loader that runs each deployment's bundle
+  as a Dynamic Worker;
+- the Tail Worker on agent code, the GitHub build sandbox (`apps/builder`, a
+  Container), and the stub model service (`apps/model-stub`) unless
+  `MODEL_SERVICE_URL` and `MODEL_SERVICE_KEY` name a real one;
+- Postgres through two Hyperdrive configs (caching off), with every file in
+  `packages/db/migrations` applied before any Worker is updated.
+
+Stages differ only in their database (above) and hostname. Previews and staging
+are served on workers.dev and need no DNS. Production serves the app on
+`APP_DOMAIN` when it is set. Its values (hostname, database, credentials) come
+from the deploy environment, so our cloud's production configuration stays
+private; a self-hosted install sets its own. On staging and production the
+database, the file, audit, runs and bundles buckets and the secrets master key
+are protected: a plan that would delete or replace them fails.
+
+Because migrations run while the previous Workers still serve, every migration
+must work with both the old and the new code (expand, then contract; see
+`AGENTS.md`).
 
 ## Regions
 
@@ -51,7 +62,7 @@ The PlanetScale database (`PLANETSCALE_DATABASE`) must be created in the same
 region, because branches live where their database does. We launch in `us` only;
 adding a region adds an entry and a database.
 
-## Deploy staging
+## Deploy staging and production
 
 Once per account, bootstrap the state store from a laptop:
 `pnpm --filter @preprocess/infra exec alchemy state bootstrap`. CI refuses to
@@ -62,6 +73,10 @@ cp infra/.env.example infra/.env.staging   # fill it in; ignored by Git
 pnpm --filter @preprocess/infra plan:staging -- --env-file .env.staging
 pnpm --filter @preprocess/infra deploy:staging -- --env-file .env.staging
 ```
+
+`plan:production` and `deploy:production` work the same way. Production also
+needs `PLANETSCALE_CLUSTER_SIZE`, the current size of its database, which the
+stack adopts on first deploy and must never resize, and usually `APP_DOMAIN`.
 
 Always read the plan first. Secrets come only from the deploy environment and
 are bound as `secret_text`; Alchemy keeps the deployed values in its state,
