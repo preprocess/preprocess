@@ -6,7 +6,7 @@
 // app's origin), the API Worker with its Durable Objects, R2 buckets, queues
 // and consumers, the case runtime that loads agent code as Dynamic Workers,
 // the Tail Worker on that code, the GitHub build sandbox (apps/builder, a
-// Container), the stub model service (apps/model-stub) unless
+// Container), the PDF renderer (apps/pdf-render, a Container), the stub model service (apps/model-stub) unless
 // MODEL_SERVICE_URL names a real one, and Postgres behind Hyperdrive.
 //
 // Stages differ only in their database and what survives a destroy:
@@ -377,6 +377,24 @@ export default Alchemy.Stack(
       },
     });
 
+    // PDF pages to PNG images for OCR (design doc 07): one sandbox container
+    // per render, started by the Renderer Durable Object from this image.
+    const renderImage = Cloudflare.Container("RenderImage", {
+      schedulingPolicy: "durable_object",
+      context: at("apps/pdf-render"),
+      dockerfile: at("apps/pdf-render/Dockerfile"),
+    });
+    const pdfRender = yield* Cloudflare.Worker("PdfRender", {
+      ...worker,
+      name: n.pdfRender,
+      main: at("apps/pdf-render/src/index.ts"),
+      env: {
+        RENDERER: Cloudflare.DurableObject("Renderer", {
+          containers: [renderImage],
+        }),
+      },
+    });
+
     // Tail Worker of agent code: console output and exceptions become run
     // logs (design doc 09). The runtime attaches it to each Dynamic Worker.
     const tail = yield* Cloudflare.Worker("Tail", {
@@ -442,6 +460,7 @@ export default Alchemy.Stack(
         SCHEDULER: Cloudflare.DurableObject(durableObjects.SCHEDULER),
         RUNTIME: Cloudflare.WorkerEntrypoint(runtime),
         BUILDER: Cloudflare.WorkerEntrypoint(builder, "Builder"),
+        PDF_RENDER: Cloudflare.WorkerEntrypoint(pdfRender),
         // The GitHub App, unconfigured (its routes answer 503) until these
         // are set.
         ...Object.fromEntries(

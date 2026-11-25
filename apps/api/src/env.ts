@@ -176,8 +176,7 @@ export type Env = {
   EMAILS_SENT: KVNamespace;
   FILES: R2Bucket;
   RUNTIME: Runtime;
-  // apps/pdf-render: PDF pages to PNGs in a sandbox container. Bound locally;
-  // the deployed stack does not run it yet.
+  // apps/pdf-render: PDF pages to PNGs in a sandbox container.
   PDF_RENDER?: { renderPdf(pdf: Uint8Array): Promise<Uint8Array[]> };
   // 32 random bytes, base64: Secrets Store on our cloud, a local variable in
   // development and tests. Only this Worker binds it (design doc 01).
