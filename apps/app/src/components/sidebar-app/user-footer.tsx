@@ -57,11 +57,7 @@ export function SidebarUserFooter({
                   {name}
                 </span>
                 <span className="ml-auto -mr-0.5 flex size-6 shrink-0 items-center justify-center">
-                  <ChevronsUpDown
-                    size={14}
-                    strokeWidth={1.5}
-                    className="text-muted-foreground"
-                  />
+                  <ChevronsUpDown size={14} className="text-muted-foreground" />
                 </span>
               </SidebarMenuButton>
             }

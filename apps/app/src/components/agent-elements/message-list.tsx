@@ -238,7 +238,6 @@ function CopyButton({
             copied ? "opacity-0 scale-50" : "opacity-100 scale-100",
           )}
           size={14}
-          strokeWidth={1.5}
         />
         <Check
           aria-hidden
@@ -247,7 +246,6 @@ function CopyButton({
             copied ? "opacity-100 scale-100" : "opacity-0 scale-50",
           )}
           size={14}
-          strokeWidth={1.5}
         />
       </div>
     </Button>
