@@ -25,7 +25,8 @@ type Page = {
     | "/settings/organization"
     | "/settings/organization/members"
     | "/settings/organization/groups"
-    | "/settings/organization/audit-logs";
+    | "/settings/organization/audit-logs"
+    | "/settings/organization/opentelemetry";
   label: string;
 };
 
@@ -41,6 +42,10 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
       { to: "/settings/organization/members", label: "Members" },
       { to: "/settings/organization/groups", label: "Groups" },
       { to: "/settings/organization/audit-logs", label: "Audit log" },
+      {
+        to: "/settings/organization/opentelemetry",
+        label: "OpenTelemetry export",
+      },
     ],
   },
 ];

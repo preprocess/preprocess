@@ -58,6 +58,7 @@ import { Route as SettingsOrganizationDevelopersRouteImport } from "./routes/set
 import { Route as SettingsOrganizationGithubRouteImport } from "./routes/settings/organization/github";
 import { Route as SettingsOrganizationIntegrationsRouteImport } from "./routes/settings/organization/integrations";
 import { Route as SettingsOrganizationMembersRouteImport } from "./routes/settings/organization/members";
+import { Route as SettingsOrganizationOpentelemetryRouteImport } from "./routes/settings/organization/opentelemetry";
 import { Route as SettingsOrganizationGroupsIndexRouteImport } from "./routes/settings/organization/groups/index";
 import { Route as SettingsOrganizationGroupsGroupIdRouteImport } from "./routes/settings/organization_/groups/$groupId";
 
@@ -317,6 +318,12 @@ const SettingsOrganizationMembersRoute =
     path: "/members",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationOpentelemetryRoute =
+  SettingsOrganizationOpentelemetryRouteImport.update({
+    id: "/opentelemetry",
+    path: "/opentelemetry",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const SettingsOrganizationGroupsIndexRoute =
   SettingsOrganizationGroupsIndexRouteImport.update({
     id: "/groups/",
@@ -377,6 +384,7 @@ export interface FileRoutesByFullPath {
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -427,6 +435,7 @@ export interface FileRoutesByTo {
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
   "/agents/$agentId": typeof AgentsAgentIdIndexRoute;
   "/settings/account": typeof SettingsAccountIndexRoute;
   "/settings/organization": typeof SettingsOrganizationIndexRoute;
@@ -481,6 +490,7 @@ export interface FileRoutesById {
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -536,6 +546,7 @@ export interface FileRouteTypes {
     | "/settings/organization/github"
     | "/settings/organization/integrations"
     | "/settings/organization/members"
+    | "/settings/organization/opentelemetry"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -586,6 +597,7 @@ export interface FileRouteTypes {
     | "/settings/organization/github"
     | "/settings/organization/integrations"
     | "/settings/organization/members"
+    | "/settings/organization/opentelemetry"
     | "/agents/$agentId"
     | "/settings/account"
     | "/settings/organization"
@@ -639,6 +651,7 @@ export interface FileRouteTypes {
     | "/settings/organization/github"
     | "/settings/organization/integrations"
     | "/settings/organization/members"
+    | "/settings/organization/opentelemetry"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -1018,6 +1031,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationMembersRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/opentelemetry": {
+      id: "/settings/organization/opentelemetry";
+      path: "/opentelemetry";
+      fullPath: "/settings/organization/opentelemetry";
+      preLoaderRoute: typeof SettingsOrganizationOpentelemetryRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/settings/organization/groups/": {
       id: "/settings/organization/groups/";
       path: "/groups";
@@ -1054,6 +1074,7 @@ interface SettingsOrganizationRouteChildren {
   SettingsOrganizationGithubRoute: typeof SettingsOrganizationGithubRoute;
   SettingsOrganizationIntegrationsRoute: typeof SettingsOrganizationIntegrationsRoute;
   SettingsOrganizationMembersRoute: typeof SettingsOrganizationMembersRoute;
+  SettingsOrganizationOpentelemetryRoute: typeof SettingsOrganizationOpentelemetryRoute;
   SettingsOrganizationIndexRoute: typeof SettingsOrganizationIndexRoute;
   SettingsOrganizationGroupsIndexRoute: typeof SettingsOrganizationGroupsIndexRoute;
 }
@@ -1065,6 +1086,8 @@ const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationGithubRoute: SettingsOrganizationGithubRoute,
   SettingsOrganizationIntegrationsRoute: SettingsOrganizationIntegrationsRoute,
   SettingsOrganizationMembersRoute: SettingsOrganizationMembersRoute,
+  SettingsOrganizationOpentelemetryRoute:
+    SettingsOrganizationOpentelemetryRoute,
   SettingsOrganizationIndexRoute: SettingsOrganizationIndexRoute,
   SettingsOrganizationGroupsIndexRoute: SettingsOrganizationGroupsIndexRoute,
 };
