@@ -15,7 +15,8 @@ const translations = {
   "Header Parameters(operation page)": "Header parameters",
   "Cookie Parameters(operation page)": "Cookie parameters",
   "Request Body(operation page)": "Request body",
-  "Response Body(operation page)": "Response body",
+  "Filter Properties(schema UI)": "Filter properties",
+  "Response Body(operation page)": "Responses",
 };
 
 export const Route = createRootRoute({

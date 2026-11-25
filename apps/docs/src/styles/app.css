@@ -298,7 +298,7 @@ figure.docs-codeblock .line {
   border-top: 0;
   box-shadow: inset 0 -1px 0 var(--border);
 }
-.docs-api [class*="group/property"] code {
+.docs-api [class*="group/property"] code:not([class*="bg-fd-secondary"]) {
   display: contents;
 }
 .docs-api [class*="group/property"] code > .text-fd-primary {
@@ -341,7 +341,7 @@ figure.docs-codeblock .line {
 }
 
 /* The schema filter: the recessed field the search uses. */
-.docs-api label:has(> input[aria-label="Filter Properties"]) {
+.docs-api label:has(> input[aria-label="Filter properties"]) {
   height: 32px;
   gap: 8px;
   padding: 0 10px;
@@ -350,11 +350,11 @@ figure.docs-codeblock .line {
   background: var(--surface-2);
   box-shadow: var(--shadow-2);
 }
-.docs-api label:has(> input[aria-label="Filter Properties"]) svg {
+.docs-api label:has(> input[aria-label="Filter properties"]) svg {
   width: 14px;
   height: 14px;
 }
-.docs-api label:has(> input[aria-label="Filter Properties"]) input {
+.docs-api label:has(> input[aria-label="Filter properties"]) input {
   font-size: var(--fs-body);
   line-height: var(--lh-body);
 }
