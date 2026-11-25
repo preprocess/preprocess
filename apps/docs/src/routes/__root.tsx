@@ -15,12 +15,29 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Preprocess docs" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", href: "/favicon.ico", sizes: "32x32" },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/site.webmanifest" },
+    ],
   }),
   component: () => (
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        {/* Outside head().meta, which keeps one meta per name. */}
+        <meta
+          name="theme-color"
+          content="#fbf7f0"
+          media="(prefers-color-scheme: light)"
+        />
+        <meta
+          name="theme-color"
+          content="#15120f"
+          media="(prefers-color-scheme: dark)"
+        />
       </head>
       <body className="flex min-h-screen flex-col">
         <RootProvider>
