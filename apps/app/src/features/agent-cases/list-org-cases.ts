@@ -1,17 +1,19 @@
 import {
+  CASE_GROUPS,
   CASE_STATUSES,
   parseOrganizationId,
   unassignedGroups,
   type Case,
 } from "./case";
+import { liveCase, liveCaseList } from "./case-api";
 import {
   AWAITING_NONE,
   UNASSIGNED_ANY,
   type CasesGrouping,
   type CasesInboxSearch,
 } from "./case-inbox-search";
-import { agentSummaries, type AgentSummary } from "../agents/agent-store";
 import { createCaseSeed } from "./case-seed";
+import { getOrgAgent, type OrgAgentDetail } from "../agents/list-org-agents";
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { ScenarioState } from "../../scenarios/scenarios";
 
@@ -36,9 +38,11 @@ export type CaseListPage = {
   readonly nextCursor: string | null;
   /** Agents with at least one case, for the agent filter. */
   readonly agents: readonly string[];
-  /** Name and mark for each agent the rows and filter show. */
-  readonly agentInfo: Readonly<Record<string, AgentSummary>>;
   readonly counts: CaseFacetCounts;
+  /** The Awaiting filter's options: group names, and "none" where offered. */
+  readonly awaitingOptions: readonly string[];
+  /** The Needs assignment filter's options; empty hides the filter. */
+  readonly assignmentOptions: readonly string[];
   /** Whether the organization has any cases at all, before filters. */
   readonly hasCases: boolean;
   readonly loadError: boolean;
@@ -59,12 +63,16 @@ type CasesScenario = ScenarioState<"cases">;
 /** Cases the "few" scenario keeps from the seed. */
 const FEW_CASES = 3;
 
+/** The live list reads the API; every other state is seeded. */
+const live = () => currentScenario().cases === "live";
+
 function seedCases(scenario: CasesScenario): readonly Case[] {
   switch (scenario) {
     case "seeded":
       return createCaseSeed(SEED_ORG);
     case "few":
       return createCaseSeed(SEED_ORG).slice(0, FEW_CASES);
+    case "live":
     case "empty":
     case "load-error":
       return [];
@@ -77,10 +85,7 @@ function seedCases(scenario: CasesScenario): readonly Case[] {
 
 const seeded = new Map<CasesScenario, readonly Case[]>();
 
-/**
- * Seeded case table for the active scenario. There is no cases backend yet;
- * builds outside dev get the empty scenario.
- */
+/** Seeded case table for the active scenario. */
 function seededCases(): readonly Case[] {
   const scenario = currentScenario().cases;
   let cases = seeded.get(scenario);
@@ -153,6 +158,7 @@ function matches(item: Case, search: CasesInboxSearch, query: string) {
 
 /** How many cases have each filter value. */
 export type CaseFacetCounts = {
+  /** Cases per status under the search and filters, whatever the tab. */
   readonly status: Readonly<Record<string, number>>;
   readonly agent: Readonly<Record<string, number>>;
   readonly awaiting: Readonly<Record<string, number>>;
@@ -174,9 +180,10 @@ function facetCounts(search: CasesInboxSearch): CaseFacetCounts {
   const bump = (counts: Record<string, number>, key: string) => {
     counts[key] = (counts[key] ?? 0) + 1;
   };
+  const anyStatus = { ...search, view: "all" as const, status: [] };
   for (const item of seededCases()) {
+    if (matches(item, anyStatus, query)) bump(status, item.status);
     if (!matchesView(item, search, query)) continue;
-    bump(status, item.status);
     bump(agent, item.agentId);
     if (item.awaiting.length === 0) bump(awaiting, AWAITING_NONE);
     for (const group of item.awaiting) bump(awaiting, group);
@@ -220,10 +227,46 @@ function offsetOf(cursor: string | null | undefined) {
  * batches (the cursor walks only the rows that show), but `groups` still
  * lists every group with its full total, so their headers draw at once.
  */
-export function listOrgCases(
+export async function listOrgCases(
   search: CasesInboxSearch,
   cursor?: string | null,
   collapsed: ReadonlySet<string> = new Set(),
+): Promise<CaseListPage> {
+  if (!live()) return seededCaseList(search, cursor, collapsed);
+  try {
+    const page = await liveCaseList({
+      data: {
+        search,
+        cursor: cursor ?? null,
+        collapsed: [...collapsed],
+        limit: CASE_BATCH_SIZE,
+      },
+    });
+    return {
+      ...page,
+      assignmentOptions: [],
+      loadError: false,
+    };
+  } catch {
+    return {
+      rows: [],
+      groups: [],
+      total: 0,
+      nextCursor: null,
+      agents: [],
+      counts: { status: {}, agent: {}, awaiting: {}, unassigned: {} },
+      awaitingOptions: [],
+      assignmentOptions: [],
+      hasCases: false,
+      loadError: true,
+    };
+  }
+}
+
+function seededCaseList(
+  search: CasesInboxSearch,
+  cursor: string | null | undefined,
+  collapsed: ReadonlySet<string>,
 ): Promise<CaseListPage> {
   const all = seededCases();
   const ordered = orderedCases(search);
@@ -248,17 +291,38 @@ export function listOrgCases(
     total: ordered.length,
     nextCursor: end < shown.length ? String(end) : null,
     agents: [...new Set(all.map((item) => item.agentId))].sort(),
-    agentInfo: agentSummaries(),
     counts: facetCounts(search),
+    awaitingOptions: [AWAITING_NONE, ...CASE_GROUPS],
+    assignmentOptions: [UNASSIGNED_ANY, ...CASE_GROUPS],
     hasCases: all.length > 0,
     loadError: currentScenario().cases === "load-error",
   });
+}
+
+/**
+ * The agent whose cases a page shows. Seeded cases name agents the API
+ * doesn't have, so a seeded scenario stands one in by its slug.
+ */
+export async function getCaseAgent(
+  slug: string,
+): Promise<OrgAgentDetail | null> {
+  const agent = await getOrgAgent({ data: slug });
+  if (agent || (live() && currentScenario()["case-work"] === "live"))
+    return agent;
+  return {
+    id: slug,
+    name: slug,
+    productionBranch: "main",
+    productionDeploymentId: null,
+    production: null,
+  };
 }
 
 export function getOrgCase(
   agentId: string,
   caseId: string,
 ): Promise<Case | null> {
+  if (live()) return liveCase({ data: caseId });
   return Promise.resolve(
     seededCases().find(
       (item) => item.agentId === agentId && item.id === caseId,
@@ -266,8 +330,16 @@ export function getOrgCase(
   );
 }
 
+/**
+ * Marking a case complete or reopening it, where the scenario allows it:
+ * only seeded cases, since the API has no such change.
+ */
+export function orgCaseStatusSetter() {
+  return live() ? null : setOrgCaseStatus;
+}
+
 /** Sets a seeded case's status. Sticks in memory until the dev server restarts. */
-export function setOrgCaseStatus(
+function setOrgCaseStatus(
   agentId: string,
   caseId: string,
   status: Case["status"],
@@ -288,59 +360,25 @@ export function setOrgCaseStatus(
   return Promise.resolve(updated);
 }
 
-/** The cases before and after this one in the list the search selects. */
-export function getOrgCaseNeighbors(
+/**
+ * The cases before and after this one in the list the search selects. Live,
+ * that is the list's first batch; a case past it has no neighbors.
+ */
+export async function getOrgCaseNeighbors(
   search: CasesInboxSearch,
   agentId: string,
   caseId: string,
 ): Promise<CaseNeighbors> {
-  const ordered = orderedCases(search);
+  // Live case links may name the agent by id or slug; the case id is unique.
+  const page = live() ? await listOrgCases(search) : null;
+  const ordered = page ? page.rows : orderedCases(search);
   const index = ordered.findIndex(
-    (item) => item.agentId === agentId && item.id === caseId,
+    (item) => item.id === caseId && (page !== null || item.agentId === agentId),
   );
-  return Promise.resolve({
+  return {
     prev: index > 0 ? (ordered[index - 1] ?? null) : null,
     next: index >= 0 ? (ordered[index + 1] ?? null) : null,
     index: index + 1,
-    total: ordered.length,
-  });
-}
-
-/** One agent's cases by status, and when any of them last changed. */
-export type AgentCaseStats = {
-  readonly byStatus: Readonly<Record<Case["status"], number>>;
-  readonly total: number;
-  /** What all of the agent's cases have cost, in US cents. */
-  readonly costCents: number;
-  readonly lastUpdatedAt: string | null;
-};
-
-export function getOrgCaseStatsByAgent(): Promise<
-  ReadonlyMap<string, AgentCaseStats>
-> {
-  const stats = new Map<string, AgentCaseStats>();
-  for (const item of seededCases()) {
-    // Agents' stats count production work only.
-    if (item.previewBranch !== null) continue;
-    const current = stats.get(item.agentId) ?? {
-      byStatus: { Waiting: 0, Active: 0, Done: 0 },
-      total: 0,
-      costCents: 0,
-      lastUpdatedAt: null,
-    };
-    stats.set(item.agentId, {
-      byStatus: {
-        ...current.byStatus,
-        [item.status]: current.byStatus[item.status] + 1,
-      },
-      total: current.total + 1,
-      costCents: current.costCents + item.costCents,
-      lastUpdatedAt:
-        current.lastUpdatedAt === null ||
-        Date.parse(item.updatedAt) > Date.parse(current.lastUpdatedAt)
-          ? item.updatedAt
-          : current.lastUpdatedAt,
-    });
-  }
-  return Promise.resolve(stats);
+    total: page ? page.total : ordered.length,
+  };
 }

@@ -27,6 +27,7 @@ import {
   useFluidHover,
   useRegisterFluidHoverItem,
 } from "@preprocess/ui/hooks/use-fluid-hover";
+import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
   OrbitSparkle,
@@ -49,18 +50,22 @@ import {
   useState,
 } from "react";
 
-import { FilterChips, FilterMenu } from "../../components/list-controls";
+import {
+  FilterChips,
+  FilterMenu,
+  type FilterFacetDef,
+} from "../../components/list-controls";
 import { PageHeader, PageTitle } from "../../components/page-header";
-import { Toolbar, ToolbarButton, ToolbarTabs } from "../../components/toolbar";
+import { Toolbar, ToolbarButton } from "../../components/toolbar";
 import { useHotkeys } from "../../components/use-hotkeys";
+import { AgentPage } from "../agents/agent-page";
+import type { OrgAgentDetail } from "../agents/list-org-agents";
 import { SettingsSearchField } from "../settings/kit";
 import {
-  CASE_GROUPS,
   awaitingPhrase,
   caseDisplayId,
   caseTitle,
   formatCost,
-  isCaseGroup,
   isCaseStatus,
   type Case,
 } from "./case";
@@ -69,7 +74,6 @@ import {
   AWAITING_NONE,
   CASES_ENVIRONMENTS,
   CASES_GROUPINGS,
-  CASES_VIEWS,
   DEFAULT_CASES_SEARCH,
   UNASSIGNED_ANY,
   type UnassignedFilter,
@@ -80,7 +84,6 @@ import {
   type CasesInboxSearch,
   type CasesView,
 } from "./case-inbox-search";
-import type { AgentSummary } from "../agents/agent-store";
 import { AssigneeStack, NeedsAssignmentTag } from "./assignee-stack";
 import { CaseStatusIcon } from "./case-status-icon";
 import {
@@ -96,16 +99,16 @@ const VIEW_LABEL: Record<CasesView, string> = {
   done: "Done",
 };
 
+/** The status filter's order (spec 14a): everything, then what needs people. */
+const VIEW_ORDER: readonly CasesView[] = ["all", "waiting", "active", "done"];
+
+const countFormat = new Intl.NumberFormat("en");
+
 const GROUPING_LABEL: Record<CasesGrouping, string> = {
   status: "Status",
   agent: "Agent",
   none: "No grouping",
 };
-
-const UNASSIGNED_FILTERS: readonly UnassignedFilter[] = [
-  UNASSIGNED_ANY,
-  ...CASE_GROUPS,
-];
 
 /**
  * The assignment chip as a sentence: "Needs assignment", "Needs assignment
@@ -128,11 +131,6 @@ function assignmentChip(selected: readonly UnassignedFilter[]): {
     values: [...(anyToo ? ["any group"] : []), ...groups].join(", "),
   };
 }
-
-const AWAITING_FILTERS: readonly AwaitingFilter[] = [
-  AWAITING_NONE,
-  ...CASE_GROUPS,
-];
 
 const dateFormat = new Intl.DateTimeFormat(undefined, {
   month: "short",
@@ -162,7 +160,10 @@ function CaseFilterMenu({
   search,
   onChange,
   toolbarIndex,
+  agentScoped,
 }: Readonly<{
+  /** The list is one agent's, so it has no Agent facet. */
+  agentScoped: boolean;
   page: CaseListPage;
   search: CasesInboxSearch;
   onChange: (patch: Partial<CasesInboxSearch>) => void;
@@ -173,61 +174,51 @@ function CaseFilterMenu({
     <FilterMenu
       countLabel={caseCountLabel}
       toolbarIndex={toolbarIndex}
-      facets={[
-        {
-          key: "agent",
-          label: "Agent",
-          icon: OrbitSparkle,
-          options: page.agents.map((agent) => {
-            const info = page.agentInfo[agent];
-            return {
+      facets={(
+        [
+          {
+            key: "agent",
+            label: "Agent",
+            icon: OrbitSparkle,
+            options: page.agents.map((agent) => ({
               value: agent,
-              label: info?.name ?? agent,
+              label: agent,
               count: counts.agent[agent] ?? 0,
-            };
-          }),
-          selected: search.agent,
-          onChange: (agent) => onChange({ agent }),
-        },
-        {
-          key: "awaiting",
-          label: "Awaiting",
-          icon: Users,
-          options: AWAITING_FILTERS.map((value) => ({
-            value,
-            label: awaitingLabel(value),
-            count: counts.awaiting[value] ?? 0,
-          })),
-          selected: search.awaiting,
-          onChange: (next) =>
-            onChange({
-              awaiting: next.filter(
-                (value): value is AwaitingFilter =>
-                  value === AWAITING_NONE || isCaseGroup(value),
-              ),
-            }),
-        },
-        {
-          key: "assignment",
-          label: "Needs assignment",
-          // The same caution mark the Needs assignment tag wears.
-          icon: TriangleAlertIcon,
-          // "Any group", then each group cases can be waiting on.
-          options: UNASSIGNED_FILTERS.map((value) => ({
-            value,
-            label: value === UNASSIGNED_ANY ? "Any group" : value,
-            count: counts.unassigned[value] ?? 0,
-          })),
-          selected: search.unassigned,
-          onChange: (next) =>
-            onChange({
-              unassigned: next.filter(
-                (value): value is UnassignedFilter =>
-                  value === UNASSIGNED_ANY || isCaseGroup(value),
-              ),
-            }),
-        },
-      ]}
+            })),
+            selected: search.agent,
+            onChange: (agent) => onChange({ agent }),
+          },
+          {
+            key: "awaiting",
+            label: "Awaiting",
+            icon: Users,
+            options: page.awaitingOptions.map((value) => ({
+              value,
+              label: awaitingLabel(value),
+              count: counts.awaiting[value] ?? 0,
+            })),
+            selected: search.awaiting,
+            onChange: (awaiting) => onChange({ awaiting }),
+          },
+          {
+            key: "assignment",
+            label: "Needs assignment",
+            // The same caution mark the Needs assignment tag wears.
+            icon: TriangleAlertIcon,
+            // "Any group", then each group cases can be waiting on.
+            options: page.assignmentOptions.map((value) => ({
+              value,
+              label: value === UNASSIGNED_ANY ? "Any group" : value,
+              count: counts.unassigned[value] ?? 0,
+            })),
+            selected: search.unassigned,
+            onChange: (unassigned) => onChange({ unassigned }),
+          },
+        ] satisfies FilterFacetDef[]
+      ).filter(
+        (facet) =>
+          facet.options.length > 0 && !(agentScoped && facet.key === "agent"),
+      )}
     />
   );
 }
@@ -238,7 +229,10 @@ function DisplayMenu({
   search,
   onChange,
   toolbarIndex,
+  agentScoped,
 }: Readonly<{
+  /** The list is one agent's, so it doesn't group by agent. */
+  agentScoped: boolean;
   search: CasesInboxSearch;
   onChange: (patch: Partial<CasesInboxSearch>) => void;
   toolbarIndex: number;
@@ -254,13 +248,16 @@ function DisplayMenu({
   // checked fills line up with the right items. The menu merges checked
   // rows with consecutive indices into one fill, so a skipped index between
   // the sections keeps the two checked rows apart.
-  const orderingStart = CASES_GROUPINGS.length + 1;
+  const groupings = CASES_GROUPINGS.filter(
+    (group) => !(agentScoped && group === "agent"),
+  );
+  const orderingStart = groupings.length + 1;
   const customized =
     search.group !== DEFAULT_CASES_SEARCH.group ||
     search.sort !== DEFAULT_CASES_SEARCH.sort ||
     search.dir !== DEFAULT_CASES_SEARCH.dir;
   const checkedIndices = [
-    CASES_GROUPINGS.indexOf(search.group),
+    groupings.indexOf(search.group),
     orderingStart +
       orderings.findIndex(
         (item) => item.sort === search.sort && item.dir === search.dir,
@@ -286,7 +283,7 @@ function DisplayMenu({
         className="w-48"
       >
         <DropdownLabel>Grouping</DropdownLabel>
-        {CASES_GROUPINGS.map((group, row) => (
+        {groupings.map((group, row) => (
           <MenuItem
             checked={search.group === group}
             index={row}
@@ -353,9 +350,7 @@ function CaseEnvironmentSelect({
 function CaseFilterChips({
   search,
   onChange,
-  agentInfo,
 }: Readonly<{
-  agentInfo: Readonly<Record<string, AgentSummary>>;
   search: CasesInboxSearch;
   onChange: (patch: Partial<CasesInboxSearch>) => void;
 }>) {
@@ -374,9 +369,7 @@ function CaseFilterChips({
           key: "agent",
           label: "Agent",
           lead: search.agent.length > 1 ? "Agent is one of" : "Agent is",
-          values: search.agent
-            .map((agent) => agentInfo[agent]?.name ?? agent)
-            .join(", "),
+          values: search.agent.join(", "),
           onClear: () => onChange({ agent: [] }),
         },
         {
@@ -434,13 +427,13 @@ function CaseRow({
   index,
   registerItem,
   showStatus,
-  agent,
+  showAgent,
 }: Readonly<{
   item: Case;
   index: number;
   registerItem: (index: number, element: HTMLElement | null) => void;
   showStatus: boolean;
-  agent: AgentSummary | null;
+  showAgent: boolean;
 }>) {
   const ref = useRef<HTMLAnchorElement>(null);
   useRegisterFluidHoverItem(registerItem, index, ref);
@@ -458,7 +451,7 @@ function CaseRow({
             data-case-row={index}
             params={{ agentId: item.agentId, caseId: item.id }}
             ref={ref}
-            to="/cases/$agentId/$caseId"
+            to="/agents/$agentId/cases/$caseId"
           />
         }
       >
@@ -483,9 +476,11 @@ function CaseRow({
               {item.previewBranch}
             </Badge>
           ) : null}
-          <span className="shrink-0 text-caption text-muted-foreground">
-            {agent?.name ?? item.agentId}
-          </span>
+          {showAgent ? (
+            <span className="shrink-0 text-caption text-muted-foreground">
+              {item.agentId}
+            </span>
+          ) : null}
         </span>
         <AwaitingTag groups={item.awaiting} />
         <NeedsAssignmentTag item={item} />
@@ -530,15 +525,12 @@ function GroupHeader({
   total,
   collapsed,
   onToggle,
-  agent,
 }: Readonly<{
   groupKey: string;
   grouping: CasesGrouping;
   total: number;
   collapsed: boolean;
   onToggle: () => void;
-  /** The agent, when grouping by agent. */
-  agent: AgentSummary | null;
 }>) {
   const shape = useShape();
   return (
@@ -566,7 +558,7 @@ function GroupHeader({
         className="text-foreground"
         style={{ fontVariationSettings: fontWeights.semibold }}
       >
-        {grouping === "agent" ? (agent?.name ?? groupKey) : groupKey}
+        {groupKey}
       </span>
       <span className="text-caption text-muted-foreground tabular-nums">
         {countLabel(total)}
@@ -684,9 +676,9 @@ function CaseRows({
   scrollElement,
   hasMore,
   onLoadMore,
-  agentInfo,
+  showAgent,
 }: Readonly<{
-  agentInfo: Readonly<Record<string, AgentSummary>>;
+  showAgent: boolean;
   rows: readonly Case[];
   groups: CaseListPage["groups"];
   search: CasesInboxSearch;
@@ -718,6 +710,7 @@ function CaseRows({
     getScrollElement: () => scrollElement,
     estimateSize: (index) => entrySize(entries[index]),
     overscan: 12,
+    initialRect: { width: 0, height: 1080 },
     // Air between the header and the first group, and below the last row.
     paddingStart: LIST_PADDING,
     paddingEnd: LIST_PADDING,
@@ -748,7 +741,7 @@ function CaseRows({
     const item = activeIndex === null ? undefined : shown[activeIndex];
     if (!item) return;
     void navigate({
-      to: "/cases/$agentId/$caseId",
+      to: "/agents/$agentId/cases/$caseId",
       params: { agentId: item.agentId, caseId: item.id },
     });
   };
@@ -790,20 +783,15 @@ function CaseRows({
                 collapsed={entry.collapsed}
                 groupKey={entry.key}
                 grouping={search.group}
-                agent={
-                  search.group === "agent"
-                    ? (agentInfo[entry.key] ?? null)
-                    : null
-                }
                 onToggle={() => onToggleGroup(entry.key)}
                 total={entry.total}
               />
             ) : (
               <CaseRow
-                agent={agentInfo[entry.item.agentId] ?? null}
                 index={entry.row}
                 item={entry.item}
                 registerItem={hover.registerItem}
+                showAgent={showAgent}
                 showStatus={search.group !== "status"}
               />
             )}
@@ -848,7 +836,10 @@ export function CaseInbox({
   page,
   search,
   onSearchChange,
+  agent,
 }: Readonly<{
+  /** Shows one agent's cases inside its page, under its Cases section. */
+  agent?: OrgAgentDetail;
   page: CaseListPage;
   search: CasesInboxSearch;
   onSearchChange: (
@@ -930,56 +921,68 @@ export function CaseInbox({
       ? "no-match"
       : "empty";
 
-  return (
-    <div
-      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
-      data-testid="case-inbox"
-    >
-      <PageHeader
-        trailing={
-          // Tabs and buttons share one hover highlight, indexed left to right.
-          <Toolbar label="Case views and options">
-            <ToolbarTabs
-              label="Case views"
-              layoutId="cases-view-tab"
-              onSelect={(view) => onSearchChange({ view })}
-              selected={search.view}
-              tabs={CASES_VIEWS.map((view) => ({
-                value: view,
-                label: VIEW_LABEL[view],
-              }))}
-            />
-            <CaseFilterMenu
-              onChange={(patch) => onSearchChange(patch)}
-              page={page}
-              search={search}
-              toolbarIndex={CASES_VIEWS.length}
-            />
-            <DisplayMenu
-              onChange={(patch) => onSearchChange(patch)}
-              search={search}
-              toolbarIndex={CASES_VIEWS.length + 1}
-            />
-          </Toolbar>
-        }
+  const agentScoped = agent !== undefined;
+  const statusCounts = page.counts.status;
+  const viewCount = (view: CasesView) =>
+    view === "all"
+      ? Object.values(statusCounts).reduce((total, n) => total + n, 0)
+      : (statusCounts[VIEW_LABEL[view]] ?? 0);
+  const toolbar = (
+    <div className="flex items-center gap-2">
+      <Tabs
+        aria-label="Case status"
+        onValueChange={(view) => onSearchChange({ view: view as CasesView })}
+        size="compact"
+        value={search.view}
       >
-        <PageTitle id="cases-title">Cases</PageTitle>
-        <CaseEnvironmentSelect
-          onChange={(env) => onSearchChange({ env })}
-          value={search.env}
+        <TabsList>
+          {VIEW_ORDER.map((view) => (
+            <TabItem
+              key={view}
+              label={`${VIEW_LABEL[view]} ${countFormat.format(viewCount(view))}`}
+              value={view}
+            />
+          ))}
+        </TabsList>
+      </Tabs>
+      {/* The buttons share one hover highlight, indexed left to right. */}
+      <Toolbar label="Case options">
+        <CaseFilterMenu
+          agentScoped={agentScoped}
+          onChange={(patch) => onSearchChange(patch)}
+          page={page}
+          search={search}
+          toolbarIndex={0}
         />
-        <SettingsSearchField
-          className="w-64"
-          label="Search cases"
-          onChange={(q) => onSearchChange({ q })}
-          placeholder="Search cases"
-          value={search.q}
+        <DisplayMenu
+          agentScoped={agentScoped}
+          onChange={(patch) => onSearchChange(patch)}
+          search={search}
+          toolbarIndex={1}
         />
-      </PageHeader>
+      </Toolbar>
+    </div>
+  );
+  const scope = (
+    <>
+      <CaseEnvironmentSelect
+        onChange={(env) => onSearchChange({ env })}
+        value={search.env}
+      />
+      <SettingsSearchField
+        className="w-64"
+        label="Search cases"
+        onChange={(q) => onSearchChange({ q })}
+        placeholder="Search cases"
+        value={search.q}
+      />
+    </>
+  );
+  const body = (
+    <>
       <CaseFilterChips
-        agentInfo={page.agentInfo}
         onChange={(patch) => onSearchChange(patch)}
-        search={search}
+        search={agentScoped ? { ...search, agent: [] } : search}
       />
       <div className="relative flex min-h-0 flex-1 flex-col">
         <EmptyPresence>
@@ -989,14 +992,14 @@ export function CaseInbox({
         </EmptyPresence>
         {hasCases ? (
           <ScrollArea
-            aria-labelledby="cases-title"
+            aria-label={agentScoped ? "Cases" : undefined}
+            aria-labelledby={agentScoped ? undefined : "cases-title"}
             className="min-h-0 flex-1"
             ref={scrollRef}
             viewportClassName="scroll-fade"
           >
             <ShapeProvider defaultShape="rounded">
               <CaseRows
-                agentInfo={page.agentInfo}
                 collapsed={collapsed}
                 groups={page.groups}
                 hasMore={current.nextCursor !== null}
@@ -1005,11 +1008,38 @@ export function CaseInbox({
                 rows={current.rows}
                 scrollElement={scrollElement}
                 search={search}
+                showAgent={!agentScoped}
               />
             </ShapeProvider>
           </ScrollArea>
         ) : null}
       </div>
+    </>
+  );
+
+  if (agent)
+    return (
+      <AgentPage
+        actions={scope}
+        agent={agent}
+        fill
+        tab="cases"
+        trailing={toolbar}
+      >
+        {body}
+      </AgentPage>
+    );
+
+  return (
+    <div
+      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
+      data-testid="case-inbox"
+    >
+      <PageHeader trailing={toolbar}>
+        <PageTitle id="cases-title">Cases</PageTitle>
+        {scope}
+      </PageHeader>
+      {body}
     </div>
   );
 }

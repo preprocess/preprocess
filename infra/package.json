@@ -4,19 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "deploy:staging": "pnpm --filter @preprocess/app build:staging && alchemy deploy --stage staging",
-    "plan:staging": "pnpm --filter @preprocess/app build:staging && alchemy plan --stage staging",
-    "deploy:production": "pnpm --filter @preprocess/app build:production && alchemy deploy --stage production",
-    "plan:production": "pnpm --filter @preprocess/app build:production && alchemy plan --stage production",
-    "preview:deploy": "pnpm --filter @preprocess/app build:development && tsx scripts/stage.ts deploy",
+    "deploy:staging": "pnpm --filter @preprocess/app build:staging && pnpm --filter @preprocess/docs build && alchemy deploy --stage staging",
+    "plan:staging": "pnpm --filter @preprocess/app build:staging && pnpm --filter @preprocess/docs build && alchemy plan --stage staging",
+    "deploy:production": "pnpm --filter @preprocess/app build:production && pnpm --filter @preprocess/docs build && alchemy deploy --stage production",
+    "plan:production": "pnpm --filter @preprocess/app build:production && pnpm --filter @preprocess/docs build && alchemy plan --stage production",
+    "preview:deploy": "pnpm --filter @preprocess/app build:development && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts deploy",
     "preview:destroy": "tsx scripts/stage.ts destroy",
     "wrangler:generate": "tsx scripts/wrangler-config.ts",
     "lint": "eslint . && tsx scripts/wrangler-config.ts --check",
     "typecheck": "tsc --noEmit",
-    "staging:deploy": "pnpm --filter @preprocess/app build:staging && tsx scripts/stage.ts deploy staging",
+    "staging:deploy": "pnpm --filter @preprocess/app build:staging && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts deploy staging",
     "smoke": "tsx scripts/smoke.ts",
-    "selfhost:plan": "pnpm --filter @preprocess/app build:production && tsx scripts/stage.ts plan",
-    "selfhost:deploy": "pnpm --filter @preprocess/app build:production && tsx scripts/stage.ts deploy"
+    "selfhost:plan": "pnpm --filter @preprocess/app build:production && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts plan",
+    "selfhost:deploy": "pnpm --filter @preprocess/app build:production && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts deploy"
   },
   "dependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.87",

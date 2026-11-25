@@ -90,6 +90,7 @@ secretRoutes.openapi(
   createRoute({
     method: "get",
     path: "/secrets",
+    tags: ["Secrets"],
     request: { params: z.object({ org: z.string() }) },
     responses: {
       200: {
@@ -139,6 +140,7 @@ secretRoutes.openapi(
   createRoute({
     method: "put",
     path: "/secrets/{name}",
+    tags: ["Secrets"],
     summary:
       "Create or replace a secret's value; live deployments that hold it are resynced",
     request: {
@@ -221,6 +223,7 @@ secretRoutes.openapi(
   createRoute({
     method: "delete",
     path: "/secrets/{name}",
+    tags: ["Secrets"],
     summary: "Delete a secret; refused while a live deployment holds it",
     request: { params: SecretParams },
     responses: { 204: { description: "Deleted" } },
@@ -318,6 +321,7 @@ secretRoutes.openapi(
   createRoute({
     method: "put",
     path: "/secrets/{name}/agents/{agent}",
+    tags: ["Secrets"],
     summary:
       "Let an agent's code receive this secret (loosens a guardrail; Admin or Owner)",
     request: { params: GrantParams },
@@ -334,6 +338,7 @@ secretRoutes.openapi(
   createRoute({
     method: "delete",
     path: "/secrets/{name}/agents/{agent}",
+    tags: ["Secrets"],
     summary: "Stop an agent's code receiving this secret, from its next call",
     request: { params: GrantParams },
     responses: { 204: { description: "Revoked" } },

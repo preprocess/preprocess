@@ -205,7 +205,7 @@ function LinkedCaseCard({ item }: Readonly<{ item: Case }>) {
     <Link
       className="group flex items-center gap-3 rounded-xl bg-surface-3 px-4 py-3 outline-none transition-colors duration-80 hover:bg-surface-4 focus-visible:ring-1 focus-visible:ring-(--focus-ring)"
       params={{ agentId: item.agentId, caseId: item.id }}
-      to="/cases/$agentId/$caseId"
+      to="/agents/$agentId/cases/$caseId"
     >
       <CaseStatusIcon status={item.status} />
       <span className="flex min-w-0 flex-1 flex-col">
@@ -261,7 +261,7 @@ function ReaderAction({ item }: Readonly<{ item: InboxItem }>) {
                 agentId: parseAgentId(link.agentId),
                 caseId: parseCaseId(link.caseId),
               }}
-              to="/cases/$agentId/$caseId"
+              to="/agents/$agentId/cases/$caseId"
             />
           }
           type="button"
@@ -273,7 +273,12 @@ function ReaderAction({ item }: Readonly<{ item: InboxItem }>) {
     case "agent":
       return (
         <Button
-          render={<Link search={{ agent: [link.agentId] }} to="/cases" />}
+          render={
+            <Link
+              params={{ agentId: link.agentId }}
+              to="/agents/$agentId/cases"
+            />
+          }
           type="button"
           variant="secondary"
         >
@@ -400,7 +405,7 @@ export function Inbox({
     const link = selected?.link;
     if (link?.kind !== "case") return;
     void navigate({
-      to: "/cases/$agentId/$caseId",
+      to: "/agents/$agentId/cases/$caseId",
       params: {
         agentId: parseAgentId(link.agentId),
         caseId: parseCaseId(link.caseId),

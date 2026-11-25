@@ -13,15 +13,17 @@ Reach the API only through `features/auth/client.ts` in the browser and
 app. Shared components belong in `packages/ui` only after a real
 cross-application need exists.
 
-`/inbox` is the notification inbox, `/cases` is the organization case list,
-`/cases/$agentId/$caseId` is the case room, and `/agents` lists the
-organization's agents from `/v1`. Each agent has a management page at
-`/agents/$agentId`, addressed by slug, with the section sidebar of spec 14a;
-sections without a real page yet are placeholders in
-`features/agents/agent-knowledge.tsx`. Organization API keys, integrations,
-webhooks, sandbox images, secrets, and network rules live under Developers
-(`/developers/*`). Organization settings hold members, groups and the audit log,
-from the API. Scrolling panes use `ScrollArea` with `scroll-fade`.
+`/inbox` is the notification inbox, `/cases` is the organization case list
+across agents, and `/agents` lists the organization's agents from `/v1`. Each
+agent has a management page at `/agents/$agentId`, addressed by slug, with the
+section sidebar of spec 14a; its Cases section (`/agents/$agentId/cases`) lists
+the agent's cases, and `/agents/$agentId/cases/$caseId` is the case room; the
+old `/cases/$agentId/$caseId` redirects there. Sections without a real page yet
+are placeholders in `features/agents/agent-knowledge.tsx`. Organization API
+keys, integrations, webhooks, sandbox images, secrets, and network rules live
+under Developers (`/developers/*`). Organization settings hold members, groups
+and the audit log, from the API. Scrolling panes use `ScrollArea` with
+`scroll-fade`.
 
 Agents inherit the organization's secrets and network rules. An agent may
 override a network rule for itself, and the UI marks it "Overrides
@@ -30,11 +32,14 @@ organization"; it may never override an organization secret.
 ## Seeded scenarios
 
 The inbox reads the API (`inbox-api.ts`) in its `live` state and in every build
-outside dev. Cases and the case room chat have no backend yet. In development,
-the inbox's other states, cases, and the case room chat load seeded data:
-`inbox-seed.ts` (reads stick in memory until restart), `case-seed.ts`,
-`agent-seed.ts` and `agent-store.ts`, `platform-store.ts`,
-`case-room-transcripts.ts`, and the case room's Input files
+outside dev. The case list and the case room's work (answers, checks, approvals,
+thread) read the API through server functions in
+`features/agent-cases/case-api.ts` when their scenario is `live`, the default in
+development and the only state outside it; every other state of those surfaces
+is seeded. In development, the inbox's other states, the seeded case states, and
+the seeded case room chat load seeded data: `inbox-seed.ts` (reads stick in
+memory until restart), `case-seed.ts`, `agent-seed.ts` and `agent-store.ts`,
+`platform-store.ts`, `case-room-transcripts.ts`, and the case room's Input files
 (`flue-lab-input-samples.ts`, one of each viewer's formats). Builds outside dev
 serve none.
 
@@ -44,8 +49,8 @@ is reachable locally without other services:
 - `src/scenarios/scenarios.ts` is the registry: each surface lists its states
   (`inbox: seeded | empty | all-read | …`). Add a state there, then handle it in
   the surface's data function (`inbox-seed.ts`, `list-org-cases.ts`,
-  `case-room-transcripts.ts`). The `switch` is exhaustive, so TypeScript points
-  at every place to update.
+  `case-room-data.ts`, `case-room-transcripts.ts`). The `switch` is exhaustive,
+  so TypeScript points at every place to update.
 - The selection lives in the `preprocess-scenario` cookie
   (`inbox:empty,cases:few`). `currentScenario()` reads it on the server render
   and in the browser, so both agree.

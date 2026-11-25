@@ -18,6 +18,8 @@ import {
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { PageHeader } from "../../components/page-header";
+import { AgentSectionCrumb } from "../agents/agent-shell";
+import type { OrgAgentDetail } from "../agents/list-org-agents";
 import { ShortcutTooltipLabel } from "../../components/shortcut-tooltip-label";
 import { useHotkeys } from "../../components/use-hotkeys";
 import type { AgentCaseRef } from "./agent-case-ref";
@@ -26,14 +28,13 @@ import { casesSearchForUrl, rememberedCasesSearch } from "./case-inbox-search";
 import { CaseStatusIcon, caseStatusColor } from "./case-status-icon";
 import type { CaseNeighbors } from "./list-org-cases";
 import { AssigneeStack, NeedsAssignmentTag } from "./assignee-stack";
-import type { AgentSummary } from "../agents/agent-store";
 
 function CaseStepper({ neighbors }: Readonly<{ neighbors: CaseNeighbors }>) {
   const navigate = useNavigate();
   const go = (target: Case | null) => {
     if (!target) return;
     void navigate({
-      to: "/cases/$agentId/$caseId",
+      to: "/agents/$agentId/cases/$caseId",
       params: { agentId: target.agentId, caseId: target.id },
     });
   };
@@ -93,7 +94,7 @@ export function CaseRoomHeader({
   /** Whether the Details inspector is open; undefined hides its toggle. */
   detailsOpen?: boolean;
   onToggleDetails?: () => void;
-  agent: AgentSummary | null;
+  agent: OrgAgentDetail;
   caseRef: AgentCaseRef;
   caseItem: Case | null;
   neighbors?: CaseNeighbors;
@@ -104,7 +105,12 @@ export function CaseRoomHeader({
   const done = caseItem?.status === "Done";
 
   useHotkeys({
-    Escape: () => void navigate({ to: "/cases", search: listSearch }),
+    Escape: () =>
+      void navigate({
+        to: "/agents/$agentId/cases",
+        params: { agentId: agent.id },
+        search: listSearch,
+      }),
   });
 
   return (
@@ -150,21 +156,26 @@ export function CaseRoomHeader({
     >
       <Breadcrumb className="flex min-w-0 items-center">
         <BreadcrumbList className="min-w-0 flex-nowrap">
-          <BreadcrumbItem className="shrink-0">
-            <BreadcrumbLink render={<Link search={listSearch} to="/cases" />}>
-              Cases
+          <BreadcrumbItem className="hidden shrink-0 md:inline-flex">
+            <BreadcrumbLink render={<Link to="/agents" />}>
+              Agents
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator className="hidden md:inline-flex">
+            /
+          </BreadcrumbSeparator>
+          <BreadcrumbItem className="min-w-0 shrink">
+            <BreadcrumbLink
+              className="truncate"
+              render={
+                <Link params={{ agentId: agent.id }} to="/agents/$agentId" />
+              }
+            >
+              {agent.name}
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator>/</BreadcrumbSeparator>
-          <BreadcrumbItem className="shrink-0">
-            <BreadcrumbLink
-              render={
-                <Link search={{ agent: [caseRef.agentId] }} to="/cases" />
-              }
-            >
-              {agent?.name ?? caseRef.agentId}
-            </BreadcrumbLink>
-          </BreadcrumbItem>
+          <AgentSectionCrumb agentId={agent.id} linked section="cases" />
           <BreadcrumbSeparator>/</BreadcrumbSeparator>
           <BreadcrumbItem className="min-w-0">
             <BreadcrumbPage className="truncate">

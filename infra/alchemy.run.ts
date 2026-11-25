@@ -6,7 +6,7 @@
 // app's origin), the API Worker with its Durable Objects, R2 buckets, queues
 // and consumers, the case runtime that loads agent code as Dynamic Workers,
 // the Tail Worker on that code, the GitHub build sandbox (apps/builder, a
-// Container), the stub model service (apps/model-stub) unless
+// Container), the PDF renderer (apps/pdf-render, a Container), the stub model service (apps/model-stub) unless
 // MODEL_SERVICE_URL names a real one, and Postgres behind Hyperdrive.
 //
 // Stages differ only in their database, run mode and what survives a destroy:
@@ -25,7 +25,7 @@
 //   deploy without a real MODEL_SERVICE_URL unless that is "stub".
 
 import { createHash } from "node:crypto";
-import { cpSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 
 import * as Cloudflare from "@alchemy.run/cloudflare";
@@ -310,6 +310,31 @@ export default Alchemy.Stack(
           return url;
         });
 
+    // The docs site documents the API on the app's origin. Production serves
+    // it on DOCS_DOMAIN; other stages use workers.dev.
+    const docsDomain = yield* Config.String("DOCS_DOMAIN").pipe(
+      Config.withDefault(""),
+    );
+    const docsDist = at("apps/docs/dist");
+    if (!existsSync(path.join(docsDist, "server/index.js")))
+      throw new Error("apps/docs/dist is missing. Build the docs first.");
+    const docs = yield* Cloudflare.Worker("Docs", {
+      ...worker,
+      name: n.docs,
+      main: path.join(docsDist, "server/index.js"),
+      bundle: false,
+      rules: [{ globs: ["**/*.js", "**/*.mjs"] }],
+      assets: { directory: path.join(docsDist, "client") },
+      workersDev: !docsDomain,
+      ...(docsDomain && { domain: docsDomain }),
+      env: {
+        API_URL: appDomain
+          ? `https://${appDomain}/v1`
+          : Output.map(app.url, (url) => `${url}/v1`),
+      },
+    });
+    const docsUrl = docsDomain ? `https://${docsDomain}` : docs.url;
+
     const roles = selfHost
       ? yield* selfHostPostgres
       : yield* Effect.gen(function* () {
@@ -321,10 +346,13 @@ export default Alchemy.Stack(
           });
           return { app: role.origin, system: role.origin };
         });
-    // Auth reads then writes (SCIM, API key revocation, sessions), so query
-    // caching stays off on both configs (PLAT-27). DB and DB_SYSTEM should
-    // log in as preprocess_app and preprocess_system from bootstrap.sql; until
-    // deployed stages run bootstrap, both use the stage's role.
+    // On our stages PlanetScale roles can inherit only built-in roles, so DB
+    // and DB_SYSTEM both log in as the stage's role, which bypasses RLS.
+    // withOrg switches each DB transaction to preprocess_app (migration 0001),
+    // so RLS applies there; DB_SYSTEM stays the only bypass path. A
+    // self-hosted install logs in as preprocess_app and preprocess_system
+    // directly. Auth reads then writes (SCIM, API key revocation, sessions),
+    // so query caching stays off on both configs (PLAT-27).
     const db = yield* Cloudflare.Hyperdrive.Connection("Db", {
       origin: roles.app,
       caching: { disabled: true },
@@ -409,6 +437,8 @@ export default Alchemy.Stack(
         LOG_STREAM: stream,
         LOG_SQL_BUCKET: n.logs,
         LOG_SQL_TOKEN: logCatalogToken,
+        CLOUDFLARE_ACCOUNT_ID: (yield* yield* Cloudflare.CloudflareEnvironment)
+          .accountId,
       };
     }
 
@@ -481,6 +511,24 @@ export default Alchemy.Stack(
       },
     });
 
+    // PDF pages to PNG images for OCR (design doc 07): one sandbox container
+    // per render, started by the Renderer Durable Object from this image.
+    const renderImage = Cloudflare.Container("RenderImage", {
+      schedulingPolicy: "durable_object",
+      context: at("apps/pdf-render"),
+      dockerfile: at("apps/pdf-render/Dockerfile"),
+    });
+    const pdfRender = yield* Cloudflare.Worker("PdfRender", {
+      ...worker,
+      name: n.pdfRender,
+      main: at("apps/pdf-render/src/index.ts"),
+      env: {
+        RENDERER: Cloudflare.DurableObject("Renderer", {
+          containers: [renderImage],
+        }),
+      },
+    });
+
     // Tail Worker of agent code: console output and exceptions become run
     // logs (design doc 09). The runtime attaches it to each Dynamic Worker.
     const tail = yield* Cloudflare.Worker("Tail", {
@@ -543,6 +591,7 @@ export default Alchemy.Stack(
         SCHEDULER: Cloudflare.DurableObject(durableObjects.SCHEDULER),
         RUNTIME: Cloudflare.WorkerEntrypoint(runtime),
         BUILDER: Cloudflare.WorkerEntrypoint(builder, "Builder"),
+        PDF_RENDER: Cloudflare.WorkerEntrypoint(pdfRender),
         // The GitHub App, unconfigured (its routes answer 503) until these
         // are set.
         ...Object.fromEntries(
@@ -603,6 +652,7 @@ export default Alchemy.Stack(
 
     return {
       app: appUrl,
+      docs: docsUrl,
       api: api.url,
       ...(modelStub && { modelStub: modelStub.url }),
       branch: n.branch,

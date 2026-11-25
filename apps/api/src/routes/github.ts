@@ -388,6 +388,7 @@ githubRoutes.openapi(
   createRoute({
     method: "post",
     path: "/github/install",
+    tags: ["GitHub"],
     summary:
       "A link that installs the GitHub App for this organization (Admin or Owner)",
     request: { params: OrgParams },
@@ -418,6 +419,7 @@ githubRoutes.openapi(
   createRoute({
     method: "get",
     path: "/github/repositories",
+    tags: ["GitHub"],
     summary:
       "Repositories the organization's installations grant, with their links",
     request: { params: OrgParams },
@@ -455,6 +457,7 @@ githubRoutes.openapi(
   createRoute({
     method: "put",
     path: "/agents/{agent}/github",
+    tags: ["GitHub"],
     summary:
       "Build this agent from a repository on every push (Admin or Owner); the first build creates the agent",
     request: {
@@ -541,6 +544,7 @@ githubRoutes.openapi(
   createRoute({
     method: "delete",
     path: "/agents/{agent}/github",
+    tags: ["GitHub"],
     summary: "Stop building this agent from GitHub (Admin or Owner)",
     request: { params: AgentParams },
     responses: { 204: { description: "Unlinked" } },
@@ -573,6 +577,7 @@ githubRoutes.openapi(
   createRoute({
     method: "get",
     path: "/agents/{agent}/builds",
+    tags: ["GitHub"],
     summary: "The agent's GitHub builds, newest first",
     request: { params: AgentParams },
     responses: {
@@ -599,6 +604,7 @@ githubRoutes.openapi(
   createRoute({
     method: "get",
     path: "/agents/{agent}/builds/{build}",
+    tags: ["GitHub"],
     summary: "One build, with the tail of its sandbox log",
     request: { params: AgentParams.extend({ build: z.string() }) },
     responses: {

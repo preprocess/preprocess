@@ -1,8 +1,12 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// Sandbox image, secrets, and network share the Settings tab now.
+// An agent's network rules live in its Settings.
 export const Route = createFileRoute("/agents/$agentId/network")({
   beforeLoad: ({ params }) => {
-    throw redirect({ to: "/agents/$agentId/settings", params });
+    throw redirect({
+      to: "/agents/$agentId/settings",
+      params,
+      hash: "network",
+    });
   },
 });

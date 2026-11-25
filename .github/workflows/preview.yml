@@ -92,7 +92,7 @@ jobs:
           'closed'
         env:
           OUTPUTS: ${{ steps.deploy.outputs.outputs }}
-        run: node scripts/smoke.ts
+        run: pnpm --filter @preprocess/infra smoke
 
       - name: Destroy stage
         id: destroy
