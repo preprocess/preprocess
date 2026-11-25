@@ -15,8 +15,9 @@ The server speaks MCP over streamable HTTP at:
 
 <Configured lang="text" code="{api}/orgs/<your org id>/mcp" />
 
-It takes an organization API key, from Developers → Keys & webhooks, as a bearer
-token. A signed-in person's session doesn't work here.
+It takes an organization API key as a bearer token. An Owner or Admin creates
+one in Developers → Keys & webhooks. A signed-in person's session doesn't work
+here.
 
 <Tabs items={["Claude Code", "Cursor", "Other clients"]}>
   <Tab value="Claude Code">
