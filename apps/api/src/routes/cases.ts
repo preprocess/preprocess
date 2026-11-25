@@ -25,6 +25,7 @@ import {
   gt,
   ilike,
   inArray,
+  isNull,
   lt,
   or,
 } from "drizzle-orm";
@@ -971,6 +972,100 @@ export const caseRoutes = new OpenAPIHono<{
         recordReview(tx, c, key.caseId, { kind: "completed" }),
       );
       return c.json(outcome.state, 200);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "get",
+      path: "/cases/{id}/files",
+      tags: ["Case room"],
+      summary: "The files attached to a case, oldest first",
+      request: { params: CaseParam },
+      responses: {
+        200: json(z.object({ files: z.array(File) }), "The case's files"),
+        404: error("Not visible"),
+      },
+    }),
+    async (c) => {
+      const { key } = await loadCase(c, c.req.valid("param").id, false);
+      const rows = await withOrg(c.env, c.var.org, (tx) =>
+        tx
+          .select()
+          .from(files)
+          .where(eq(files.caseId, key.caseId))
+          .orderBy(asc(files.createdAt)),
+      );
+      return c.json(
+        {
+          files: rows.map((f) => ({
+            id: f.id,
+            name: f.name,
+            contentType: f.contentType,
+            size: f.size,
+            createdAt: f.createdAt.toISOString(),
+          })),
+        },
+        200,
+      );
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "post",
+      path: "/cases/{id}/files",
+      tags: ["Case room"],
+      summary: "Attach uploaded files to a case",
+      description:
+        "Takes ids from POST /files that belong to no case yet. A queued case starts with them; otherwise the agent gets them on its next run, read by OCR when the agent switched OCR on.",
+      request: {
+        params: CaseParam,
+        ...body(z.object({ files: z.array(z.string()).min(1).max(20) })),
+      },
+      responses: {
+        200: json(z.object({ files: z.array(File) }), "Attached"),
+        409: error("The case is cancelled"),
+        422: error("A file does not exist or belongs to a case"),
+      },
+    }),
+    async (c) => {
+      const { key, status } = await loadCase(c, c.req.valid("param").id, true);
+      if (status === "cancelled")
+        throw new ApiError(409, "case_cancelled", "The case is cancelled.");
+      const wanted = [...new Set(c.req.valid("json").files)];
+      const attached = await withOrg(c.env, c.var.org, async (tx) => {
+        const rows = await tx
+          .update(files)
+          .set({ caseId: key.caseId })
+          .where(and(inArray(files.id, wanted), isNull(files.caseId)))
+          .returning();
+        if (rows.length !== wanted.length)
+          throw new ApiError(
+            422,
+            "invalid_files",
+            "Each file must come from POST /files and belong to no case yet.",
+          );
+        // A queued case reads its files when it starts; a started one hears
+        // about them on its next run.
+        if (status !== "queued")
+          for (const f of rows)
+            await recordReview(tx, c, key.caseId, {
+              kind: "file.added",
+              after: { id: f.id, name: f.name, contentType: f.contentType },
+            });
+        return rows;
+      });
+      return c.json(
+        {
+          files: attached.map((f) => ({
+            id: f.id,
+            name: f.name,
+            contentType: f.contentType,
+            size: f.size,
+            createdAt: f.createdAt.toISOString(),
+          })),
+        },
+        200,
+      );
     },
   )
   .openapi(
