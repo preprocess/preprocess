@@ -17,31 +17,31 @@ export const sendInvitationEmail = async (
   await env.EMAIL.send({
     from: env.EMAIL_FROM,
     to: invitation.email,
-    subject: `${invitation.inviterName} invited you to ${invitation.organizationName} on Preprocess`,
+    subject: `Join ${invitation.organizationName} on Preprocess`,
     text: [
       `${invitation.inviterName} invited you to join ${invitation.organizationName} on Preprocess.`,
       "",
-      `Accept the invitation: ${url}`,
+      `Join ${invitation.organizationName}: ${url}`,
       "",
       "If you did not expect this, you can ignore this email.",
     ].join("\n"),
   });
 };
 
-export const sendVerificationEmail = async (
+export const sendMagicLinkEmail = async (
   env: Env,
   message: { email: string; url: string },
 ) => {
   await env.EMAIL.send({
     from: env.EMAIL_FROM,
     to: message.email,
-    subject: "Confirm your email for Preprocess",
+    subject: "Your sign-in link for Preprocess",
     text: [
-      "Confirm this is your email address to finish setting up Preprocess:",
+      "Use this link to sign in to Preprocess. It works once and expires in 15 minutes:",
       "",
       message.url,
       "",
-      "If you did not sign up, you can ignore this email.",
+      "If you did not ask for it, you can ignore this email.",
     ].join("\n"),
   });
 };

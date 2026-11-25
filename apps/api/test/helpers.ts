@@ -103,7 +103,8 @@ let counter = 0;
 export const unique = (name: string) =>
   `${name}-${Date.now().toString(36)}-${(counter++).toString(36)}${crypto.randomUUID().slice(0, 6)}`;
 
-// Opens the link in the newest email to `email` (verification), as the person would.
+// Opens the link in the newest email to `email` (a sign-in link or an
+// invitation), as the person would.
 export const followEmailLink = async (client: Client, email: string) => {
   const mail = [...sent].reverse().find((m) => m.to === email);
   const link = mail?.text.match(/https?:\/\/\S+/)?.[0];
@@ -112,22 +113,41 @@ export const followEmailLink = async (client: Client, email: string) => {
   return client.call(url.pathname + url.search);
 };
 
+// Asks for a sign-in link and opens it. There are no passwords.
+export const signInByLink = async (client: Client, email: string) => {
+  const asked = await client.call("/api/auth/sign-in/magic-link", {
+    body: { email, callbackURL: "/" },
+  });
+  if (asked.status !== 200) return asked;
+  return followEmailLink(client, email);
+};
+
+// A new person signs in by link and enters their first and last name, as the
+// app asks right after. "Ada" becomes Ada Tester; "Ada Lovelace" stays.
 export const signUp = async (
   name: string,
   environment = testEnv(),
-  email = `${unique(name.toLowerCase())}@example.test`,
+  email = `${unique(name.toLowerCase().replaceAll(" ", "-"))}@example.test`,
 ) => {
   const client = new Client(environment);
-  const result = await client.call<{ user: { id: string } }>(
-    "/api/auth/sign-up/email",
-    { body: { name, email, password: "correct horse battery" } },
-  );
-  if (result.status !== 200)
+  const asked = await signInByLink(client, email);
+  if (asked.status >= 400)
     throw new Error(
-      `sign-up failed: ${result.status} ${JSON.stringify(result.body)}`,
+      `sign-in link failed: ${asked.status} ${JSON.stringify(asked.body)}`,
     );
-  await followEmailLink(client, email);
-  return { client, email, userId: result.body.user.id };
+  const [firstName, ...rest] = name.split(" ");
+  const named = await client.call("/api/auth/update-user", {
+    body: { firstName, lastName: rest.join(" ") || "Tester" },
+  });
+  if (named.status !== 200)
+    throw new Error(
+      `naming failed: ${named.status} ${JSON.stringify(named.body)}`,
+    );
+  const session = await client.call<{ user: { id: string } } | null>(
+    "/api/auth/get-session",
+  );
+  if (!session.body) throw new Error(`no session for ${email}`);
+  return { client, email, userId: session.body.user.id };
 };
 
 export const createOrganization = async (client: Client, name: string) => {
@@ -149,7 +169,7 @@ export const addMember = async (
   name: string,
   role: "member" | "admin" = "member",
 ) => {
-  const email = `${unique(name.toLowerCase())}@example.test`;
+  const email = `${unique(name.toLowerCase().replaceAll(" ", "-"))}@example.test`;
   const invited = await owner.call<{ id: string }>(
     "/api/auth/organization/invite-member",
     { body: { email, role, organizationId: org } },

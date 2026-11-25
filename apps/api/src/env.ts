@@ -195,6 +195,9 @@ export type Env = {
   GITHUB_WEBHOOK_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
+  // Google sign-in. Without both, the app shows only the emailed link.
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
   // Default https://api.github.com and https://github.com; the local GitHub
   // stub in development.
   GITHUB_API_URL?: string;

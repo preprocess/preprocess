@@ -1,5 +1,5 @@
-// Better Auth, run in our own code (spec 13): email and password, the
-// organization plugin with the fixed roles, and organization-wide API keys.
+// Better Auth, run in our own code (spec 13): passwordless sign-in by
+// emailed magic link or Google (when configured), the organization plugin with the fixed roles, and organization-wide API keys.
 //
 // Every auth request runs inside one Postgres transaction on DB_SYSTEM: the
 // Drizzle adapter writes through that transaction, and the hooks below write
@@ -18,9 +18,10 @@ import { groups } from "@preprocess/db/schema/access";
 import * as authSchema from "@preprocess/db/schema/auth";
 import { runMode } from "@preprocess/runmode";
 import { betterAuth } from "better-auth";
+import { generateRandomString } from "better-auth/crypto";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { organization } from "better-auth/plugins";
+import { magicLink, organization } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import {
   adminAc,
@@ -30,8 +31,39 @@ import {
 } from "better-auth/plugins/organization/access";
 import { and, count, eq, gt, sql } from "drizzle-orm";
 
-import { sendInvitationEmail, sendVerificationEmail } from "./email.ts";
+import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
+
+// The deploy smoke test (infra/scripts/smoke.ts) has no mailbox. On staging
+// and previews only, its one address (smoke-test+<stage>@ EMAIL_FROM's
+// domain) gets a sign-in token that is an HMAC of that address and the
+// current minute under the auth secret, which the smoke test also holds, and
+// the token opens for two minutes at most. Every other stage refuses any
+// smoke-test address before a token exists or is checked. Its link is never
+// mailed, since the smoke test opens it itself.
+const SMOKE_TEST_STAGE = /^(staging|pr-\d+)$/;
+const SMOKE_TEST_LOCAL = /^smoke-test\+/i;
+const smokeTestToken = async (
+  secret: string,
+  email: string,
+  minute: number,
+) => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`smoke-test:${email}:${minute}`),
+  );
+  return [...new Uint8Array(mac)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
 
 // Owner, Admin and Member are Better Auth's own roles. The only addition is
 // that Admins manage organization API keys (mvp-surface), which by default
@@ -84,21 +116,79 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     { id: string; referenceId: string; name: string | null } | undefined;
   const person = (fallback: string) => request.actorId ?? fallback;
 
+  // Sign-up is open on our cloud. A self-hosted install takes its first
+  // person, then only people with a pending invitation.
+  const mayJoin = async (email: string) => {
+    if (runMode(env).kind === "cloud") return true;
+    const [{ users = 0 } = {}] = await tx
+      .select({ users: count() })
+      .from(authSchema.user);
+    if (users === 0) return true;
+    const [invited] = await tx
+      .select({ id: authSchema.invitation.id })
+      .from(authSchema.invitation)
+      .where(
+        and(
+          sql`lower(${authSchema.invitation.email}) = lower(${email})`,
+          eq(authSchema.invitation.status, "pending"),
+          gt(authSchema.invitation.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    return Boolean(invited);
+  };
+  // A first or last name, when set, is set together and spelled out as
+  // `name`, which every other reader uses.
+  const fullName = (user: Record<string, unknown>) => {
+    if (user.firstName === undefined && user.lastName === undefined) return {};
+    const first =
+      typeof user.firstName === "string" ? user.firstName.trim() : "";
+    const last = typeof user.lastName === "string" ? user.lastName.trim() : "";
+    if (!first && !last) return { firstName: null, lastName: null };
+    if (!first || !last)
+      throw new APIError("BAD_REQUEST", {
+        message: "Enter your first and last name.",
+      });
+    return { firstName: first, lastName: last, name: `${first} ${last}` };
+  };
+  const smokeTestDomain = /@([^>\s]+)>?\s*$/.exec(env.EMAIL_FROM)?.[1];
+  const smokeTestAddress =
+    SMOKE_TEST_STAGE.test(env.STAGE) && smokeTestDomain
+      ? `smoke-test+${env.STAGE}@${smokeTestDomain}`.toLowerCase()
+      : null;
+  const minuteNow = () => Math.floor(Date.now() / 60_000);
+  const notHere = () =>
+    new APIError("FORBIDDEN", { message: "This address can't sign in here." });
+  const needsInvitation = () =>
+    new APIError("FORBIDDEN", {
+      message: "Sign-up on this install needs an invitation.",
+    });
+
   return betterAuth({
     baseURL: env.APP_URL,
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: [env.APP_URL],
     database: drizzleAdapter(tx, { provider: "pg", schema: authSchema }),
-    emailAndPassword: { enabled: true },
-    // Accepting an invitation needs a verified email (Better Auth's default),
-    // so nobody can sign up with someone else's address and take their seat.
-    emailVerification: {
-      sendOnSignUp: true,
-      autoSignInAfterVerification: true,
-      async sendVerificationEmail({ user, url }) {
-        await sendVerificationEmail(env, { email: user.email, url });
-      },
-    },
+    // No passwords. Both ways in prove the address (the link reaches it, or
+    // Google vouches for it), and accepting an invitation needs a verified
+    // email, so nobody can take someone else's seat.
+    emailAndPassword: { enabled: false },
+    socialProviders:
+      env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? {
+            google: {
+              clientId: env.GOOGLE_CLIENT_ID,
+              clientSecret: env.GOOGLE_CLIENT_SECRET,
+              // Whatever Google doesn't return, the app asks for after
+              // sign-in.
+              mapProfileToUser: (profile) => ({
+                firstName: profile.given_name || null,
+                lastName: profile.family_name || null,
+              }),
+            },
+          }
+        : {},
+    account: { accountLinking: { trustedProviders: ["google"] } },
     advanced: {
       ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
       database: {
@@ -108,6 +198,10 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     user: {
       additionalFields: {
         deactivatedAt: { type: "date", required: false, input: false },
+        // Entered by the person (sign-up, an invitation, or their profile),
+        // never by whoever invited them. `name` follows as "First Last".
+        firstName: { type: "string", required: false, input: true },
+        lastName: { type: "string", required: false, input: true },
         // Set by the person through update-user (design doc 06).
         emailNotifications: {
           type: "boolean",
@@ -120,30 +214,14 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     databaseHooks: {
       user: {
         create: {
-          // Sign-up is open on our cloud. A self-hosted install takes its
-          // first person, then only people with a pending invitation.
           async before(user) {
-            if (runMode(env).kind === "cloud") return;
-            const [{ users = 0 } = {}] = await tx
-              .select({ users: count() })
-              .from(authSchema.user);
-            if (users === 0) return;
-            const [invited] = await tx
-              .select({ id: authSchema.invitation.id })
-              .from(authSchema.invitation)
-              .where(
-                and(
-                  sql`lower(${authSchema.invitation.email}) = lower(${user.email})`,
-                  eq(authSchema.invitation.status, "pending"),
-                  gt(authSchema.invitation.expiresAt, new Date()),
-                ),
-              )
-              .limit(1);
-            if (!invited)
-              throw new APIError("FORBIDDEN", {
-                message: "Sign-up on this install needs an invitation.",
-              });
+            if (!(await mayJoin(user.email))) throw needsInvitation();
+            return { data: { ...user, ...fullName(user) } };
           },
+        },
+        update: {
+          before: (user) =>
+            Promise.resolve({ data: { ...user, ...fullName(user) } }),
         },
       },
       session: {
@@ -167,6 +245,50 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       // The key a revoke names, read before the plugin deletes it, so the
       // audit event can say which organization and key it was.
       before: createAuthMiddleware(async (ctx) => {
+        // Refuse a sign-up link up front rather than at the link, so the
+        // person sees why on the page instead of after opening the email.
+        if (ctx.path === "/magic-link/verify") {
+          const token = (ctx.query as { token?: unknown } | undefined)?.token;
+          if (typeof token !== "string") return;
+          const [row] = await tx
+            .select({ value: authSchema.verification.value })
+            .from(authSchema.verification)
+            .where(
+              eq(authSchema.verification.identifier, `magic-link:${token}`),
+            )
+            .limit(1);
+          const email = row
+            ? (JSON.parse(row.value) as { email?: unknown }).email
+            : undefined;
+          if (typeof email !== "string" || !SMOKE_TEST_LOCAL.test(email))
+            return;
+          if (!smokeTestAddress || email.toLowerCase() !== smokeTestAddress)
+            throw notHere();
+          const minute = minuteNow();
+          const fresh = await Promise.all(
+            [minute, minute - 1].map((at) =>
+              smokeTestToken(env.BETTER_AUTH_SECRET, smokeTestAddress, at),
+            ),
+          );
+          if (!fresh.includes(token)) throw notHere();
+          return;
+        }
+        if (ctx.path === "/sign-in/magic-link") {
+          const email = (ctx.body as { email?: unknown } | undefined)?.email;
+          if (typeof email !== "string") return;
+          if (
+            SMOKE_TEST_LOCAL.test(email) &&
+            email.toLowerCase() !== smokeTestAddress
+          )
+            throw notHere();
+          const [known] = await tx
+            .select({ id: authSchema.user.id })
+            .from(authSchema.user)
+            .where(sql`lower(${authSchema.user.email}) = lower(${email})`)
+            .limit(1);
+          if (!known && !(await mayJoin(email))) throw needsInvitation();
+          return;
+        }
         if (ctx.path !== "/api-key/delete") return;
         const keyId = (ctx.body as { keyId?: unknown } | undefined)?.keyId;
         if (typeof keyId !== "string") return;
@@ -213,6 +335,22 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       }),
     },
     plugins: [
+      magicLink({
+        expiresIn: 15 * 60,
+        generateToken: (email) =>
+          smokeTestAddress && email.toLowerCase() === smokeTestAddress
+            ? smokeTestToken(
+                env.BETTER_AUTH_SECRET,
+                smokeTestAddress,
+                minuteNow(),
+              )
+            : generateRandomString(32, "a-z", "A-Z"),
+        async sendMagicLink({ email, url }) {
+          // The smoke test opens its link itself, so nothing is mailed.
+          if (email.toLowerCase() === smokeTestAddress) return;
+          await sendMagicLinkEmail(env, { email, url });
+        },
+      }),
       organization({
         ac,
         roles,
@@ -230,7 +368,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             id: data.id,
             email: data.email,
             organizationName: data.organization.name,
-            inviterName: data.inviter.user.name,
+            inviterName: data.inviter.user.name || data.inviter.user.email,
           });
         },
         organizationHooks: {

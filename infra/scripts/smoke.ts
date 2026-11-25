@@ -8,12 +8,13 @@
 // 3. In the smoke-test organization, deploy a stub agent (smoke-agent/agent.ts) and
 //    run one case on it to completion.
 //
-// The user is reused across runs so each run sends no email. Its password is
-// derived from the stage's BETTER_AUTH_SECRET, so it is never stored and
-// differs per stage; its address is on EMAIL_FROM's domain, which receives the
-// one verification email the first sign-up sends.
+// The user is reused across runs. Sign-in is by emailed link, and the smoke
+// test has no mailbox: for its address only, the API derives the link's token
+// from the stage's BETTER_AUTH_SECRET and the current minute, so the token is
+// never stored here and differs per stage (apps/api/src/auth.ts). The API
+// mails nothing for that address, so each run sends no email.
 
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import path from "node:path";
 
 import { buildSync } from "esbuild";
@@ -32,9 +33,10 @@ if (!authSecret || !emailFrom) {
 const domain = /@([^>\s]+)>?\s*$/.exec(emailFrom)?.[1];
 if (!domain) throw new Error("EMAIL_FROM has no address");
 const email = `smoke-test+${stage}@${domain}`;
-const password = createHash("sha256")
-  .update(`${authSecret}:smoke-test`)
-  .digest("hex");
+const tokenFor = (minute: number) =>
+  createHmac("sha256", authSecret)
+    .update(`smoke-test:${email}:${minute}`)
+    .digest("hex");
 
 const fail = (what: string): never => {
   throw new Error(`smoke test failed: ${what}`);
@@ -92,24 +94,31 @@ if (signInPage.status !== 200 || !/<html/i.test(signInPage.text)) {
 }
 
 // 2. Auth round trip.
-let signedIn = await call("POST", "/api/auth/sign-in/email", {
+const asked = await call("POST", "/api/auth/sign-in/magic-link", {
   email,
-  password,
+  callbackURL: "/",
 });
-if (signedIn.status !== 200) {
-  signedIn = await call("POST", "/api/auth/sign-up/email", {
-    name: "Smoke test",
-    email,
-    password,
-  });
+if (asked.status !== 200) fail(`asking for a sign-in link: ${asked.text}`);
+// The API minted the token in the minute it answered, or just before.
+const minute = Math.floor(Date.now() / 60_000);
+let session = { body: null } as Awaited<
+  ReturnType<typeof call<{ user?: { id: string; email?: string } } | null>>
+>;
+for (const at of [minute, minute - 1]) {
+  await call(
+    "GET",
+    `/api/auth/magic-link/verify?${new URLSearchParams({ token: tokenFor(at), callbackURL: "/" }).toString()}`,
+  );
+  session = await call("GET", "/api/auth/get-session");
+  if (session.body?.user) break;
 }
-if (signedIn.status !== 200) fail(`sign-in: ${signedIn.text}`);
-const session = await call<{ user?: { id: string; email?: string } } | null>(
-  "GET",
-  "/api/auth/get-session",
-);
 const user = session.body?.user;
 if (!user || user.email !== email) fail("the session after sign-in");
+const named = await call("POST", "/api/auth/update-user", {
+  firstName: "Smoke",
+  lastName: "Test",
+});
+if (named.status !== 200) fail(`naming the user: ${named.text}`);
 
 // 3. A case on a freshly deployed stub agent.
 const orgs = await call<{ id: string; slug: string }[]>(
