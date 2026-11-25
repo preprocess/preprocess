@@ -8,6 +8,8 @@ import { parseArgs } from "node:util";
 
 import { bundle, deploy, describe, gitInfo } from "./deploy.ts";
 import { evalsList, evalsRun } from "./evals.ts";
+import { githubApp } from "./github-app.ts";
+import { install } from "./install.ts";
 import { logs } from "./logs.ts";
 import { configPull, groupsPull } from "./pull.ts";
 import { usage } from "./usage.ts";
@@ -26,6 +28,15 @@ export const main = async (argv: string[], env = process.env) => {
       model: { type: "string", multiple: true },
       org: { type: "string" },
       api: { type: "string" },
+      version: { type: "string" },
+      source: { type: "string" },
+      stage: { type: "string" },
+      "env-file": { type: "string", multiple: true },
+      plan: { type: "boolean" },
+      "app-url": { type: "string" },
+      name: { type: "string" },
+      owner: { type: "string" },
+      out: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -38,9 +49,34 @@ export const main = async (argv: string[], env = process.env) => {
       (positionals[1] === "run" && !!positionals[2]));
   if (
     values.help ||
-    (command !== "deploy" && command !== "logs" && !pull && !evals)
+    (command !== "deploy" &&
+      command !== "logs" &&
+      command !== "install" &&
+      command !== "github-app" &&
+      !pull &&
+      !evals)
   )
     return { code: command ? 1 : 0, out: usage };
+  if (command === "install")
+    return install({
+      stage: values.stage ?? "selfhost",
+      plan: values.plan ?? false,
+      version: values.version,
+      source: values.source,
+      envFiles: values["env-file"] ?? [],
+      env,
+    });
+  if (command === "github-app") {
+    if (!values["app-url"])
+      return { code: 1, out: `Missing --app-url.\n\n${usage}` };
+    return githubApp({
+      appUrl: values["app-url"],
+      name: values.name ?? "Preprocess",
+      owner: values.owner,
+      out: values.out ?? ".env.github-app",
+      log: (line) => console.log(line),
+    });
+  }
   if (evals) {
     const org = values.org ?? env.PREPROCESS_ORG;
     const api = values.api ?? env.PREPROCESS_API_URL;
