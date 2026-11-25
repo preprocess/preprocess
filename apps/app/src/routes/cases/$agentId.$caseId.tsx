@@ -17,12 +17,17 @@ import {
   orgCaseStatusSetter,
 } from "../../features/agent-cases/list-org-cases";
 
+/** `view=review` opens the room on its Review view. */
+type CaseRoomSearch = { view?: "review" };
+
 export const Route = createFileRoute("/cases/$agentId/$caseId")({
   staticData: { ownsHeader: true },
   params: {
     parse: (raw) => parseAgentCaseRef(raw),
     stringify: (ref) => stringifyAgentCaseRef(ref),
   },
+  validateSearch: (search: Record<string, unknown>): CaseRoomSearch =>
+    search.view === "review" ? { view: "review" } : {},
   loader: async ({ params }) => {
     const [item, neighbors, room] = await Promise.all([
       getOrgCase(params.agentId, params.caseId),
@@ -42,6 +47,7 @@ export const Route = createFileRoute("/cases/$agentId/$caseId")({
 
 function AgentCasePage() {
   const caseRef = Route.useParams();
+  const { view } = Route.useSearch();
   const { item, neighbors, room } = Route.useLoaderData();
   const router = useRouter();
   const { agentId, caseId } = caseRef;
@@ -56,6 +62,7 @@ function AgentCasePage() {
     <AgentCaseRoom
       caseItem={item}
       caseRef={caseRef}
+      initialView={view}
       // Seeded input so the viewers are exercisable. Builds outside dev serve none.
       inputSamples={import.meta.env.DEV ? FLUE_LAB_INPUT_SAMPLES : undefined}
       neighbors={neighbors}

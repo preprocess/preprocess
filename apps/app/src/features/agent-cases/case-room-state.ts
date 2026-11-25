@@ -106,6 +106,22 @@ export type RoomApproval = {
   readonly note: string | null;
 };
 
+/**
+ * A rule the agent proposed on this case for its memory (spec 10). A person
+ * with operator access accepts it, and every new case and rerun receives it,
+ * or dismisses it. The text can't be edited.
+ */
+export type RoomMemory = {
+  readonly id: string;
+  readonly text: string;
+  /** Why the agent proposed it. */
+  readonly reason: string | null;
+  readonly status: "proposed" | "accepted" | "dismissed" | "deleted";
+  readonly proposedAt: string;
+  readonly decidedAt: string | null;
+  readonly decidedByName: string | null;
+};
+
 /** What deciding an approval returned; refusals carry the API's code. */
 export type ApprovalDecision =
   | { readonly ok: true }
@@ -125,6 +141,7 @@ export type CaseRoomState = {
   readonly answers: Record<string, unknown> | null;
   readonly thread: readonly RoomMessage[];
   readonly approvals: readonly RoomApproval[];
+  readonly memories: readonly RoomMemory[];
 };
 
 /** What a change to an answer returned (PATCH /answers and friends). */

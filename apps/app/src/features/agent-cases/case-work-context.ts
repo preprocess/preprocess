@@ -28,6 +28,11 @@ export type CaseWorkActions = {
     decision: "approve" | "reject";
     text: string;
   }) => Promise<ApprovalDecision>;
+  /** Accepts or dismisses a memory rule the agent proposed. */
+  readonly decideMemory: (input: {
+    memoryId: string;
+    decision: "accept" | "dismiss";
+  }) => Promise<ApprovalDecision>;
   /** Posts to the case thread; @group mentions notify that group. */
   readonly post: (text: string) => Promise<ApprovalDecision>;
 };

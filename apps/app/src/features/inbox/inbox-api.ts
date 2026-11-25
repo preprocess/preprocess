@@ -30,7 +30,8 @@ type ApiGuardrailChange =
 
 type ApiInboxItem = {
   key: string;
-  kind: "waiting" | "mention" | "assigned" | "approval" | "guardrail";
+  kind:
+    "waiting" | "mention" | "assigned" | "approval" | "guardrail" | "memory";
   at: string;
   read: boolean;
   case: ApiCase | null;
@@ -154,6 +155,15 @@ function toItem(item: ApiInboxItem): InboxItem {
   }
 
   switch (item.kind) {
+    case "memory":
+      return {
+        ...base,
+        kind: "memory",
+        title,
+        summary: "The agent proposed a rule for its memory",
+        body: item.message ?? "",
+        link: caseLink && { ...caseLink, view: "review" },
+      };
     case "mention":
       return {
         ...base,
