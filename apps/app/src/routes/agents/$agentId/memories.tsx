@@ -10,10 +10,9 @@ export const Route = createFileRoute("/agents/$agentId/memories")({
 });
 
 function AgentMemoriesPage() {
-  const agent = agentRoute.useLoaderData();
   return (
-    <AgentPage agent={agent} tab="memories">
-      <AgentMemories memories={agent.memories} />
+    <AgentPage agent={agentRoute.useLoaderData()} tab="memories">
+      <AgentMemories />
     </AgentPage>
   );
 }

@@ -171,8 +171,8 @@ export function AgentSectionNav({
               {agent.name}
             </span>
             <span className="truncate text-caption text-muted-foreground">
-              {agent.deploymentId
-                ? `Production · ${shortDeploymentId(agent.deploymentId)}`
+              {agent.productionDeploymentId
+                ? `Production · ${shortDeploymentId(agent.productionDeploymentId)}`
                 : "Not deployed"}
             </span>
           </div>
