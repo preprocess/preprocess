@@ -3,5 +3,31 @@ title: Preprocess
 description: Build, deploy and supervise agents that work cases.
 ---
 
-The guides for the SDK, the CLI and MCP are on their way. The API reference is
-generated from the API itself.
+An agent on Preprocess is a TypeScript module. It declares its instructions, its
+model, the tools it may call, and the shape of the answers it produces for each
+case. You deploy it with the CLI. Preprocess runs it on Cloudflare Workers, and
+your team supervises its cases in the app: they review answers, approve what
+needs approval, and teach it rules it will follow next time.
+
+<Cards>
+  <Card
+    title="SDK"
+    href="/sdk"
+    description="Write an agent: tools, secrets, MCP servers and an output schema."
+  />
+  <Card
+    title="CLI"
+    href="/cli"
+    description="Deploy agents, pull their settings, read logs and run evals."
+  />
+  <Card
+    title="MCP"
+    href="/mcp"
+    description="Let an MCP client manage your organization's agents and cases."
+  />
+  <Card
+    title="API reference"
+    href="/api"
+    description="Every endpoint, generated from the API itself."
+  />
+</Cards>
