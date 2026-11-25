@@ -8,6 +8,8 @@ import { parseArgs } from "node:util";
 
 import { bundle, deploy, describe, gitInfo } from "./deploy.ts";
 import { evalsList, evalsRun } from "./evals.ts";
+import { githubApp } from "./github-app.ts";
+import { install } from "./install.ts";
 import { logs } from "./logs.ts";
 import { configPull, groupsPull } from "./pull.ts";
 
@@ -18,6 +20,10 @@ const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <id>] [-
                        [--level <level>] [--search <text>] [--limit <n>]
        preprocess evals list [--agent <name>]
        preprocess evals run <suite> [--deployment <id>] [--model <id>]...
+       preprocess install [--version <tag> | --source <dir>] [--stage <name>]
+                          [--env-file <path>]... [--plan]
+       preprocess github-app --app-url <url> [--name <name>] [--owner <org>]
+                             [--out <path>]
 
   deploy       bundle and deploy the agent
   config pull  write the agent's dashboard overrides into preprocess.config.json
@@ -27,6 +33,15 @@ const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <id>] [-
   evals list   list the agent's eval suites
   evals run    run a suite against a deployment (production by default),
                one run per --model, and wait for the results
+  install      install or upgrade Preprocess in your own Cloudflare account,
+               from a release (the latest by default) or a checkout, as the
+               self-hosted stage --stage (default: selfhost); --plan only
+               prints what would change. Reads CLOUDFLARE_API_TOKEN,
+               CLOUDFLARE_ACCOUNT_ID, DATABASE_URL, EMAIL_FROM,
+               MODEL_SERVICE_URL and MODEL_SERVICE_KEY from the environment
+               or --env-file; see infra/README.md for the optional ones
+  github-app   register your install's own GitHub App on GitHub and write its
+               credentials to --out (default: .env.github-app)
 
   entry     the agent's module (default: src/index.ts)
   --agent   the agent's name (default: package.json name, without its scope)
@@ -49,6 +64,15 @@ export const main = async (argv: string[], env = process.env) => {
       model: { type: "string", multiple: true },
       org: { type: "string" },
       api: { type: "string" },
+      version: { type: "string" },
+      source: { type: "string" },
+      stage: { type: "string" },
+      "env-file": { type: "string", multiple: true },
+      plan: { type: "boolean" },
+      "app-url": { type: "string" },
+      name: { type: "string" },
+      owner: { type: "string" },
+      out: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -61,9 +85,34 @@ export const main = async (argv: string[], env = process.env) => {
       (positionals[1] === "run" && !!positionals[2]));
   if (
     values.help ||
-    (command !== "deploy" && command !== "logs" && !pull && !evals)
+    (command !== "deploy" &&
+      command !== "logs" &&
+      command !== "install" &&
+      command !== "github-app" &&
+      !pull &&
+      !evals)
   )
     return { code: command ? 1 : 0, out: usage };
+  if (command === "install")
+    return install({
+      stage: values.stage ?? "selfhost",
+      plan: values.plan ?? false,
+      version: values.version,
+      source: values.source,
+      envFiles: values["env-file"] ?? [],
+      env,
+    });
+  if (command === "github-app") {
+    if (!values["app-url"])
+      return { code: 1, out: `Missing --app-url.\n\n${usage}` };
+    return githubApp({
+      appUrl: values["app-url"],
+      name: values.name ?? "Preprocess",
+      owner: values.owner,
+      out: values.out ?? ".env.github-app",
+      log: (line) => console.log(line),
+    });
+  }
   if (evals) {
     const org = values.org ?? env.PREPROCESS_ORG;
     const api = values.api ?? env.PREPROCESS_API_URL;
