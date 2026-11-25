@@ -13,6 +13,7 @@ import {
   type CasesInboxSearch,
 } from "./case-inbox-search";
 import { createCaseSeed } from "./case-seed";
+import { getOrgAgent, type OrgAgentDetail } from "../agents/list-org-agents";
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { ScenarioState } from "../../scenarios/scenarios";
 
@@ -157,6 +158,7 @@ function matches(item: Case, search: CasesInboxSearch, query: string) {
 
 /** How many cases have each filter value. */
 export type CaseFacetCounts = {
+  /** Cases per status under the search and filters, whatever the tab. */
   readonly status: Readonly<Record<string, number>>;
   readonly agent: Readonly<Record<string, number>>;
   readonly awaiting: Readonly<Record<string, number>>;
@@ -178,9 +180,10 @@ function facetCounts(search: CasesInboxSearch): CaseFacetCounts {
   const bump = (counts: Record<string, number>, key: string) => {
     counts[key] = (counts[key] ?? 0) + 1;
   };
+  const anyStatus = { ...search, view: "all" as const, status: [] };
   for (const item of seededCases()) {
+    if (matches(item, anyStatus, query)) bump(status, item.status);
     if (!matchesView(item, search, query)) continue;
-    bump(status, item.status);
     bump(agent, item.agentId);
     if (item.awaiting.length === 0) bump(awaiting, AWAITING_NONE);
     for (const group of item.awaiting) bump(awaiting, group);
@@ -294,6 +297,25 @@ function seededCaseList(
     hasCases: all.length > 0,
     loadError: currentScenario().cases === "load-error",
   });
+}
+
+/**
+ * The agent whose cases a page shows. Seeded cases name agents the API
+ * doesn't have, so a seeded scenario stands one in by its slug.
+ */
+export async function getCaseAgent(
+  slug: string,
+): Promise<OrgAgentDetail | null> {
+  const agent = await getOrgAgent({ data: slug });
+  if (agent || (live() && currentScenario()["case-work"] === "live"))
+    return agent;
+  return {
+    id: slug,
+    name: slug,
+    productionBranch: "main",
+    productionDeploymentId: null,
+    production: null,
+  };
 }
 
 export function getOrgCase(
