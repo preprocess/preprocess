@@ -53,7 +53,11 @@ export const withOrg = <T>(
   if (!org) throw new Error("withOrg needs an organization");
   return connect(env.DB.connectionString, (db) =>
     db.transaction(async (tx) => {
-      await tx.execute(sql`select set_config('app.org_id', ${org}, true)`);
+      const { rows } = await tx.execute<{ bypass: boolean }>(
+        sql`select set_config('app.org_id', ${org}, true), (select rolsuper or rolbypassrls from pg_roles where rolname = current_user) as bypass`,
+      );
+      if (rows[0]?.bypass)
+        throw new Error("DB bypasses row-level security; it must not");
       return fn(tx);
     }),
   );

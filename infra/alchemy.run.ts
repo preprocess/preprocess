@@ -199,12 +199,18 @@ export default Alchemy.Stack(
       branch,
       inheritedRoles: ["postgres"],
     });
-    // Auth reads then writes (SCIM, API key revocation, sessions), so query
-    // caching stays off on both configs (PLAT-27). DB and DB_SYSTEM should
-    // log in as preprocess_app and preprocess_system from bootstrap.sql; until
-    // deployed stages run bootstrap, both use the stage's role.
+    // DB logs in as a member of preprocess_app (migration 0001), without
+    // BYPASSRLS, so row-level security applies to it. DB_SYSTEM keeps the
+    // stage's role, which bypasses RLS, as the only escape hatch. Auth reads
+    // then writes (SCIM, API key revocation, sessions), so query caching stays
+    // off on both configs (PLAT-27).
+    const appRole = yield* Planetscale.PostgresRole("AppRole", {
+      database,
+      branch,
+      inheritedRoles: ["preprocess_app"],
+    });
     const db = yield* Cloudflare.Hyperdrive.Connection("Db", {
-      origin: role.origin,
+      origin: appRole.origin,
       caching: { disabled: true },
     });
     const dbSystem = yield* Cloudflare.Hyperdrive.Connection("DbSystem", {

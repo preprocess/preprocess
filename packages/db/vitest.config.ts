@@ -14,6 +14,9 @@ const pgRequire = createRequire(createRequire(import.meta.url).resolve("pg"));
 // superuser) exists only here, to stand in for an attacker with table access.
 const url =
   process.env.TEST_DATABASE_URL ?? localDatabaseUrl("preprocess_test_db");
+// The deployed-stage login roles test/global-setup.ts creates.
+const loginAs = (role: string) =>
+  Object.assign(new URL(url), { username: role, password: role }).href;
 
 export default defineConfig({
   plugins: [
@@ -25,6 +28,8 @@ export default defineConfig({
           DB: localRoleUrl(url, "preprocess_app"),
           DB_SYSTEM: localRoleUrl(url, "preprocess_system"),
           DB_ADMIN: url,
+          DB_MEMBER: loginAs("preprocess_test_member"),
+          DB_BYPASS: loginAs("preprocess_test_bypass"),
         },
       },
     }),
