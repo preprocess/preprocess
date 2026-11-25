@@ -1,3 +1,4 @@
+import { FluidProvider } from "@preprocess/ui/lib/fluid-provider";
 import {
   createRootRoute,
   HeadContent,
@@ -15,16 +16,30 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Preprocess docs" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      {
+        rel: "icon",
+        href: "/brand/favicon-light.svg",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        rel: "icon",
+        href: "/brand/favicon-dark.svg",
+        media: "(prefers-color-scheme: dark)",
+      },
+    ],
   }),
   component: () => (
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
-      <body className="flex min-h-screen flex-col">
-        <RootProvider>
-          <Outlet />
+      <body className="fixed inset-0 h-svh overflow-hidden overscroll-none">
+        <RootProvider search={{ enabled: false }}>
+          <FluidProvider shape="pill">
+            <Outlet />
+          </FluidProvider>
         </RootProvider>
         <Scripts />
       </body>

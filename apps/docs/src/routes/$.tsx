@@ -2,20 +2,14 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
-import { DocsLayout } from "fumadocs-ui/layouts/notebook";
-import {
-  DocsBody,
-  DocsDescription,
-  DocsPage,
-  DocsTitle,
-} from "fumadocs-ui/layouts/notebook/page";
 import { Suspense, use } from "react";
 
 import { OpenAPIPage } from "@/components/api-page";
 import { ApiUrlContext } from "@/components/configured";
+import { DocsArticle } from "@/components/docs-article";
+import { DocsShell } from "@/components/docs-shell";
 import { useMDXComponents } from "@/components/mdx";
 import { docs } from "@/lib/collections";
-import { baseOptions } from "@/lib/layout";
 import { source } from "@/lib/source";
 
 const loadPage = createServerFn({ method: "GET" })
@@ -27,12 +21,14 @@ const loadPage = createServerFn({ method: "GET" })
     if (page.type === "openapi")
       return {
         type: "openapi" as const,
+        url: page.url,
         title: page.data.title,
         pageTree,
         props: page.data.getOpenAPIPageProps(),
       };
     return {
       type: "docs" as const,
+      url: page.url,
       path: page.path,
       apiUrl: env.API_URL,
       pageTree,
@@ -50,45 +46,49 @@ export const Route = createFileRoute("/$")({
   component: Page,
 });
 
-function Content({ path }: { path: string }) {
+function Content({
+  path,
+  tree,
+  url,
+}: {
+  path: string;
+  tree: Parameters<typeof DocsArticle>[0]["tree"];
+  url: string;
+}) {
   const page = docs.getPage(path);
   if (!page) throw new Error(`Unknown page: ${path}`);
   const { toc } = use(page.load());
   const MDX = page.body;
   return (
-    <DocsPage toc={toc}>
-      <DocsTitle>{page.title}</DocsTitle>
-      <DocsDescription>{page.description}</DocsDescription>
-      <DocsBody>
-        <MDX components={useMDXComponents()} />
-      </DocsBody>
-    </DocsPage>
+    <DocsArticle
+      description={page.description}
+      title={page.title}
+      toc={toc}
+      tree={tree}
+      url={url}
+    >
+      <MDX components={useMDXComponents()} />
+    </DocsArticle>
   );
 }
 
 function Page() {
   const page = useFumadocsLoader(Route.useLoaderData());
-  const base = baseOptions();
   return (
-    <DocsLayout
-      {...base}
-      nav={{ ...base.nav, mode: "top" }}
-      tree={page.pageTree}
-    >
+    <DocsShell tree={page.pageTree}>
       {page.type === "openapi" ? (
-        <DocsPage full>
-          <DocsTitle>{page.title}</DocsTitle>
-          <DocsBody>
+        <DocsArticle title={page.title} tree={page.pageTree} url={page.url}>
+          <div className="not-typeset">
             <OpenAPIPage {...page.props} />
-          </DocsBody>
-        </DocsPage>
+          </div>
+        </DocsArticle>
       ) : (
         <ApiUrlContext value={page.apiUrl}>
           <Suspense>
-            <Content path={page.path} />
+            <Content path={page.path} tree={page.pageTree} url={page.url} />
           </Suspense>
         </ApiUrlContext>
       )}
-    </DocsLayout>
+    </DocsShell>
   );
 }

@@ -11,9 +11,11 @@ export function Configured({ lang, code }: { lang: string; code: string }) {
   const api = use(ApiUrlContext);
   const origin = api.replace(/\/v1\/?$/, "");
   return (
-    <DynamicCodeBlock
-      lang={lang}
-      code={code.replaceAll("{api}", api).replaceAll("{origin}", origin)}
-    />
+    <div className="not-typeset">
+      <DynamicCodeBlock
+        lang={lang}
+        code={code.replaceAll("{api}", api).replaceAll("{origin}", origin)}
+      />
+    </div>
   );
 }

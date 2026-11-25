@@ -1,4 +1,92 @@
-@import "tailwindcss";
-@import "fumadocs-ui/css/neutral.css";
+@import "@preprocess/ui/styles.css";
 @import "fumadocs-ui/css/preset.css";
 @import "fumadocs-openapi/css/preset.css";
+
+@source "../";
+
+/* Fumadocs draws its code blocks, tabs and API reference from these colors.
+   They point at the app's tokens, which already switch with the theme. */
+@theme {
+  --color-fd-background: var(--background);
+  --color-fd-foreground: var(--foreground);
+  --color-fd-muted: var(--surface-3);
+  --color-fd-muted-foreground: var(--muted-foreground);
+  --color-fd-popover: var(--card);
+  --color-fd-popover-foreground: var(--foreground);
+  --color-fd-card: var(--card);
+  --color-fd-card-foreground: var(--foreground);
+  --color-fd-border: var(--border);
+  --color-fd-primary: var(--foreground);
+  --color-fd-primary-foreground: var(--background);
+  --color-fd-secondary: var(--accent);
+  --color-fd-secondary-foreground: var(--foreground);
+  --color-fd-accent: var(--hover);
+  --color-fd-accent-foreground: var(--foreground);
+  --color-fd-ring: var(--ring);
+  --color-fd-overlay: rgb(var(--overlay) / 0.2);
+  --color-fd-info: var(--info);
+  --color-fd-warning: var(--warning);
+  --color-fd-error: var(--destructive);
+  --color-fd-success: var(--success);
+  --color-fd-idea: var(--warning);
+  --color-fd-diff-remove: color-mix(
+    in oklab,
+    var(--destructive) 12%,
+    transparent
+  );
+  --color-fd-diff-remove-symbol: var(--destructive);
+  --color-fd-diff-add: color-mix(in oklab, var(--success) 12%, transparent);
+  --color-fd-diff-add-symbol: var(--success);
+
+  /* Fumadocs' own components size text with Tailwind's scale and weights.
+     These put them on the six type roles and the three weights. */
+  --text-xs: var(--fs-caption);
+  --text-xs--line-height: var(--lh-caption);
+  --text-sm: var(--fs-body);
+  --text-sm--line-height: var(--lh-body);
+  --text-base: var(--fs-subtitle);
+  --text-base--line-height: var(--lh-subtitle);
+  --text-lg: var(--fs-title);
+  --text-lg--line-height: var(--lh-title);
+  --text-xl: var(--fs-title);
+  --text-xl--line-height: var(--lh-title);
+  --text-2xl: var(--fs-display);
+  --text-2xl--line-height: var(--lh-display);
+  --text-3xl: var(--fs-display);
+  --text-3xl--line-height: var(--lh-display);
+  --font-weight-medium: 550;
+  --font-weight-semibold: 550;
+  --font-weight-bold: 700;
+}
+
+/* Code blocks take their spacing from the typeset around them. */
+.not-typeset > figure.shiki {
+  margin-block: 0;
+}
+
+/* Headings link to themselves without looking like links. */
+.typeset :is(h2, h3, h4) > a {
+  color: inherit;
+  text-decoration-line: none;
+}
+
+/* Fumadocs' weight utilities take the app's weights with their optical
+   sizes, as the type roles do. */
+@layer utilities {
+  :is(.font-medium, .font-semibold) {
+    font-variation-settings:
+      "wght" 550,
+      "opsz" 18;
+  }
+  .font-bold {
+    font-variation-settings:
+      "wght" 700,
+      "opsz" 25;
+  }
+}
+
+/* Fumadocs' buttons (the API playground trigger and send) take the app's
+   pill shape. */
+button:is(.bg-fd-primary, .bg-fd-secondary) {
+  border-radius: 9999px;
+}
