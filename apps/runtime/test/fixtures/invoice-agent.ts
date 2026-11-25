@@ -37,6 +37,11 @@ export default agent({
             field: "amount",
             message: "must be positive",
           },
+        noteShort: (a) =>
+          ((a.get("approverNote") as string | null) ?? "").length <= 200 || {
+            field: "approverNote",
+            message: "keep it under 200 characters",
+          },
       },
     },
   ),
