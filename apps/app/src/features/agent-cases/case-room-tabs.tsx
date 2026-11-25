@@ -371,7 +371,17 @@ function rectTarget(rect: ItemRect) {
   };
 }
 
-/** TabsSubtle's selected and hover pills, over this strip's own rects. */
+/** The selected tab's underline along its bottom edge (spec 14a). */
+function underlineTarget(rect: ItemRect) {
+  return {
+    left: rect.left + 6,
+    width: Math.max(rect.width - 12, 0),
+    top: rect.top + rect.height - 2,
+    height: 2,
+  };
+}
+
+/** The selected tab's underline and the hover pill, over this strip's own rects. */
 function TabPills({
   rects,
   selectedIndex,
@@ -393,13 +403,10 @@ function TabPills({
     <>
       {selectedRect ? (
         <motion.div
-          animate={{
-            ...rectTarget(selectedRect),
-            opacity: hoveringOther ? 0.8 : 1,
-          }}
-          className={cn(PILL_CLASS, shape.bg)}
+          animate={underlineTarget(selectedRect)}
+          className="pointer-events-none absolute rounded-full bg-foreground"
           initial={false}
-          transition={{ ...spring.moderate, opacity: { duration: 0.08 } }}
+          transition={spring.moderate}
         />
       ) : null}
       <AnimatePresence>

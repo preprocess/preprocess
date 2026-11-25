@@ -40,7 +40,6 @@ jobs:
     environment: staging
     outputs:
       deployed: ${{ steps.deploy.outcome == 'success' }}
-      outputs: ${{ steps.deploy.outputs.outputs }}
     env:
       CI: "true"
       PREPROCESS_REGION: ${{ vars.PREPROCESS_REGION }}
@@ -91,6 +90,21 @@ jobs:
         if: steps.credentials.outputs.ready == 'true'
         run: pnpm --filter @preprocess/infra staging:deploy
 
+      # The stage's URLs contain the account's workers.dev subdomain, which
+      # matches a secret's value, so GitHub drops them as a job output. They
+      # reach the smoke test as an artifact instead.
+      - name: Keep the stage's URLs for the smoke test
+        if: steps.deploy.outcome == 'success'
+        env:
+          OUTPUTS: ${{ steps.deploy.outputs.outputs }}
+        run: printenv OUTPUTS > outputs.json
+      - if: steps.deploy.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-outputs
+          path: outputs.json
+          retention-days: 1
+
   # Its check, "Staging smoke test", is what internal's production deploy
   # requires. It only runs, and so only passes, after a real staging deploy.
   smoke:
@@ -110,13 +124,15 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: staging-outputs
       - name: Smoke test staging
         env:
           STAGE: staging
-          OUTPUTS: ${{ needs.staging.outputs.outputs }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-        run: pnpm --filter @preprocess/infra smoke
+        run: OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra smoke
 
   production:
     name: Promote to production

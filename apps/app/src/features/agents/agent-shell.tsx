@@ -29,6 +29,7 @@ import {
   ChartLine,
   ChevronDown,
   Code,
+  Folder4,
   Gauge,
   Home,
   OrbitSparkle,
@@ -47,6 +48,7 @@ import type { OrgAgentDetail } from "./list-org-agents";
 
 type SectionTo =
   | "/agents/$agentId"
+  | "/agents/$agentId/cases"
   | "/agents/$agentId/observability"
   | "/agents/$agentId/evaluations"
   | "/agents/$agentId/memories"
@@ -66,6 +68,13 @@ type Section = {
 
 export const AGENT_SECTIONS = [
   { id: "", label: "Overview", icon: Home, to: "/agents/$agentId", group: "" },
+  {
+    id: "cases",
+    label: "Cases",
+    icon: Folder4,
+    to: "/agents/$agentId/cases",
+    group: "Operate",
+  },
   {
     id: "observability",
     label: "Observability",

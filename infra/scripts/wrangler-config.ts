@@ -48,6 +48,14 @@ const configs: Record<string, object> = {
       production: { name: names("production").app, workers_dev: false },
     },
   },
+  // The docs site documents the API on the app's origin.
+  "apps/docs": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.docs,
+    main: "@tanstack/react-start/server-entry",
+    ...common,
+    vars: { API_URL: `${localAppUrl}/v1` },
+  },
   "apps/api": {
     $schema: "node_modules/wrangler/config-schema.json",
     name: local.api,

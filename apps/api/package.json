@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "wrangler dev --inspector-port 9241 -c wrangler.jsonc -c ../builder/wrangler.jsonc",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "openapi": "node scripts/openapi.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.27",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
     "@cloudflare/workers-types": "catalog:",
+    "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "esbuild": "^0.25.0",
     "typescript": "^5.9.3",

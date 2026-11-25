@@ -83,6 +83,7 @@ mcpRoutes.openapi(
   createRoute({
     method: "get",
     path: "/mcp-servers",
+    tags: ["MCP servers"],
     summary: "List the organization's MCP servers and connection status",
     request: { params: z.object({ org: z.string() }) },
     responses: {
@@ -135,6 +136,7 @@ mcpRoutes.openapi(
   createRoute({
     method: "put",
     path: "/mcp-servers/{server}",
+    tags: ["MCP servers"],
     summary:
       "Register a remote MCP server under the name agent code uses for it; a new URL drops the connection",
     request: {
@@ -214,6 +216,7 @@ mcpRoutes.openapi(
   createRoute({
     method: "delete",
     path: "/mcp-servers/{server}",
+    tags: ["MCP servers"],
     summary:
       "Remove an MCP server and its connection; refused while agents are granted it",
     request: { params: ServerParams },
@@ -305,6 +308,7 @@ mcpRoutes.openapi(
   createRoute({
     method: "put",
     path: "/mcp-servers/{server}/agents/{agent}",
+    tags: ["MCP servers"],
     summary:
       "Let an agent's code use this MCP server (loosens a guardrail; Admin or Owner)",
     request: { params: GrantParams },
@@ -317,6 +321,7 @@ mcpRoutes.openapi(
   createRoute({
     method: "delete",
     path: "/mcp-servers/{server}/agents/{agent}",
+    tags: ["MCP servers"],
     summary: "Stop an agent's code using this MCP server",
     request: { params: GrantParams },
     responses: { 204: { description: "Revoked" } },
@@ -328,6 +333,7 @@ mcpRoutes.openapi(
   createRoute({
     method: "post",
     path: "/mcp-servers/{server}/connect",
+    tags: ["MCP servers"],
     summary:
       "Start the organization's OAuth sign-in to an MCP server; open the returned URL in a browser",
     request: { params: ServerParams },
@@ -408,6 +414,7 @@ mcpRoutes.openapi(
   createRoute({
     method: "get",
     path: "/mcp-servers/{server}/tools",
+    tags: ["MCP servers"],
     summary:
       "List the tools an MCP server offers, through the organization's connection",
     request: { params: ServerParams },
@@ -445,6 +452,7 @@ mcpRoutes.openapi(
   createRoute({
     method: "post",
     path: "/mcp-servers/{server}/connection/refresh",
+    tags: ["MCP servers"],
     summary: "Refresh the organization's token for an MCP server now",
     request: { params: ServerParams },
     responses: { 204: { description: "Refreshed" } },
@@ -465,6 +473,7 @@ mcpRoutes.openapi(
   createRoute({
     method: "delete",
     path: "/mcp-servers/{server}/connection",
+    tags: ["MCP servers"],
     summary: "Revoke the organization's connection to an MCP server",
     request: { params: ServerParams },
     responses: { 204: { description: "Revoked" } },
