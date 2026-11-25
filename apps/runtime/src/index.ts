@@ -41,6 +41,10 @@ type CaseObject = {
     mentioned: string[];
   }>;
   cancel(): Promise<CaseState>;
+  complete(): Promise<
+    | { result: "ok"; state: CaseState }
+    | { result: "refused"; code: string; message: string }
+  >;
   decide(input: {
     id: string;
     approve: boolean;
@@ -103,6 +107,10 @@ export default class Runtime extends WorkerEntrypoint<Env> {
 
   cancelCase(c: CaseKey) {
     return runtimeFor(this.env, c).cancel();
+  }
+
+  completeCase(c: CaseKey) {
+    return runtimeFor(this.env, c).complete();
   }
 
   decideApproval(

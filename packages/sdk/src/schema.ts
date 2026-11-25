@@ -60,6 +60,15 @@ export type Check = (
   a: Answers,
 ) => true | false | string | { field: Path; message: string };
 
+// When the case is done (design doc 05), over its answers whoever entered
+// them: true, or false or a message saying what is missing.
+export type Success = (
+  a: Answers & { allReviewed(): boolean },
+) => boolean | string;
+
+// Done once every visible field that needs review has a person's answer.
+export const allReviewed: Success = (a) => a.allReviewed();
+
 type Options = OptionLike[] | ((a: Answers) => OptionLike[]) | Source;
 
 // Approval by a person: true is any operator; a group names who approves,
@@ -82,6 +91,7 @@ export type Field = FieldOptions & {
   readonly fields?: Record<string, Field>;
   readonly item?: Field;
   readonly checks?: Record<string, Check>;
+  readonly success?: Success;
   readonly inputs?: (a: Answers) => unknown;
   readonly fetch?: (inputs: unknown, ctx: FunctionContext) => unknown;
   readonly transform?: (data: unknown) => unknown;
@@ -97,7 +107,10 @@ const field = (
 export const schema = {
   group: (
     fields: Record<string, Field>,
-    opts: FieldOptions & { checks?: Record<string, Check> } = {},
+    opts: FieldOptions & {
+      checks?: Record<string, Check>;
+      success?: Success;
+    } = {},
   ): Group => field("group", { ...opts, fields }) as Group,
   list: (item: Field, opts: FieldOptions = {}): Field =>
     field("list", { ...opts, item }),
@@ -650,6 +663,30 @@ export const evaluate = async (
     else checks.push({ name, ok: false });
   }
 
+  let success: EvaluateResponse["success"];
+  if (root.success) {
+    const condition = root.success;
+    const confirmed = new Set(request.confirmed ?? []);
+    const unreviewed = new Set(request.unreviewed ?? []);
+    for (const [path, f] of Object.entries(fields))
+      if (f.visible && f.review === "required" && !confirmed.has(path))
+        unreviewed.add(path);
+      else unreviewed.delete(path);
+    const settled = await settle((r) =>
+      condition({
+        ...run.accessor(r, "", []),
+        allReviewed: () => unreviewed.size === 0,
+      }),
+    );
+    success = !settled.ok
+      ? { ok: false, message: settled.error }
+      : settled.value === true
+        ? { ok: true }
+        : typeof settled.value === "string"
+          ? { ok: false, message: settled.value }
+          : { ok: false };
+  }
+
   let approval: EvaluateResponse["approval"];
   if (completion) {
     const { group } = approvalRule(completion);
@@ -660,7 +697,12 @@ export const evaluate = async (
     if (!settled.ok || settled.value) approval = { group };
   }
 
-  return { fields, checks, ...(approval && { approval }) };
+  return {
+    fields,
+    checks,
+    ...(success && { success }),
+    ...(approval && { approval }),
+  };
 };
 
 const page = (result: SourceResult): OptionsResponse => {

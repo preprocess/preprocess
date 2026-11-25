@@ -187,6 +187,10 @@ export type EvaluateRequest = {
   answers: Record<Path, unknown>;
   fetched: Record<Path, { key: string; data: unknown }>;
   targets: Path[] | "all";
+  // For allReviewed(): paths whose answer a person confirmed, and fields
+  // outside the targets that still wait for review as of the last evaluation.
+  confirmed?: Path[];
+  unreviewed?: Path[];
 };
 
 export type FieldEval = {
@@ -214,6 +218,9 @@ export type CheckResult = {
 export type EvaluateResponse = {
   fields: Record<Path, FieldEval>;
   checks: CheckResult[];
+  // The schema's success condition, when it declares one: the case completes
+  // only while every check passes and this is ok.
+  success?: { ok: boolean; message?: string };
   // Set when the agent's approval before completion applies.
   approval?: { group: string | null };
 };

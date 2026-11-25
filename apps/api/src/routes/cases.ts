@@ -943,6 +943,39 @@ export const caseRoutes = new OpenAPIHono<{
   .openapi(
     createRoute({
       method: "post",
+      path: "/cases/{id}/complete",
+      tags: ["Case room"],
+      summary: "Complete a waiting case as a person",
+      description:
+        "Runs the checks and the schema's success condition first, the same rule the agent meets. Approvals the agent's code declares still apply, so the case may stay waiting on one.",
+      request: { params: CaseParam },
+      responses: {
+        200: json(RoomState, "Completed, or waiting on an approval"),
+        409: error(
+          "The case is not waiting, or its checks or success condition fail",
+        ),
+      },
+    }),
+    async (c) => {
+      const { key, status } = await loadCase(c, c.req.valid("param").id, true);
+      if (status !== "waiting")
+        throw new ApiError(
+          409,
+          "case_not_completable",
+          `The case is ${status}.`,
+        );
+      const outcome = await runtime(c).completeCase(key);
+      if (outcome.result === "refused")
+        throw new ApiError(409, outcome.code, outcome.message);
+      await withOrg(c.env, c.var.org, (tx) =>
+        recordReview(tx, c, key.caseId, { kind: "completed" }),
+      );
+      return c.json(outcome.state, 200);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "post",
       path: "/cases/{id}/cancel",
       tags: ["Case room"],
       summary: "Cancel the case; no webhook is sent",
