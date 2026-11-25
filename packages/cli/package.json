@@ -1,7 +1,7 @@
 {
   "name": "@preprocess/cli",
   "version": "0.1.0",
-  "description": "The preprocess command: deploy agents written with @preprocess/sdk.",
+  "description": "The preprocess command: deploy agents written with @preprocess/sdk, and install self-hosted Preprocess.",
   "author": "Preprocess, Inc.",
   "license": "MIT",
   "type": "module",

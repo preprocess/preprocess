@@ -1,0 +1,121 @@
+# `preprocess install` as a GitHub Action: installs or upgrades Preprocess in
+# your own Cloudflare account from the release this Action is pinned to. Run it
+# from a workflow you trigger (or on a schedule) with your values in secrets:
+#
+#   on: workflow_dispatch
+#   jobs:
+#     install:
+#       runs-on: ubuntu-latest
+#       steps:
+#         - uses: preprocess/preprocess/packages/cli/install@v0.2.0
+#           with:
+#             cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+#             cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+#             database-url: ${{ secrets.DATABASE_URL }}
+#             email-from: ${{ vars.EMAIL_FROM }}
+#             model-service-url: ${{ vars.MODEL_SERVICE_URL }}
+#             model-service-key: ${{ secrets.MODEL_SERVICE_KEY }}
+#
+# Upgrading is the same run with a newer tag. Docker builds the stack's
+# container images, so use a runner that has it (ubuntu-latest does).
+name: Preprocess install
+description:
+  Install or upgrade self-hosted Preprocess in your own Cloudflare account.
+author: Preprocess, Inc.
+inputs:
+  stage:
+    description: The install's stage, selfhost or selfhost-<name>.
+    default: selfhost
+  plan:
+    description: Set to true to print the plan without changing anything.
+    default: "false"
+  cloudflare-api-token:
+    description: A Cloudflare API token for the account (see infra/README.md).
+    required: true
+  cloudflare-account-id:
+    description: The Cloudflare account to install into.
+    required: true
+  database-url:
+    description:
+      Your Postgres, as a role that can create roles and owns the database.
+    required: true
+  email-from:
+    description:
+      The invitation sender, on a domain onboarded to Cloudflare Email Service.
+    required: true
+  model-service-url:
+    description:
+      Our hosted model service or your own; "stub" deploys fixture answers.
+    required: true
+  model-service-key:
+    description: The model service's key.
+    default: ""
+  app-domain:
+    description: The app's hostname on a zone in the account (optional).
+    default: ""
+  r2-location-hint:
+    description: Where R2 places the buckets (optional).
+    default: ""
+  github-app-id:
+    description: Your GitHub App's id, from `preprocess github-app` (optional).
+    default: ""
+  github-app-slug:
+    description: Your GitHub App's slug (optional).
+    default: ""
+  github-client-id:
+    description: Your GitHub App's client id (optional).
+    default: ""
+  github-client-secret:
+    description: Your GitHub App's client secret (optional).
+    default: ""
+  github-webhook-secret:
+    description: Your GitHub App's webhook secret (optional).
+    default: ""
+  github-app-private-key:
+    description: Your GitHub App's private key, PKCS #8 PEM (optional).
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 24
+    # The Action's own checkout is the release it is pinned to, so it installs
+    # from there. The CLI runs from a copy with esbuild beside it, as the
+    # deploy Action does.
+    - shell: bash
+      run: |
+        cli="$RUNNER_TEMP/preprocess-cli"
+        rm -rf "$cli" && mkdir -p "$cli"
+        cp -r "$GITHUB_ACTION_PATH/../src" "$cli/src"
+        echo '{"type":"module","private":true}' > "$cli/package.json"
+        esbuild=$(node -p "require(process.env.GITHUB_ACTION_PATH + '/../package.json').dependencies.esbuild")
+        npm install --prefix "$cli" --no-save --no-package-lock --ignore-scripts --silent "esbuild@$esbuild"
+    - shell: bash
+      env:
+        STAGE: ${{ inputs.stage }}
+        PLAN: ${{ inputs.plan }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        DATABASE_URL: ${{ inputs.database-url }}
+        EMAIL_FROM: ${{ inputs.email-from }}
+        MODEL_SERVICE_URL: ${{ inputs.model-service-url }}
+        MODEL_SERVICE_KEY: ${{ inputs.model-service-key }}
+        APP_DOMAIN: ${{ inputs.app-domain }}
+        R2_LOCATION_HINT: ${{ inputs.r2-location-hint }}
+        GITHUB_APP_ID: ${{ inputs.github-app-id }}
+        GITHUB_APP_SLUG: ${{ inputs.github-app-slug }}
+        GITHUB_CLIENT_ID: ${{ inputs.github-client-id }}
+        GITHUB_CLIENT_SECRET: ${{ inputs.github-client-secret }}
+        GITHUB_WEBHOOK_SECRET: ${{ inputs.github-webhook-secret }}
+        GITHUB_APP_PRIVATE_KEY: ${{ inputs.github-app-private-key }}
+      run: |
+        # Empty optional inputs must stay unset, not empty, for the stack.
+        for name in MODEL_SERVICE_KEY APP_DOMAIN R2_LOCATION_HINT GITHUB_APP_ID \
+          GITHUB_APP_SLUG GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+          GITHUB_WEBHOOK_SECRET GITHUB_APP_PRIVATE_KEY; do
+          [ -n "${!name}" ] || unset "$name"
+        done
+        node "$RUNNER_TEMP/preprocess-cli/src/main.ts" install \
+          --source "$GITHUB_ACTION_PATH/../../.." --stage "$STAGE" \
+          $([ "$PLAN" = "true" ] && echo --plan)
