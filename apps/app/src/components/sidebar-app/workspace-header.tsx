@@ -118,11 +118,7 @@ export function SidebarWorkspaceHeader({
                 {tileSlot}
                 {nameSpan}
                 <span className="ml-auto inline-flex @max-[7rem]:hidden">
-                  <ChevronDown
-                    size={14}
-                    strokeWidth={1.5}
-                    className="text-muted-foreground"
-                  />
+                  <ChevronDown size={14} className="text-muted-foreground" />
                 </span>
               </SidebarMenuButton>
             }
