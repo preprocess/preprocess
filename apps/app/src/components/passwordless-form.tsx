@@ -89,8 +89,10 @@ export function PasswordlessForm({
             onClick={() => void onGoogle()}
             variant="secondary"
           >
-            <GoogleMark />
-            {opening ? "Opening Google…" : "Continue with Google"}
+            <span className="inline-flex items-center gap-2">
+              <GoogleMark />
+              {opening ? "Opening Google…" : "Continue with Google"}
+            </span>
           </Button>
           <div className="flex items-center gap-3 text-body text-muted-foreground">
             <span className="h-px flex-1 bg-border" />
