@@ -15,11 +15,28 @@ import {
   reviewEvents,
 } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
-import { member } from "@preprocess/db/schema/auth";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { member, user } from "@preprocess/db/schema/auth";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  lt,
+  or,
+} from "drizzle-orm";
 import type { Context } from "hono";
 
-import { agentRole, canSeeCase, canWorkCase, mayApprove } from "../access.ts";
+import {
+  agentRole,
+  canSeeCase,
+  canWorkCase,
+  mayApprove,
+  visibleAgents,
+} from "../access.ts";
 import { eventBase, requireAdmin } from "../caller.ts";
 import type { OrgRole, OrgVariables } from "../caller.ts";
 import { ApiError, createCase, type Approval } from "../cases.ts";
@@ -117,6 +134,46 @@ const Case = z
     url: z.string().url(),
   })
   .openapi("Case");
+
+const CaseStatus = Case.shape.status;
+
+const csv = z
+  .string()
+  .optional()
+  .transform((v) => (v ? v.split(",").filter(Boolean) : []));
+
+const ListQuery = z.object({
+  agent: csv.openapi({ description: "Agent slugs, comma-separated" }),
+  status: csv
+    .pipe(z.array(CaseStatus))
+    .openapi({ description: "Statuses, comma-separated" }),
+  waitingOn: csv.openapi({
+    description: "Group slugs the case waits on, comma-separated",
+  }),
+  environment: z.enum(["production", "preview"]).default("production"),
+  q: z.string().optional().openapi({ description: "Matches the title or id" }),
+  sort: z.enum(["updatedAt", "createdAt"]).default("updatedAt"),
+  dir: z.enum(["asc", "desc"]).default("desc"),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().optional(),
+});
+
+const CaseSummary = Case.omit({ answers: true, error: true, url: true })
+  .extend({
+    deployment: Case.shape.deployment.extend({ branch: z.string().nullable() }),
+    assignees: z.array(z.object({ id: z.string(), name: z.string() })),
+  })
+  .openapi("CaseSummary");
+
+const CaseList = z
+  .object({
+    items: z.array(CaseSummary),
+    nextCursor: z.string().nullable(),
+    counts: z.record(CaseStatus, z.number()).openapi({
+      description: "Cases per status under every filter but status",
+    }),
+  })
+  .openapi("CaseList");
 
 const RoomState = z
   .record(z.string(), z.unknown())
@@ -425,6 +482,156 @@ export const caseRoutes = new OpenAPIHono<{
       c.header("Location", accepted.statusUrl);
       if (replayed) c.header("Idempotent-Replayed", "true");
       return c.json(accepted, 202);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "get",
+      path: "/cases",
+      tags: ["Cases"],
+      summary: "Cases across the agents the caller can see",
+      request: { params: OrgParam, query: ListQuery },
+      responses: {
+        200: json(CaseList, "A page of cases"),
+        400: error("Bad cursor or filter"),
+      },
+    }),
+    async (c) => {
+      const query = c.req.valid("query");
+      let after: [string, string] | null = null;
+      if (query.cursor) {
+        try {
+          after = JSON.parse(atob(query.cursor)) as [string, string];
+        } catch {
+          throw new ApiError(400, "invalid_request", "Bad cursor.");
+        }
+      }
+      const page = await withOrg(c.env, c.var.org, async (tx) => {
+        const visible = await visibleAgents(tx, c.var.caller);
+        if (visible?.length === 0) return { rows: [], counts: [] };
+        const column =
+          query.sort === "updatedAt" ? cases.updatedAt : cases.createdAt;
+        const filters = and(
+          visible ? inArray(cases.agentId, visible) : undefined,
+          eq(deployments.environment, query.environment),
+          query.agent.length ? inArray(agents.slug, query.agent) : undefined,
+          query.waitingOn.length
+            ? inArray(groups.slug, query.waitingOn)
+            : undefined,
+          query.q
+            ? or(ilike(cases.title, `%${query.q}%`), eq(cases.id, query.q))
+            : undefined,
+        );
+        const base = () =>
+          tx
+            .select({
+              case: cases,
+              agentSlug: agents.slug,
+              environment: deployments.environment,
+              branch: deployments.gitBranch,
+              waitingOn: {
+                id: groups.id,
+                slug: groups.slug,
+                name: groups.name,
+              },
+            })
+            .from(cases)
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .innerJoin(deployments, eq(deployments.id, cases.deploymentId))
+            .leftJoin(groups, eq(groups.id, cases.waitingOnGroupId));
+        const asc_ = query.dir === "asc";
+        const [rows, counts] = await Promise.all([
+          base()
+            .where(
+              and(
+                filters,
+                query.status.length
+                  ? inArray(cases.status, query.status)
+                  : undefined,
+                after
+                  ? or(
+                      (asc_ ? gt : lt)(column, new Date(after[0])),
+                      and(
+                        eq(column, new Date(after[0])),
+                        (asc_ ? gt : lt)(cases.id, after[1]),
+                      ),
+                    )
+                  : undefined,
+              ),
+            )
+            .orderBy(
+              asc_ ? asc(column) : desc(column),
+              asc_ ? asc(cases.id) : desc(cases.id),
+            )
+            .limit(query.limit + 1),
+          tx
+            .select({ status: cases.status, n: count() })
+            .from(cases)
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .innerJoin(deployments, eq(deployments.id, cases.deploymentId))
+            .leftJoin(groups, eq(groups.id, cases.waitingOnGroupId))
+            .where(filters)
+            .groupBy(cases.status),
+        ]);
+        const ids = rows.map((r) => r.case.id);
+        const assignees = ids.length
+          ? await tx
+              .select({
+                caseId: caseAssignees.caseId,
+                id: user.id,
+                name: user.name,
+              })
+              .from(caseAssignees)
+              .innerJoin(user, eq(user.id, caseAssignees.userId))
+              .where(inArray(caseAssignees.caseId, ids))
+          : [];
+        return {
+          rows: rows.map((r) => ({
+            ...r,
+            assignees: assignees
+              .filter((a) => a.caseId === r.case.id)
+              .map(({ id, name }) => ({ id, name })),
+          })),
+          counts,
+        };
+      });
+      const more = page.rows.length > query.limit;
+      const rows = page.rows.slice(0, query.limit);
+      const last = rows.at(-1)?.case;
+      return c.json(
+        {
+          items: rows.map(({ case: k, ...r }) => ({
+            id: k.id,
+            agent: { id: k.agentId, slug: r.agentSlug },
+            deployment: {
+              id: k.deploymentId,
+              environment: r.environment,
+              branch: r.environment === "preview" ? r.branch : null,
+            },
+            status: k.status,
+            haltReason: k.haltReason,
+            waitingOn: r.waitingOn?.id ? r.waitingOn : null,
+            assignees: r.assignees,
+            source: k.source,
+            title: k.title,
+            costUsd: k.costMicroUsd / 1_000_000,
+            createdAt: k.createdAt.toISOString(),
+            updatedAt: k.updatedAt.toISOString(),
+            completedAt: k.completedAt?.toISOString() ?? null,
+          })),
+          nextCursor:
+            more && last
+              ? btoa(JSON.stringify([last[query.sort].toISOString(), last.id]))
+              : null,
+          counts: Object.fromEntries(
+            CaseStatus.options.map((status) => [
+              status,
+              page.counts.find((r) => r.status === status)?.n ?? 0,
+            ]),
+          ) as Record<z.infer<typeof CaseStatus>, number>,
+        },
+        200,
+      );
     },
   )
   .openapi(
