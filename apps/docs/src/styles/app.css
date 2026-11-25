@@ -438,3 +438,251 @@ svg.lucide {
 svg.lucide * {
   vector-effect: non-scaling-stroke;
 }
+
+/* The home page. The highlight is www's .lander-copy-highlight; on the dark
+   page panel it takes one step up. */
+.docs-highlight {
+  display: inline;
+  padding-inline: 0.1em;
+  background: var(--surface-4);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.dark .docs-highlight {
+  background: var(--surface-5);
+}
+
+/* The art cards' slate field, the same in both themes, sized in container
+   units so each object scales with the card. */
+.home-art {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  container-type: size;
+  aspect-ratio: 428 / 248;
+  border-radius: 24px;
+  background:
+    radial-gradient(90% 80% at 20% 0%, #2c3a34, transparent 70%), #1f2925;
+}
+@media (width < 40rem) {
+  .home-art {
+    aspect-ratio: 350 / 196;
+  }
+}
+.home-art::after {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  content: "";
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: 0.22;
+  pointer-events: none;
+}
+.home-art > * {
+  position: absolute;
+}
+
+.home-ring {
+  border: 1px solid;
+  border-radius: 50%;
+  translate: -50% -50%;
+}
+
+.home-glass {
+  translate: -50% -50%;
+  background:
+    linear-gradient(
+      160deg,
+      rgb(255 255 255 / 0.14),
+      rgb(255 255 255 / 0.02) 55%
+    ),
+    #26302c;
+  border-radius: 26%;
+}
+.home-module {
+  left: 50%;
+  top: 52%;
+  width: 30cqmin;
+  height: 30cqmin;
+  box-shadow:
+    inset 0 1px 0 rgb(251 247 240 / 0.22),
+    inset 0 0 0 1px rgb(251 247 240 / 0.1),
+    0 3.6cqmin 9cqmin rgb(0 0 0 / 0.35);
+}
+.home-core {
+  position: absolute;
+  inset: 30%;
+  border-radius: 26%;
+  background: radial-gradient(circle at 38% 32%, #fff, #e6e2d8 70%);
+  box-shadow:
+    0 0 3cqmin rgb(251 247 240 / 0.7),
+    0 0 8cqmin rgb(251 247 240 / 0.25);
+}
+.home-tile {
+  width: 9.6cqmin;
+  height: 9.6cqmin;
+  box-shadow:
+    inset 0 1px 0 rgb(251 247 240 / 0.22),
+    inset 0 0 0 1px rgb(251 247 240 / 0.1),
+    0 1.2cqmin 2.9cqmin rgb(0 0 0 / 0.35);
+}
+.home-tile::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  translate: -50% -50%;
+  content: "";
+  border-radius: 50%;
+  background: #fbf7f0;
+  box-shadow: 0 0 4px rgb(251 247 240 / 0.6);
+}
+
+.home-command {
+  left: 12cqw;
+  top: 44cqh;
+  display: flex;
+  align-items: center;
+  color: rgb(251 247 240 / 0.92);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  line-height: 1.2;
+  white-space: pre;
+}
+.home-prompt {
+  color: rgb(251 247 240 / 0.45);
+}
+.home-cursor {
+  margin-left: 0.5em;
+  width: 0.6em;
+  height: 1.2em;
+  border-radius: 2px;
+  background: #fbf7f0;
+  box-shadow:
+    0 0 14px rgb(251 247 240 / 0.7),
+    0 0 36px rgb(251 247 240 / 0.25);
+}
+
+.home-orb {
+  top: 58%;
+  width: 7cqmin;
+  height: 7cqmin;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #fff, #e6e2d8 70%);
+  box-shadow:
+    0 0 6.3cqmin rgb(251 247 240 / 0.7),
+    0 0 16.8cqmin rgb(251 247 240 / 0.25);
+}
+.home-link {
+  top: 58%;
+  left: calc(30% + 10.5cqmin);
+  right: calc(30% + 10.5cqmin);
+  height: 1.2px;
+  translate: 0 -50%;
+  background: repeating-linear-gradient(
+    90deg,
+    rgb(251 247 240 / 0.45) 0 2px,
+    transparent 2px 7px
+  );
+}
+
+.home-endpoints {
+  top: 50%;
+  left: 7cqw;
+  right: 0;
+  translate: 0 -50%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.home-endpoint {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  padding-left: 5cqw;
+  color: rgb(251 247 240 / var(--row));
+  white-space: pre;
+}
+.home-endpoint + .home-endpoint {
+  box-shadow: inset 0 1px 0 rgb(251 247 240 / calc(var(--row) * 0.12));
+}
+.home-method {
+  width: 7ch;
+  flex-shrink: 0;
+  color: rgb(251 247 240 / calc(var(--row) * 0.65));
+}
+.home-endpoint-lit {
+  position: relative;
+  background: linear-gradient(90deg, rgb(251 247 240 / 0.13), transparent 85%);
+}
+.home-endpoint-lit::before {
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  left: 0;
+  width: 2px;
+  content: "";
+  border-radius: 1px;
+  background: #fbf7f0;
+  box-shadow:
+    0 0 10px rgb(251 247 240 / 0.8),
+    0 0 24px rgb(251 247 240 / 0.25);
+}
+.home-crop {
+  z-index: 1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 34%;
+  background: linear-gradient(90deg, rgb(31 41 37 / 0), #1f2925 82%);
+}
+@container (width < 400px) {
+  .home-command {
+    font-size: 15px;
+  }
+  .home-endpoints {
+    font-size: 10.5px;
+  }
+  .home-endpoint {
+    height: 27px;
+  }
+}
+
+/* The numbered path: 28px numbers joined by a hairline. */
+.home-steps {
+  counter-reset: step;
+}
+.home-step {
+  position: relative;
+  counter-increment: step;
+}
+.home-step + .home-step {
+  margin-top: 28px;
+}
+.home-step-number {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.home-step-number::before {
+  content: counter(step);
+}
+.home-step:not(:last-child)::after {
+  position: absolute;
+  top: 32px;
+  bottom: -24px;
+  left: 13.5px;
+  width: 1px;
+  content: "";
+  background: var(--border);
+}

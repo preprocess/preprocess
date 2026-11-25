@@ -25,10 +25,19 @@ import { typeClass } from "@preprocess/ui/lib/type-scale";
 import { cn } from "@preprocess/ui/lib/utils";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
-import { use, useState, type ReactNode } from "react";
+import { use, type ReactNode } from "react";
 
 import { Pre } from "./code-block";
-import { ApiUrlContext, Configured, configure } from "./configured";
+import { Configured } from "./configured";
+import {
+  ArtCard,
+  ArtCards,
+  Hero,
+  Highlight,
+  PromptBlock,
+  Step,
+  Steps,
+} from "./home";
 import {
   contains,
   firstPage,
@@ -38,7 +47,8 @@ import {
   textOf,
   TreeContext,
 } from "./page-tree";
-import { agentPrompts } from "@/lib/prompts";
+import type { agentPrompts } from "@/lib/prompts";
+import { useAgentPrompt } from "@/lib/use-agent-prompt";
 
 function Cards({ children }: { children: ReactNode }) {
   return (
@@ -170,15 +180,8 @@ function Callout({
 // A prompt to hand to a coding agent: copied whole, shown folded until
 // expanded.
 function AgentPrompt({ name }: { name: keyof typeof agentPrompts }) {
-  const { title, prompt } = agentPrompts[name];
-  const text = configure(prompt, use(ApiUrlContext));
-  const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
+  const { title, text, expanded, setExpanded, copied, copy } =
+    useAgentPrompt(name);
   return (
     <div className="not-typeset docs-app-step overflow-hidden rounded-2xl bg-surface-1 shadow-[inset_0_0_0_1px_var(--border)]">
       <div className="flex h-12 items-center gap-2 pr-2.5 pl-4 shadow-[inset_0_-1px_0_var(--border)]">
@@ -313,6 +316,8 @@ export const getMDXComponents = (components?: MDXComponents) =>
     ...defaultMdxComponents,
     pre: Pre,
     AgentPrompt,
+    ArtCard,
+    ArtCards,
     Callout,
     Card,
     Cards,
@@ -320,6 +325,11 @@ export const getMDXComponents = (components?: MDXComponents) =>
     Tabs,
     Configured,
     EndpointTags,
+    Hero,
+    Highlight,
+    PromptBlock,
+    Step,
+    Steps,
     ...components,
   }) satisfies MDXComponents;
 
