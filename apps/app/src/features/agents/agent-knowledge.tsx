@@ -59,21 +59,6 @@ export function AgentMemories({
   );
 }
 
-/** Placeholder: the agent's evaluation suites. */
-export function AgentEvaluations() {
-  return (
-    <SettingsSection
-      description="Suites of graded cases scored against each deployment, so a release that makes things worse shows up."
-      title="Evaluations"
-    >
-      <SettingsEmpty
-        description="Evaluation suites and their scores will show up here."
-        title="No evaluations yet"
-      />
-    </SettingsSection>
-  );
-}
-
 /** Placeholder: the agent's datasets, training runs and fine-tuned models. */
 export function AgentTraining() {
   return (
