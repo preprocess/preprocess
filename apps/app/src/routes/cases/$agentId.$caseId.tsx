@@ -15,6 +15,7 @@ export const Route = createFileRoute("/cases/$agentId/$caseId")({
     throw redirect({
       to: "/agents/$agentId/cases/$caseId",
       params,
+      search: true,
       replace: true,
     });
   },
