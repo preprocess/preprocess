@@ -26,7 +26,6 @@ import { casesSearchForUrl, rememberedCasesSearch } from "./case-inbox-search";
 import { CaseStatusIcon, caseStatusColor } from "./case-status-icon";
 import type { CaseNeighbors } from "./list-org-cases";
 import { AssigneeStack, NeedsAssignmentTag } from "./assignee-stack";
-import type { AgentSummary } from "../agents/agent-store";
 
 function CaseStepper({ neighbors }: Readonly<{ neighbors: CaseNeighbors }>) {
   const navigate = useNavigate();
@@ -82,7 +81,6 @@ function CaseStepper({ neighbors }: Readonly<{ neighbors: CaseNeighbors }>) {
 }
 
 export function CaseRoomHeader({
-  agent,
   caseRef,
   caseItem,
   neighbors,
@@ -93,7 +91,6 @@ export function CaseRoomHeader({
   /** Whether the Details inspector is open; undefined hides its toggle. */
   detailsOpen?: boolean;
   onToggleDetails?: () => void;
-  agent: AgentSummary | null;
   caseRef: AgentCaseRef;
   caseItem: Case | null;
   neighbors?: CaseNeighbors;
@@ -102,6 +99,8 @@ export function CaseRoomHeader({
   const navigate = useNavigate();
   const listSearch = casesSearchForUrl(rememberedCasesSearch());
   const done = caseItem?.status === "Done";
+  // Case links may name the agent by id; the case names it by slug.
+  const agentSlug = caseItem?.agentId ?? caseRef.agentId;
 
   useHotkeys({
     Escape: () => void navigate({ to: "/cases", search: listSearch }),
@@ -158,11 +157,9 @@ export function CaseRoomHeader({
           <BreadcrumbSeparator>/</BreadcrumbSeparator>
           <BreadcrumbItem className="shrink-0">
             <BreadcrumbLink
-              render={
-                <Link search={{ agent: [caseRef.agentId] }} to="/cases" />
-              }
+              render={<Link search={{ agent: [agentSlug] }} to="/cases" />}
             >
-              {agent?.name ?? caseRef.agentId}
+              {agentSlug}
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator>/</BreadcrumbSeparator>

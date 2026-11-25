@@ -49,18 +49,20 @@ import {
   useState,
 } from "react";
 
-import { FilterChips, FilterMenu } from "../../components/list-controls";
+import {
+  FilterChips,
+  FilterMenu,
+  type FilterFacetDef,
+} from "../../components/list-controls";
 import { PageHeader, PageTitle } from "../../components/page-header";
 import { Toolbar, ToolbarButton, ToolbarTabs } from "../../components/toolbar";
 import { useHotkeys } from "../../components/use-hotkeys";
 import { SettingsSearchField } from "../settings/kit";
 import {
-  CASE_GROUPS,
   awaitingPhrase,
   caseDisplayId,
   caseTitle,
   formatCost,
-  isCaseGroup,
   isCaseStatus,
   type Case,
 } from "./case";
@@ -80,7 +82,6 @@ import {
   type CasesInboxSearch,
   type CasesView,
 } from "./case-inbox-search";
-import type { AgentSummary } from "../agents/agent-store";
 import { AssigneeStack, NeedsAssignmentTag } from "./assignee-stack";
 import { CaseStatusIcon } from "./case-status-icon";
 import {
@@ -101,11 +102,6 @@ const GROUPING_LABEL: Record<CasesGrouping, string> = {
   agent: "Agent",
   none: "No grouping",
 };
-
-const UNASSIGNED_FILTERS: readonly UnassignedFilter[] = [
-  UNASSIGNED_ANY,
-  ...CASE_GROUPS,
-];
 
 /**
  * The assignment chip as a sentence: "Needs assignment", "Needs assignment
@@ -128,11 +124,6 @@ function assignmentChip(selected: readonly UnassignedFilter[]): {
     values: [...(anyToo ? ["any group"] : []), ...groups].join(", "),
   };
 }
-
-const AWAITING_FILTERS: readonly AwaitingFilter[] = [
-  AWAITING_NONE,
-  ...CASE_GROUPS,
-];
 
 const dateFormat = new Intl.DateTimeFormat(undefined, {
   month: "short",
@@ -173,61 +164,48 @@ function CaseFilterMenu({
     <FilterMenu
       countLabel={caseCountLabel}
       toolbarIndex={toolbarIndex}
-      facets={[
-        {
-          key: "agent",
-          label: "Agent",
-          icon: OrbitSparkle,
-          options: page.agents.map((agent) => {
-            const info = page.agentInfo[agent];
-            return {
+      facets={(
+        [
+          {
+            key: "agent",
+            label: "Agent",
+            icon: OrbitSparkle,
+            options: page.agents.map((agent) => ({
               value: agent,
-              label: info?.name ?? agent,
+              label: agent,
               count: counts.agent[agent] ?? 0,
-            };
-          }),
-          selected: search.agent,
-          onChange: (agent) => onChange({ agent }),
-        },
-        {
-          key: "awaiting",
-          label: "Awaiting",
-          icon: Users,
-          options: AWAITING_FILTERS.map((value) => ({
-            value,
-            label: awaitingLabel(value),
-            count: counts.awaiting[value] ?? 0,
-          })),
-          selected: search.awaiting,
-          onChange: (next) =>
-            onChange({
-              awaiting: next.filter(
-                (value): value is AwaitingFilter =>
-                  value === AWAITING_NONE || isCaseGroup(value),
-              ),
-            }),
-        },
-        {
-          key: "assignment",
-          label: "Needs assignment",
-          // The same caution mark the Needs assignment tag wears.
-          icon: TriangleAlertIcon,
-          // "Any group", then each group cases can be waiting on.
-          options: UNASSIGNED_FILTERS.map((value) => ({
-            value,
-            label: value === UNASSIGNED_ANY ? "Any group" : value,
-            count: counts.unassigned[value] ?? 0,
-          })),
-          selected: search.unassigned,
-          onChange: (next) =>
-            onChange({
-              unassigned: next.filter(
-                (value): value is UnassignedFilter =>
-                  value === UNASSIGNED_ANY || isCaseGroup(value),
-              ),
-            }),
-        },
-      ]}
+            })),
+            selected: search.agent,
+            onChange: (agent) => onChange({ agent }),
+          },
+          {
+            key: "awaiting",
+            label: "Awaiting",
+            icon: Users,
+            options: page.awaitingOptions.map((value) => ({
+              value,
+              label: awaitingLabel(value),
+              count: counts.awaiting[value] ?? 0,
+            })),
+            selected: search.awaiting,
+            onChange: (awaiting) => onChange({ awaiting }),
+          },
+          {
+            key: "assignment",
+            label: "Needs assignment",
+            // The same caution mark the Needs assignment tag wears.
+            icon: TriangleAlertIcon,
+            // "Any group", then each group cases can be waiting on.
+            options: page.assignmentOptions.map((value) => ({
+              value,
+              label: value === UNASSIGNED_ANY ? "Any group" : value,
+              count: counts.unassigned[value] ?? 0,
+            })),
+            selected: search.unassigned,
+            onChange: (unassigned) => onChange({ unassigned }),
+          },
+        ] satisfies FilterFacetDef[]
+      ).filter((facet) => facet.options.length > 0)}
     />
   );
 }
@@ -353,9 +331,7 @@ function CaseEnvironmentSelect({
 function CaseFilterChips({
   search,
   onChange,
-  agentInfo,
 }: Readonly<{
-  agentInfo: Readonly<Record<string, AgentSummary>>;
   search: CasesInboxSearch;
   onChange: (patch: Partial<CasesInboxSearch>) => void;
 }>) {
@@ -374,9 +350,7 @@ function CaseFilterChips({
           key: "agent",
           label: "Agent",
           lead: search.agent.length > 1 ? "Agent is one of" : "Agent is",
-          values: search.agent
-            .map((agent) => agentInfo[agent]?.name ?? agent)
-            .join(", "),
+          values: search.agent.join(", "),
           onClear: () => onChange({ agent: [] }),
         },
         {
@@ -434,13 +408,11 @@ function CaseRow({
   index,
   registerItem,
   showStatus,
-  agent,
 }: Readonly<{
   item: Case;
   index: number;
   registerItem: (index: number, element: HTMLElement | null) => void;
   showStatus: boolean;
-  agent: AgentSummary | null;
 }>) {
   const ref = useRef<HTMLAnchorElement>(null);
   useRegisterFluidHoverItem(registerItem, index, ref);
@@ -484,7 +456,7 @@ function CaseRow({
             </Badge>
           ) : null}
           <span className="shrink-0 text-caption text-muted-foreground">
-            {agent?.name ?? item.agentId}
+            {item.agentId}
           </span>
         </span>
         <AwaitingTag groups={item.awaiting} />
@@ -530,15 +502,12 @@ function GroupHeader({
   total,
   collapsed,
   onToggle,
-  agent,
 }: Readonly<{
   groupKey: string;
   grouping: CasesGrouping;
   total: number;
   collapsed: boolean;
   onToggle: () => void;
-  /** The agent, when grouping by agent. */
-  agent: AgentSummary | null;
 }>) {
   const shape = useShape();
   return (
@@ -566,7 +535,7 @@ function GroupHeader({
         className="text-foreground"
         style={{ fontVariationSettings: fontWeights.semibold }}
       >
-        {grouping === "agent" ? (agent?.name ?? groupKey) : groupKey}
+        {groupKey}
       </span>
       <span className="text-caption text-muted-foreground tabular-nums">
         {countLabel(total)}
@@ -684,9 +653,7 @@ function CaseRows({
   scrollElement,
   hasMore,
   onLoadMore,
-  agentInfo,
 }: Readonly<{
-  agentInfo: Readonly<Record<string, AgentSummary>>;
   rows: readonly Case[];
   groups: CaseListPage["groups"];
   search: CasesInboxSearch;
@@ -718,6 +685,7 @@ function CaseRows({
     getScrollElement: () => scrollElement,
     estimateSize: (index) => entrySize(entries[index]),
     overscan: 12,
+    initialRect: { width: 0, height: 1080 },
     // Air between the header and the first group, and below the last row.
     paddingStart: LIST_PADDING,
     paddingEnd: LIST_PADDING,
@@ -790,17 +758,11 @@ function CaseRows({
                 collapsed={entry.collapsed}
                 groupKey={entry.key}
                 grouping={search.group}
-                agent={
-                  search.group === "agent"
-                    ? (agentInfo[entry.key] ?? null)
-                    : null
-                }
                 onToggle={() => onToggleGroup(entry.key)}
                 total={entry.total}
               />
             ) : (
               <CaseRow
-                agent={agentInfo[entry.item.agentId] ?? null}
                 index={entry.row}
                 item={entry.item}
                 registerItem={hover.registerItem}
@@ -977,7 +939,6 @@ export function CaseInbox({
         />
       </PageHeader>
       <CaseFilterChips
-        agentInfo={page.agentInfo}
         onChange={(patch) => onSearchChange(patch)}
         search={search}
       />
@@ -996,7 +957,6 @@ export function CaseInbox({
           >
             <ShapeProvider defaultShape="rounded">
               <CaseRows
-                agentInfo={page.agentInfo}
                 collapsed={collapsed}
                 groups={page.groups}
                 hasMore={current.nextCursor !== null}
