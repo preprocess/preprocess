@@ -300,7 +300,7 @@ function CreateKeyDialog({
         >
           <InlineValidation
             autoFocus
-            hint="Say where it's used, so you know what breaks if you revoke it."
+            hint="Say where it's used, like CI."
             id="api-key-name"
             label="Name"
             onChange={setName}
