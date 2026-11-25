@@ -20,18 +20,6 @@ function Placeholder({
   );
 }
 
-/** Placeholder: the agent's evaluation suites. */
-export function AgentEvaluations() {
-  return (
-    <Placeholder
-      description="Suites of graded cases scored against each deployment, so a release that makes things worse shows up."
-      emptyDescription="Evaluation suites and their scores will show up here."
-      emptyTitle="No evaluations yet"
-      title="Evaluations"
-    />
-  );
-}
-
 /** Placeholder: what the agent keeps between cases. */
 export function AgentMemories() {
   return (
