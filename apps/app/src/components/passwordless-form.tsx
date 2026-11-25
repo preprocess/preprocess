@@ -84,26 +84,6 @@ export function PasswordlessForm({
 
   return (
     <div className="flex flex-col gap-6">
-      {google ? (
-        <>
-          <Button
-            className="w-full"
-            disabled={pending || opening}
-            onClick={() => void onGoogle()}
-            variant="secondary"
-          >
-            <span className="inline-flex items-center gap-2">
-              <GoogleMark />
-              {opening ? "Opening Google…" : "Continue with Google"}
-            </span>
-          </Button>
-          <div className="flex items-center gap-3 text-body text-muted-foreground">
-            <span className="h-px flex-1 bg-border" />
-            or
-            <span className="h-px flex-1 bg-border" />
-          </div>
-        </>
-      ) : null}
       <form
         className="flex flex-col gap-6"
         noValidate
@@ -147,6 +127,26 @@ export function PasswordlessForm({
           {submitLabel}
         </LoadingButton>
       </form>
+      {google ? (
+        <>
+          <div className="flex items-center gap-3 text-body text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            or
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            className="w-full"
+            disabled={pending || opening}
+            onClick={() => void onGoogle()}
+            variant="secondary"
+          >
+            <span className="inline-flex items-center gap-2">
+              <GoogleMark />
+              {opening ? "Opening Google…" : "Continue with Google"}
+            </span>
+          </Button>
+        </>
+      ) : null}
     </div>
   );
 }
