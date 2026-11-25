@@ -8,18 +8,14 @@ import { AgentCaseRoom } from "../../features/agent-cases/agent-case-room";
 import { agentSummaries } from "../../features/agents/agent-store";
 import { rememberedCasesSearch } from "../../features/agent-cases/case-inbox-search";
 import {
-  acceptSuggestion,
-  cancelCase,
-  confirmAnswer,
-  editAnswer,
+  caseWorkActions,
   getCaseRoom,
-  rerunCase,
-} from "../../features/agent-cases/case-room-seed";
+} from "../../features/agent-cases/case-room-data";
 import { FLUE_LAB_INPUT_SAMPLES } from "../../features/agent-cases/flue-lab-input-samples";
 import {
   getOrgCase,
   getOrgCaseNeighbors,
-  setOrgCaseStatus,
+  orgCaseStatusSetter,
 } from "../../features/agent-cases/list-org-cases";
 
 export const Route = createFileRoute("/cases/$agentId/$caseId")({
@@ -60,6 +56,7 @@ function AgentCasePage() {
     await router.invalidate();
     return value;
   };
+  const setStatus = orgCaseStatusSetter();
 
   return (
     <AgentCaseRoom
@@ -69,20 +66,12 @@ function AgentCasePage() {
       // Seeded input so the viewers are exercisable. Builds outside dev serve none.
       inputSamples={import.meta.env.DEV ? FLUE_LAB_INPUT_SAMPLES : undefined}
       neighbors={neighbors}
-      work={{
-        room,
-        actions: {
-          edit: (input) => refresh(editAnswer(agentId, caseId, input)),
-          confirm: (input) => refresh(confirmAnswer(agentId, caseId, input)),
-          accept: (input) => refresh(acceptSuggestion(agentId, caseId, input)),
-          rerun: () => refresh(rerunCase(agentId, caseId)),
-          cancel: () => refresh(cancelCase(agentId, caseId)),
-        },
-      }}
-      onStatusChange={async (status) => {
-        await setOrgCaseStatus(caseRef.agentId, caseRef.caseId, status);
-        await router.invalidate();
-      }}
+      work={{ room, actions: caseWorkActions(agentId, caseId, refresh) }}
+      onStatusChange={
+        setStatus
+          ? (status) => refresh(setStatus(agentId, caseId, status))
+          : undefined
+      }
     />
   );
 }

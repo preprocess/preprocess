@@ -49,18 +49,20 @@ import {
   useState,
 } from "react";
 
-import { FilterChips, FilterMenu } from "../../components/list-controls";
+import {
+  FilterChips,
+  FilterMenu,
+  type FilterFacetDef,
+} from "../../components/list-controls";
 import { PageHeader, PageTitle } from "../../components/page-header";
 import { Toolbar, ToolbarButton, ToolbarTabs } from "../../components/toolbar";
 import { useHotkeys } from "../../components/use-hotkeys";
 import { SettingsSearchField } from "../settings/kit";
 import {
-  CASE_GROUPS,
   awaitingPhrase,
   caseDisplayId,
   caseTitle,
   formatCost,
-  isCaseGroup,
   isCaseStatus,
   type Case,
 } from "./case";
@@ -102,11 +104,6 @@ const GROUPING_LABEL: Record<CasesGrouping, string> = {
   none: "No grouping",
 };
 
-const UNASSIGNED_FILTERS: readonly UnassignedFilter[] = [
-  UNASSIGNED_ANY,
-  ...CASE_GROUPS,
-];
-
 /**
  * The assignment chip as a sentence: "Needs assignment", "Needs assignment
  * from Legal", "… from one of Legal, Review". "Any" alone reads plainly.
@@ -128,11 +125,6 @@ function assignmentChip(selected: readonly UnassignedFilter[]): {
     values: [...(anyToo ? ["any group"] : []), ...groups].join(", "),
   };
 }
-
-const AWAITING_FILTERS: readonly AwaitingFilter[] = [
-  AWAITING_NONE,
-  ...CASE_GROUPS,
-];
 
 const dateFormat = new Intl.DateTimeFormat(undefined, {
   month: "short",
@@ -173,61 +165,51 @@ function CaseFilterMenu({
     <FilterMenu
       countLabel={caseCountLabel}
       toolbarIndex={toolbarIndex}
-      facets={[
-        {
-          key: "agent",
-          label: "Agent",
-          icon: OrbitSparkle,
-          options: page.agents.map((agent) => {
-            const info = page.agentInfo[agent];
-            return {
-              value: agent,
-              label: info?.name ?? agent,
-              count: counts.agent[agent] ?? 0,
-            };
-          }),
-          selected: search.agent,
-          onChange: (agent) => onChange({ agent }),
-        },
-        {
-          key: "awaiting",
-          label: "Awaiting",
-          icon: Users,
-          options: AWAITING_FILTERS.map((value) => ({
-            value,
-            label: awaitingLabel(value),
-            count: counts.awaiting[value] ?? 0,
-          })),
-          selected: search.awaiting,
-          onChange: (next) =>
-            onChange({
-              awaiting: next.filter(
-                (value): value is AwaitingFilter =>
-                  value === AWAITING_NONE || isCaseGroup(value),
-              ),
+      facets={(
+        [
+          {
+            key: "agent",
+            label: "Agent",
+            icon: OrbitSparkle,
+            options: page.agents.map((agent) => {
+              const info = page.agentInfo[agent];
+              return {
+                value: agent,
+                label: info?.name ?? agent,
+                count: counts.agent[agent] ?? 0,
+              };
             }),
-        },
-        {
-          key: "assignment",
-          label: "Needs assignment",
-          // The same caution mark the Needs assignment tag wears.
-          icon: TriangleAlertIcon,
-          // "Any group", then each group cases can be waiting on.
-          options: UNASSIGNED_FILTERS.map((value) => ({
-            value,
-            label: value === UNASSIGNED_ANY ? "Any group" : value,
-            count: counts.unassigned[value] ?? 0,
-          })),
-          selected: search.unassigned,
-          onChange: (next) =>
-            onChange({
-              unassigned: next.filter(
-                (value): value is UnassignedFilter =>
-                  value === UNASSIGNED_ANY || isCaseGroup(value),
-              ),
-            }),
-        },
-      ]}
+            selected: search.agent,
+            onChange: (agent) => onChange({ agent }),
+          },
+          {
+            key: "awaiting",
+            label: "Awaiting",
+            icon: Users,
+            options: page.awaitingOptions.map((value) => ({
+              value,
+              label: awaitingLabel(value),
+              count: counts.awaiting[value] ?? 0,
+            })),
+            selected: search.awaiting,
+            onChange: (awaiting) => onChange({ awaiting }),
+          },
+          {
+            key: "assignment",
+            label: "Needs assignment",
+            // The same caution mark the Needs assignment tag wears.
+            icon: TriangleAlertIcon,
+            // "Any group", then each group cases can be waiting on.
+            options: page.assignmentOptions.map((value) => ({
+              value,
+              label: value === UNASSIGNED_ANY ? "Any group" : value,
+              count: counts.unassigned[value] ?? 0,
+            })),
+            selected: search.unassigned,
+            onChange: (unassigned) => onChange({ unassigned }),
+          },
+        ] satisfies FilterFacetDef[]
+      ).filter((facet) => facet.options.length > 0)}
     />
   );
 }

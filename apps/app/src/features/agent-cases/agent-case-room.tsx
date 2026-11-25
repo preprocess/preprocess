@@ -49,7 +49,7 @@ import {
 } from "./case-room-tabs";
 import { CaseRoomDetails, CaseRecordContext } from "./case-room-details";
 import { CaseRoomHeader } from "./case-room-header";
-import { CaseRoomReview } from "./case-room-review";
+import { CaseRoomReview, hasReview } from "./case-room-review";
 import { CaseRoomRun } from "./case-room-run";
 import type { CaseRoomState } from "./case-room-state";
 import {
@@ -150,7 +150,7 @@ function CaseWorkspacePane({
   const room = useCaseWork()?.room;
   const hasContent = (viewId: CaseRoomEmptyViewId) =>
     viewId === "review"
-      ? (room?.fields.length ?? 0) > 0
+      ? room !== undefined && hasReview(room)
       : (room?.thread.length ?? 0) > 0;
   const emptyViewId =
     isRoomViewId(pane.selectedId) && pane.selectedId !== INPUT_TAB

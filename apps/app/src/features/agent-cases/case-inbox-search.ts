@@ -1,20 +1,15 @@
-import {
-  isCaseGroup,
-  isCaseStatus,
-  type CaseGroup,
-  type CaseStatus,
-} from "./case";
+import { isCaseStatus, type CaseStatus } from "./case";
 
+/**
+ * Awaiting and assignment filters hold group names, or these markers. The
+ * list's data function offers the groups it knows and ignores any other.
+ */
 export const AWAITING_NONE = "none";
-export type AwaitingFilter = CaseGroup | typeof AWAITING_NONE;
+export type AwaitingFilter = string;
 
 /** Needs assignment from any group, rather than from a given one. */
 export const UNASSIGNED_ANY = "any";
-export type UnassignedFilter = CaseGroup | typeof UNASSIGNED_ANY;
-
-function isUnassignedFilter(value: string): value is UnassignedFilter {
-  return value === UNASSIGNED_ANY || isCaseGroup(value);
-}
+export type UnassignedFilter = string;
 
 /** The tabs above the list: every case, then one tab per status. */
 export const CASES_VIEWS = ["all", "active", "waiting", "done"] as const;
@@ -93,10 +88,6 @@ function asStringList(value: unknown): string[] {
   return [];
 }
 
-function isAwaitingFilter(value: string): value is AwaitingFilter {
-  return value === AWAITING_NONE || isCaseGroup(value);
-}
-
 function isView(value: unknown): value is CasesView {
   return (
     typeof value === "string" &&
@@ -134,8 +125,8 @@ export function parseCasesSearch(raw: unknown): CasesInboxSearch {
     q: typeof record.q === "string" ? record.q : "",
     agent: asStringList(record.agent),
     status: asStringList(record.status).filter(isCaseStatus),
-    awaiting: asStringList(record.awaiting).filter(isAwaitingFilter),
-    unassigned: asStringList(record.unassigned).filter(isUnassignedFilter),
+    awaiting: asStringList(record.awaiting),
+    unassigned: asStringList(record.unassigned),
     sort: isSortField(record.sort) ? record.sort : DEFAULT_CASES_SEARCH.sort,
     dir: isSortDirection(record.dir) ? record.dir : DEFAULT_CASES_SEARCH.dir,
   };

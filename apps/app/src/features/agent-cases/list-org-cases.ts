@@ -1,9 +1,11 @@
 import {
+  CASE_GROUPS,
   CASE_STATUSES,
   parseOrganizationId,
   unassignedGroups,
   type Case,
 } from "./case";
+import { liveCase, liveCaseList } from "./case-api";
 import {
   AWAITING_NONE,
   UNASSIGNED_ANY,
@@ -39,6 +41,10 @@ export type CaseListPage = {
   /** Name and mark for each agent the rows and filter show. */
   readonly agentInfo: Readonly<Record<string, AgentSummary>>;
   readonly counts: CaseFacetCounts;
+  /** The Awaiting filter's options: group names, and "none" where offered. */
+  readonly awaitingOptions: readonly string[];
+  /** The Needs assignment filter's options; empty hides the filter. */
+  readonly assignmentOptions: readonly string[];
   /** Whether the organization has any cases at all, before filters. */
   readonly hasCases: boolean;
   readonly loadError: boolean;
@@ -59,8 +65,15 @@ type CasesScenario = ScenarioState<"cases">;
 /** Cases the "few" scenario keeps from the seed. */
 const FEW_CASES = 3;
 
+/** The live list reads the API; the agents' stats still read the seed. */
+const live = () => currentScenario().cases === "live";
+
 function seedCases(scenario: CasesScenario): readonly Case[] {
   switch (scenario) {
+    // Only the agents' stats read the seed when live: the agent pages are
+    // still seeded. Builds outside dev serve none.
+    case "live":
+      return import.meta.env.DEV ? createCaseSeed(SEED_ORG) : [];
     case "seeded":
       return createCaseSeed(SEED_ORG);
     case "few":
@@ -77,10 +90,7 @@ function seedCases(scenario: CasesScenario): readonly Case[] {
 
 const seeded = new Map<CasesScenario, readonly Case[]>();
 
-/**
- * Seeded case table for the active scenario. There is no cases backend yet;
- * builds outside dev get the empty scenario.
- */
+/** Seeded case table for the active scenario. */
 function seededCases(): readonly Case[] {
   const scenario = currentScenario().cases;
   let cases = seeded.get(scenario);
@@ -220,10 +230,48 @@ function offsetOf(cursor: string | null | undefined) {
  * batches (the cursor walks only the rows that show), but `groups` still
  * lists every group with its full total, so their headers draw at once.
  */
-export function listOrgCases(
+export async function listOrgCases(
   search: CasesInboxSearch,
   cursor?: string | null,
   collapsed: ReadonlySet<string> = new Set(),
+): Promise<CaseListPage> {
+  if (!live()) return seededCaseList(search, cursor, collapsed);
+  try {
+    const page = await liveCaseList({
+      data: {
+        search,
+        cursor: cursor ?? null,
+        collapsed: [...collapsed],
+        limit: CASE_BATCH_SIZE,
+      },
+    });
+    return {
+      ...page,
+      agentInfo: {},
+      assignmentOptions: [],
+      loadError: false,
+    };
+  } catch {
+    return {
+      rows: [],
+      groups: [],
+      total: 0,
+      nextCursor: null,
+      agents: [],
+      agentInfo: {},
+      counts: { status: {}, agent: {}, awaiting: {}, unassigned: {} },
+      awaitingOptions: [],
+      assignmentOptions: [],
+      hasCases: false,
+      loadError: true,
+    };
+  }
+}
+
+function seededCaseList(
+  search: CasesInboxSearch,
+  cursor: string | null | undefined,
+  collapsed: ReadonlySet<string>,
 ): Promise<CaseListPage> {
   const all = seededCases();
   const ordered = orderedCases(search);
@@ -250,6 +298,8 @@ export function listOrgCases(
     agents: [...new Set(all.map((item) => item.agentId))].sort(),
     agentInfo: agentSummaries(),
     counts: facetCounts(search),
+    awaitingOptions: [AWAITING_NONE, ...CASE_GROUPS],
+    assignmentOptions: [UNASSIGNED_ANY, ...CASE_GROUPS],
     hasCases: all.length > 0,
     loadError: currentScenario().cases === "load-error",
   });
@@ -259,6 +309,7 @@ export function getOrgCase(
   agentId: string,
   caseId: string,
 ): Promise<Case | null> {
+  if (live()) return liveCase({ data: caseId });
   return Promise.resolve(
     seededCases().find(
       (item) => item.agentId === agentId && item.id === caseId,
@@ -266,8 +317,16 @@ export function getOrgCase(
   );
 }
 
+/**
+ * Marking a case complete or reopening it, where the scenario allows it:
+ * only seeded cases, since the API has no such change.
+ */
+export function orgCaseStatusSetter() {
+  return live() ? null : setOrgCaseStatus;
+}
+
 /** Sets a seeded case's status. Sticks in memory until the dev server restarts. */
-export function setOrgCaseStatus(
+function setOrgCaseStatus(
   agentId: string,
   caseId: string,
   status: Case["status"],
@@ -288,22 +347,27 @@ export function setOrgCaseStatus(
   return Promise.resolve(updated);
 }
 
-/** The cases before and after this one in the list the search selects. */
-export function getOrgCaseNeighbors(
+/**
+ * The cases before and after this one in the list the search selects. Live,
+ * that is the list's first batch; a case past it has no neighbors.
+ */
+export async function getOrgCaseNeighbors(
   search: CasesInboxSearch,
   agentId: string,
   caseId: string,
 ): Promise<CaseNeighbors> {
-  const ordered = orderedCases(search);
+  // Live case links may name the agent by id or slug; the case id is unique.
+  const page = live() ? await listOrgCases(search) : null;
+  const ordered = page ? page.rows : orderedCases(search);
   const index = ordered.findIndex(
-    (item) => item.agentId === agentId && item.id === caseId,
+    (item) => item.id === caseId && (page !== null || item.agentId === agentId),
   );
-  return Promise.resolve({
+  return {
     prev: index > 0 ? (ordered[index - 1] ?? null) : null,
     next: index >= 0 ? (ordered[index + 1] ?? null) : null,
     index: index + 1,
-    total: ordered.length,
-  });
+    total: page ? page.total : ordered.length,
+  };
 }
 
 /** One agent's cases by status, and when any of them last changed. */

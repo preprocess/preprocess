@@ -28,6 +28,7 @@ import {
   type RoomField,
   type WriteResult,
 } from "./case-room-state";
+import { CaseRoomApprovals } from "./case-room-approvals";
 import { useCaseWork, type CaseWorkActions } from "./case-work-context";
 
 const semibold = { fontVariationSettings: fontWeights.semibold };
@@ -42,6 +43,10 @@ function who(setBy: string) {
   if (setBy === "agent") return "Agent";
   return setBy === "person:usr_you" ? "You" : "A person";
 }
+
+/** Whether the Review view has anything to show. */
+export const hasReview = (room: CaseRoomState) =>
+  room.fields.length > 0 || room.approvals.length > 0;
 
 /** Where the case stands, above the fields: a wait, a halt, a failure. */
 export function CaseWorkNotice({
@@ -421,10 +426,10 @@ function FieldRow({
   );
 }
 
-/** The Review view: the case's answers, what to check, and Rerun. */
+/** The Review view: approvals, the case's answers, what to check, and Rerun. */
 export function CaseRoomReview() {
   const work = useCaseWork();
-  if (!work || work.room.fields.length === 0) return null;
+  if (!work || !hasReview(work.room)) return null;
   const { room, actions } = work;
   const visible = room.fields.filter((f) => f.visible);
   const hidden = room.fields.filter((f) => !f.visible);
@@ -448,32 +453,35 @@ export function CaseRoomReview() {
             ))}
           </ul>
         ) : null}
-        <section className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-body text-foreground" style={semibold}>
-              Answers
-            </h2>
-            {failing.length === 0 && room.checks.length > 0 ? (
-              <span className="flex items-center gap-1 text-body text-muted-foreground">
-                <CircleCheckIcon aria-hidden className="size-3.5" />
-                All checks pass
-              </span>
-            ) : null}
-          </div>
-          <ul className="border border-border bg-surface-1">
-            {visible.map((field) => (
-              <FieldRow
-                actions={actions}
-                failing={failing
-                  .filter((c) => c.field === field.path)
-                  .map((c) => c.message ?? c.name)}
-                field={field}
-                key={field.path}
-                room={room}
-              />
-            ))}
-          </ul>
-        </section>
+        <CaseRoomApprovals actions={actions} room={room} />
+        {visible.length > 0 ? (
+          <section className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-body text-foreground" style={semibold}>
+                Answers
+              </h2>
+              {failing.length === 0 && room.checks.length > 0 ? (
+                <span className="flex items-center gap-1 text-body text-muted-foreground">
+                  <CircleCheckIcon aria-hidden className="size-3.5" />
+                  All checks pass
+                </span>
+              ) : null}
+            </div>
+            <ul className="border border-border bg-surface-1">
+              {visible.map((field) => (
+                <FieldRow
+                  actions={actions}
+                  failing={failing
+                    .filter((c) => c.field === field.path)
+                    .map((c) => c.message ?? c.name)}
+                  field={field}
+                  key={field.path}
+                  room={room}
+                />
+              ))}
+            </ul>
+          </section>
+        ) : null}
         {hidden.length > 0 ? (
           <section className="flex flex-col gap-1">
             <h2 className="text-body text-muted-foreground">

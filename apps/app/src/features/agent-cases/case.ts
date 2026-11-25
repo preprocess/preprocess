@@ -34,7 +34,7 @@ export function parseOrganizationId(raw: string): OrganizationId {
 export const CASE_STATUSES = ["Waiting", "Active", "Done"] as const;
 export type CaseStatus = (typeof CASE_STATUSES)[number];
 
-/** Teams a case can be waiting on. */
+/** The teams seeded cases wait on. Live cases wait on the organization's groups. */
 export const CASE_GROUPS = [
   "Legal",
   "Sales",
@@ -55,7 +55,7 @@ export type CaseAssignee = {
   readonly name: string;
   readonly email: string;
   /** The groups this person belongs to, which they can act for. */
-  readonly groups: readonly CaseGroup[];
+  readonly groups: readonly string[];
 };
 
 export type Case = {
@@ -65,8 +65,8 @@ export type Case = {
   /** Optional metadata; many cases have none. Show `caseTitle` instead. */
   readonly title: string | null;
   readonly status: CaseStatus;
-  /** Teams the case is waiting on. Empty when it waits on no one. */
-  readonly awaiting: readonly CaseGroup[];
+  /** Teams the case is waiting on, by name. Empty when it waits on no one. */
+  readonly awaiting: readonly string[];
   /** Everyone assigned; empty when nobody is. */
   readonly assignees: readonly CaseAssignee[];
   readonly externalId: string | null;
@@ -117,7 +117,7 @@ export function caseDisplayId(item: Pick<Case, "externalId" | "id">) {
  */
 export function unassignedGroups(
   item: Pick<Case, "awaiting" | "assignees">,
-): CaseGroup[] {
+): string[] {
   return item.awaiting.filter(
     (group) => !item.assignees.some((person) => person.groups.includes(group)),
   );

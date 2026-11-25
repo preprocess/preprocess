@@ -1,8 +1,10 @@
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { ScenarioState } from "../../scenarios/scenarios";
 import type {
+  ApprovalDecision,
   CaseRoomState,
   RoomAnswer,
+  RoomApproval,
   RoomField,
   RoomMessage,
   WriteResult,
@@ -103,6 +105,35 @@ const baseFields = (overrides: Record<string, RoomField> = {}) => {
   return fields.map((f) => overrides[f.path] ?? f);
 };
 
+const approval = (
+  id: string,
+  level: RoomApproval["level"],
+  target: string,
+  extra: Partial<RoomApproval> = {},
+): RoomApproval => ({
+  id,
+  level,
+  target,
+  group: null,
+  payload: null,
+  reason: null,
+  status: "pending",
+  run: 1,
+  requestedAt: T0 + 4 * 60_000,
+  decidedBy: null,
+  decidedByName: null,
+  decidedAt: null,
+  note: null,
+  ...extra,
+});
+
+const PAYMENT = {
+  vendor: "globex",
+  amount: 1285,
+  currency: "EUR",
+  dueDate: "2026-12-24",
+};
+
 const answersOf = (fields: readonly RoomField[]) =>
   Object.fromEntries(
     fields
@@ -110,7 +141,16 @@ const answersOf = (fields: readonly RoomField[]) =>
       .map((f) => [f.path, f.answer!.value]),
   );
 
+type SeededWork = Omit<CaseRoomState, "approvals"> & {
+  readonly approvals?: readonly RoomApproval[];
+};
+
 function seededRoom(scenario: CaseWorkScenario): CaseRoomState {
+  const work = seededWork(scenario);
+  return { ...work, approvals: work.approvals ?? [] };
+}
+
+function seededWork(scenario: CaseWorkScenario): SeededWork {
   switch (scenario) {
     case "waiting": {
       const fields = baseFields({
@@ -330,6 +370,152 @@ function seededRoom(scenario: CaseWorkScenario): CaseRoomState {
           event("ev_2", 5, "Failed"),
         ],
       };
+    case "approval-tool": {
+      const fields = baseFields();
+      return {
+        status: "waiting",
+        run: 1,
+        waitingOn: { group: "finance", reason: null },
+        reason: null,
+        fields,
+        checks: [
+          { name: "total-matches-lines", ok: true },
+          { name: "vendor-known", ok: true },
+        ],
+        answers: answersOf(fields),
+        thread: [
+          INPUT,
+          event("ev_1", 0, "Run 1 started"),
+          event(
+            "ev_2",
+            4,
+            "Waiting for finance to approve the call to post_payment",
+          ),
+          event(
+            "ev_3",
+            4,
+            "Waiting for legal to approve the call to email_vendor",
+          ),
+        ],
+        approvals: [
+          approval("apr_payment", "tool", "post_payment", {
+            group: "finance",
+            payload: PAYMENT,
+            reason: "Payments over 1,000 EUR need Finance.",
+          }),
+          approval("apr_email", "tool", "email_vendor", {
+            group: "legal",
+            payload: {
+              to: "billing@globex.example",
+              subject: "Invoice INV-1042 scheduled",
+            },
+            reason: "Mail to vendors goes through Legal.",
+          }),
+        ],
+      };
+    }
+    case "approval-completion": {
+      const fields = baseFields();
+      return {
+        status: "waiting",
+        run: 1,
+        waitingOn: { group: "accounts-payable", reason: null },
+        reason: null,
+        fields,
+        checks: [
+          { name: "total-matches-lines", ok: true },
+          { name: "vendor-known", ok: true },
+        ],
+        answers: answersOf(fields),
+        thread: [
+          INPUT,
+          event("ev_1", 0, "Run 1 started"),
+          event("ev_2", 4, "Waiting for an operator to approve glAccount"),
+          event(
+            "ev_3",
+            4,
+            "Waiting for accounts-payable to approve completing the case",
+          ),
+        ],
+        approvals: [
+          approval("apr_gl", "field", "glAccount", {
+            payload: "6400",
+            reason: "GL account changes need a person.",
+          }),
+          approval("apr_done", "completion", "", {
+            group: "accounts-payable",
+            payload: { run: 1 },
+            reason: "Every invoice is approved before it's posted.",
+          }),
+        ],
+      };
+    }
+    case "approval-decided": {
+      const fields = baseFields();
+      const decided = (minutes: number, name: string) => ({
+        decidedBy: `person:usr_${name.toLowerCase()}`,
+        decidedByName: name,
+        decidedAt: T0 + minutes * 60_000,
+      });
+      return {
+        status: "completed",
+        run: 2,
+        waitingOn: null,
+        reason: null,
+        fields,
+        checks: [
+          { name: "total-matches-lines", ok: true },
+          { name: "vendor-known", ok: true },
+        ],
+        answers: answersOf(fields),
+        thread: [
+          INPUT,
+          event("ev_1", 0, "Run 1 started"),
+          event("ev_2", 6, "Rejected glAccount: Software, not services."),
+          event("ev_3", 7, "Run 2 started"),
+          event(
+            "ev_4",
+            9,
+            "Approved the call to post_payment: Matches PO 7731.",
+          ),
+          event("ev_5", 10, "Approved completing the case"),
+          event("ev_6", 10, "Completed"),
+        ],
+        approvals: [
+          approval("apr_gl_1", "field", "glAccount", {
+            payload: "6400",
+            reason: "GL account changes need a person.",
+            status: "rejected",
+            note: "Software, not services. Use 6200.",
+            ...decided(6, "Ana"),
+          }),
+          approval("apr_gl_2", "field", "glAccount", {
+            payload: "6100",
+            run: 2,
+            reason: "GL account changes need a person.",
+            status: "stale",
+            decidedAt: T0 + 8 * 60_000,
+          }),
+          approval("apr_payment", "tool", "post_payment", {
+            group: "finance",
+            payload: PAYMENT,
+            run: 2,
+            reason: "Payments over 1,000 EUR need Finance.",
+            status: "approved",
+            note: "Matches PO 7731.",
+            ...decided(9, "Sam"),
+          }),
+          approval("apr_done", "completion", "", {
+            group: "accounts-payable",
+            payload: { run: 2 },
+            run: 2,
+            status: "approved",
+            ...decided(10, "Ana"),
+          }),
+        ],
+      };
+    }
+    case "live":
     case "empty":
       return {
         status: "queued",
@@ -479,6 +665,67 @@ export function rerunCase(agentId: string, caseId: string) {
       },
     ],
   }));
+}
+
+/** Groups the seeded "you" is in; any other group's approvals refuse you. */
+const YOUR_GROUPS = ["finance", "accounts-payable"];
+
+export async function decideApproval(
+  agentId: string,
+  caseId: string,
+  input: { approvalId: string; decision: "approve" | "reject"; text: string },
+): Promise<ApprovalDecision> {
+  const room = await getCaseRoom(agentId, caseId);
+  const found = room.approvals.find((a) => a.id === input.approvalId);
+  if (!found)
+    return { ok: false, code: "not_found", message: "No such approval." };
+  if (found.status !== "pending")
+    return {
+      ok: false,
+      code: "approval_decided",
+      message: `The approval is ${found.status}.`,
+    };
+  if (room.status === "running")
+    return {
+      ok: false,
+      code: "case_running",
+      message: "Decide once the run ends.",
+    };
+  if (found.group && !YOUR_GROUPS.includes(found.group))
+    return {
+      ok: false,
+      code: "forbidden",
+      message: `Only members of ${found.group} approve this.`,
+    };
+  const approve = input.decision === "approve";
+  const note = input.text.trim() || null;
+  await update(agentId, caseId, (current) => ({
+    ...current,
+    approvals: current.approvals.map((a) =>
+      a.id === found.id
+        ? {
+            ...a,
+            status: approve ? "approved" : "rejected",
+            decidedBy: YOU,
+            decidedByName: "You",
+            decidedAt: Date.now(),
+            note,
+          }
+        : a,
+    ),
+    thread: [
+      ...current.thread,
+      {
+        id: `ev_${found.id}`,
+        at: new Date().toISOString(),
+        by: YOU,
+        kind: "event",
+        text: `${approve ? "Approved" : "Rejected"} ${found.target || "completing the case"}${note ? `: ${note}` : ""}`,
+        group: found.group,
+      },
+    ],
+  }));
+  return { ok: true };
 }
 
 export function cancelCase(agentId: string, caseId: string) {
