@@ -106,7 +106,7 @@ function toItem(item: ApiInboxItem): InboxItem {
   const caseLink = subject
     ? {
         kind: "case" as const,
-        agentId: subject.agent.id,
+        agentId: subject.agent.slug,
         caseId: subject.id,
       }
     : undefined;
