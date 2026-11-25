@@ -38,8 +38,9 @@ Every stage deploys the whole product, the same way:
   and bundles buckets, and the Worker Loader that runs each deployment's bundle
   as a Dynamic Worker;
 - the Tail Worker on agent code, the GitHub build sandbox (`apps/builder`, a
-  Container), and the stub model service (`apps/model-stub`) unless
-  `MODEL_SERVICE_URL` and `MODEL_SERVICE_KEY` name a real one;
+  Container), the PDF renderer behind OCR (`apps/pdf-render`, a Container), and
+  the stub model service (`apps/model-stub`) unless `MODEL_SERVICE_URL` and
+  `MODEL_SERVICE_KEY` name a real one;
 - Postgres through two Hyperdrive configs (caching off), with every file in
   `packages/db/migrations` applied before any Worker is updated.
 
