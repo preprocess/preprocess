@@ -1,0 +1,364 @@
+/*
+ * The sign-in, sign-up and invitation art: the right-hand panel of the
+ * branded AuthKit page, ported from apps/app/authkit/content-panel.css.
+ * Glass and pearl on grainy slate green, the same in both themes. One very
+ * large dial, cropped by the panel's right and bottom edges, with hairline
+ * rings radiating from it; the teams the agents work with sit top left, and
+ * a glass card floats over the rings showing a case working through its
+ * steps. .pp-panel sets the em scale from its own width, so every part
+ * grows with the panel.
+ */
+
+.pp-panel {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(70% 55% at 60% 60%, #2c3a34, transparent 72%), #1f2925;
+  color: #fbf7f0;
+  container-type: size;
+  -webkit-font-smoothing: antialiased;
+}
+
+.pp-panel *,
+.pp-panel *::before {
+  box-sizing: border-box;
+}
+
+.pp-stage {
+  position: absolute;
+  inset: 0;
+  font-size: clamp(10px, 1.6cqw, 15px);
+}
+
+/* Fine grain over the whole panel; it also breaks up the arc's fade. */
+.pp-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+}
+
+/* Hairline rings from the dial's center (16em in from the right, 4em up
+   from the bottom), every 2.4em, clear just outside the arc and fading out
+   across the panel. */
+.pp-rings {
+  position: absolute;
+  inset: 0;
+  background: repeating-radial-gradient(
+    circle at calc(100% - 16em) calc(100% - 4em),
+    transparent 0 calc(2.4em - 1px),
+    rgba(251, 247, 240, 0.09) calc(2.4em - 1px) 2.4em
+  );
+  mask: radial-gradient(
+    circle at calc(100% - 16em) calc(100% - 4em),
+    transparent 30em,
+    #000 31em,
+    rgba(0, 0, 0, 0.5) 42em,
+    transparent 64em
+  );
+}
+
+/* A 56em dial centered 16em in from the right and 4em up from the bottom. */
+.pp-dial {
+  position: absolute;
+  right: -12em;
+  bottom: -24em;
+  width: 56em;
+  aspect-ratio: 1;
+}
+
+.pp-dial > * {
+  position: absolute;
+  display: block;
+}
+
+/* The ring the arc runs in, and the arc itself: 270 degrees from -135,
+   fading in from nothing to full light at the bead (160 degrees in). */
+.pp-track,
+.pp-arc {
+  inset: 0;
+  border-radius: 50%;
+  mask: radial-gradient(
+    closest-side,
+    transparent 85.5%,
+    #000 86%,
+    #000 92%,
+    transparent 92.5%
+  );
+}
+
+.pp-track {
+  background: conic-gradient(
+    from 225deg,
+    rgba(251, 247, 240, 0) 10deg,
+    rgba(251, 247, 240, 0.05) 70deg 200deg,
+    rgba(251, 247, 240, 0) 260deg
+  );
+}
+
+.pp-sweep {
+  inset: 0;
+}
+
+.pp-arc {
+  position: absolute;
+  background: conic-gradient(
+    from 225deg,
+    rgba(251, 247, 240, 0) 55deg,
+    rgba(251, 247, 240, 0.08) 82deg,
+    rgba(251, 247, 240, 0.4) 123deg,
+    #fbf7f0 160deg,
+    transparent 160deg
+  );
+  filter: drop-shadow(0 0 0.7em rgba(251, 247, 240, 0.45));
+}
+
+/* The pearl at the arc's end, on the arc's band (5.5% in from the edge). */
+.pp-bead {
+  position: absolute;
+  inset: 0;
+}
+
+.pp-bead::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 5.5%;
+  width: 5.6%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #fff, #e6e2d8 70%);
+  box-shadow:
+    0 0 1.2em rgba(251, 247, 240, 0.7),
+    0 0 3em rgba(251, 247, 240, 0.25);
+  transform: translate(-50%, -50%);
+}
+
+/* Dark glass knob with a knurled rim and a lit dot pointing at the bead. */
+.pp-knob {
+  inset: 31%;
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      circle at 38% 30%,
+      rgba(255, 255, 255, 0.16),
+      rgba(255, 255, 255, 0.03) 62%
+    ),
+    #26302c;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -0.5em 1em rgba(0, 0, 0, 0.35),
+    0 1em 2.4em rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.pp-knob::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    rgba(255, 255, 255, 0.07) 0deg 1.5deg,
+    transparent 1.5deg 5deg
+  );
+  mask: radial-gradient(closest-side, transparent 86%, #000 88%);
+}
+
+.pp-knob::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 16%;
+  width: 4.5%;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #fbf7f0;
+  box-shadow:
+    0 0 0.7em rgba(251, 247, 240, 0.8),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Top left: overlapping glass discs, one per team, then the agent as the
+   bright pearl from the dial's bead. */
+.pp-team {
+  position: absolute;
+  top: 5.6em;
+  left: 5.6em;
+  z-index: 4;
+}
+
+.pp-faces {
+  display: flex;
+  align-items: center;
+}
+
+.pp-face {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 3.4em;
+  aspect-ratio: 1;
+  margin-right: -0.7em;
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      circle at 38% 30%,
+      rgba(255, 255, 255, 0.16),
+      rgba(255, 255, 255, 0.03) 62%
+    ),
+    #26302c;
+  box-shadow:
+    0 0 0 0.25em #222d29,
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(251, 247, 240, 0.08);
+  color: rgba(251, 247, 240, 0.78);
+  font-size: 1.1em;
+}
+
+.pp-face svg {
+  width: 1.35em;
+  height: 1.35em;
+}
+
+.pp-face.pp-agent {
+  position: relative;
+  z-index: 1;
+  background: radial-gradient(circle at 38% 32%, #fff, #e6e2d8 70%);
+  box-shadow:
+    0 0 0 0.25em #222d29,
+    0 0 1.4em rgba(251, 247, 240, 0.5);
+}
+
+.pp-team p {
+  margin: 0.8em 0 0;
+  font-size: 1.15em;
+  line-height: 1.5;
+  color: rgba(251, 247, 240, 0.45);
+}
+
+/* Glass card: a case working through its steps, over the rings and left of
+   the dial. */
+.pp-card {
+  position: absolute;
+  left: 5.6em;
+  bottom: 22%;
+  z-index: 4;
+  width: 30em;
+  padding: 1.4em 1.4em 0.6em;
+  border-radius: 1em;
+  background: linear-gradient(
+    180deg,
+    rgba(251, 247, 240, 0.09),
+    rgba(251, 247, 240, 0.04)
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(251, 247, 240, 0.08),
+    0 1.6em 3.2em rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(14px);
+  font-size: 1.15em;
+}
+
+.pp-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  margin-bottom: 0.9em;
+}
+
+.pp-card-title {
+  font-variation-settings:
+    "wght" 550,
+    "opsz" 18;
+  letter-spacing: -0.01em;
+}
+
+.pp-pill {
+  padding: 0.2em 0.7em;
+  border-radius: 999px;
+  background: rgba(251, 247, 240, 0.1);
+  color: rgba(251, 247, 240, 0.75);
+  font-size: 0.85em;
+}
+
+.pp-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  padding: 0.7em 0;
+  border-top: 1px solid rgba(251, 247, 240, 0.08);
+  color: rgba(251, 247, 240, 0.45);
+}
+
+.pp-step span {
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-step em {
+  font-style: normal;
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Step markers: an empty ring, a pearl when done, and a pulsing half-lit
+   ring while waiting on a person. */
+.pp-step i {
+  flex: none;
+  width: 0.9em;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(251, 247, 240, 0.3);
+}
+
+.pp-step[data-state="done"] {
+  color: rgba(251, 247, 240, 0.85);
+}
+
+.pp-step[data-state="done"] em {
+  color: rgba(251, 247, 240, 0.45);
+}
+
+.pp-step[data-state="done"] i {
+  background: radial-gradient(circle at 38% 32%, #fff, #e6e2d8 70%);
+  box-shadow: 0 0 0.6em rgba(251, 247, 240, 0.45);
+}
+
+.pp-step[data-state="waiting"] {
+  color: #fbf7f0;
+}
+
+.pp-step[data-state="waiting"] i {
+  box-shadow: inset 0 0 0 1px rgba(251, 247, 240, 0.8);
+  background: conic-gradient(#fbf7f0 0 50%, transparent 50%);
+  animation: pp-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pp-pulse {
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(251, 247, 240, 0.8),
+      0 0 0.8em rgba(251, 247, 240, 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-step[data-state="waiting"] i {
+    animation: none;
+  }
+}
+
+/* The app keeps a stable scrollbar gutter on the page, which would leave a
+   strip of page background beside the panel; these pages never scroll the
+   document, so the panel runs to the window's edge. */
+html:has(.pp-panel) {
+  scrollbar-gutter: auto;
+}

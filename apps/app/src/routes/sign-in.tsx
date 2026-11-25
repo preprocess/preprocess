@@ -1,7 +1,4 @@
-import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
+import { FieldGroup } from "@preprocess/ui/components/field";
 import {
   AsyncActionAbortError,
   LoadingButton,
@@ -10,33 +7,43 @@ import {
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 
-import { AuthCard, authLinkClass, safeRedirect } from "../components/auth-card";
+import {
+  AuthField,
+  AuthLayout,
+  authLinkClass,
+  safeRedirect,
+} from "../components/auth-layout";
 import { ApiError, authPost } from "../features/auth/client";
+import { loadSignUpOpen } from "../features/auth/session";
 
 export const Route = createFileRoute("/sign-in")({
   validateSearch: (search): { redirect?: string } =>
     typeof search.redirect === "string" ? { redirect: search.redirect } : {},
+  loader: async () => ({ signUpOpen: await loadSignUpOpen() }),
   component: SignInPage,
 });
 
-const required = (label: string) => (value: string) =>
-  value.trim() ? null : `Enter your ${label}.`;
-
 function SignInPage() {
   const { redirect } = Route.useSearch();
-  const emailRef = useRef<InlineValidationHandle>(null);
-  const passwordRef = useRef<InlineValidationHandle>(null);
+  const { signUpOpen } = Route.useLoaderData();
   const submitRef = useRef<LoadingButtonHandle>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>(
+    {},
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const invited = safeRedirect(redirect).startsWith("/invitations/");
 
   async function onSignIn() {
     setError(null);
-    const emailOk = emailRef.current?.commit();
-    const passwordOk = passwordRef.current?.commit();
-    if (!emailOk || !passwordOk) throw new AsyncActionAbortError();
+    const found = {
+      ...(email.trim() ? {} : { email: "Enter your email." }),
+      ...(password ? {} : { password: "Enter your password." }),
+    };
+    setErrors(found);
+    if (Object.keys(found).length) throw new AsyncActionAbortError();
     try {
       await authPost("/sign-in/email", { email: email.trim(), password });
       window.setTimeout(
@@ -56,47 +63,60 @@ function SignInPage() {
   }
 
   return (
-    <AuthCard
+    <AuthLayout
       footer={
         <>
-          New to Preprocess?{" "}
+          {signUpOpen ? "New to Preprocess?" : "Have an invitation?"}{" "}
           <Link className={authLinkClass} search={{ redirect }} to="/sign-up">
             Create an account
           </Link>
         </>
       }
-      title="Sign in"
+      subtitle={
+        invited
+          ? "Sign in to accept your invite."
+          : "Sign in to your workspace."
+      }
+      title={invited ? "Welcome aboard." : "Welcome back."}
     >
       <form
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-6"
+        noValidate
         onSubmit={(event: FormEvent<HTMLFormElement>) => {
           event.preventDefault();
           submitRef.current?.run();
         }}
       >
-        <InlineValidation
-          ref={emailRef}
-          autoComplete="email"
-          autoFocus
-          disabled={pending}
-          id="email"
-          label="Email"
-          onChange={setEmail}
-          type="email"
-          validate={required("email")}
-          value={email}
-        />
-        <InlineValidation
-          ref={passwordRef}
-          autoComplete="current-password"
-          disabled={pending}
-          id="password"
-          label="Password"
-          onChange={setPassword}
-          type="password"
-          validate={required("password")}
-          value={password}
-        />
+        <FieldGroup>
+          <AuthField
+            autoComplete="email"
+            autoFocus
+            disabled={pending}
+            error={errors.email}
+            id="email"
+            label="Email"
+            onChange={(value) => {
+              setEmail(value);
+              setErrors((current) => ({ ...current, email: undefined }));
+            }}
+            placeholder="Your email address"
+            type="email"
+            value={email}
+          />
+          <AuthField
+            autoComplete="current-password"
+            disabled={pending}
+            error={errors.password}
+            id="password"
+            label="Password"
+            onChange={(value) => {
+              setPassword(value);
+              setErrors((current) => ({ ...current, password: undefined }));
+            }}
+            type="password"
+            value={password}
+          />
+        </FieldGroup>
         {error ? (
           <p className="text-body text-destructive" role="alert">
             {error}
@@ -115,6 +135,6 @@ function SignInPage() {
           Sign in
         </LoadingButton>
       </form>
-    </AuthCard>
+    </AuthLayout>
   );
 }

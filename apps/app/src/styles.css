@@ -1,4 +1,5 @@
 @import "./components/agent-elements/agent-ui.css";
+@import "./components/auth-panel.css";
 @import "streamdown/styles.css";
 
 @source "./components/agent-elements";
