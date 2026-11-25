@@ -62,19 +62,16 @@ type CasesScenario = ScenarioState<"cases">;
 /** Cases the "few" scenario keeps from the seed. */
 const FEW_CASES = 3;
 
-/** The live list reads the API; the agents' stats still read the seed. */
+/** The live list reads the API; every other state is seeded. */
 const live = () => currentScenario().cases === "live";
 
 function seedCases(scenario: CasesScenario): readonly Case[] {
   switch (scenario) {
-    // Only the agents' stats read the seed when live: the agent pages are
-    // still seeded. Builds outside dev serve none.
-    case "live":
-      return import.meta.env.DEV ? createCaseSeed(SEED_ORG) : [];
     case "seeded":
       return createCaseSeed(SEED_ORG);
     case "few":
       return createCaseSeed(SEED_ORG).slice(0, FEW_CASES);
+    case "live":
     case "empty":
     case "load-error":
       return [];
@@ -362,43 +359,4 @@ export async function getOrgCaseNeighbors(
     index: index + 1,
     total: page ? page.total : ordered.length,
   };
-}
-
-/** One agent's cases by status, and when any of them last changed. */
-export type AgentCaseStats = {
-  readonly byStatus: Readonly<Record<Case["status"], number>>;
-  readonly total: number;
-  /** What all of the agent's cases have cost, in US cents. */
-  readonly costCents: number;
-  readonly lastUpdatedAt: string | null;
-};
-
-export function getOrgCaseStatsByAgent(): Promise<
-  ReadonlyMap<string, AgentCaseStats>
-> {
-  const stats = new Map<string, AgentCaseStats>();
-  for (const item of seededCases()) {
-    // Agents' stats count production work only.
-    if (item.previewBranch !== null) continue;
-    const current = stats.get(item.agentId) ?? {
-      byStatus: { Waiting: 0, Active: 0, Done: 0 },
-      total: 0,
-      costCents: 0,
-      lastUpdatedAt: null,
-    };
-    stats.set(item.agentId, {
-      byStatus: {
-        ...current.byStatus,
-        [item.status]: current.byStatus[item.status] + 1,
-      },
-      total: current.total + 1,
-      costCents: current.costCents + item.costCents,
-      lastUpdatedAt:
-        current.lastUpdatedAt === null ||
-        Date.parse(item.updatedAt) > Date.parse(current.lastUpdatedAt)
-          ? item.updatedAt
-          : current.lastUpdatedAt,
-    });
-  }
-  return Promise.resolve(stats);
 }
