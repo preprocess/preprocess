@@ -7,6 +7,7 @@ import type {
   Deployment,
   DeploymentRef,
   Env,
+  MemoryRule,
   StartCase,
 } from "./env.ts";
 import type { WriteResult } from "./schema-state.ts";
@@ -25,7 +26,7 @@ type CaseObject = {
   start(start: StartCase): Promise<CaseView>;
   view(): Promise<CaseView>;
   state(): Promise<CaseState>;
-  rerun(notes: ReviewNote[]): Promise<CaseState>;
+  rerun(notes: ReviewNote[], memories?: MemoryRule[]): Promise<CaseState>;
   edit(input: Edit & { value: unknown }): Promise<unknown>;
   confirm(input: Edit): Promise<unknown>;
   acceptSuggestion(input: Edit): Promise<unknown>;
@@ -69,8 +70,8 @@ export default class Runtime extends WorkerEntrypoint<Env> {
     return runtimeFor(this.env, c).state();
   }
 
-  rerun(c: CaseKey & { notes?: ReviewNote[] }) {
-    return runtimeFor(this.env, c).rerun(c.notes ?? []);
+  rerun(c: CaseKey & { notes?: ReviewNote[]; memories?: MemoryRule[] }) {
+    return runtimeFor(this.env, c).rerun(c.notes ?? [], c.memories);
   }
 
   editAnswer(c: CaseKey & Edit & { value: unknown }) {

@@ -41,6 +41,7 @@ import { eventBase, requireAdmin } from "../caller.ts";
 import type { OrgRole, OrgVariables } from "../caller.ts";
 import { ApiError, createCase, type Approval } from "../cases.ts";
 import type { Env, WriteResult } from "../env.ts";
+import { acceptedMemories } from "../memories.ts";
 import { notifyLater } from "../notify.ts";
 import { ocrFile } from "../ocr.ts";
 import { drainOutbox } from "../outbox.ts";
@@ -879,30 +880,37 @@ export const caseRoutes = new OpenAPIHono<{
       // What people changed since the last rerun, for the agent's prompt.
       // A rerun runs the agent again, so it passes the spend gate first; this
       // is how a halted case restarts.
-      const notes = await withOrg(c.env, c.var.org, async (tx) => {
-        await refuseOverLimit(tx);
-        const events = await tx
-          .select({
-            kind: reviewEvents.kind,
-            path: reviewEvents.path,
-            before: reviewEvents.before,
-            after: reviewEvents.after,
-            at: reviewEvents.at,
-          })
-          .from(reviewEvents)
-          .where(eq(reviewEvents.caseId, key.caseId))
-          .orderBy(asc(reviewEvents.at));
-        const since = events.filter((e) => e.kind === "rerun").at(-1)?.at;
-        return events
-          .filter((e) => e.kind !== "rerun" && (!since || e.at > since))
-          .map(({ kind, path, before, after }) => ({
-            kind,
-            path,
-            before,
-            after,
-          }));
-      });
-      const state = await runtime(c).rerun({ ...key, notes });
+      const { notes, memories } = await withOrg(
+        c.env,
+        c.var.org,
+        async (tx) => {
+          await refuseOverLimit(tx);
+          const events = await tx
+            .select({
+              kind: reviewEvents.kind,
+              path: reviewEvents.path,
+              before: reviewEvents.before,
+              after: reviewEvents.after,
+              at: reviewEvents.at,
+            })
+            .from(reviewEvents)
+            .where(eq(reviewEvents.caseId, key.caseId))
+            .orderBy(asc(reviewEvents.at));
+          const since = events.filter((e) => e.kind === "rerun").at(-1)?.at;
+          return {
+            notes: events
+              .filter((e) => e.kind !== "rerun" && (!since || e.at > since))
+              .map(({ kind, path, before, after }) => ({
+                kind,
+                path,
+                before,
+                after,
+              })),
+            memories: await acceptedMemories(tx, key.agentId),
+          };
+        },
+      );
+      const state = await runtime(c).rerun({ ...key, notes, memories });
       await withOrg(c.env, c.var.org, (tx) =>
         recordReview(tx, c, key.caseId, { kind: "rerun" }),
       );
