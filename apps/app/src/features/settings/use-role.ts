@@ -9,7 +9,9 @@ export function useCanAdminister() {
   const member = useQuery({
     queryKey: ["active-member", organizationId],
     queryFn: () =>
-      apiFetch<{ role: string }>("/api/auth/organization/get-active-member"),
+      apiFetch<{ role: string }>(
+        `/api/auth/organization/get-active-member-role?organizationId=${encodeURIComponent(organizationId)}`,
+      ),
   });
   const role = member.data?.role ?? "member";
   return role.split(",").some((r) => r === "owner" || r === "admin");
