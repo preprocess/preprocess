@@ -12,8 +12,10 @@ deliberately and read its changelog first.
 - `scripts/wrangler-config.ts` writes `apps/*/wrangler.jsonc` from
   `src/stages.ts`. Those files drive local development and the app's build dry
   runs only; `pnpm lint` fails if they drift.
-- `scripts/preview.ts` deploys or destroys one `pr-<number>` stage and prints
-  its outputs.
+- `scripts/stage.ts` deploys a `pr-<number>` or `staging` stage (and destroys
+  previews) and prints its outputs.
+- `scripts/smoke.ts` is the end-to-end smoke test of a deployed stage; it
+  deploys and runs the stub agent in `smoke-agent/`.
 
 ## Stages
 
@@ -82,6 +84,35 @@ Always read the plan first. Secrets come only from the deploy environment and
 are bound as `secret_text`; Alchemy keeps the deployed values in its state,
 encrypted with a key held in the account's Secrets Store, so treat the deploy
 token like a production secret.
+
+## Continuous deployment
+
+`.github/workflows/deploy.yml` runs on every push to `main`, one push at a time:
+
+1. **CI** (`ci.yml`): validate, build and test.
+2. **Deploy staging** (`staging:deploy`) in the `staging` environment.
+3. **Staging smoke test** (`smoke`): the API's health check, the app's sign-in
+   page, sign-in through the app's origin (signing up the stage's smoke-test
+   user on the first run) and reading the session back, then deploying the stub
+   agent in `smoke-agent/` to the smoke-test organization and running one case
+   to completion. The user's password is derived from the stage's
+   `BETTER_AUTH_SECRET` and its address is on `EMAIL_FROM`'s domain, so the test
+   needs no secret of its own.
+4. **Promote to production**: mints a token for the `preprocess-deploy` GitHub
+   App and starts `deploy-preprocess.yml` in preprocess/internal with the
+   commit's sha. Internal holds production's configuration, checks the sha is on
+   `main` and passed "Staging smoke test", and runs `deploy:production`.
+
+A job whose secrets aren't set reports "skipped" with the missing names and
+stays green. The smoke test runs only after a real staging deploy, so its check
+exists only for commits that passed it.
+
+**Rollback** is in internal:
+`gh workflow run deploy-preprocess.yml -R preprocess/internal -f rollback=true`
+redeploys the previous good commit. It never reverses migrations, which is why
+they are expand and contract (`AGENTS.md`).
+
+`v*` tags are self-hosted releases and deploy nothing of ours.
 
 ## Pull request previews
 

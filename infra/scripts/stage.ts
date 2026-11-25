@@ -1,8 +1,10 @@
-// Deploys or destroys one pull request stage and prints its outputs as JSON.
-// CI runs it from .github/workflows/preview.yml:
+// Deploys or destroys one stage and prints its outputs as JSON. CI runs it
+// from .github/workflows/preview.yml and deploy.yml:
 //   pnpm --filter @preprocess/infra preview:deploy pr-42
 //   pnpm --filter @preprocess/infra preview:destroy pr-42
-// With GITHUB_OUTPUT set, it also writes the outputs there for the PR comment.
+//   pnpm --filter @preprocess/infra staging:deploy
+// Only preview stages can be destroyed here. With GITHUB_OUTPUT set, it also
+// writes the outputs there for the PR comment and the smoke test.
 
 import { appendFileSync } from "node:fs";
 
@@ -13,11 +15,13 @@ import stack from "../alchemy.run.ts";
 import { isPreviewStage } from "../src/stages.ts";
 
 const [operation, stage = ""] = process.argv.slice(2);
-if (
-  (operation !== "deploy" && operation !== "destroy") ||
-  !isPreviewStage(stage)
-) {
-  console.error("usage: tsx scripts/preview.ts <deploy|destroy> pr-<number>");
+const allowed =
+  (operation === "deploy" && (isPreviewStage(stage) || stage === "staging")) ||
+  (operation === "destroy" && isPreviewStage(stage));
+if (!allowed) {
+  console.error(
+    "usage: tsx scripts/stage.ts deploy <pr-<number>|staging> | destroy pr-<number>",
+  );
   process.exit(2);
 }
 
