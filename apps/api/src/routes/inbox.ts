@@ -1,24 +1,27 @@
 // The inbox (design doc 06): cases waiting on the person's groups, mentions of
-// their groups, cases assigned to them, and memory rules proposed on the
-// agents they work (spec 10), computed on read from membership and
-// assignment. Read marks are kept per item key.
+// their groups, cases assigned to them, approvals and memory rules (spec 10)
+// they may decide, and, for Owners and Admins, pending guardrail requests. Computed on read from
+// membership, assignment and access. Read marks are kept per item key.
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { withOrg } from "@preprocess/db/client";
 import { agents, groupMembers, groups } from "@preprocess/db/schema/access";
 import {
+  caseApprovals,
   caseAssignees,
   caseMentions,
   cases,
   inboxReads,
 } from "@preprocess/db/schema/cases";
+import { guardrailRequests } from "@preprocess/db/schema/guardrails";
 import { agentMemories } from "@preprocess/db/schema/memories";
-import { and, desc, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { and, desc, eq, ne, notInArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
-import { workedAgents } from "../access.ts";
+import { mayApprove } from "../access.ts";
 import type { Caller, OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
+import { Change } from "./guardrails.ts";
 
 const OrgParam = z.object({ org: z.string() });
 
@@ -33,23 +36,64 @@ const InboxItem = z
   .object({
     key: z.string().openapi({
       description:
-        '"waiting:<caseId>:<since>", "mention:<id>", "assigned:<caseId>:<at>" or "memory:<id>"',
+        '"waiting:<caseId>:<since>", "mention:<id>", "assigned:<caseId>:<at>", "approval:<approvalId>", "guardrail:<requestId>" or "memory:<memoryId>"',
     }),
-    kind: z.enum(["waiting", "mention", "assigned", "memory"]),
+    kind: z.enum([
+      "waiting",
+      "mention",
+      "assigned",
+      "approval",
+      "guardrail",
+      "memory",
+    ]),
     at: z.string().datetime(),
     read: z.boolean(),
-    case: z.object({
-      id: z.string(),
-      agent: z.object({ id: z.string(), slug: z.string() }),
-      title: z.string().nullable(),
-      status: z.string(),
-    }),
+    case: z
+      .object({
+        id: z.string(),
+        agent: z.object({ id: z.string(), slug: z.string() }),
+        title: z.string().nullable(),
+        status: z.string(),
+      })
+      .nullable()
+      .openapi({ description: "Null for guardrail requests" }),
     group: z
       .object({ id: z.string(), slug: z.string(), name: z.string() })
-      .nullable(),
+      .nullable()
+      .openapi({
+        description:
+          "The group waited on or mentioned, or the group named to approve (null: any operator)",
+      }),
     message: z.string().nullable().openapi({
       description: "A mention's message, or a proposed memory rule's text",
     }),
+    approval: z
+      .object({
+        id: z.string(),
+        level: z.enum(["tool", "field", "completion"]),
+        target: z.string().openapi({
+          description: "The tool name or field path; empty for completion",
+        }),
+        payload: z.unknown(),
+        reason: z.string().nullable(),
+      })
+      .nullable()
+      .openapi({ description: 'What to approve; set when kind is "approval"' }),
+    guardrail: z
+      .object({
+        id: z.string(),
+        agent: z
+          .object({ id: z.string(), slug: z.string() })
+          .nullable()
+          .openapi({ description: "Null when the request covers every agent" }),
+        change: Change,
+        reason: z.string().nullable(),
+        requestedBy: z.object({ type: z.string(), id: z.string() }),
+      })
+      .nullable()
+      .openapi({
+        description: 'The loosening asked for; set when kind is "guardrail"',
+      }),
   })
   .openapi("InboxItem");
 
@@ -103,83 +147,132 @@ export const inboxRoutes = new OpenAPIHono<{
       },
     }),
     async (c) => {
-      const userId = person(c.var.caller);
+      const caller = c.var.caller;
+      const userId = person(caller);
+      const decidesGuardrails =
+        caller.role === "owner" || caller.role === "admin";
       const items = await withOrg(c.env, c.var.org, async (tx) => {
         const group = { id: groups.id, slug: groups.slug, name: groups.name };
-        const worked = await workedAgents(tx, userId);
-        const [waiting, mentions, assigned, proposals, reads] =
-          await Promise.all([
-            tx
-              .select({ ...caseColumns, since: cases.waitingSince, group })
-              .from(cases)
-              .innerJoin(agents, eq(agents.id, cases.agentId))
-              .innerJoin(groups, eq(groups.id, cases.waitingOnGroupId))
-              .innerJoin(
-                groupMembers,
-                and(
-                  eq(groupMembers.groupId, cases.waitingOnGroupId),
-                  eq(groupMembers.userId, userId),
-                ),
-              )
-              .where(eq(cases.status, "waiting")),
-            tx
-              .select({
-                ...caseColumns,
-                mentionId: caseMentions.id,
-                message: caseMentions.message,
-                at: caseMentions.at,
-                group,
-              })
-              .from(caseMentions)
-              .innerJoin(cases, eq(cases.id, caseMentions.caseId))
-              .innerJoin(agents, eq(agents.id, cases.agentId))
-              .innerJoin(groups, eq(groups.id, caseMentions.groupId))
-              .innerJoin(
-                groupMembers,
-                and(
-                  eq(groupMembers.groupId, caseMentions.groupId),
-                  eq(groupMembers.userId, userId),
-                ),
-              )
-              .where(ne(caseMentions.by, `person:${userId}`))
-              .orderBy(desc(caseMentions.at))
-              .limit(MENTIONS),
-            tx
-              .select({ ...caseColumns, at: caseAssignees.assignedAt })
-              .from(caseAssignees)
-              .innerJoin(cases, eq(cases.id, caseAssignees.caseId))
-              .innerJoin(agents, eq(agents.id, cases.agentId))
-              .where(
-                and(
-                  eq(caseAssignees.userId, userId),
-                  notInArray(cases.status, ["completed", "cancelled"]),
-                ),
+        const [
+          waiting,
+          mentions,
+          assigned,
+          approvals,
+          requests,
+          proposals,
+          reads,
+        ] = await Promise.all([
+          tx
+            .select({ ...caseColumns, since: cases.waitingSince, group })
+            .from(cases)
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .innerJoin(groups, eq(groups.id, cases.waitingOnGroupId))
+            .innerJoin(
+              groupMembers,
+              and(
+                eq(groupMembers.groupId, cases.waitingOnGroupId),
+                eq(groupMembers.userId, userId),
               ),
-            worked?.length === 0
-              ? []
-              : tx
-                  .select({
-                    ...caseColumns,
-                    memoryId: agentMemories.id,
-                    text: agentMemories.text,
-                    at: agentMemories.proposedAt,
-                  })
-                  .from(agentMemories)
-                  .innerJoin(cases, eq(cases.id, agentMemories.caseId))
-                  .innerJoin(agents, eq(agents.id, cases.agentId))
-                  .where(
-                    and(
-                      eq(agentMemories.status, "proposed"),
-                      worked
-                        ? inArray(agentMemories.agentId, worked)
-                        : undefined,
-                    ),
-                  ),
-            tx
-              .select({ key: inboxReads.itemKey })
-              .from(inboxReads)
-              .where(eq(inboxReads.userId, userId)),
-          ]);
+            )
+            .where(eq(cases.status, "waiting")),
+          tx
+            .select({
+              ...caseColumns,
+              mentionId: caseMentions.id,
+              message: caseMentions.message,
+              at: caseMentions.at,
+              group,
+            })
+            .from(caseMentions)
+            .innerJoin(cases, eq(cases.id, caseMentions.caseId))
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .innerJoin(groups, eq(groups.id, caseMentions.groupId))
+            .innerJoin(
+              groupMembers,
+              and(
+                eq(groupMembers.groupId, caseMentions.groupId),
+                eq(groupMembers.userId, userId),
+              ),
+            )
+            .where(ne(caseMentions.by, `person:${userId}`))
+            .orderBy(desc(caseMentions.at))
+            .limit(MENTIONS),
+          tx
+            .select({ ...caseColumns, at: caseAssignees.assignedAt })
+            .from(caseAssignees)
+            .innerJoin(cases, eq(cases.id, caseAssignees.caseId))
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .where(
+              and(
+                eq(caseAssignees.userId, userId),
+                notInArray(cases.status, ["completed", "cancelled"]),
+              ),
+            ),
+          tx
+            .select({
+              ...caseColumns,
+              approvalId: caseApprovals.id,
+              level: caseApprovals.level,
+              target: caseApprovals.target,
+              payload: caseApprovals.payload,
+              reason: caseApprovals.reason,
+              at: caseApprovals.requestedAt,
+              groupId: groups.id,
+              groupSlug: groups.slug,
+              groupName: groups.name,
+            })
+            .from(caseApprovals)
+            .innerJoin(cases, eq(cases.id, caseApprovals.caseId))
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .leftJoin(groups, eq(groups.id, caseApprovals.groupId))
+            .where(eq(caseApprovals.status, "pending")),
+          decidesGuardrails
+            ? tx
+                .select({
+                  id: guardrailRequests.id,
+                  agentId: guardrailRequests.agentId,
+                  agentSlug: agents.slug,
+                  change: guardrailRequests.change,
+                  reason: guardrailRequests.reason,
+                  requestedByType: guardrailRequests.requestedByType,
+                  requestedBy: guardrailRequests.requestedBy,
+                  at: guardrailRequests.createdAt,
+                })
+                .from(guardrailRequests)
+                .leftJoin(agents, eq(agents.id, guardrailRequests.agentId))
+                .where(eq(guardrailRequests.status, "pending"))
+            : [],
+          tx
+            .select({
+              ...caseColumns,
+              memoryId: agentMemories.id,
+              text: agentMemories.text,
+              at: agentMemories.proposedAt,
+            })
+            .from(agentMemories)
+            .innerJoin(cases, eq(cases.id, agentMemories.caseId))
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .where(eq(agentMemories.status, "proposed")),
+          tx
+            .select({ key: inboxReads.itemKey })
+            .from(inboxReads)
+            .where(eq(inboxReads.userId, userId)),
+        ]);
+        // mayApprove is the approval rule; ask it once per agent and group.
+        const decides = new Map<string, Promise<boolean>>();
+        const mayDecide = (agentId: string, slug: string | null) => {
+          const key = `${agentId}:${slug ?? ""}`;
+          if (!decides.has(key))
+            decides.set(key, mayApprove(tx, caller, agentId, slug));
+          return decides.get(key)!;
+        };
+        const allowed = await Promise.all(
+          approvals.map((a) => mayDecide(a.agentId, a.groupSlug)),
+        );
+        // Any operator decides a memory rule, like an approval naming no group.
+        const decidesMemory = await Promise.all(
+          proposals.map((m) => mayDecide(m.agentId, null)),
+        );
         const read = new Set(reads.map((r) => r.key));
         const all: Omit<Item, "read">[] = [
           ...waiting.map((w) => {
@@ -191,6 +284,8 @@ export const inboxRoutes = new OpenAPIHono<{
               case: caseOf(w),
               group: w.group,
               message: null,
+              approval: null,
+              guardrail: null,
             };
           }),
           ...mentions.map((m) => ({
@@ -200,6 +295,8 @@ export const inboxRoutes = new OpenAPIHono<{
             case: caseOf(m),
             group: m.group,
             message: m.message,
+            approval: null,
+            guardrail: null,
           })),
           ...assigned.map((a) => ({
             key: `assigned:${a.id}:${a.at.toISOString()}`,
@@ -208,15 +305,61 @@ export const inboxRoutes = new OpenAPIHono<{
             case: caseOf(a),
             group: null,
             message: null,
+            approval: null,
+            guardrail: null,
           })),
-          ...proposals.map((m) => ({
-            key: `memory:${m.memoryId}`,
-            kind: "memory" as const,
-            at: m.at.toISOString(),
-            case: caseOf(m),
+          ...approvals
+            .filter((_, i) => allowed[i])
+            .map((a) => ({
+              key: `approval:${a.approvalId}`,
+              kind: "approval" as const,
+              at: a.at.toISOString(),
+              case: caseOf(a),
+              group:
+                a.groupId && a.groupSlug && a.groupName
+                  ? { id: a.groupId, slug: a.groupSlug, name: a.groupName }
+                  : null,
+              message: null,
+              approval: {
+                id: a.approvalId,
+                level: a.level,
+                target: a.target,
+                payload: a.payload,
+                reason: a.reason,
+              },
+              guardrail: null,
+            })),
+          ...requests.map((r) => ({
+            key: `guardrail:${r.id}`,
+            kind: "guardrail" as const,
+            at: r.at.toISOString(),
+            case: null,
             group: null,
-            message: m.text,
+            message: null,
+            approval: null,
+            guardrail: {
+              id: r.id,
+              agent:
+                r.agentId && r.agentSlug
+                  ? { id: r.agentId, slug: r.agentSlug }
+                  : null,
+              change: r.change,
+              reason: r.reason,
+              requestedBy: { type: r.requestedByType, id: r.requestedBy },
+            },
           })),
+          ...proposals
+            .filter((_, i) => decidesMemory[i])
+            .map((m) => ({
+              key: `memory:${m.memoryId}`,
+              kind: "memory" as const,
+              at: m.at.toISOString(),
+              case: caseOf(m),
+              group: null,
+              message: m.text,
+              approval: null,
+              guardrail: null,
+            })),
         ];
         return all
           .map((i) => ({ ...i, read: read.has(i.key) }))
