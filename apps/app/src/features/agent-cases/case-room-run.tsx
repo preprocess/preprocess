@@ -1,5 +1,12 @@
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
+import { useParams } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+
+import { currentScenario } from "../../scenarios/current-scenario";
+import { useOrganizationId } from "../auth/auth-context";
+import { orgApi } from "../auth/client";
+import { LogList, type Log } from "../logs/agent-logs";
 
 import type { RoomMessage } from "./case-room-state";
 import { groupName } from "./case-room-review";
@@ -31,10 +38,63 @@ function headline(message: RoomMessage) {
   return AUTHOR[message.kind];
 }
 
-/** The Run view: each run and what happened in it, oldest first. */
+type Logs =
+  | { kind: "loading" }
+  | { kind: "failed" }
+  | { kind: "ready"; logs: readonly Log[] };
+
+/** The case's run logs from the API (design doc 09), newest first. */
+function CaseRunLogs({ caseId }: Readonly<{ caseId: string }>) {
+  const organizationId = useOrganizationId();
+  const [state, setState] = useState<Logs>({ kind: "loading" });
+  useEffect(() => {
+    let current = true;
+    orgApi<{ logs: Log[] }>(
+      organizationId,
+      `/cases/${encodeURIComponent(caseId)}/logs?limit=200`,
+    )
+      .then((page) => {
+        if (current) setState({ kind: "ready", logs: page.logs });
+      })
+      .catch(() => {
+        if (current) setState({ kind: "failed" });
+      });
+    return () => {
+      current = false;
+    };
+  }, [organizationId, caseId]);
+  return (
+    <section className="flex flex-col gap-3">
+      <span
+        className="text-body text-foreground"
+        style={{ fontVariationSettings: fontWeights.semibold }}
+      >
+        Logs
+      </span>
+      {state.kind === "loading" ? (
+        <span className="text-body text-muted-foreground">Loading logs…</span>
+      ) : state.kind === "failed" ? (
+        <span className="text-body text-muted-foreground">
+          Could not load this case's logs.
+        </span>
+      ) : state.logs.length === 0 ? (
+        <span className="text-body text-muted-foreground">
+          No logs for this case yet.
+        </span>
+      ) : (
+        <LogList logs={state.logs} />
+      )}
+    </section>
+  );
+}
+
+/** The Run view: each run and what happened in it, oldest first, and the
+ * case's run logs when the room reads the API. */
 export function CaseRoomRun() {
   const work = useCaseWork();
-  if (!work || work.room.thread.length === 0) return null;
+  const { caseId } = useParams({ strict: false });
+  const live = currentScenario()["case-work"] === "live";
+  if (!work || (work.room.thread.length === 0 && !live)) return null;
   const { room } = work;
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
@@ -65,6 +125,7 @@ export function CaseRoomRun() {
             </li>
           ))}
         </ol>
+        {live && caseId ? <CaseRunLogs caseId={caseId} /> : null}
       </div>
     </ScrollArea>
   );

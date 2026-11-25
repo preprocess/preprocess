@@ -3,6 +3,8 @@
 export const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <id>] [--api <url>]
        preprocess config pull [entry] [--agent <name>] [--org <id>] [--api <url>]
        preprocess groups pull [entry] [--org <id>] [--api <url>]
+       preprocess cases create [--agent <name>] [--text <text>] [--file <path>]...
+                               [--deployment <id>] [--idempotency-key <key>]
        preprocess logs [--agent <id>] [--case <id>] [--deployment <id>]
                        [--level <level>] [--search <text>] [--limit <n>]
        preprocess evals list [--agent <name>]
@@ -15,6 +17,10 @@ export const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <
   deploy       bundle and deploy the agent
   config pull  write the agent's dashboard overrides into preprocess.config.json
   groups pull  write the organization's groups into preprocess.config.json
+  cases create start a case from text, files or both, on the production
+               deployment unless --deployment names another; prints the case
+               id and its status URL. A retry with the same --idempotency-key
+               never starts a second case
   logs         print run logs, newest first: a case's, or the agent's,
                deployment's or organization's (Developers and Admins)
   evals list   list the agent's eval suites

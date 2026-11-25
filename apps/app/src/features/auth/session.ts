@@ -8,6 +8,8 @@ export type SessionUser = {
   email: string;
   emailVerified: boolean;
   image: string | null;
+  /** Immediate email for waits, mentions and assignments (design doc 06). */
+  emailNotifications: boolean;
 };
 
 export type Session = {
@@ -18,7 +20,9 @@ export type Session = {
 
 type BetterAuthSession = {
   session: { id: string; activeOrganizationId?: string | null };
-  user: SessionUser;
+  user: Omit<SessionUser, "emailNotifications"> & {
+    emailNotifications?: boolean | null;
+  };
 } | null;
 
 /** The signed-in person and their active organization, or null. */
@@ -27,10 +31,18 @@ export const loadSession = createServerFn({ method: "GET" }).handler(
     const { apiJson } = await import("../../server/api.server");
     const body = await apiJson<BetterAuthSession>("/api/auth/get-session");
     if (!body) return null;
-    const { id, name, email, emailVerified, image } = body.user;
+    const { id, name, email, emailVerified, image, emailNotifications } =
+      body.user;
     return {
       sessionId: body.session.id,
-      user: { id, name, email, emailVerified, image: image ?? null },
+      user: {
+        id,
+        name,
+        email,
+        emailVerified,
+        image: image ?? null,
+        emailNotifications: emailNotifications ?? true,
+      },
       organizationId: body.session.activeOrganizationId ?? null,
     };
   },

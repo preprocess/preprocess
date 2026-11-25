@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
+import { casesCreate } from "./cases.ts";
 import { bundle, deploy, describe, gitInfo } from "./deploy.ts";
 import { evalsList, evalsRun } from "./evals.ts";
 import { githubApp } from "./github-app.ts";
@@ -21,6 +22,9 @@ export const main = async (argv: string[], env = process.env) => {
     options: {
       agent: { type: "string" },
       case: { type: "string" },
+      text: { type: "string" },
+      file: { type: "string", multiple: true },
+      "idempotency-key": { type: "string" },
       deployment: { type: "string" },
       level: { type: "string" },
       search: { type: "string" },
@@ -43,6 +47,7 @@ export const main = async (argv: string[], env = process.env) => {
   const [command] = positionals;
   const pull =
     (command === "config" || command === "groups") && positionals[1] === "pull";
+  const cases = command === "cases" && positionals[1] === "create";
   const evals =
     command === "evals" &&
     (positionals[1] === "list" ||
@@ -54,6 +59,7 @@ export const main = async (argv: string[], env = process.env) => {
       command !== "install" &&
       command !== "github-app" &&
       !pull &&
+      !cases &&
       !evals)
   )
     return { code: command ? 1 : 0, out: usage };
@@ -76,6 +82,32 @@ export const main = async (argv: string[], env = process.env) => {
       out: values.out ?? ".env.github-app",
       log: (line) => console.log(line),
     });
+  }
+  if (cases) {
+    const org = values.org ?? env.PREPROCESS_ORG;
+    const api = values.api ?? env.PREPROCESS_API_URL;
+    const key = env.PREPROCESS_API_KEY;
+    const agent = values.agent ?? packageName(process.cwd());
+    if (!org || !api || !key || !agent)
+      return {
+        code: 1,
+        out: `Missing --agent, --org, --api or PREPROCESS_API_KEY.\n\n${usage}`,
+      };
+    if (!values.text && !values.file?.length)
+      return { code: 1, out: `Give --text, --file or both.\n\n${usage}` };
+    return {
+      code: 0,
+      ...(await casesCreate({
+        api,
+        org,
+        key,
+        agent,
+        text: values.text,
+        files: values.file,
+        deployment: values.deployment,
+        idempotencyKey: values["idempotency-key"],
+      })),
+    };
   }
   if (evals) {
     const org = values.org ?? env.PREPROCESS_ORG;
