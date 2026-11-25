@@ -365,3 +365,13 @@ figure.docs-codeblock .line {
     gap: 0;
   }
 }
+
+/* Fumadocs draws Lucide icons. Hold them at the stroke the app and marketing
+   take from @preprocess/ui's --icon-stroke: 1.15px on screen at every size. */
+svg.lucide {
+  stroke-width: 1.15px;
+}
+
+svg.lucide * {
+  vector-effect: non-scaling-stroke;
+}
