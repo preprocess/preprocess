@@ -5,10 +5,9 @@ import {
   FieldLabel,
 } from "@preprocess/ui/components/field";
 import { Input, type InputProps } from "@preprocess/ui/components/input";
-import { PasswordInput } from "@preprocess/ui/components/password-input";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { AuthPanel } from "./auth-panel";
 import { PreprocessMark } from "./preprocess-mark";
@@ -76,7 +75,6 @@ export function AuthField({
   hint,
   error,
   onChange,
-  type,
   ...input
 }: Omit<InputProps, "id" | "onChange"> & {
   id: string;
@@ -85,21 +83,15 @@ export function AuthField({
   error?: string;
   onChange: (value: string) => void;
 }) {
-  const control = {
-    "aria-invalid": error ? true : undefined,
-    id,
-    onChange: (event: ChangeEvent<HTMLInputElement>) =>
-      onChange(event.target.value),
-    ...input,
-  };
   return (
     <Field data-invalid={error ? true : undefined}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      {type === "password" ? (
-        <PasswordInput {...control} />
-      ) : (
-        <Input type={type} {...control} />
-      )}
+      <Input
+        aria-invalid={error ? true : undefined}
+        id={id}
+        onChange={(event) => onChange(event.target.value)}
+        {...input}
+      />
       {error ? (
         <FieldError>{error}</FieldError>
       ) : hint ? (

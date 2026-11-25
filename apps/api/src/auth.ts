@@ -105,6 +105,19 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       .limit(1);
     return Boolean(invited);
   };
+  // A first or last name, when set, is set together and spelled out as
+  // `name`, which every other reader uses.
+  const fullName = (user: Record<string, unknown>) => {
+    if (user.firstName === undefined && user.lastName === undefined) return {};
+    const first = typeof user.firstName === "string" ? user.firstName.trim() : "";
+    const last = typeof user.lastName === "string" ? user.lastName.trim() : "";
+    if (!first && !last) return { firstName: null, lastName: null };
+    if (!first || !last)
+      throw new APIError("BAD_REQUEST", {
+        message: "Enter your first and last name.",
+      });
+    return { firstName: first, lastName: last, name: `${first} ${last}` };
+  };
   const needsInvitation = () =>
     new APIError("FORBIDDEN", {
       message: "Sign-up on this install needs an invitation.",
@@ -125,6 +138,12 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             google: {
               clientId: env.GOOGLE_CLIENT_ID,
               clientSecret: env.GOOGLE_CLIENT_SECRET,
+              // Whatever Google doesn't return, the app asks for after
+              // sign-in.
+              mapProfileToUser: (profile) => ({
+                firstName: profile.given_name || null,
+                lastName: profile.family_name || null,
+              }),
             },
           }
         : {},
@@ -138,6 +157,10 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     user: {
       additionalFields: {
         deactivatedAt: { type: "date", required: false, input: false },
+        // Entered by the person (sign-up, an invitation, or their profile),
+        // never by whoever invited them. `name` follows as "First Last".
+        firstName: { type: "string", required: false, input: true },
+        lastName: { type: "string", required: false, input: true },
         // Set by the person through update-user (design doc 06).
         emailNotifications: {
           type: "boolean",
@@ -152,6 +175,12 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
         create: {
           async before(user) {
             if (!(await mayJoin(user.email))) throw needsInvitation();
+            return { data: { ...user, ...fullName(user) } };
+          },
+        },
+        update: {
+          async before(user) {
+            return { data: { ...user, ...fullName(user) } };
           },
         },
       },
@@ -258,7 +287,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             id: data.id,
             email: data.email,
             organizationName: data.organization.name,
-            inviterName: data.inviter.user.name,
+            inviterName: data.inviter.user.name || data.inviter.user.email,
           });
         },
         organizationHooks: {

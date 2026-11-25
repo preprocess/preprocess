@@ -90,6 +90,13 @@ export const githubSecrets = [
   "GITHUB_CLIENT_SECRET",
 ] as const;
 
+// Google sign-in, optional on every stage: without both, sign-in is by emailed
+// link only. Previews stay without them, since each preview's origin would
+// need its own registered callback. The app reads the client id only to show
+// the button.
+export const googleVars = ["GOOGLE_CLIENT_ID"] as const;
+export const googleSecrets = ["GOOGLE_CLIENT_SECRET"] as const;
+
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).
 export const apiCrons = ["20 0 * * *", "* * * * *"];

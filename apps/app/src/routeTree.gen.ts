@@ -29,6 +29,7 @@ import { Route as DevelopersSandboxesRouteImport } from "./routes/developers/san
 import { Route as DevelopersSecretsRouteImport } from "./routes/developers/secrets";
 import { Route as DevelopersWebhooksRouteImport } from "./routes/developers/webhooks";
 import { Route as InvitationsInvitationIdRouteImport } from "./routes/invitations/$invitationId";
+import { Route as OnboardingNameRouteImport } from "./routes/onboarding_.name";
 import { Route as SettingsAccountRouteImport } from "./routes/settings/account";
 import { Route as SettingsOrganizationRouteImport } from "./routes/settings/organization";
 import { Route as V1SplatRouteImport } from "./routes/v1/$";
@@ -166,6 +167,11 @@ const DevelopersWebhooksRoute = DevelopersWebhooksRouteImport.update({
 const InvitationsInvitationIdRoute = InvitationsInvitationIdRouteImport.update({
   id: "/invitations/$invitationId",
   path: "/invitations/$invitationId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const OnboardingNameRoute = OnboardingNameRouteImport.update({
+  id: "/onboarding_/name",
+  path: "/onboarding/name",
   getParentRoute: () => rootRouteImport,
 } as any);
 const SettingsAccountRoute = SettingsAccountRouteImport.update({
@@ -397,6 +403,7 @@ export interface FileRoutesByFullPath {
   "/developers/secrets": typeof DevelopersSecretsRoute;
   "/developers/webhooks": typeof DevelopersWebhooksRoute;
   "/invitations/$invitationId": typeof InvitationsInvitationIdRoute;
+  "/onboarding/name": typeof OnboardingNameRoute;
   "/settings/account": typeof SettingsAccountRouteWithChildren;
   "/settings/organization": typeof SettingsOrganizationRouteWithChildren;
   "/v1/$": typeof V1SplatRoute;
@@ -456,6 +463,7 @@ export interface FileRoutesByTo {
   "/developers/secrets": typeof DevelopersSecretsRoute;
   "/developers/webhooks": typeof DevelopersWebhooksRoute;
   "/invitations/$invitationId": typeof InvitationsInvitationIdRoute;
+  "/onboarding/name": typeof OnboardingNameRoute;
   "/v1/$": typeof V1SplatRoute;
   "/agents": typeof AgentsIndexRoute;
   "/cases": typeof CasesIndexRoute;
@@ -515,6 +523,7 @@ export interface FileRoutesById {
   "/developers/secrets": typeof DevelopersSecretsRoute;
   "/developers/webhooks": typeof DevelopersWebhooksRoute;
   "/invitations/$invitationId": typeof InvitationsInvitationIdRoute;
+  "/onboarding_/name": typeof OnboardingNameRoute;
   "/settings/account": typeof SettingsAccountRouteWithChildren;
   "/settings/organization": typeof SettingsOrganizationRouteWithChildren;
   "/v1/$": typeof V1SplatRoute;
@@ -577,6 +586,7 @@ export interface FileRouteTypes {
     | "/developers/secrets"
     | "/developers/webhooks"
     | "/invitations/$invitationId"
+    | "/onboarding/name"
     | "/settings/account"
     | "/settings/organization"
     | "/v1/$"
@@ -636,6 +646,7 @@ export interface FileRouteTypes {
     | "/developers/secrets"
     | "/developers/webhooks"
     | "/invitations/$invitationId"
+    | "/onboarding/name"
     | "/v1/$"
     | "/agents"
     | "/cases"
@@ -694,6 +705,7 @@ export interface FileRouteTypes {
     | "/developers/secrets"
     | "/developers/webhooks"
     | "/invitations/$invitationId"
+    | "/onboarding_/name"
     | "/settings/account"
     | "/settings/organization"
     | "/v1/$"
@@ -755,6 +767,7 @@ export interface RootRouteChildren {
   DevelopersSecretsRoute: typeof DevelopersSecretsRoute;
   DevelopersWebhooksRoute: typeof DevelopersWebhooksRoute;
   InvitationsInvitationIdRoute: typeof InvitationsInvitationIdRoute;
+  OnboardingNameRoute: typeof OnboardingNameRoute;
   V1SplatRoute: typeof V1SplatRoute;
   AgentsIndexRoute: typeof AgentsIndexRoute;
   CasesIndexRoute: typeof CasesIndexRoute;
@@ -905,6 +918,13 @@ declare module "@tanstack/react-router" {
       path: "/invitations/$invitationId";
       fullPath: "/invitations/$invitationId";
       preLoaderRoute: typeof InvitationsInvitationIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/onboarding_/name": {
+      id: "/onboarding_/name";
+      path: "/onboarding/name";
+      fullPath: "/onboarding/name";
+      preLoaderRoute: typeof OnboardingNameRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/settings/account": {
@@ -1302,6 +1322,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevelopersSecretsRoute: DevelopersSecretsRoute,
   DevelopersWebhooksRoute: DevelopersWebhooksRoute,
   InvitationsInvitationIdRoute: InvitationsInvitationIdRoute,
+  OnboardingNameRoute: OnboardingNameRoute,
   V1SplatRoute: V1SplatRoute,
   AgentsIndexRoute: AgentsIndexRoute,
   CasesIndexRoute: CasesIndexRoute,

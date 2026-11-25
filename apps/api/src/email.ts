@@ -17,11 +17,11 @@ export const sendInvitationEmail = async (
   await env.EMAIL.send({
     from: env.EMAIL_FROM,
     to: invitation.email,
-    subject: `${invitation.inviterName} invited you to ${invitation.organizationName} on Preprocess`,
+    subject: `Join ${invitation.organizationName} on Preprocess`,
     text: [
       `${invitation.inviterName} invited you to join ${invitation.organizationName} on Preprocess.`,
       "",
-      `Accept the invitation: ${url}`,
+      `Join ${invitation.organizationName}: ${url}`,
       "",
       "If you did not expect this, you can ignore this email.",
     ].join("\n"),

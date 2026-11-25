@@ -55,6 +55,8 @@ import {
   apiSecrets,
   githubSecrets,
   githubVars,
+  googleSecrets,
+  googleVars,
   compatibility,
   durableObjects,
   isPreviewStage,
@@ -302,6 +304,16 @@ export default Alchemy.Stack(
       env: {
         ...runMode,
         API: Cloudflare.WorkerEntrypoint(apiRef),
+        // Shows the Google button; the API holds the secret.
+        ...Object.fromEntries(
+          googleVars.map(
+            (name) =>
+              [
+                name,
+                Config.String(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
       },
     });
     const appUrl = appDomain
@@ -609,6 +621,24 @@ export default Alchemy.Stack(
               [
                 name,
                 Config.String(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
+        ...Object.fromEntries(
+          googleVars.map(
+            (name) =>
+              [
+                name,
+                Config.String(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
+        ...Object.fromEntries(
+          googleSecrets.map(
+            (name) =>
+              [
+                name,
+                Config.Redacted(name).pipe(Config.withDefault(undefined)),
               ] as const,
           ),
         ),
