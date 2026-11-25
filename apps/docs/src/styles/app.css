@@ -4,12 +4,16 @@
 @import "fumadocs-openapi/css/preset.css";
 
 /* Fumadocs draws Lucide icons. Hold them at the stroke the app and marketing
-   take from @preprocess/ui's globals.css: 0.9375px on screen at every size,
-   Fluid Functionalism's own icon weight. */
+   take from @preprocess/ui's --icon-stroke: 1.15px on screen at every size. */
 svg.lucide {
-  stroke-width: 0.9375px;
+  stroke-width: 1.15px;
 }
 
 svg.lucide * {
   vector-effect: non-scaling-stroke;
+}
+
+/* Text weight caps at medium (500). Fumadocs sets its nav title semibold. */
+#nd-subnav a.font-semibold {
+  font-weight: 500;
 }
