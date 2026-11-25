@@ -157,7 +157,7 @@ export const RESULT_STATUS = {
 /** The case's text, for a one-line preview. */
 export function inputText(input: unknown) {
   if (input && typeof input === "object" && "text" in input) {
-    const text = (input).text;
+    const text = input.text;
     if (typeof text === "string") return text;
   }
   return JSON.stringify(input);
