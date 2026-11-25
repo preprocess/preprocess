@@ -34,12 +34,19 @@ import { and, count, eq, gt, sql } from "drizzle-orm";
 import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 
-// The deploy smoke test (infra/scripts/smoke.ts) has no mailbox, so for its
-// own address only the sign-in token is an HMAC of the address and the
-// current minute under the auth secret, which the smoke test also holds.
-// Everyone else gets a random token.
-const SMOKE_TEST_EMAIL = /^smoke-test\+[a-z0-9-]+@/;
-const smokeTestToken = async (secret: string, email: string) => {
+// The deploy smoke test (infra/scripts/smoke.ts) has no mailbox. On staging
+// and previews only, its one address (smoke-test+<stage>@ EMAIL_FROM's
+// domain) gets a sign-in token that is an HMAC of that address and the
+// current minute under the auth secret, which the smoke test also holds, and
+// the token opens for two minutes at most. Every other stage refuses any
+// smoke-test address before a token exists or is checked.
+const SMOKE_TEST_STAGE = /^(staging|pr-\d+)$/;
+const SMOKE_TEST_LOCAL = /^smoke-test\+/i;
+const smokeTestToken = async (
+  secret: string,
+  email: string,
+  minute: number,
+) => {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -47,7 +54,6 @@ const smokeTestToken = async (secret: string, email: string) => {
     false,
     ["sign"],
   );
-  const minute = Math.floor(Date.now() / 60_000);
   const mac = await crypto.subtle.sign(
     "HMAC",
     key,
@@ -144,6 +150,14 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       });
     return { firstName: first, lastName: last, name: `${first} ${last}` };
   };
+  const smokeTestDomain = /@([^>\s]+)>?\s*$/.exec(env.EMAIL_FROM)?.[1];
+  const smokeTestAddress =
+    SMOKE_TEST_STAGE.test(env.STAGE) && smokeTestDomain
+      ? `smoke-test+${env.STAGE}@${smokeTestDomain}`.toLowerCase()
+      : null;
+  const minuteNow = () => Math.floor(Date.now() / 60_000);
+  const notHere = () =>
+    new APIError("FORBIDDEN", { message: "This address can't sign in here." });
   const needsInvitation = () =>
     new APIError("FORBIDDEN", {
       message: "Sign-up on this install needs an invitation.",
@@ -232,9 +246,40 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       before: createAuthMiddleware(async (ctx) => {
         // Refuse a sign-up link up front rather than at the link, so the
         // person sees why on the page instead of after opening the email.
+        if (ctx.path === "/magic-link/verify") {
+          const token = (ctx.query as { token?: unknown } | undefined)?.token;
+          if (typeof token !== "string") return;
+          const [row] = await tx
+            .select({ value: authSchema.verification.value })
+            .from(authSchema.verification)
+            .where(
+              eq(authSchema.verification.identifier, `magic-link:${token}`),
+            )
+            .limit(1);
+          const email = row
+            ? (JSON.parse(row.value) as { email?: unknown }).email
+            : undefined;
+          if (typeof email !== "string" || !SMOKE_TEST_LOCAL.test(email))
+            return;
+          if (!smokeTestAddress || email.toLowerCase() !== smokeTestAddress)
+            throw notHere();
+          const minute = minuteNow();
+          const fresh = await Promise.all(
+            [minute, minute - 1].map((at) =>
+              smokeTestToken(env.BETTER_AUTH_SECRET, smokeTestAddress, at),
+            ),
+          );
+          if (!fresh.includes(token)) throw notHere();
+          return;
+        }
         if (ctx.path === "/sign-in/magic-link") {
           const email = (ctx.body as { email?: unknown } | undefined)?.email;
           if (typeof email !== "string") return;
+          if (
+            SMOKE_TEST_LOCAL.test(email) &&
+            email.toLowerCase() !== smokeTestAddress
+          )
+            throw notHere();
           const [known] = await tx
             .select({ id: authSchema.user.id })
             .from(authSchema.user)
@@ -292,8 +337,12 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       magicLink({
         expiresIn: 15 * 60,
         generateToken: (email) =>
-          SMOKE_TEST_EMAIL.test(email)
-            ? smokeTestToken(env.BETTER_AUTH_SECRET, email)
+          smokeTestAddress && email.toLowerCase() === smokeTestAddress
+            ? smokeTestToken(
+                env.BETTER_AUTH_SECRET,
+                smokeTestAddress,
+                minuteNow(),
+              )
             : generateRandomString(32, "a-z", "A-Z"),
         async sendMagicLink({ email, url }) {
           await sendMagicLinkEmail(env, { email, url });

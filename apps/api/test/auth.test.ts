@@ -35,17 +35,15 @@ describe("sign-up and sign-in", () => {
     expect(none.body).toBeNull();
   });
 
-  it("lets only the deploy smoke test derive its own sign-in token", async () => {
-    const environment = testEnv();
-    const tokenFor = async (email: string) => {
+  describe("the deploy smoke test's sign-in", () => {
+    const tokenFor = async (secret: string, email: string, minute: number) => {
       const key = await crypto.subtle.importKey(
         "raw",
-        new TextEncoder().encode(environment.BETTER_AUTH_SECRET),
+        new TextEncoder().encode(secret),
         { name: "HMAC", hash: "SHA-256" },
         false,
         ["sign"],
       );
-      const minute = Math.floor(Date.now() / 60_000);
       const mac = await crypto.subtle.sign(
         "HMAC",
         key,
@@ -55,19 +53,84 @@ describe("sign-up and sign-in", () => {
         .map((byte) => byte.toString(16).padStart(2, "0"))
         .join("");
     };
-    const open = async (email: string) => {
+    const minute = () => Math.floor(Date.now() / 60_000);
+    const attempt = async (
+      stage: string,
+      email: string,
+      tokenEmail = email,
+      afterAsking: () => void = () => undefined,
+    ) => {
+      const environment = testEnv({ STAGE: stage });
       const client = new Client(environment);
-      await client.call("/api/auth/sign-in/magic-link", {
+      const asked = await client.call("/api/auth/sign-in/magic-link", {
         body: { email, callbackURL: "/" },
       });
-      await client.call(
-        `/api/auth/magic-link/verify?token=${await tokenFor(email)}&callbackURL=/`,
+      const token = await tokenFor(
+        environment.BETTER_AUTH_SECRET,
+        tokenEmail.toLowerCase(),
+        minute(),
       );
-      return (await client.call("/api/auth/get-session")).body;
+      afterAsking();
+      const opened = await client.call(
+        `/api/auth/magic-link/verify?token=${token}&callbackURL=/`,
+      );
+      const session = (await client.call("/api/auth/get-session")).body;
+      return { asked, opened, session };
     };
-    const smoke = `smoke-test+${unique("stage")}@example.test`;
-    expect(await open(smoke)).toMatchObject({ user: { email: smoke } });
-    expect(await open(`${unique("person")}@example.test`)).toBeNull();
+
+    it("works on a preview for that stage's exact address", async () => {
+      const email = "smoke-test+pr-7@preprocess.localhost";
+      const { session } = await attempt("pr-7", email);
+      expect(session).toMatchObject({ user: { email } });
+    });
+
+    it("is refused before any token on production and self-hosted installs", async () => {
+      for (const stage of ["production", "selfhost", "development"]) {
+        const email = `smoke-test+${stage}@preprocess.localhost`;
+        const before = sent.length;
+        const { asked, session } = await attempt(stage, email);
+        expect(asked.status).toBe(403);
+        expect(sent.slice(before).some((m) => m.to === email)).toBe(false);
+        expect(session).toBeNull();
+      }
+    });
+
+    it("is bound to the exact address", async () => {
+      const other = await attempt(
+        "pr-7",
+        "smoke-test+pr-8@preprocess.localhost",
+        "smoke-test+pr-7@preprocess.localhost",
+      );
+      expect(other.asked.status).toBe(403);
+      expect(other.session).toBeNull();
+
+      const person = `${unique("person")}@example.test`;
+      const derived = await attempt("pr-7", person);
+      expect(derived.asked.status).toBe(200);
+      expect(derived.session).toBeNull();
+    });
+
+    it("lasts two minutes at most", async () => {
+      const real = Date.now;
+      try {
+        const { opened, session } = await attempt(
+          "staging",
+          "smoke-test+staging@preprocess.localhost",
+          "smoke-test+staging@preprocess.localhost",
+          () => {
+            const asked = real();
+            Date.now = () => asked + 3 * 60_000;
+          },
+        );
+        expect(opened.status).toBe(403);
+        expect(opened.body).toMatchObject({
+          message: "This address can't sign in here.",
+        });
+        expect(session).toBeNull();
+      } finally {
+        Date.now = real;
+      }
+    });
   });
 
   it("has no password sign-in or sign-up", async () => {
