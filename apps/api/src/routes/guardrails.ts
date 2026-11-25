@@ -337,19 +337,20 @@ const decide = async (
         "request_decided",
         `The request was already ${request.status}.`,
       );
+    const decidedAt = new Date();
+    const decidedBy = actor(vars.caller).actorId;
+    const status = approve ? "approved" : "rejected";
+    // Decided first, so the sync below doesn't withdraw it as no longer needed.
+    await tx
+      .update(guardrailRequests)
+      .set({ status, decidedBy, decidedAt })
+      .where(eq(guardrailRequests.id, id));
     if (approve)
       await syncAgents(
         tx,
         vars.org,
         await applyChange(tx, vars, request.agentId, request.change),
       );
-    const decidedAt = new Date();
-    const decidedBy = actor(vars.caller).actorId;
-    const status = approve ? "approved" : "rejected";
-    await tx
-      .update(guardrailRequests)
-      .set({ status, decidedBy, decidedAt })
-      .where(eq(guardrailRequests.id, id));
     await audit(tx, {
       ...eventBase(vars),
       action: approve
