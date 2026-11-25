@@ -4,6 +4,9 @@
     "apps/app": {
       "name": "app.preprocess"
     },
+    "apps/docs": {
+      "name": "docs.preprocess"
+    },
     "apps/api": {
       "name": "api.preprocess"
     },

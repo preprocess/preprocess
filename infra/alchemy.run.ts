@@ -18,7 +18,7 @@
 //   seeded, protected. Its hostname comes from APP_DOMAIN, so no production
 //   configuration lives in this repository.
 
-import { cpSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 
 import * as Cloudflare from "@alchemy.run/cloudflare";
@@ -192,6 +192,31 @@ export default Alchemy.Stack(
           if (!url) throw new Error("The app has no workers.dev URL");
           return url;
         });
+
+    // The docs site documents the API on the app's origin. Production serves
+    // it on DOCS_DOMAIN; other stages use workers.dev.
+    const docsDomain = yield* Config.String("DOCS_DOMAIN").pipe(
+      Config.withDefault(""),
+    );
+    const docsDist = at("apps/docs/dist");
+    if (!existsSync(path.join(docsDist, "server/index.js")))
+      throw new Error("apps/docs/dist is missing. Build the docs first.");
+    const docs = yield* Cloudflare.Worker("Docs", {
+      ...worker,
+      name: n.docs,
+      main: path.join(docsDist, "server/index.js"),
+      bundle: false,
+      rules: [{ globs: ["**/*.js", "**/*.mjs"] }],
+      assets: { directory: path.join(docsDist, "client") },
+      workersDev: !docsDomain,
+      ...(docsDomain && { domain: docsDomain }),
+      env: {
+        API_URL: appDomain
+          ? `https://${appDomain}/v1`
+          : Output.map(app.url, (url) => `${url}/v1`),
+      },
+    });
+    const docsUrl = docsDomain ? `https://${docsDomain}` : docs.url;
 
     const { database, branch } = yield* postgres(stage);
     const role = yield* Planetscale.PostgresRole("Role", {
@@ -477,6 +502,7 @@ export default Alchemy.Stack(
 
     return {
       app: appUrl,
+      docs: docsUrl,
       api: api.url,
       ...(modelStub && { modelStub: modelStub.url }),
       branch: n.branch,

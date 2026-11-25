@@ -28,6 +28,8 @@ export const isStage = (stage: string): stage is Stage =>
 
 export const names = (stage: string) => ({
   app: `preprocess-app-${stage}`,
+  // The docs site (apps/docs).
+  docs: `preprocess-docs-${stage}`,
   api: `preprocess-api-${stage}`,
   queue: `preprocess-jobs-${stage}`,
   // Case starts (design doc 04): the API enqueues after commit and consumes.

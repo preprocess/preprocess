@@ -45,11 +45,13 @@ Every stage deploys the whole product, the same way:
 
 Stages differ only in their database (above) and hostname. Previews and staging
 are served on workers.dev and need no DNS. Production serves the app on
-`APP_DOMAIN` when it is set. Its values (hostname, database, credentials) come
-from the deploy environment, so our cloud's production configuration stays
-private; a self-hosted install sets its own. On staging and production the
-database, the file, audit, runs and bundles buckets and the secrets master key
-are protected: a plan that would delete or replace them fails.
+`APP_DOMAIN` and the docs site (`apps/docs`) on `DOCS_DOMAIN` when they are set;
+the docs' API reference points at the app's origin. Its values (hostname,
+database, credentials) come from the deploy environment, so our cloud's
+production configuration stays private; a self-hosted install sets its own. On
+staging and production the database, the file, audit, runs and bundles buckets
+and the secrets master key are protected: a plan that would delete or replace
+them fails.
 
 Because migrations run while the previous Workers still serve, every migration
 must work with both the old and the new code (expand, then contract; see
@@ -78,7 +80,8 @@ pnpm --filter @preprocess/infra deploy:staging -- --env-file .env.staging
 
 `plan:production` and `deploy:production` work the same way. Production also
 needs `PLANETSCALE_CLUSTER_SIZE`, the current size of its database, which the
-stack adopts on first deploy and must never resize, and usually `APP_DOMAIN`.
+stack adopts on first deploy and must never resize, and usually `APP_DOMAIN` and
+`DOCS_DOMAIN`.
 
 Always read the plan first. Secrets come only from the deploy environment and
 are bound as `secret_text`; Alchemy keeps the deployed values in its state,

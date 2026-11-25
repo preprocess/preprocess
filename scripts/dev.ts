@@ -1,6 +1,6 @@
 // `pnpm dev`: installs dependencies, prepares local Postgres, then starts the
-// apps behind portless at https://app.preprocess.localhost and
-// https://api.preprocess.localhost. Workers, the Durable Object, the queue and
+// apps behind portless at https://app.preprocess.localhost,
+// https://api.preprocess.localhost and https://docs.preprocess.localhost. Workers, the Durable Object, the queue and
 // R2 run in Cloudflare's local runtime (workerd, through wrangler and the Vite
 // plugin); nothing reaches Cloudflare.
 
@@ -54,6 +54,8 @@ for (const [name, value] of Object.entries(github))
   if (!new RegExp(`^${name}=`, "m").test(present))
     appendFileSync(apiVars, `${name}=${value()}\n`);
 run(["--filter", "@preprocess/infra", "wrangler:generate"]);
+// The docs site's API reference reads the API's OpenAPI document.
+run(["--filter", "@preprocess/docs", "openapi"]);
 run(["db:migrate"]);
 run(["db:seed"]);
 
