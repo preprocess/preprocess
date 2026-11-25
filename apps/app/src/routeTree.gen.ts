@@ -61,6 +61,8 @@ import { Route as SettingsOrganizationIntegrationsRouteImport } from "./routes/s
 import { Route as SettingsOrganizationMembersRouteImport } from "./routes/settings/organization/members";
 import { Route as SettingsOrganizationOpentelemetryRouteImport } from "./routes/settings/organization/opentelemetry";
 import { Route as AgentsAgentIdEvaluationsIndexRouteImport } from "./routes/agents/$agentId/evaluations/index";
+import { Route as AgentsAgentIdCasesIndexRouteImport } from "./routes/agents/$agentId_/cases/index";
+import { Route as AgentsAgentIdCasesCaseIdRouteImport } from "./routes/agents/$agentId_/cases/$caseId";
 import { Route as SettingsOrganizationGroupsIndexRouteImport } from "./routes/settings/organization/groups/index";
 import { Route as SettingsOrganizationGroupsGroupIdRouteImport } from "./routes/settings/organization_/groups/$groupId";
 import { Route as AgentsAgentIdEvaluationsSuiteIdIndexRouteImport } from "./routes/agents/$agentId/evaluations/$suiteId/index";
@@ -340,6 +342,17 @@ const AgentsAgentIdEvaluationsIndexRoute =
     path: "/evaluations/",
     getParentRoute: () => AgentsAgentIdRoute,
   } as any);
+const AgentsAgentIdCasesIndexRoute = AgentsAgentIdCasesIndexRouteImport.update({
+  id: "/agents/$agentId_/cases/",
+  path: "/agents/$agentId/cases/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AgentsAgentIdCasesCaseIdRoute =
+  AgentsAgentIdCasesCaseIdRouteImport.update({
+    id: "/agents/$agentId_/cases/$caseId",
+    path: "/agents/$agentId/cases/$caseId",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 const SettingsOrganizationGroupsIndexRoute =
   SettingsOrganizationGroupsIndexRouteImport.update({
     id: "/groups/",
@@ -417,8 +430,10 @@ export interface FileRoutesByFullPath {
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
+  "/agents/$agentId/cases/$caseId": typeof AgentsAgentIdCasesCaseIdRoute;
   "/settings/organization/groups/$groupId": typeof SettingsOrganizationGroupsGroupIdRoute;
   "/agents/$agentId/evaluations/": typeof AgentsAgentIdEvaluationsIndexRoute;
+  "/agents/$agentId/cases/": typeof AgentsAgentIdCasesIndexRoute;
   "/settings/organization/groups/": typeof SettingsOrganizationGroupsIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/": typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/runs/$runId": typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
@@ -472,8 +487,10 @@ export interface FileRoutesByTo {
   "/agents/$agentId": typeof AgentsAgentIdIndexRoute;
   "/settings/account": typeof SettingsAccountIndexRoute;
   "/settings/organization": typeof SettingsOrganizationIndexRoute;
+  "/agents/$agentId/cases/$caseId": typeof AgentsAgentIdCasesCaseIdRoute;
   "/settings/organization/groups/$groupId": typeof SettingsOrganizationGroupsGroupIdRoute;
   "/agents/$agentId/evaluations": typeof AgentsAgentIdEvaluationsIndexRoute;
+  "/agents/$agentId/cases": typeof AgentsAgentIdCasesIndexRoute;
   "/settings/organization/groups": typeof SettingsOrganizationGroupsIndexRoute;
   "/agents/$agentId/evaluations/$suiteId": typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/runs/$runId": typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
@@ -531,8 +548,10 @@ export interface FileRoutesById {
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
+  "/agents/$agentId_/cases/$caseId": typeof AgentsAgentIdCasesCaseIdRoute;
   "/settings/organization_/groups/$groupId": typeof SettingsOrganizationGroupsGroupIdRoute;
   "/agents/$agentId/evaluations/": typeof AgentsAgentIdEvaluationsIndexRoute;
+  "/agents/$agentId_/cases/": typeof AgentsAgentIdCasesIndexRoute;
   "/settings/organization/groups/": typeof SettingsOrganizationGroupsIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/": typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/runs/$runId": typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
@@ -591,8 +610,10 @@ export interface FileRouteTypes {
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
+    | "/agents/$agentId/cases/$caseId"
     | "/settings/organization/groups/$groupId"
     | "/agents/$agentId/evaluations/"
+    | "/agents/$agentId/cases/"
     | "/settings/organization/groups/"
     | "/agents/$agentId/evaluations/$suiteId/"
     | "/agents/$agentId/evaluations/$suiteId/runs/$runId";
@@ -646,8 +667,10 @@ export interface FileRouteTypes {
     | "/agents/$agentId"
     | "/settings/account"
     | "/settings/organization"
+    | "/agents/$agentId/cases/$caseId"
     | "/settings/organization/groups/$groupId"
     | "/agents/$agentId/evaluations"
+    | "/agents/$agentId/cases"
     | "/settings/organization/groups"
     | "/agents/$agentId/evaluations/$suiteId"
     | "/agents/$agentId/evaluations/$suiteId/runs/$runId";
@@ -704,8 +727,10 @@ export interface FileRouteTypes {
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
+    | "/agents/$agentId_/cases/$caseId"
     | "/settings/organization_/groups/$groupId"
     | "/agents/$agentId/evaluations/"
+    | "/agents/$agentId_/cases/"
     | "/settings/organization/groups/"
     | "/agents/$agentId/evaluations/$suiteId/"
     | "/agents/$agentId/evaluations/$suiteId/runs/$runId";
@@ -736,6 +761,8 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute;
   ApiDevScenarioRoute: typeof ApiDevScenarioRoute;
   CasesAgentIdCaseIdRoute: typeof CasesAgentIdCaseIdRoute;
+  AgentsAgentIdCasesCaseIdRoute: typeof AgentsAgentIdCasesCaseIdRoute;
+  AgentsAgentIdCasesIndexRoute: typeof AgentsAgentIdCasesIndexRoute;
 }
 
 declare module "@tanstack/react-router" {
@@ -1104,6 +1131,20 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AgentsAgentIdEvaluationsIndexRouteImport;
       parentRoute: typeof AgentsAgentIdRoute;
     };
+    "/agents/$agentId_/cases/": {
+      id: "/agents/$agentId_/cases/";
+      path: "/agents/$agentId/cases";
+      fullPath: "/agents/$agentId/cases/";
+      preLoaderRoute: typeof AgentsAgentIdCasesIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/agents/$agentId_/cases/$caseId": {
+      id: "/agents/$agentId_/cases/$caseId";
+      path: "/agents/$agentId/cases/$caseId";
+      fullPath: "/agents/$agentId/cases/$caseId";
+      preLoaderRoute: typeof AgentsAgentIdCasesCaseIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/settings/organization/groups/": {
       id: "/settings/organization/groups/";
       path: "/groups";
@@ -1267,6 +1308,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDevScenarioRoute: ApiDevScenarioRoute,
   CasesAgentIdCaseIdRoute: CasesAgentIdCaseIdRoute,
+  AgentsAgentIdCasesCaseIdRoute: AgentsAgentIdCasesCaseIdRoute,
+  AgentsAgentIdCasesIndexRoute: AgentsAgentIdCasesIndexRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

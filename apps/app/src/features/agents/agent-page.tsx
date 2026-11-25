@@ -56,8 +56,17 @@ export function AgentPage({
   detail,
   parent,
   anchors,
+  actions,
+  trailing,
+  fill = false,
   children,
 }: Readonly<{
+  /** Controls after the breadcrumb, such as a list's search. */
+  actions?: ReactNode;
+  /** The header's trailing controls; defaults to a link to the agent's cases. */
+  trailing?: ReactNode;
+  /** The content fills the pane and scrolls itself, like a list. */
+  fill?: boolean;
   agent: OrgAgentDetail;
   tab: AgentSection;
   /** The detail page's own crumb, after its section's. */
@@ -75,15 +84,20 @@ export function AgentPage({
     >
       <PageHeader
         trailing={
-          <>
+          trailing ?? (
             <Button
-              render={<Link search={{ agent: [agent.id] }} to="/cases" />}
+              render={
+                <Link
+                  params={{ agentId: agent.id }}
+                  to="/agents/$agentId/cases"
+                />
+              }
               type="button"
               variant="secondary"
             >
               View cases
             </Button>
-          </>
+          )
         }
       >
         <Breadcrumb className="flex min-w-0 items-center">
@@ -132,14 +146,22 @@ export function AgentPage({
             ) : null}
           </BreadcrumbList>
         </Breadcrumb>
+        {actions}
       </PageHeader>
       <div className="flex min-h-0 flex-1">
         <AgentSectionNav agent={agent} anchors={anchors} section={tab} />
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
-          <div className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-6 py-8">
-            {children}
-          </div>
-        </ScrollArea>
+        {fill ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+        ) : (
+          <ScrollArea
+            className="min-h-0 flex-1"
+            viewportClassName="scroll-fade"
+          >
+            <div className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-6 py-8">
+              {children}
+            </div>
+          </ScrollArea>
+        )}
       </div>
     </div>
   );

@@ -259,10 +259,9 @@ export const liveCaseList = createServerFn({ method: "GET" })
     };
     const slugs = agents.map((agent) => agent.slug);
 
-    const [unfiltered, searched, byAgent, byGroup, filtered, agentTotals] =
+    const [unfiltered, byAgent, byGroup, filtered, agentTotals] =
       await Promise.all([
         counts({}),
-        counts({ q }),
         Promise.all(slugs.map((slug) => counts({ q, agent: [slug] }))),
         Promise.all(
           orgGroups.map((group) => counts({ q, waitingOn: [group.slug] })),
@@ -337,9 +336,9 @@ export const liveCaseList = createServerFn({ method: "GET" })
       ),
       counts: {
         status: Object.fromEntries(
-          viewStatuses(search).map((status) => [
+          CASE_STATUSES.map((status) => [
             status,
-            sum(searched, API_STATUSES[status]),
+            sum(filtered, API_STATUSES[status]),
           ]),
         ),
         agent: Object.fromEntries(

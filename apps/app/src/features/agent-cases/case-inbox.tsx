@@ -27,6 +27,7 @@ import {
   useFluidHover,
   useRegisterFluidHoverItem,
 } from "@preprocess/ui/hooks/use-fluid-hover";
+import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
   OrbitSparkle,
@@ -55,8 +56,10 @@ import {
   type FilterFacetDef,
 } from "../../components/list-controls";
 import { PageHeader, PageTitle } from "../../components/page-header";
-import { Toolbar, ToolbarButton, ToolbarTabs } from "../../components/toolbar";
+import { Toolbar, ToolbarButton } from "../../components/toolbar";
 import { useHotkeys } from "../../components/use-hotkeys";
+import { AgentPage } from "../agents/agent-page";
+import type { OrgAgentDetail } from "../agents/list-org-agents";
 import { SettingsSearchField } from "../settings/kit";
 import {
   awaitingPhrase,
@@ -71,7 +74,6 @@ import {
   AWAITING_NONE,
   CASES_ENVIRONMENTS,
   CASES_GROUPINGS,
-  CASES_VIEWS,
   DEFAULT_CASES_SEARCH,
   UNASSIGNED_ANY,
   type UnassignedFilter,
@@ -96,6 +98,11 @@ const VIEW_LABEL: Record<CasesView, string> = {
   waiting: "Waiting",
   done: "Done",
 };
+
+/** The status filter's order (spec 14a): everything, then what needs people. */
+const VIEW_ORDER: readonly CasesView[] = ["all", "waiting", "active", "done"];
+
+const countFormat = new Intl.NumberFormat("en");
 
 const GROUPING_LABEL: Record<CasesGrouping, string> = {
   status: "Status",
@@ -153,7 +160,10 @@ function CaseFilterMenu({
   search,
   onChange,
   toolbarIndex,
+  agentScoped,
 }: Readonly<{
+  /** The list is one agent's, so it has no Agent facet. */
+  agentScoped: boolean;
   page: CaseListPage;
   search: CasesInboxSearch;
   onChange: (patch: Partial<CasesInboxSearch>) => void;
@@ -205,7 +215,10 @@ function CaseFilterMenu({
             onChange: (unassigned) => onChange({ unassigned }),
           },
         ] satisfies FilterFacetDef[]
-      ).filter((facet) => facet.options.length > 0)}
+      ).filter(
+        (facet) =>
+          facet.options.length > 0 && !(agentScoped && facet.key === "agent"),
+      )}
     />
   );
 }
@@ -216,7 +229,10 @@ function DisplayMenu({
   search,
   onChange,
   toolbarIndex,
+  agentScoped,
 }: Readonly<{
+  /** The list is one agent's, so it doesn't group by agent. */
+  agentScoped: boolean;
   search: CasesInboxSearch;
   onChange: (patch: Partial<CasesInboxSearch>) => void;
   toolbarIndex: number;
@@ -232,13 +248,16 @@ function DisplayMenu({
   // checked fills line up with the right items. The menu merges checked
   // rows with consecutive indices into one fill, so a skipped index between
   // the sections keeps the two checked rows apart.
-  const orderingStart = CASES_GROUPINGS.length + 1;
+  const groupings = CASES_GROUPINGS.filter(
+    (group) => !(agentScoped && group === "agent"),
+  );
+  const orderingStart = groupings.length + 1;
   const customized =
     search.group !== DEFAULT_CASES_SEARCH.group ||
     search.sort !== DEFAULT_CASES_SEARCH.sort ||
     search.dir !== DEFAULT_CASES_SEARCH.dir;
   const checkedIndices = [
-    CASES_GROUPINGS.indexOf(search.group),
+    groupings.indexOf(search.group),
     orderingStart +
       orderings.findIndex(
         (item) => item.sort === search.sort && item.dir === search.dir,
@@ -264,7 +283,7 @@ function DisplayMenu({
         className="w-48"
       >
         <DropdownLabel>Grouping</DropdownLabel>
-        {CASES_GROUPINGS.map((group, row) => (
+        {groupings.map((group, row) => (
           <MenuItem
             checked={search.group === group}
             index={row}
@@ -408,11 +427,13 @@ function CaseRow({
   index,
   registerItem,
   showStatus,
+  showAgent,
 }: Readonly<{
   item: Case;
   index: number;
   registerItem: (index: number, element: HTMLElement | null) => void;
   showStatus: boolean;
+  showAgent: boolean;
 }>) {
   const ref = useRef<HTMLAnchorElement>(null);
   useRegisterFluidHoverItem(registerItem, index, ref);
@@ -430,7 +451,7 @@ function CaseRow({
             data-case-row={index}
             params={{ agentId: item.agentId, caseId: item.id }}
             ref={ref}
-            to="/cases/$agentId/$caseId"
+            to="/agents/$agentId/cases/$caseId"
           />
         }
       >
@@ -455,9 +476,11 @@ function CaseRow({
               {item.previewBranch}
             </Badge>
           ) : null}
-          <span className="shrink-0 text-caption text-muted-foreground">
-            {item.agentId}
-          </span>
+          {showAgent ? (
+            <span className="shrink-0 text-caption text-muted-foreground">
+              {item.agentId}
+            </span>
+          ) : null}
         </span>
         <AwaitingTag groups={item.awaiting} />
         <NeedsAssignmentTag item={item} />
@@ -653,7 +676,9 @@ function CaseRows({
   scrollElement,
   hasMore,
   onLoadMore,
+  showAgent,
 }: Readonly<{
+  showAgent: boolean;
   rows: readonly Case[];
   groups: CaseListPage["groups"];
   search: CasesInboxSearch;
@@ -716,7 +741,7 @@ function CaseRows({
     const item = activeIndex === null ? undefined : shown[activeIndex];
     if (!item) return;
     void navigate({
-      to: "/cases/$agentId/$caseId",
+      to: "/agents/$agentId/cases/$caseId",
       params: { agentId: item.agentId, caseId: item.id },
     });
   };
@@ -766,6 +791,7 @@ function CaseRows({
                 index={entry.row}
                 item={entry.item}
                 registerItem={hover.registerItem}
+                showAgent={showAgent}
                 showStatus={search.group !== "status"}
               />
             )}
@@ -810,7 +836,10 @@ export function CaseInbox({
   page,
   search,
   onSearchChange,
+  agent,
 }: Readonly<{
+  /** Shows one agent's cases inside its page, under its Cases section. */
+  agent?: OrgAgentDetail;
   page: CaseListPage;
   search: CasesInboxSearch;
   onSearchChange: (
@@ -892,55 +921,68 @@ export function CaseInbox({
       ? "no-match"
       : "empty";
 
-  return (
-    <div
-      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
-      data-testid="case-inbox"
-    >
-      <PageHeader
-        trailing={
-          // Tabs and buttons share one hover highlight, indexed left to right.
-          <Toolbar label="Case views and options">
-            <ToolbarTabs
-              label="Case views"
-              layoutId="cases-view-tab"
-              onSelect={(view) => onSearchChange({ view })}
-              selected={search.view}
-              tabs={CASES_VIEWS.map((view) => ({
-                value: view,
-                label: VIEW_LABEL[view],
-              }))}
-            />
-            <CaseFilterMenu
-              onChange={(patch) => onSearchChange(patch)}
-              page={page}
-              search={search}
-              toolbarIndex={CASES_VIEWS.length}
-            />
-            <DisplayMenu
-              onChange={(patch) => onSearchChange(patch)}
-              search={search}
-              toolbarIndex={CASES_VIEWS.length + 1}
-            />
-          </Toolbar>
-        }
+  const agentScoped = agent !== undefined;
+  const statusCounts = page.counts.status;
+  const viewCount = (view: CasesView) =>
+    view === "all"
+      ? Object.values(statusCounts).reduce((total, n) => total + n, 0)
+      : (statusCounts[VIEW_LABEL[view]] ?? 0);
+  const toolbar = (
+    <div className="flex items-center gap-2">
+      <Tabs
+        aria-label="Case status"
+        onValueChange={(view) => onSearchChange({ view: view as CasesView })}
+        size="compact"
+        value={search.view}
       >
-        <PageTitle id="cases-title">Cases</PageTitle>
-        <CaseEnvironmentSelect
-          onChange={(env) => onSearchChange({ env })}
-          value={search.env}
+        <TabsList>
+          {VIEW_ORDER.map((view) => (
+            <TabItem
+              key={view}
+              label={`${VIEW_LABEL[view]} ${countFormat.format(viewCount(view))}`}
+              value={view}
+            />
+          ))}
+        </TabsList>
+      </Tabs>
+      {/* The buttons share one hover highlight, indexed left to right. */}
+      <Toolbar label="Case options">
+        <CaseFilterMenu
+          agentScoped={agentScoped}
+          onChange={(patch) => onSearchChange(patch)}
+          page={page}
+          search={search}
+          toolbarIndex={0}
         />
-        <SettingsSearchField
-          className="w-64"
-          label="Search cases"
-          onChange={(q) => onSearchChange({ q })}
-          placeholder="Search cases"
-          value={search.q}
+        <DisplayMenu
+          agentScoped={agentScoped}
+          onChange={(patch) => onSearchChange(patch)}
+          search={search}
+          toolbarIndex={1}
         />
-      </PageHeader>
+      </Toolbar>
+    </div>
+  );
+  const scope = (
+    <>
+      <CaseEnvironmentSelect
+        onChange={(env) => onSearchChange({ env })}
+        value={search.env}
+      />
+      <SettingsSearchField
+        className="w-64"
+        label="Search cases"
+        onChange={(q) => onSearchChange({ q })}
+        placeholder="Search cases"
+        value={search.q}
+      />
+    </>
+  );
+  const body = (
+    <>
       <CaseFilterChips
         onChange={(patch) => onSearchChange(patch)}
-        search={search}
+        search={agentScoped ? { ...search, agent: [] } : search}
       />
       <div className="relative flex min-h-0 flex-1 flex-col">
         <EmptyPresence>
@@ -950,7 +992,8 @@ export function CaseInbox({
         </EmptyPresence>
         {hasCases ? (
           <ScrollArea
-            aria-labelledby="cases-title"
+            aria-label={agentScoped ? "Cases" : undefined}
+            aria-labelledby={agentScoped ? undefined : "cases-title"}
             className="min-h-0 flex-1"
             ref={scrollRef}
             viewportClassName="scroll-fade"
@@ -965,11 +1008,38 @@ export function CaseInbox({
                 rows={current.rows}
                 scrollElement={scrollElement}
                 search={search}
+                showAgent={!agentScoped}
               />
             </ShapeProvider>
           </ScrollArea>
         ) : null}
       </div>
+    </>
+  );
+
+  if (agent)
+    return (
+      <AgentPage
+        actions={scope}
+        agent={agent}
+        fill
+        tab="cases"
+        trailing={toolbar}
+      >
+        {body}
+      </AgentPage>
+    );
+
+  return (
+    <div
+      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
+      data-testid="case-inbox"
+    >
+      <PageHeader trailing={toolbar}>
+        <PageTitle id="cases-title">Cases</PageTitle>
+        {scope}
+      </PageHeader>
+      {body}
     </div>
   );
 }

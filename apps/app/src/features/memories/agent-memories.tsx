@@ -122,7 +122,7 @@ export function AgentMemories({ agentSlug }: Readonly<{ agentSlug: string }>) {
                   agentId: parseAgentId(agentSlug),
                   caseId: parseCaseId(memory.caseId),
                 }}
-                to="/cases/$agentId/$caseId"
+                to="/agents/$agentId/cases/$caseId"
               >
                 <SettingsRow
                   description={`Proposed ${formatRelative(memory.proposedAt)}${memory.reason ? ` · ${memory.reason}` : ""}`}

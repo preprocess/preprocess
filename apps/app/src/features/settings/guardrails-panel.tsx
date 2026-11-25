@@ -10,7 +10,7 @@ import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
 import { XIcon } from "@preprocess/ui/lib/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
@@ -92,11 +92,11 @@ function Anchor({
   );
 }
 
-export function GuardrailsPanel() {
+export function GuardrailsPanel({ request }: { request?: string }) {
   return (
     <SettingsStacked>
       <Anchor id="requests">
-        <Requests />
+        <Requests highlight={request} />
       </Anchor>
       <Anchor id="network">
         <Network />
@@ -131,33 +131,140 @@ function useMemberNames(organizationId: string) {
   return new Map(members.data?.map((m) => [m.userId, m.name]));
 }
 
-function Requests() {
+/** Every guardrail request in the organization, newest first. */
+export function useGuardrailRequests() {
   const organizationId = useOrganizationId();
-  const queryClient = useQueryClient();
-  const canDecide = useCanAdminister();
-  const names = useMemberNames(organizationId);
-  const [status, setStatus] = useState<Status>("pending");
-  const [error, setError] = useState<unknown>(null);
-  const requests = useQuery({
+  return useQuery({
     queryKey: ["guardrail-requests", organizationId],
     queryFn: () =>
       orgApi<GuardrailRequest[]>(organizationId, "/guardrail-requests"),
   });
-  const refresh = () =>
-    Promise.all(
-      ["guardrail-requests", "guardrails", "spending"].map((key) =>
-        queryClient.invalidateQueries({ queryKey: [key, organizationId] }),
-      ),
-    );
-  const decide = async (id: string, verdict: "approve" | "reject") => {
-    setError(null);
+}
+
+/** Approves or rejects a request, then refreshes what the change touches. */
+export function useDecideRequest() {
+  const organizationId = useOrganizationId();
+  const queryClient = useQueryClient();
+  return async (id: string, verdict: "approve" | "reject") => {
     await orgApi(organizationId, `/guardrail-requests/${id}/${verdict}`, {
       method: "POST",
     });
-    await refresh();
+    await Promise.all(
+      [
+        "guardrail-requests",
+        "guardrails",
+        "spending",
+        "deployments",
+        "agent-network",
+      ].map((key) =>
+        queryClient.invalidateQueries({ queryKey: [key, organizationId] }),
+      ),
+    );
   };
+}
 
+/**
+ * Requests as rows, with Approve and Reject for Owners and Admins on the
+ * pending ones. The row named by `highlight` (a `?request=` link) is marked
+ * and scrolled into view.
+ */
+export function RequestRows({
+  requests,
+  highlight,
+}: {
+  requests: GuardrailRequest[];
+  highlight?: string;
+}) {
+  const organizationId = useOrganizationId();
+  const canDecide = useCanAdminister();
+  const names = useMemberNames(organizationId);
+  const decide = useDecideRequest();
+  const [error, setError] = useState<unknown>(null);
+  const highlighted = useRef<HTMLDivElement>(null);
+  const shown = requests.some((r) => r.id === highlight);
+  useEffect(() => {
+    if (!shown) return;
+    // Sections above may still be loading and push the row down.
+    const timer = setTimeout(
+      () => highlighted.current?.scrollIntoView({ block: "center" }),
+      400,
+    );
+    return () => clearTimeout(timer);
+  }, [shown]);
+
+  return (
+    <>
+      <SettingsRows>
+        {requests.map((request) => (
+          <div
+            className={request.id === highlight ? "bg-selected" : undefined}
+            id={`request-${request.id}`}
+            key={request.id}
+            ref={request.id === highlight ? highlighted : undefined}
+          >
+            <SettingsRow
+              description={[
+                request.agent ? `Agent ${request.agent}` : "All agents",
+                `asked by ${
+                  request.requestedBy.type === "person"
+                    ? (names.get(request.requestedBy.id) ?? "a member")
+                    : request.requestedBy.type === "deployment"
+                      ? `deployment ${shortDeploymentId(request.requestedBy.id)}`
+                      : "an API key"
+                }`,
+                formatRelative(request.createdAt),
+                request.reason ? `“${request.reason}”` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              label={describeChange(request.change)}
+            >
+              {request.status === "pending" && canDecide ? (
+                <>
+                  <LoadingButton
+                    onAction={() => {
+                      setError(null);
+                      return decide(request.id, "reject");
+                    }}
+                    onError={setError}
+                    variant="secondary"
+                  >
+                    Reject
+                  </LoadingButton>
+                  <LoadingButton
+                    onAction={() => {
+                      setError(null);
+                      return decide(request.id, "approve");
+                    }}
+                    onError={setError}
+                  >
+                    Approve
+                  </LoadingButton>
+                </>
+              ) : request.status === "pending" ? (
+                <Badge color="amber">Waiting for an Owner or Admin</Badge>
+              ) : (
+                <Badge color={request.status === "approved" ? "green" : "gray"}>
+                  {request.status === "approved" ? "Approved" : "Rejected"}
+                </Badge>
+              )}
+            </SettingsRow>
+          </div>
+        ))}
+      </SettingsRows>
+      <ErrorLine error={error} fallback="Could not decide the request." />
+    </>
+  );
+}
+
+function Requests({ highlight }: { highlight?: string }) {
+  const requests = useGuardrailRequests();
   const rows = requests.data ?? [];
+  const linked = rows.find((r) => r.id === highlight);
+  const [status, setStatus] = useState<Status>(linked?.status ?? "pending");
+  useEffect(() => {
+    if (linked) setStatus(linked.status);
+  }, [linked]);
   const count = (s: Status) => rows.filter((r) => r.status === s).length;
   const shown = rows.filter((r) => r.status === status);
 
@@ -182,6 +289,11 @@ function Requests() {
         <SettingsError error={requests.error} />
       ) : requests.isPending ? (
         <SettingsSkeletonRows count={2} />
+      ) : highlight && !linked ? (
+        <SettingsEmpty
+          description="It may have been withdrawn after the deployment that filed it was replaced."
+          title="This request no longer exists"
+        />
       ) : shown.length === 0 ? (
         <SettingsEmpty
           description={
@@ -192,52 +304,8 @@ function Requests() {
           title={`No ${status} requests`}
         />
       ) : (
-        <SettingsRows>
-          {shown.map((request) => (
-            <SettingsRow
-              description={[
-                request.agent ? `Agent ${request.agent}` : "All agents",
-                `asked by ${
-                  request.requestedBy.type === "person"
-                    ? (names.get(request.requestedBy.id) ?? "a member")
-                    : request.requestedBy.type === "deployment"
-                      ? `deployment ${shortDeploymentId(request.requestedBy.id)}`
-                      : "an API key"
-                }`,
-                formatRelative(request.createdAt),
-                request.reason ? `“${request.reason}”` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-              key={request.id}
-              label={describeChange(request.change)}
-            >
-              {request.status === "pending" && canDecide ? (
-                <>
-                  <LoadingButton
-                    onAction={() => decide(request.id, "reject")}
-                    onError={setError}
-                    variant="secondary"
-                  >
-                    Reject
-                  </LoadingButton>
-                  <LoadingButton
-                    onAction={() => decide(request.id, "approve")}
-                    onError={setError}
-                  >
-                    Approve
-                  </LoadingButton>
-                </>
-              ) : request.status !== "pending" ? (
-                <Badge color={request.status === "approved" ? "green" : "gray"}>
-                  {request.status === "approved" ? "Approved" : "Rejected"}
-                </Badge>
-              ) : null}
-            </SettingsRow>
-          ))}
-        </SettingsRows>
+        <RequestRows highlight={highlight} requests={shown} />
       )}
-      <ErrorLine error={error} fallback="Could not decide the request." />
     </SettingsSection>
   );
 }

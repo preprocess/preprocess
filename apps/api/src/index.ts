@@ -40,12 +40,18 @@ import { logRoutes } from "./routes/logs.ts";
 import { otelRoutes } from "./routes/otel.ts";
 import { evalRoutes } from "./routes/evals.ts";
 import { memoryRoutes } from "./routes/memories.ts";
+import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
 export { Scheduler } from "./scheduler.ts";
 export { McpService } from "./mcp.ts";
 export { Platform } from "./platform.ts";
+
+const OPENAPI = {
+  openapi: "3.1.0",
+  info: { title: "Preprocess API", version: "1" },
+};
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -118,14 +124,53 @@ orgApi.route("/", otelRoutes);
 orgApi.route("/", evalRoutes);
 orgApi.route("/", memoryRoutes);
 
+// The MCP server (src/mcp-server.ts) takes an organization API key, and each
+// tool call is a request to this API with the same key, so the API's own
+// permission checks decide what a tool may do.
+let mcpTools: Tool[] | undefined;
+orgApi.post("/mcp", async (c) => {
+  if (c.var.caller.type !== "api_key")
+    throw new HTTPException(401, {
+      message: "The MCP server takes an organization API key.",
+    });
+  const message = (await c.req.json().catch(() => null)) as Parameters<
+    typeof handleMcp
+  >[0];
+  const answer = await handleMcp(
+    message,
+    () =>
+      (mcpTools ??= buildTools(
+        v1.getOpenAPI31Document(OPENAPI) as unknown as Parameters<
+          typeof buildTools
+        >[0],
+      )),
+    (request) =>
+      app.fetch(
+        new Request(
+          new URL(`/v1/orgs/${c.var.org}${request.path}`, c.req.url),
+          {
+            method: request.method,
+            headers: {
+              "content-type": "application/json",
+              authorization: c.req.header("authorization") ?? "",
+              "x-api-key": c.req.header("x-api-key") ?? "",
+            },
+            body: request.body ?? null,
+          },
+        ),
+        c.env,
+        c.executionCtx,
+      ),
+  );
+  return answer ? c.json(answer) : c.body(null, 202);
+});
+orgApi.get("/mcp", (c) => c.body(null, 405, { allow: "POST" }));
+
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
 v1.route("/", mcpCallback);
 v1.route("/", githubCallbacks);
-v1.doc31("/openapi.json", {
-  openapi: "3.1.0",
-  info: { title: "Preprocess API", version: "1" },
-});
+v1.doc31("/openapi.json", OPENAPI);
 app.route("/v1", v1);
 
 app.post("/orgs/:org/counter", async (c) => {
