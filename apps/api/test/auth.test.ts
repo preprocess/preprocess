@@ -78,10 +78,12 @@ describe("sign-up and sign-in", () => {
       return { asked, opened, session };
     };
 
-    it("works on a preview for that stage's exact address", async () => {
+    it("works on a preview for that stage's exact address, without mailing it", async () => {
       const email = "smoke-test+pr-7@preprocess.localhost";
+      const before = sent.length;
       const { session } = await attempt("pr-7", email);
       expect(session).toMatchObject({ user: { email } });
+      expect(sent.slice(before).some((m) => m.to === email)).toBe(false);
     });
 
     it("is refused before any token on production and self-hosted installs", async () => {

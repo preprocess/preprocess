@@ -39,7 +39,8 @@ import type { Env } from "./env.ts";
 // domain) gets a sign-in token that is an HMAC of that address and the
 // current minute under the auth secret, which the smoke test also holds, and
 // the token opens for two minutes at most. Every other stage refuses any
-// smoke-test address before a token exists or is checked.
+// smoke-test address before a token exists or is checked. Its link is never
+// mailed, since the smoke test opens it itself.
 const SMOKE_TEST_STAGE = /^(staging|pr-\d+)$/;
 const SMOKE_TEST_LOCAL = /^smoke-test\+/i;
 const smokeTestToken = async (
@@ -345,6 +346,8 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               )
             : generateRandomString(32, "a-z", "A-Z"),
         async sendMagicLink({ email, url }) {
+          // The smoke test opens its link itself, so nothing is mailed.
+          if (email.toLowerCase() === smokeTestAddress) return;
           await sendMagicLinkEmail(env, { email, url });
         },
       }),

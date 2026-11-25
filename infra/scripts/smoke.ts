@@ -11,8 +11,8 @@
 // The user is reused across runs. Sign-in is by emailed link, and the smoke
 // test has no mailbox: for its address only, the API derives the link's token
 // from the stage's BETTER_AUTH_SECRET and the current minute, so the token is
-// never stored here and differs per stage (apps/api/src/auth.ts). Its address
-// is on EMAIL_FROM's domain, which receives each run's sign-in email.
+// never stored here and differs per stage (apps/api/src/auth.ts). The API
+// mails nothing for that address, so each run sends no email.
 
 import { createHmac } from "node:crypto";
 import path from "node:path";
