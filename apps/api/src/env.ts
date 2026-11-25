@@ -33,6 +33,8 @@ export type StartCase = CaseKey & {
     files?: { id: string; name: string; contentType: string }[];
   };
   groups?: GroupRef[];
+  // The agent's accepted memory rules (spec 10); an eval run's own snapshot.
+  memories?: { id: string; text: string }[];
   // An eval case (design doc 09): a replay of a suite case's source case.
   eval?: { runId: string; sourceCaseId: string; captureKey: string };
 };
@@ -61,7 +63,12 @@ export type CaseRoomState = {
 export type Runtime = {
   startCase(start: StartCase): Promise<unknown>;
   caseState(c: CaseKey): Promise<CaseRoomState>;
-  rerun(c: CaseKey & { notes?: unknown[] }): Promise<CaseRoomState>;
+  rerun(
+    c: CaseKey & {
+      notes?: unknown[];
+      memories?: { id: string; text: string }[];
+    },
+  ): Promise<CaseRoomState>;
   decideApproval(
     c: CaseKey & {
       id: string;

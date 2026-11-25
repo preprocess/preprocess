@@ -38,6 +38,7 @@ import type {
   EvalEvent,
   GroupRef,
   Settings,
+  MemoryRule,
   StartCase,
 } from "./env.ts";
 import { openModels, PROVIDER } from "./models.ts";
@@ -678,6 +679,43 @@ export class CaseRuntime extends DurableObject<Env> {
           ),
       }),
       defineTool({
+        name: "memory_propose",
+        description:
+          "Propose a rule for this agent to remember across cases, such as how a customer's documents are laid out. A person approves or dismisses it; once approved, every later case receives it. Propose only what will hold for future cases, in one sentence.",
+        parameters: {
+          type: "object",
+          properties: {
+            text: { type: "string", maxLength: 500 },
+            reason: {
+              type: "string",
+              description: "What in this case taught you the rule",
+            },
+          },
+          required: ["text"],
+          additionalProperties: false,
+        },
+        execute: async (input: { text: string; reason?: string }) => {
+          const current = this.meta()!;
+          if (current.eval)
+            return result("not recorded: eval runs do not propose rules");
+          if (!this.env.PLATFORM) return result("proposed");
+          const proposed = await this.env.PLATFORM.proposeMemory({
+            organizationId: current.organizationId,
+            agentId: current.agentId,
+            caseId: current.caseId,
+            text: input.text,
+            reason: input.reason ?? null,
+          });
+          return proposed.result === "refused"
+            ? result(`not proposed: ${proposed.reason}`, true)
+            : result(
+                proposed.result === "duplicate"
+                  ? "already proposed on this case"
+                  : "proposed; a person will approve or dismiss it",
+              );
+        },
+      }),
+      defineTool({
         name: "tag_group",
         description:
           "Post a message in the case thread that tags a group; its members are notified.",
@@ -906,6 +944,15 @@ export class CaseRuntime extends DurableObject<Env> {
           name: "agent",
           sections: [
             section("agent", () => meta.manifest.instructions, { tag: false }),
+            section("memory", () => {
+              const rules = this.meta()?.memories ?? [];
+              return rules.length
+                ? [
+                    "Rules people approved for this agent. Follow them:",
+                    ...rules.map((r) => `- ${r.text}`),
+                  ].join("\n")
+                : undefined;
+            }),
             section("schema", () => {
               const current = this.meta();
               const overview = current ? this.schema(current).overview() : "";
@@ -1343,10 +1390,15 @@ export class CaseRuntime extends DurableObject<Env> {
   // Rerun: re-evaluate everything and resume the agent with what changed
   // since its last run (design doc 05). A person's answers stay theirs; the
   // agent's differing values land beside them as suggestions.
-  async rerun(notes: ReviewNote[] = []): Promise<CaseState> {
+  async rerun(
+    notes: ReviewNote[] = [],
+    memories?: MemoryRule[],
+  ): Promise<CaseState> {
     const meta = this.meta();
     if (!meta) throw new Error("case has not started");
     if (meta.status === "running") throw new Error("case is running");
+    // Rules accepted or deleted since the last run apply from this one.
+    if (memories) this.save({ ...meta, memories });
     return this.continueWith((schema) => {
       const messages = this.thread().filter(
         (m) => m.kind === "person" && this.messageRun(m.id) >= meta.run,

@@ -39,6 +39,7 @@ import { exportLogs, type OtelRetry } from "./otel.ts";
 import { logRoutes } from "./routes/logs.ts";
 import { otelRoutes } from "./routes/otel.ts";
 import { evalRoutes } from "./routes/evals.ts";
+import { memoryRoutes } from "./routes/memories.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
@@ -115,6 +116,7 @@ orgApi.route("/", inboxRoutes);
 orgApi.route("/", logRoutes);
 orgApi.route("/", otelRoutes);
 orgApi.route("/", evalRoutes);
+orgApi.route("/", memoryRoutes);
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);

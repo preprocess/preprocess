@@ -14,6 +14,7 @@ import type { Env } from "./env.ts";
 import { recordEvalEvent } from "./evals.ts";
 import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
+import { proposeMemory, type MemoryProposal } from "./memories.ts";
 import { ocrFile } from "./ocr.ts";
 import { spendGate } from "./spend.ts";
 
@@ -25,6 +26,12 @@ export class Platform extends WorkerEntrypoint<Env> {
   // An eval case settling (design doc 09); it never reaches the case index.
   evalEvent(event: EvalEvent) {
     return recordEvalEvent(this.env, event);
+  }
+
+  // The agent's memory_propose tool (spec 10). The answer goes back to the
+  // agent as the tool's result.
+  proposeMemory(proposal: MemoryProposal) {
+    return proposeMemory(this.env, proposal);
   }
 
   // The runtime calls this before each metered model, OCR or decide call and

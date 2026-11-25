@@ -18,7 +18,7 @@
 //   seeded, protected. Its hostname comes from APP_DOMAIN, so no production
 //   configuration lives in this repository.
 
-import { readFileSync } from "node:fs";
+import { cpSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 
 import * as Cloudflare from "@alchemy.run/cloudflare";
@@ -85,10 +85,17 @@ const builtApp = (stage: Stage) => {
 
 // Postgres for the stage, with every migration in packages/db/migrations
 // applied before any Worker that uses it is updated. That ordering is why
-// migrations must work with the code already running (AGENTS.md).
+// migrations must work with the code already running (AGENTS.md). Alchemy
+// refuses a directory holding drizzle-kit's meta/ journal, so it reads a copy
+// of the .sql files alone, applied in filename order like pnpm db migrate.
 const postgres = (stage: Stage) =>
   Effect.gen(function* () {
-    const migrations = at("packages/db/migrations");
+    const migrations = at("infra/.alchemy/migrations");
+    rmSync(migrations, { recursive: true, force: true });
+    cpSync(at("packages/db/migrations"), migrations, {
+      recursive: true,
+      filter: (source) => path.basename(source) !== "meta",
+    });
     const name = yield* Config.String("PLANETSCALE_DATABASE");
     if (stage === "production") {
       // The database is created once by hand in the stage's region; the stack
@@ -109,7 +116,7 @@ const postgres = (stage: Stage) =>
       parentBranch: "main",
       migrations,
       ...(preview && { importFiles: [at("packages/db/seed.sql")] }),
-    }).pipe(RemovalPolicy.protect(!preview));
+    }).pipe(adopt(), RemovalPolicy.protect(!preview));
     return { database: name, branch };
   });
 
@@ -333,8 +340,6 @@ export default Alchemy.Stack(
       schedulingPolicy: "durable_object",
       context: root,
       dockerfile: at("apps/builder/Dockerfile"),
-      instanceType: "standard-1",
-      maxInstances: 5,
     });
     const builder = yield* Cloudflare.Worker("Builder", {
       ...worker,

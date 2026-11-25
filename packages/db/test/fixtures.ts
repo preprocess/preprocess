@@ -46,6 +46,7 @@ import {
   organizationDefaults,
 } from "../src/schema/settings.ts";
 import { logSummaries } from "../src/schema/logs.ts";
+import { agentMemories } from "../src/schema/memories.ts";
 import {
   evalResults,
   evalRuns,
@@ -416,6 +417,14 @@ export const seedOrganization = async (name: string) =>
       caseId,
       status: "running",
     });
+    await tx.insert(agentMemories).values({
+      id: newId("memory"),
+      organizationId: org,
+      agentId,
+      caseId,
+      text: "Order forms put the term dates on page one.",
+      status: "accepted",
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -454,6 +463,7 @@ export const tenantTables = {
   review_events: "organization_id",
   case_mentions: "organization_id",
   case_approvals: "organization_id",
+  agent_memories: "organization_id",
   inbox_reads: "organization_id",
   outbox: "organization_id",
   webhook_endpoints: "organization_id",

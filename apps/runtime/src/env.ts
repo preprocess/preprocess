@@ -63,12 +63,27 @@ export type GroupRef = {
   access: "operator" | "viewer" | "developers";
 };
 
+export type MemoryRule = { id: string; text: string };
+
+export type MemoryProposal = Pick<Deployment, "organizationId" | "agentId"> & {
+  caseId: string;
+  text: string;
+  reason: string | null;
+};
+
+export type ProposeResult =
+  | { result: "proposed" | "duplicate"; id: string }
+  | { result: "refused"; reason: string };
+
 export type CaseFile = { id: string; name: string; contentType: string };
 
 export type StartCase = Deployment & {
   caseId: string;
   input: { text: string; files?: CaseFile[] };
   groups?: GroupRef[];
+  // The agent's accepted memory rules (spec 10), read into its instructions;
+  // an eval run passes the snapshot it started with.
+  memories?: MemoryRule[];
   // The agent's effective settings (apps/api/src/settings.ts): dashboard
   // overrides and organization defaults over the code's values. Null means
   // the runtime's own behavior.
@@ -148,6 +163,8 @@ export type Platform = {
   }): Promise<{ markdown: string }>;
   // Run-log records (design doc 09), queued for the API's consumer.
   logs(records: LogRecord[]): Promise<void>;
+  // The memory_propose tool (spec 10); the answer is the tool's result.
+  proposeMemory(proposal: MemoryProposal): Promise<ProposeResult>;
   // The secrets a deployment's code receives (design doc 03): the version
   // names the current set, asked on every call; the values are read only
   // when an isolate loads.

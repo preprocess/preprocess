@@ -1,6 +1,6 @@
 // The inbox (design doc 06): cases waiting on the person's groups, mentions of
-// their groups, cases assigned to them, approvals they may decide, and, for
-// Owners and Admins, pending guardrail requests. Computed on read from
+// their groups, cases assigned to them, approvals and memory rules (spec 10)
+// they may decide, and, for Owners and Admins, pending guardrail requests. Computed on read from
 // membership, assignment and access. Read marks are kept per item key.
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
@@ -14,6 +14,7 @@ import {
   inboxReads,
 } from "@preprocess/db/schema/cases";
 import { guardrailRequests } from "@preprocess/db/schema/guardrails";
+import { agentMemories } from "@preprocess/db/schema/memories";
 import { and, desc, eq, ne, notInArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
@@ -35,9 +36,16 @@ const InboxItem = z
   .object({
     key: z.string().openapi({
       description:
-        '"waiting:<caseId>:<since>", "mention:<id>", "assigned:<caseId>:<at>", "approval:<approvalId>" or "guardrail:<requestId>"',
+        '"waiting:<caseId>:<since>", "mention:<id>", "assigned:<caseId>:<at>", "approval:<approvalId>", "guardrail:<requestId>" or "memory:<memoryId>"',
     }),
-    kind: z.enum(["waiting", "mention", "assigned", "approval", "guardrail"]),
+    kind: z.enum([
+      "waiting",
+      "mention",
+      "assigned",
+      "approval",
+      "guardrail",
+      "memory",
+    ]),
     at: z.string().datetime(),
     read: z.boolean(),
     case: z
@@ -56,7 +64,9 @@ const InboxItem = z
         description:
           "The group waited on or mentioned, or the group named to approve (null: any operator)",
       }),
-    message: z.string().nullable(),
+    message: z.string().nullable().openapi({
+      description: "A mention's message, or a proposed memory rule's text",
+    }),
     approval: z
       .object({
         id: z.string(),
@@ -143,93 +153,111 @@ export const inboxRoutes = new OpenAPIHono<{
         caller.role === "owner" || caller.role === "admin";
       const items = await withOrg(c.env, c.var.org, async (tx) => {
         const group = { id: groups.id, slug: groups.slug, name: groups.name };
-        const [waiting, mentions, assigned, approvals, requests, reads] =
-          await Promise.all([
-            tx
-              .select({ ...caseColumns, since: cases.waitingSince, group })
-              .from(cases)
-              .innerJoin(agents, eq(agents.id, cases.agentId))
-              .innerJoin(groups, eq(groups.id, cases.waitingOnGroupId))
-              .innerJoin(
-                groupMembers,
-                and(
-                  eq(groupMembers.groupId, cases.waitingOnGroupId),
-                  eq(groupMembers.userId, userId),
-                ),
-              )
-              .where(eq(cases.status, "waiting")),
-            tx
-              .select({
-                ...caseColumns,
-                mentionId: caseMentions.id,
-                message: caseMentions.message,
-                at: caseMentions.at,
-                group,
-              })
-              .from(caseMentions)
-              .innerJoin(cases, eq(cases.id, caseMentions.caseId))
-              .innerJoin(agents, eq(agents.id, cases.agentId))
-              .innerJoin(groups, eq(groups.id, caseMentions.groupId))
-              .innerJoin(
-                groupMembers,
-                and(
-                  eq(groupMembers.groupId, caseMentions.groupId),
-                  eq(groupMembers.userId, userId),
-                ),
-              )
-              .where(ne(caseMentions.by, `person:${userId}`))
-              .orderBy(desc(caseMentions.at))
-              .limit(MENTIONS),
-            tx
-              .select({ ...caseColumns, at: caseAssignees.assignedAt })
-              .from(caseAssignees)
-              .innerJoin(cases, eq(cases.id, caseAssignees.caseId))
-              .innerJoin(agents, eq(agents.id, cases.agentId))
-              .where(
-                and(
-                  eq(caseAssignees.userId, userId),
-                  notInArray(cases.status, ["completed", "cancelled"]),
-                ),
+        const [
+          waiting,
+          mentions,
+          assigned,
+          approvals,
+          requests,
+          proposals,
+          reads,
+        ] = await Promise.all([
+          tx
+            .select({ ...caseColumns, since: cases.waitingSince, group })
+            .from(cases)
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .innerJoin(groups, eq(groups.id, cases.waitingOnGroupId))
+            .innerJoin(
+              groupMembers,
+              and(
+                eq(groupMembers.groupId, cases.waitingOnGroupId),
+                eq(groupMembers.userId, userId),
               ),
-            tx
-              .select({
-                ...caseColumns,
-                approvalId: caseApprovals.id,
-                level: caseApprovals.level,
-                target: caseApprovals.target,
-                payload: caseApprovals.payload,
-                reason: caseApprovals.reason,
-                at: caseApprovals.requestedAt,
-                groupId: groups.id,
-                groupSlug: groups.slug,
-                groupName: groups.name,
-              })
-              .from(caseApprovals)
-              .innerJoin(cases, eq(cases.id, caseApprovals.caseId))
-              .innerJoin(agents, eq(agents.id, cases.agentId))
-              .leftJoin(groups, eq(groups.id, caseApprovals.groupId))
-              .where(eq(caseApprovals.status, "pending")),
-            decidesGuardrails
-              ? tx
-                  .select({
-                    id: guardrailRequests.id,
-                    agentId: guardrailRequests.agentId,
-                    agentSlug: agents.slug,
-                    change: guardrailRequests.change,
-                    reason: guardrailRequests.reason,
-                    requestedByType: guardrailRequests.requestedByType,
-                    requestedBy: guardrailRequests.requestedBy,
-                    at: guardrailRequests.createdAt,
-                  })
-                  .from(guardrailRequests)
-                  .leftJoin(agents, eq(agents.id, guardrailRequests.agentId))
-                  .where(eq(guardrailRequests.status, "pending"))
-              : [],
-            tx
-              .select({ key: inboxReads.itemKey })
-              .from(inboxReads)
-              .where(eq(inboxReads.userId, userId)),
-          ]);
+            )
+            .where(eq(cases.status, "waiting")),
+          tx
+            .select({
+              ...caseColumns,
+              mentionId: caseMentions.id,
+              message: caseMentions.message,
+              at: caseMentions.at,
+              group,
+            })
+            .from(caseMentions)
+            .innerJoin(cases, eq(cases.id, caseMentions.caseId))
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .innerJoin(groups, eq(groups.id, caseMentions.groupId))
+            .innerJoin(
+              groupMembers,
+              and(
+                eq(groupMembers.groupId, caseMentions.groupId),
+                eq(groupMembers.userId, userId),
+              ),
+            )
+            .where(ne(caseMentions.by, `person:${userId}`))
+            .orderBy(desc(caseMentions.at))
+            .limit(MENTIONS),
+          tx
+            .select({ ...caseColumns, at: caseAssignees.assignedAt })
+            .from(caseAssignees)
+            .innerJoin(cases, eq(cases.id, caseAssignees.caseId))
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .where(
+              and(
+                eq(caseAssignees.userId, userId),
+                notInArray(cases.status, ["completed", "cancelled"]),
+              ),
+            ),
+          tx
+            .select({
+              ...caseColumns,
+              approvalId: caseApprovals.id,
+              level: caseApprovals.level,
+              target: caseApprovals.target,
+              payload: caseApprovals.payload,
+              reason: caseApprovals.reason,
+              at: caseApprovals.requestedAt,
+              groupId: groups.id,
+              groupSlug: groups.slug,
+              groupName: groups.name,
+            })
+            .from(caseApprovals)
+            .innerJoin(cases, eq(cases.id, caseApprovals.caseId))
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .leftJoin(groups, eq(groups.id, caseApprovals.groupId))
+            .where(eq(caseApprovals.status, "pending")),
+          decidesGuardrails
+            ? tx
+                .select({
+                  id: guardrailRequests.id,
+                  agentId: guardrailRequests.agentId,
+                  agentSlug: agents.slug,
+                  change: guardrailRequests.change,
+                  reason: guardrailRequests.reason,
+                  requestedByType: guardrailRequests.requestedByType,
+                  requestedBy: guardrailRequests.requestedBy,
+                  at: guardrailRequests.createdAt,
+                })
+                .from(guardrailRequests)
+                .leftJoin(agents, eq(agents.id, guardrailRequests.agentId))
+                .where(eq(guardrailRequests.status, "pending"))
+            : [],
+          tx
+            .select({
+              ...caseColumns,
+              memoryId: agentMemories.id,
+              text: agentMemories.text,
+              at: agentMemories.proposedAt,
+            })
+            .from(agentMemories)
+            .innerJoin(cases, eq(cases.id, agentMemories.caseId))
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .where(eq(agentMemories.status, "proposed")),
+          tx
+            .select({ key: inboxReads.itemKey })
+            .from(inboxReads)
+            .where(eq(inboxReads.userId, userId)),
+        ]);
         // mayApprove is the approval rule; ask it once per agent and group.
         const decides = new Map<string, Promise<boolean>>();
         const mayDecide = (agentId: string, slug: string | null) => {
@@ -240,6 +268,10 @@ export const inboxRoutes = new OpenAPIHono<{
         };
         const allowed = await Promise.all(
           approvals.map((a) => mayDecide(a.agentId, a.groupSlug)),
+        );
+        // Any operator decides a memory rule, like an approval naming no group.
+        const decidesMemory = await Promise.all(
+          proposals.map((m) => mayDecide(m.agentId, null)),
         );
         const read = new Set(reads.map((r) => r.key));
         const all: Omit<Item, "read">[] = [
@@ -316,6 +348,18 @@ export const inboxRoutes = new OpenAPIHono<{
               requestedBy: { type: r.requestedByType, id: r.requestedBy },
             },
           })),
+          ...proposals
+            .filter((_, i) => decidesMemory[i])
+            .map((m) => ({
+              key: `memory:${m.memoryId}`,
+              kind: "memory" as const,
+              at: m.at.toISOString(),
+              case: caseOf(m),
+              group: null,
+              message: m.text,
+              approval: null,
+              guardrail: null,
+            })),
         ];
         return all
           .map((i) => ({ ...i, read: read.has(i.key) }))
