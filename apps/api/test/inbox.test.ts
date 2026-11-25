@@ -10,8 +10,10 @@ import {
   groupMembers,
   groups,
 } from "@preprocess/db/schema/access";
-import { cases } from "@preprocess/db/schema/cases";
+import { caseApprovals, cases } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
+import { guardrailRequests } from "@preprocess/db/schema/guardrails";
+import { eq } from "drizzle-orm";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { recordCaseEvent } from "../src/cases.ts";
@@ -43,9 +45,11 @@ type Inbox = {
     key: string;
     kind: string;
     read: boolean;
-    case: { id: string; title: string | null };
+    case: { id: string; title: string | null } | null;
     group: { slug: string } | null;
     message: string | null;
+    approval: { id: string; level: string; target: string } | null;
+    guardrail: { id: string; agent: { slug: string } | null } | null;
   }[];
   unread: number;
 };
@@ -55,10 +59,14 @@ let org: string;
 let lee: { client: Client; userId: string; email: string };
 let quiet: { client: Client; userId: string; email: string };
 let outsider: { client: Client; userId: string; email: string };
+let viewer: { client: Client; userId: string; email: string };
+let admin: { client: Client; userId: string; email: string };
 let keyed: Client;
 const agentId = newId("agent");
 const deploymentId = newId("deployment");
 const legal = newId("group");
+const finance = newId("group");
+const readers = newId("group");
 
 const newCase = async (title: string) => {
   const id = newId("case");
@@ -109,6 +117,8 @@ beforeAll(async () => {
   lee = await addMember(owner, org, "Lee");
   quiet = await addMember(owner, org, "Quinn");
   outsider = await addMember(owner, org, "Otto");
+  viewer = await addMember(owner, org, "Vic");
+  admin = await addMember(owner, org, "Ada", "admin");
   const key = await owner.call<{ key: string }>("/api/auth/api-key/create", {
     body: { name: "ci", organizationId: org },
   });
@@ -130,20 +140,33 @@ beforeAll(async () => {
       createdBy: ana.userId,
       promotedAt: new Date(),
     });
-    await tx
-      .insert(groups)
-      .values({ id: legal, organizationId: org, slug: "legal", name: "Legal" });
+    await tx.insert(groups).values([
+      { id: legal, organizationId: org, slug: "legal", name: "Legal" },
+      { id: finance, organizationId: org, slug: "finance", name: "Finance" },
+      { id: readers, organizationId: org, slug: "readers", name: "Readers" },
+    ]);
     await tx.insert(groupMembers).values([
       { organizationId: org, groupId: legal, userId: lee.userId },
       { organizationId: org, groupId: legal, userId: quiet.userId },
+      { organizationId: org, groupId: finance, userId: lee.userId },
+      { organizationId: org, groupId: readers, userId: viewer.userId },
     ]);
-    await tx.insert(agentGrants).values({
-      organizationId: org,
-      agentId,
-      groupId: legal,
-      access: "operator",
-      grantedBy: ana.userId,
-    });
+    await tx.insert(agentGrants).values([
+      {
+        organizationId: org,
+        agentId,
+        groupId: legal,
+        access: "operator",
+        grantedBy: ana.userId,
+      },
+      {
+        organizationId: org,
+        agentId,
+        groupId: readers,
+        access: "viewer",
+        grantedBy: ana.userId,
+      },
+    ]);
   });
   const off = await quiet.client.call("/api/auth/update-user", {
     body: { emailNotifications: false },
@@ -170,7 +193,7 @@ describe("the inbox", () => {
 
     for (const person of [lee, quiet]) {
       const items = (await inbox(person.client)).items.filter(
-        (i) => i.case.id === key.caseId,
+        (i) => i.case?.id === key.caseId,
       );
       expect(items).toMatchObject([
         { kind: "waiting", read: false, group: { slug: "legal" } },
@@ -178,13 +201,13 @@ describe("the inbox", () => {
     }
     expect(
       (await inbox(outsider.client)).items.some(
-        (i) => i.case.id === key.caseId,
+        (i) => i.case?.id === key.caseId,
       ),
     ).toBe(false);
 
     await waitOn(key, null, "completed");
     expect(
-      (await inbox(lee.client)).items.some((i) => i.case.id === key.caseId),
+      (await inbox(lee.client)).items.some((i) => i.case?.id === key.caseId),
     ).toBe(false);
   });
 
@@ -211,10 +234,10 @@ describe("the inbox", () => {
     });
     expect(await deliver()).toEqual([]);
     expect(
-      (await inbox(lee.client)).items.some((i) => i.case.id === key.caseId),
+      (await inbox(lee.client)).items.some((i) => i.case?.id === key.caseId),
     ).toBe(false);
     const quietItems = (await inbox(quiet.client)).items.filter(
-      (i) => i.case.id === key.caseId,
+      (i) => i.case?.id === key.caseId,
     );
     expect(quietItems).toMatchObject([
       { kind: "mention", message: "@legal can you check the payment terms?" },
@@ -238,7 +261,7 @@ describe("the inbox", () => {
     const key = await newCase("Invoice 1045");
     await waitOn(key, "legal");
     const item = (await inbox(lee.client)).items.find(
-      (i) => i.case.id === key.caseId,
+      (i) => i.case?.id === key.caseId,
     )!;
     const marked = await lee.client.call(`/v1/orgs/${org}/inbox/read`, {
       body: { keys: [item.key] },
@@ -260,6 +283,107 @@ describe("the inbox", () => {
     const other = await signUp("Eve", environment);
     await createOrganization(other.client, "Evil");
     expect((await other.client.call(`/v1/orgs/${org}/inbox`)).status).toBe(403);
+  });
+});
+
+describe("approvals and guardrail requests", () => {
+  const requestApproval = async (groupId: string | null) => {
+    const key = await newCase("Invoice 3001");
+    const id = `apr_${crypto.randomUUID()}`;
+    await withOrg(environment, orgId(org), (tx) =>
+      tx.insert(caseApprovals).values({
+        id,
+        organizationId: org,
+        caseId: key.caseId,
+        level: "tool",
+        target: "pay_invoice",
+        groupId,
+        status: "pending",
+        payload: { amount: 1200 },
+        reason: "Over the payment limit",
+        requestedAt: new Date(),
+      }),
+    );
+    return id;
+  };
+  const sees = async (client: Client, key: string) =>
+    (await inbox(client)).items.some((i) => i.key === key);
+
+  it("shows an approval for a named group to its members only", async () => {
+    const id = await requestApproval(finance);
+    const key = `approval:${id}`;
+    const item = (await inbox(lee.client)).items.find((i) => i.key === key);
+    expect(item).toMatchObject({
+      kind: "approval",
+      read: false,
+      group: { slug: "finance" },
+      approval: { id, level: "tool", target: "pay_invoice" },
+    });
+    expect(await sees(quiet.client, key)).toBe(false);
+    expect(await sees(viewer.client, key)).toBe(false);
+    expect(await sees(owner, key)).toBe(false);
+  });
+
+  it("shows an approval for any operator to operators, not viewers", async () => {
+    const id = await requestApproval(null);
+    const key = `approval:${id}`;
+    expect(await sees(lee.client, key)).toBe(true);
+    expect(await sees(quiet.client, key)).toBe(true);
+    expect(await sees(viewer.client, key)).toBe(false);
+    expect(await sees(outsider.client, key)).toBe(false);
+  });
+
+  it("drops an approval once decided, and keeps read marks", async () => {
+    const id = await requestApproval(null);
+    const key = `approval:${id}`;
+    await lee.client.call(`/v1/orgs/${org}/inbox/read`, {
+      body: { keys: [key] },
+    });
+    expect(
+      (await inbox(lee.client)).items.find((i) => i.key === key)?.read,
+    ).toBe(true);
+    await withOrg(environment, orgId(org), (tx) =>
+      tx
+        .update(caseApprovals)
+        .set({ status: "approved", decidedAt: new Date() })
+        .where(eq(caseApprovals.id, id)),
+    );
+    expect(await sees(lee.client, key)).toBe(false);
+  });
+
+  it("shows pending guardrail requests to Owners and Admins only", async () => {
+    const id = newId("guardrailRequest");
+    await withOrg(environment, orgId(org), (tx) =>
+      tx.insert(guardrailRequests).values({
+        id,
+        organizationId: org,
+        kind: "network",
+        agentId,
+        change: { kind: "network", hosts: ["erp.example.com"] },
+        reason: "Reach the ERP",
+        requestedByType: "person",
+        requestedBy: lee.userId,
+      }),
+    );
+    const key = `guardrail:${id}`;
+    for (const decider of [owner, admin.client]) {
+      const item = (await inbox(decider)).items.find((i) => i.key === key);
+      expect(item).toMatchObject({
+        kind: "guardrail",
+        case: null,
+        guardrail: { id, agent: { slug: "invoices" } },
+      });
+    }
+    for (const other of [lee, viewer, outsider])
+      expect(await sees(other.client, key)).toBe(false);
+
+    await withOrg(environment, orgId(org), (tx) =>
+      tx
+        .update(guardrailRequests)
+        .set({ status: "rejected", decidedAt: new Date() })
+        .where(eq(guardrailRequests.id, id)),
+    );
+    expect(await sees(owner, key)).toBe(false);
   });
 });
 
@@ -293,14 +417,14 @@ describe("assignment", () => {
       "Invoice 2001 (invoices) was assigned to you",
     );
     expect(
-      (await inbox(lee.client)).items.filter((i) => i.case.id === key.caseId),
+      (await inbox(lee.client)).items.filter((i) => i.case?.id === key.caseId),
     ).toMatchObject([{ kind: "assigned" }]);
 
     // Replacing the set emails only people newly added.
     await owner.call(path, { method: "PUT", body: { userIds: [lee.userId] } });
     expect(await deliver()).toEqual([]);
     expect(
-      (await inbox(quiet.client)).items.some((i) => i.case.id === key.caseId),
+      (await inbox(quiet.client)).items.some((i) => i.case?.id === key.caseId),
     ).toBe(false);
 
     const audit = await owner.call<{

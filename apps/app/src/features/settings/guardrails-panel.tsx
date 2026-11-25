@@ -29,16 +29,17 @@ import { GUARDRAIL_SECTIONS } from "./settings-nav";
 import { SettingsStacked } from "./settings-widgets";
 import { useCanAdminister } from "./use-role";
 
-type Rules = { allow: string[]; block: string[] };
-type Change =
+export type Rules = { allow: string[]; block: string[] };
+export type Change =
   | { kind: "network"; hosts: string[] }
   | { kind: "secret"; secret: string }
   | { kind: "mcp"; server: string }
   | { kind: "spending_limit"; limitUsd: number | null };
 type Status = "pending" | "approved" | "rejected";
-type GuardrailRequest = {
+export type GuardrailRequest = {
   id: string;
   agent: string | null;
+  deployment: string | null;
   change: Change;
   reason: string | null;
   status: Status;
@@ -58,7 +59,7 @@ const PATTERN =
 const usd = (value: number) =>
   value.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-const describeChange = (change: Change) => {
+export const describeChange = (change: Change) => {
   switch (change.kind) {
     case "network":
       return `Reach ${change.hosts.join(", ")}`;
@@ -238,7 +239,13 @@ function Requests() {
   );
 }
 
-function ErrorLine({ error, fallback }: { error: unknown; fallback: string }) {
+export function ErrorLine({
+  error,
+  fallback,
+}: {
+  error: unknown;
+  fallback: string;
+}) {
   return error ? (
     <p className="pl-1 text-caption text-destructive" role="alert">
       {actionErrorMessage(error, fallback)}
@@ -316,7 +323,7 @@ function Network() {
   );
 }
 
-function PatternList({
+export function PatternList({
   label,
   empty,
   patterns,
