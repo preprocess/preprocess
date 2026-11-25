@@ -19,12 +19,13 @@ deliberately and read its changelog first.
 
 ## Stages
 
-| Stage         | Database                                                      | On destroy         |
-| ------------- | ------------------------------------------------------------- | ------------------ |
-| `pr-<number>` | Its own branch of `main`, migrated and seeded                 | Everything removed |
-| `staging`     | Long-lived `staging` branch of `main`, migrated, never seeded | Data is protected  |
-| `production`  | Default branch of its own database, migrated, never seeded    | Data is protected  |
-| `development` | Never deployed; the names `pnpm dev` uses locally             |                    |
+| Stage               | Database                                                                            | On destroy                                           |
+| ------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `pr-<number>`       | Its own branch of `main`, migrated and seeded                                       | Everything removed                                   |
+| `staging`           | Long-lived `staging` branch of `main`, migrated, never seeded                       | Data is protected                                    |
+| `production`        | Default branch of its own database, migrated, never seeded                          | Data is protected                                    |
+| `selfhost[-<name>]` | A customer's own Postgres (`DATABASE_URL`), bootstrapped and migrated, never seeded | Data is protected, and the database is never dropped |
+| `development`       | Never deployed; the names `pnpm dev` uses locally                                   |                                                      |
 
 Every stage deploys the whole product, the same way:
 
@@ -57,10 +58,13 @@ must work with both the old and the new code (expand, then contract; see
 
 ## Regions
 
-Region is configuration (spec 16d). Each deploy sets `PREPROCESS_REGION` to a
-key of `src/regions.ts`; the stack places the R2 bucket by that entry and binds
-`PREPROCESS_REGION` on the Workers, which read it through `@preprocess/runmode`.
-The PlanetScale database (`PLANETSCALE_DATABASE`) must be created in the same
+Region is configuration (spec 16d). Each of our stages sets `PREPROCESS_REGION`
+to a key of `src/regions.ts`; the stack places the R2 bucket by that entry and
+binds `PREPROCESS_REGION` on the Workers, which read it through
+`@preprocess/runmode`. That binding is also the run mode: it marks the deploy as
+our cloud. A self-hosted stage refuses `PREPROCESS_REGION`, binds nothing, and
+places its buckets by the optional `R2_LOCATION_HINT` (for example `weur`). The
+PlanetScale database (`PLANETSCALE_DATABASE`) must be created in the same
 region, because branches live where their database does. We launch in `us` only;
 adding a region adds an entry and a database.
 
@@ -84,6 +88,31 @@ Always read the plan first. Secrets come only from the deploy environment and
 are bound as `secret_text`; Alchemy keeps the deployed values in its state,
 encrypted with a key held in the account's Secrets Store, so treat the deploy
 token like a production secret.
+
+## Self-hosted installs
+
+A customer installs Preprocess into their own Cloudflare account from this same
+stack, as a `selfhost` or `selfhost-<name>` stage (spec 16).
+`preprocess install` and its GitHub Action run it for them; underneath they run
+`pnpm --filter @preprocess/infra selfhost:deploy <stage>` with these inputs:
+
+| Input                                           | Value                                                                                              |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | The customer's account, on Workers Paid                                                            |
+| `DATABASE_URL`                                  | Any Postgres Hyperdrive can reach, as a role that can create roles and owns the database           |
+| `EMAIL_FROM`                                    | Invitation sender, on a domain onboarded to Cloudflare Email Service in that account               |
+| `MODEL_SERVICE_URL`, `MODEL_SERVICE_KEY`        | Our hosted model service or the customer's own. `stub` deploys fixture answers, for trying it only |
+| `APP_DOMAIN` (optional)                         | The app's hostname on a zone in that account; workers.dev without it                               |
+| `R2_LOCATION_HINT` (optional)                   | Where R2 places the buckets                                                                        |
+| `GITHUB_*` (optional)                           | The install's own GitHub App (docs/design/08-github-app.md)                                        |
+
+Each deploy runs `packages/db/bootstrap.sql` with passwords the stack generates
+and keeps in its state, then every pending migration as `preprocess_migrator`,
+before any Worker is updated. Hyperdrive logs in as `preprocess_app` and
+`preprocess_system`, so row-level security applies. `BETTER_AUTH_SECRET`,
+`AUDIT_SIGNING_KEY` and its id, and the secrets master key are generated once.
+The account's state store is created or upgraded as part of the install.
+`selfhost:plan <stage>` prints the plan without applying it.
 
 ## Continuous deployment
 

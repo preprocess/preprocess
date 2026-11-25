@@ -9,6 +9,9 @@
 //   and credentials come from the deploy environment (APP_DOMAIN and the
 //   rest), so our cloud's production configuration stays private.
 // - "pr-<number>": one per pull request, fully isolated (spec 16c).
+// - "selfhost" or "selfhost-<name>": a customer's install in their own
+//   Cloudflare account (spec 16), on their own Postgres (DATABASE_URL). It
+//   binds no PREPROCESS_REGION, so it runs in self-hosted mode.
 // - "development": local only (`pnpm dev`), never deployed.
 
 export const compatibility = {
@@ -18,13 +21,21 @@ export const compatibility = {
 
 export const LOCAL = "development";
 
-export type Stage = "staging" | "production" | `pr-${number}`;
+export type SelfHostStage = "selfhost" | `selfhost-${string}`;
+
+export type Stage = "staging" | "production" | `pr-${number}` | SelfHostStage;
 
 export const isPreviewStage = (stage: string): stage is `pr-${number}` =>
   /^pr-\d+$/.test(stage);
 
+export const isSelfHostStage = (stage: string): stage is SelfHostStage =>
+  /^selfhost(-[a-z0-9]+(-[a-z0-9]+)*)?$/.test(stage);
+
 export const isStage = (stage: string): stage is Stage =>
-  stage === "staging" || stage === "production" || isPreviewStage(stage);
+  stage === "staging" ||
+  stage === "production" ||
+  isPreviewStage(stage) ||
+  isSelfHostStage(stage);
 
 export const names = (stage: string) => ({
   app: `preprocess-app-${stage}`,
