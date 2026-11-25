@@ -109,7 +109,7 @@ const postgres = (stage: Stage) =>
       parentBranch: "main",
       migrations,
       ...(preview && { importFiles: [at("packages/db/seed.sql")] }),
-    }).pipe(RemovalPolicy.protect(!preview));
+    }).pipe(adopt(), RemovalPolicy.protect(!preview));
     return { database: name, branch };
   });
 
@@ -333,8 +333,6 @@ export default Alchemy.Stack(
       schedulingPolicy: "durable_object",
       context: root,
       dockerfile: at("apps/builder/Dockerfile"),
-      instanceType: "standard-1",
-      maxInstances: 5,
     });
     const builder = yield* Cloudflare.Worker("Builder", {
       ...worker,
