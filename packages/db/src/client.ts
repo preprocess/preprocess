@@ -55,7 +55,7 @@ export const withOrg = <T>(
     db.transaction(async (tx) => {
       await tx.execute(sql`set local role preprocess_app`);
       const { rows } = await tx.execute<{ bypass: boolean }>(
-        sql`select set_config('app.org_id', ${org}, true), (select rolsuper or rolbypassrls from pg_roles where rolname = current_user) as bypass`,
+        sql`select set_config('app.org_id', ${org}, true), (select bool_or(rolsuper or rolbypassrls) from pg_roles where rolname in (current_user, session_user)) as bypass`,
       );
       if (rows[0]?.bypass)
         throw new Error("DB bypasses row-level security; it must not");
