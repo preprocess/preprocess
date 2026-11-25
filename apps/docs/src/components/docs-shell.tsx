@@ -252,8 +252,14 @@ function SidebarBody({ tree }: { tree: PageTree.Root }) {
         <img alt="" className="size-5 dark:hidden" src={markBlack} />
         <img alt="" className="hidden size-5 dark:block" src={markWhite} />
         <span
-          className="text-lg text-foreground tracking-[-0.02em]"
-          style={{ fontVariationSettings: '"wght" 450, "opsz" 16' }}
+          className="text-foreground"
+          style={{
+            fontFamily: "ui-sans-serif, system-ui, sans-serif",
+            fontSize: "1.125rem",
+            fontVariationSettings: '"wght" 450, "opsz" 16',
+            fontWeight: 450,
+            letterSpacing: "-0.02em",
+          }}
         >
           Preprocess
         </span>
