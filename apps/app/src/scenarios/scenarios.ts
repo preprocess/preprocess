@@ -1,8 +1,9 @@
 /**
- * Seeded UI states for surfaces that have no backend yet.
+ * Seeded UI states for the app's surfaces.
  *
  * Each surface is a small state machine: the selection names which seeded
- * state its data function serves. Development switches states with the
+ * state its data function serves. A surface with a backend has a `live`
+ * state, its default, which reads the API; every other state is seeded. Development switches states with the
  * scenario toolbar (or `/api/dev/scenario?set=inbox:empty`), stored in one
  * cookie so the server render and client navigations agree.
  */
@@ -11,11 +12,19 @@ export const SCENARIO_COOKIE_NAME = "preprocess-scenario";
 export const SCENARIO_SURFACES = {
   inbox: {
     label: "Inbox",
-    states: ["seeded", "empty", "all-read", "single-unread", "long-copy"],
+    // "live" reads the API; the rest are seeded.
+    states: [
+      "seeded",
+      "empty",
+      "all-read",
+      "single-unread",
+      "long-copy",
+      "live",
+    ],
   },
   cases: {
     label: "Cases",
-    states: ["seeded", "few", "empty", "load-error"],
+    states: ["live", "seeded", "few", "empty", "load-error"],
   },
   "case-room": {
     label: "Case room",
@@ -25,8 +34,12 @@ export const SCENARIO_SURFACES = {
   "case-work": {
     label: "Case work",
     states: [
+      "live",
       "waiting",
       "review",
+      "approval-tool",
+      "approval-completion",
+      "approval-decided",
       "running",
       "completed",
       "halted",
@@ -49,20 +62,20 @@ export const SCENARIO_SURFACE_IDS = Object.keys(
   SCENARIO_SURFACES,
 ) as ScenarioSurface[];
 
-/** Development default: every surface populated. */
+/** Development default: the API where a surface has one, else seeded. */
 export const SEEDED_SCENARIO: ScenarioSelection = {
   inbox: "seeded",
-  cases: "seeded",
+  cases: "live",
   "case-room": "conversation",
-  "case-work": "waiting",
+  "case-work": "live",
 };
 
 /** Builds without `import.meta.env.DEV` never serve seeded records. */
 export const UNSEEDED_SCENARIO: ScenarioSelection = {
-  inbox: "empty",
-  cases: "empty",
+  inbox: "live",
+  cases: "live",
   "case-room": "empty",
-  "case-work": "empty",
+  "case-work": "live",
 };
 
 export function isScenarioSurface(value: string): value is ScenarioSurface {

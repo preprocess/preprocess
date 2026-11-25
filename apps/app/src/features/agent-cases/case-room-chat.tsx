@@ -1,9 +1,7 @@
 "use client";
 
-import { Button } from "@preprocess/ui/components/button";
 import { ChatMessage } from "@preprocess/ui/components/chat-message";
 import { InputMessage } from "@preprocess/ui/components/input-message";
-import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { ThinkingIndicator } from "@preprocess/ui/components/thinking-indicator";
 import {
@@ -13,75 +11,16 @@ import {
   ThinkingStepsContent,
   ThinkingStepsHeader,
 } from "@preprocess/ui/components/thinking-steps";
-import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import type { IconName } from "@preprocess/ui/lib/icon-context";
-import { Brain } from "@preprocess/ui/lib/icons";
 import { cn } from "@preprocess/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Markdown } from "../../components/agent-elements/markdown";
-import { approveAgentMemory } from "../agents/agent-memories";
 import { currentScenario } from "../../scenarios/current-scenario";
+import type { RoomMessage } from "./case-room-state";
 import { caseRoomTranscript, seededReply } from "./case-room-transcripts";
-
-/** What the seeded transcript's agent proposes to remember. */
-const PROPOSED_MEMORY =
-  "When a renewal pack has no signed exhibit B, ask Legal before extracting terms.";
-
-/**
- * A memory the agent proposes from feedback in this chat. Approving it saves
- * it for every future case on the agent; memories are only approved here.
- */
-function ProposedMemory({
-  agentId,
-  caseLabel,
-}: Readonly<{ agentId: string; caseLabel: string }>) {
-  const [state, setState] = useState<"proposed" | "approved" | "dismissed">(
-    "proposed",
-  );
-  if (state === "dismissed") return null;
-
-  return (
-    <div className="flex flex-col gap-3 rounded-2xl bg-muted px-4 py-3">
-      <div className="flex items-center gap-2 text-caption text-muted-foreground">
-        <Brain aria-hidden="true" className="size-3.5" />
-        {state === "approved"
-          ? "Saved to this agent's memories"
-          : "Remember this for future cases?"}
-      </div>
-      <p
-        className="text-body text-foreground"
-        style={{ fontVariationSettings: fontWeights.semibold }}
-      >
-        {PROPOSED_MEMORY}
-      </p>
-      {state === "proposed" ? (
-        <div className="flex items-center gap-2">
-          <LoadingButton
-            onAction={async () => {
-              await approveAgentMemory(agentId, PROPOSED_MEMORY, caseLabel);
-              window.setTimeout(() => setState("approved"), 500);
-            }}
-            pendingLabel="Saving…"
-            size="compact"
-            successLabel="Saved"
-          >
-            Approve
-          </LoadingButton>
-          <Button
-            onClick={() => setState("dismissed")}
-            size="compact"
-            type="button"
-            variant="ghost"
-          >
-            Dismiss
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+import { useCaseWork } from "./case-work-context";
 
 const REPLY_DELAY_MS = 700;
 /** Output lines a tool step shows before the rest folds away. */
@@ -191,16 +130,115 @@ function AssistantMessage({ message }: Readonly<{ message: UIMessage }>) {
   );
 }
 
+/** Keeps the newest message in view as the thread grows. */
+function useStickToBottom(...deps: readonly unknown[]) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const viewport = scrollRef.current?.querySelector<HTMLElement>(
+      "[data-slot='scroll-area-viewport']",
+    );
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, deps);
+  return scrollRef;
+}
+
+function ThreadEntry({ message }: Readonly<{ message: RoomMessage }>) {
+  if (message.kind === "event")
+    return (
+      <span className="self-center text-caption text-muted-foreground">
+        {message.text}
+      </span>
+    );
+  if (message.kind === "input" || message.kind === "person")
+    return <ChatMessage from="user">{message.text}</ChatMessage>;
+  return (
+    <ChatMessage
+      className="max-w-full [&>div:first-child]:whitespace-normal"
+      from="assistant"
+    >
+      <Markdown content={message.text} />
+    </ChatMessage>
+  );
+}
+
 /**
- * The case room chat on Fluid's chat parts over a seeded transcript.
- * Sending appends the message and a canned reply, so the composer's
- * streaming and stop states stay exercisable. There is no agent runtime yet.
+ * A live case's thread from GET /cases/{id}/room. Sending posts to the
+ * thread and reloads the room; it doesn't wake the agent, and @group
+ * mentions notify that group.
  */
-export function CaseRoomChat({
-  agentId,
-  caseLabel,
+function LiveCaseRoomChat({
   className,
-}: Readonly<{ agentId: string; caseLabel: string; className?: string }>) {
+  work,
+}: Readonly<{
+  className?: string;
+  work: NonNullable<ReturnType<typeof useCaseWork>>;
+}>) {
+  const { thread } = work.room;
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = useStickToBottom(thread.length);
+
+  const send = async (value: string) => {
+    const text = value.trim();
+    if (!text || sending) return;
+    setSending(true);
+    setError(null);
+    const result = await work.actions.post(text).catch((cause: unknown) => ({
+      ok: false as const,
+      message:
+        cause instanceof Error ? cause.message : "The message wasn't sent.",
+    }));
+    setSending(false);
+    if (result.ok) setDraft("");
+    else setError(result.message);
+  };
+
+  return (
+    <div className={cn("flex h-full min-h-0 flex-col", className)}>
+      <ScrollArea
+        className="min-h-0 flex-1"
+        ref={scrollRef}
+        viewportClassName="scroll-fade"
+      >
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
+          {thread.map((message) => (
+            <ThreadEntry key={message.id} message={message} />
+          ))}
+        </div>
+      </ScrollArea>
+      <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-1 px-3 pb-3">
+        {error ? (
+          <span className="px-1 text-body text-destructive" role="alert">
+            {error}
+          </span>
+        ) : null}
+        <InputMessage
+          onSend={(value) => void send(value)}
+          onValueChange={setDraft}
+          placeholder="Write to the case thread; @mention a group to notify it"
+          status="idle"
+          value={draft}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The case room chat. Live cases show their thread; seeded scenarios use
+ * Fluid's chat parts over a seeded transcript, where sending appends the
+ * message and a canned reply so the streaming and stop states stay
+ * exercisable.
+ */
+export function CaseRoomChat({ className }: Readonly<{ className?: string }>) {
+  const work = useCaseWork();
+  if (work && currentScenario()["case-work"] === "live")
+    return <LiveCaseRoomChat className={className} work={work} />;
+  return <SeededCaseRoomChat className={className} />;
+}
+
+function SeededCaseRoomChat({ className }: Readonly<{ className?: string }>) {
   const [transcript] = useState(() =>
     caseRoomTranscript(currentScenario()["case-room"]),
   );
@@ -210,17 +248,9 @@ export function CaseRoomChat({
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(transcript.streaming);
   const replyTimer = useRef<number | undefined>(undefined);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useStickToBottom(messages.length, streaming);
 
   useEffect(() => () => window.clearTimeout(replyTimer.current), []);
-
-  // Keep the newest message in view as the transcript grows.
-  useLayoutEffect(() => {
-    const viewport = scrollRef.current?.querySelector<HTMLElement>(
-      "[data-slot='scroll-area-viewport']",
-    );
-    if (viewport) viewport.scrollTop = viewport.scrollHeight;
-  }, [messages.length, streaming]);
 
   const send = (value: string) => {
     const text = value.trim();
@@ -261,9 +291,6 @@ export function CaseRoomChat({
               <AssistantMessage key={message.id} message={message} />
             ),
           )}
-          {import.meta.env.DEV && transcript.messages.length > 0 ? (
-            <ProposedMemory agentId={agentId} caseLabel={caseLabel} />
-          ) : null}
           {streaming ? <ThinkingIndicator className="px-0" /> : null}
         </div>
       </ScrollArea>

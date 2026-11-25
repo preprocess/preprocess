@@ -29,10 +29,15 @@ organization"; it may never override an organization secret.
 
 ## Seeded scenarios
 
-There is no backend yet. In development, inbox, cases, and the case room chat
-load seeded data: `inbox-seed.ts` (reads stick in memory until restart),
-`case-seed.ts`, `agent-seed.ts` and `agent-store.ts`, `platform-store.ts`,
-`case-room-transcripts.ts`, and the case room's Input files
+The inbox reads the API (`inbox-api.ts`) in its `live` state and in every build
+outside dev. The case list and the case room's work (answers, checks, approvals,
+thread) read the API through server functions in
+`features/agent-cases/case-api.ts` when their scenario is `live`, the default in
+development and the only state outside it; every other state of those surfaces
+is seeded. In development, the inbox's other states, the seeded case states, and
+the seeded case room chat load seeded data: `inbox-seed.ts` (reads stick in
+memory until restart), `case-seed.ts`, `agent-seed.ts` and `agent-store.ts`,
+`platform-store.ts`, `case-room-transcripts.ts`, and the case room's Input files
 (`flue-lab-input-samples.ts`, one of each viewer's formats). Builds outside dev
 serve none.
 
@@ -42,8 +47,8 @@ is reachable locally without other services:
 - `src/scenarios/scenarios.ts` is the registry: each surface lists its states
   (`inbox: seeded | empty | all-read | …`). Add a state there, then handle it in
   the surface's data function (`inbox-seed.ts`, `list-org-cases.ts`,
-  `case-room-transcripts.ts`). The `switch` is exhaustive, so TypeScript points
-  at every place to update.
+  `case-room-data.ts`, `case-room-transcripts.ts`). The `switch` is exhaustive,
+  so TypeScript points at every place to update.
 - The selection lives in the `preprocess-scenario` cookie
   (`inbox:empty,cases:few`). `currentScenario()` reads it on the server render
   and in the browser, so both agree.

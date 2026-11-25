@@ -26,9 +26,12 @@ import {
 import {
   describeChange,
   ErrorLine,
+  useDecideRequest,
+  useGuardrailRequests,
   type Change,
   type GuardrailRequest,
 } from "../settings/guardrails-panel";
+import { useCanAdminister } from "../settings/use-role";
 import { DeploymentStatus } from "./agent-page";
 import { shortDeploymentId } from "./agent-store";
 import type { OrgAgentDetail } from "./list-org-agents";
@@ -102,11 +105,9 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
     queryKey: ["deployments", organizationId, agent.id],
     queryFn: () => orgApi<Deployment[]>(organizationId, path),
   });
-  const requests = useQuery({
-    queryKey: ["guardrail-requests", organizationId],
-    queryFn: () =>
-      orgApi<GuardrailRequest[]>(organizationId, "/guardrail-requests"),
-  });
+  const requests = useGuardrailRequests();
+  const decide = useDecideRequest();
+  const canDecide = useCanAdminister();
   const pending = (requests.data ?? []).filter(
     (r) => r.status === "pending" && r.agent === agent.id,
   );
@@ -223,18 +224,42 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
                       key={need.label}
                       label={need.label}
                     >
-                      {asked ? (
+                      {asked && canDecide ? (
+                        <>
+                          <LoadingButton
+                            onAction={() => {
+                              setError(null);
+                              return decide(asked.id, "reject");
+                            }}
+                            onError={setError}
+                            variant="secondary"
+                          >
+                            Reject
+                          </LoadingButton>
+                          <LoadingButton
+                            onAction={() => {
+                              setError(null);
+                              return decide(asked.id, "approve");
+                            }}
+                            onError={setError}
+                          >
+                            Approve
+                          </LoadingButton>
+                        </>
+                      ) : asked ? (
                         <Button
                           render={
                             <Link
                               hash="requests"
-                              to="/settings/organization/guardrails"
+                              params={{ agentId: agent.id }}
+                              search={{ request: asked.id }}
+                              to="/agents/$agentId/settings"
                             />
                           }
                           size="compact"
                           variant="ghost"
                         >
-                          Review in Guardrails
+                          View request
                         </Button>
                       ) : need.change ? (
                         <LoadingButton

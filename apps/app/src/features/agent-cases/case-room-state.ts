@@ -1,8 +1,9 @@
 /**
  * The case room's work, in the shape of `GET /v1/orgs/{org}/cases/{id}/room`
  * (apps/api, design doc 05): the output schema's fields with their answers,
- * the checks, and the thread. Until the app talks to the API, development
- * serves seeded states shaped the same (`case-room-seed.ts`).
+ * the checks, the thread and the approvals. `case-room-data.ts` reads it
+ * from the API, or from the seeded states shaped the same
+ * (`case-room-seed.ts`) when a seeded scenario is selected.
  */
 
 export type RoomStatus =
@@ -79,6 +80,37 @@ export type RoomMessage = {
   readonly group: string | null;
 };
 
+/**
+ * Something the agent's code asked a person to approve (spec §9): a tool
+ * call before it runs, a field's value, or completing the case.
+ */
+export type RoomApproval = {
+  readonly id: string;
+  readonly level: "tool" | "field" | "completion";
+  /** The tool's name or the field's path; empty for completion. */
+  readonly target: string;
+  /** The group whose members approve; null for any operator. */
+  readonly group: string | null;
+  /** The tool call's input, the field's value, or the run. */
+  readonly payload: unknown;
+  /** Why the code asks. */
+  readonly reason: string | null;
+  readonly status: "pending" | "approved" | "rejected" | "stale";
+  readonly run: number;
+  readonly requestedAt: number;
+  /** "person:<userId>". */
+  readonly decidedBy: string | null;
+  readonly decidedByName: string | null;
+  readonly decidedAt: number | null;
+  /** The approver's note, or the reason they rejected it. */
+  readonly note: string | null;
+};
+
+/** What deciding an approval returned; refusals carry the API's code. */
+export type ApprovalDecision =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
 export type CaseRoomState = {
   readonly status: RoomStatus;
   readonly run: number;
@@ -92,6 +124,7 @@ export type CaseRoomState = {
   readonly checks: readonly RoomCheck[];
   readonly answers: Record<string, unknown> | null;
   readonly thread: readonly RoomMessage[];
+  readonly approvals: readonly RoomApproval[];
 };
 
 /** What a change to an answer returned (PATCH /answers and friends). */

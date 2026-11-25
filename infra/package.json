@@ -8,11 +8,13 @@
     "plan:staging": "pnpm --filter @preprocess/app build:staging && pnpm --filter @preprocess/docs build && alchemy plan --stage staging",
     "deploy:production": "pnpm --filter @preprocess/app build:production && pnpm --filter @preprocess/docs build && alchemy deploy --stage production",
     "plan:production": "pnpm --filter @preprocess/app build:production && pnpm --filter @preprocess/docs build && alchemy plan --stage production",
-    "preview:deploy": "pnpm --filter @preprocess/app build:development && pnpm --filter @preprocess/docs build && tsx scripts/preview.ts deploy",
-    "preview:destroy": "tsx scripts/preview.ts destroy",
+    "preview:deploy": "pnpm --filter @preprocess/app build:development && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts deploy",
+    "preview:destroy": "tsx scripts/stage.ts destroy",
     "wrangler:generate": "tsx scripts/wrangler-config.ts",
     "lint": "eslint . && tsx scripts/wrangler-config.ts --check",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "staging:deploy": "pnpm --filter @preprocess/app build:staging && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts deploy staging",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.87",
@@ -23,9 +25,13 @@
     "pg": "catalog:"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "@preprocess/sdk": "workspace:*",
     "@types/node": "catalog:",
+    "esbuild": "^0.25.0",
     "prettier": "^3.6.2",
     "tsx": "catalog:",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "zod": "catalog:"
   }
 }

@@ -1,6 +1,10 @@
 import { createContext, useContext } from "react";
 
-import type { CaseRoomState, WriteResult } from "./case-room-state";
+import type {
+  ApprovalDecision,
+  CaseRoomState,
+  WriteResult,
+} from "./case-room-state";
 
 export type CaseWorkActions = {
   readonly edit: (input: {
@@ -18,6 +22,14 @@ export type CaseWorkActions = {
   }) => Promise<WriteResult>;
   readonly rerun: () => Promise<unknown>;
   readonly cancel: () => Promise<unknown>;
+  /** Approve (the text is an optional note) or reject (the reason). */
+  readonly decide: (input: {
+    approvalId: string;
+    decision: "approve" | "reject";
+    text: string;
+  }) => Promise<ApprovalDecision>;
+  /** Posts to the case thread; @group mentions notify that group. */
+  readonly post: (text: string) => Promise<ApprovalDecision>;
 };
 
 /** The open case's work and what a person can do to it, for the room's views. */
