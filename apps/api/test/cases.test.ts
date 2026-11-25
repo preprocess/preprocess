@@ -56,6 +56,12 @@ let roomState: Awaited<ReturnType<Runtime["caseState"]>> = {
   checks: [],
 };
 
+let completion: Awaited<ReturnType<Runtime["completeCase"]>> = {
+  result: "refused",
+  code: "case_not_done",
+  message: "Checks failing: amountPositive",
+};
+
 const runtime: Runtime = {
   manifest: () => Promise.reject(new Error("unused")),
   getCase: () => Promise.reject(new Error("unused")),
@@ -88,6 +94,10 @@ const runtime: Runtime = {
   decideApproval: (input) => {
     calls.push({ method: "decide", input });
     return Promise.resolve(roomState);
+  },
+  completeCase: (input) => {
+    calls.push({ method: "complete", input });
+    return Promise.resolve(completion);
   },
   cancelCase: (input) => {
     calls.push({ method: "cancel", input });
@@ -451,6 +461,63 @@ describe("a started case", () => {
       `/v1/orgs/${org}/cases/${created.body.id}`,
     );
     expect(status.body.status).toBe("cancelled");
+  });
+});
+
+describe("completing a case", () => {
+  let caseId: string;
+  const complete = (who: Client) =>
+    who.call<{ status?: string; error?: { code: string; message: string } }>(
+      `/v1/orgs/${org}/cases/${caseId}/complete`,
+      { body: {} },
+    );
+  const status = (s: "running" | "waiting") =>
+    recordCaseEvent(environment, {
+      organizationId: org,
+      agentId,
+      caseId,
+      type: "status",
+      status: s,
+      waitingOn: null,
+      reason: null,
+      answers: null,
+      error: null,
+    });
+
+  beforeAll(async () => {
+    const created = await operator.call<Accepted>(`/v1/orgs/${org}/cases`, {
+      body: { agent: "invoices", text: "Invoice 2003" },
+    });
+    caseId = created.body.id;
+    await startQueuedCase(environment, queued.at(-1)!);
+  });
+
+  it("is for people who work the case, on a waiting case", async () => {
+    await status("running");
+    const running = await complete(operator);
+    expect(running.status).toBe(409);
+    expect(running.body.error?.code).toBe("case_not_completable");
+    await status("waiting");
+    expect((await complete(admin)).status).toBe(403);
+    expect((await complete(outsider)).status).toBe(404);
+    expect(calls.filter((c) => c.method === "complete")).toHaveLength(0);
+  });
+
+  it("refuses while the checks or success condition fail, then completes", async () => {
+    const refused = await complete(operator);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatchObject({
+      code: "case_not_done",
+      message: "Checks failing: amountPositive",
+    });
+    completion = {
+      result: "ok",
+      state: { status: "completed", run: 1, answers: {}, checks: [] },
+    };
+    const done = await complete(operator);
+    expect(done.status).toBe(200);
+    expect(done.body.status).toBe("completed");
+    expect(calls.filter((c) => c.method === "complete")).toHaveLength(2);
   });
 });
 

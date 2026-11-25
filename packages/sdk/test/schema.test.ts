@@ -3,10 +3,13 @@ import { z } from "zod";
 
 import {
   agent,
+  allReviewed,
   schema as s,
   tool,
   type FunctionContext,
+  type Success,
 } from "../src/index.ts";
+import { evaluate as evaluateSchema } from "../src/schema.ts";
 import type {
   EvaluateRequest,
   EvaluateResponse,
@@ -580,5 +583,85 @@ describe("effects", () => {
       isError: true,
       threw: true,
     });
+  });
+});
+
+describe("schema success", () => {
+  const ctx = { env: {}, caseId: "case_1" };
+  const tree = (success?: Success) =>
+    s.group(
+      {
+        vendor: s.text({ review: "required" }),
+        total: s.number(),
+        note: s.text({
+          review: "required",
+          visible: (a) => Number(a.get("total") ?? 0) > 100,
+        }),
+      },
+      { ...(success && { success }) },
+    );
+  const run = (
+    success: Success | undefined,
+    request: Partial<EvaluateRequest>,
+  ) =>
+    evaluateSchema(
+      tree(success),
+      {
+        caseId: "case_1",
+        answers: {},
+        fetched: {},
+        targets: "all",
+        ...request,
+      },
+      ctx,
+    );
+
+  it("leaves success out when the schema declares none", async () => {
+    expect((await run(undefined, {})).success).toBeUndefined();
+  });
+
+  it("reports a message or false when the condition is not met", async () => {
+    const needsTotal: Success = (a) =>
+      a.get("total") !== null || "The total is missing";
+    expect((await run(needsTotal, {})).success).toEqual({
+      ok: false,
+      message: "The total is missing",
+    });
+    expect((await run(() => false, {})).success).toEqual({ ok: false });
+    expect((await run(needsTotal, { answers: { total: 5 } })).success).toEqual({
+      ok: true,
+    });
+  });
+
+  it("is met by allReviewed once every visible field needing review is confirmed", async () => {
+    expect(
+      (await run(allReviewed, { answers: { vendor: "acme", total: 5 } }))
+        .success,
+    ).toEqual({ ok: false });
+    // The note is hidden, so only the vendor needs a person.
+    expect(
+      (
+        await run(allReviewed, {
+          answers: { vendor: "acme", total: 5 },
+          confirmed: ["vendor"],
+        })
+      ).success,
+    ).toEqual({ ok: true });
+    expect(
+      (
+        await run(allReviewed, {
+          answers: { vendor: "acme", total: 500 },
+          confirmed: ["vendor"],
+        })
+      ).success,
+    ).toEqual({ ok: false });
+  });
+
+  it("counts fields outside the targets from what the runtime reports", async () => {
+    const partial = { answers: { total: 5 }, targets: ["total"] };
+    expect(
+      (await run(allReviewed, { ...partial, unreviewed: ["vendor"] })).success,
+    ).toEqual({ ok: false });
+    expect((await run(allReviewed, partial)).success).toEqual({ ok: true });
   });
 });

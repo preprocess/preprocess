@@ -98,6 +98,12 @@ export type Runtime = {
     c: CaseKey & { userId: string; text: string },
   ): Promise<{ id: string; mentioned: string[] }>;
   cancelCase(c: CaseKey): Promise<CaseRoomState>;
+  completeCase(
+    c: CaseKey,
+  ): Promise<
+    | { result: "ok"; state: CaseRoomState }
+    | { result: "refused"; code: string; message: string }
+  >;
   manifest(
     deployment: Omit<StartCase, "caseId" | "input" | "groups">,
   ): Promise<unknown>;

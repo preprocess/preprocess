@@ -31,6 +31,12 @@ type Runtime = {
   ): Promise<{ id: string; mentioned: string[] }>;
   rerun(c: CaseKey & { notes?: unknown[] }): Promise<CaseState>;
   getCase(c: CaseKey): Promise<CaseView>;
+  completeCase(
+    c: CaseKey,
+  ): Promise<
+    | { result: "ok"; state: CaseState }
+    | { result: "refused"; code: string; message: string }
+  >;
 };
 
 const runtime = (exports as unknown as { default: Runtime }).default;
@@ -199,5 +205,77 @@ describe("a case with an output schema", () => {
       setBy: "person:usr_ana",
     });
     expect(field(accepted, "vendor").answer?.suggestedValue).toBeUndefined();
+  });
+});
+
+describe("completing a case", () => {
+  it("waits while a check fails, whoever ran last, and a person completes it once checks pass", async () => {
+    const { bundleHash } = await deploy(
+      {
+        organizationId: "org_inv",
+        agentId: "agt_invoices",
+        deploymentId: "dep_2",
+      },
+      invoiceAgent,
+    );
+    const c = key("case_inv_2");
+    await runtime.startCase({
+      ...c,
+      deploymentId: "dep_2",
+      bundleHash,
+      network: { allow: [], block: [] },
+      input: { text: "Invoice 1042 from Acme Corporation, total 1,285.00 USD" },
+      groups: [
+        {
+          id: "grp_ap",
+          slug: "accounts-payable",
+          name: "Accounts payable",
+          description: null,
+          access: "operator",
+        },
+      ],
+    });
+    const first = await settle(c);
+    expect(first.status).toBe("waiting");
+
+    // A person enters a negative total; the agent never overwrites it.
+    const edit = async (value: number) => {
+      const state = await runtime.caseState(c);
+      await runtime.editAnswer({
+        ...c,
+        path: "amount",
+        value,
+        version: field(state, "amount").answer!.version,
+        userId: "usr_ana",
+      });
+    };
+    await edit(-5);
+    await runtime.rerun(c);
+    const second = await settle(c);
+    expect(second.status).toBe("waiting");
+    expect(second.waitingOn).toBeNull();
+    const reported = (await runtime.getCase(c)).capture
+      .filter((e) => e.kind === "case.event" && e.data.type === "status")
+      .map((e) => e.data);
+    expect(reported.at(-1)).toMatchObject({
+      status: "waiting",
+      reason: "Checks failing: amountPositive",
+    });
+
+    expect(await runtime.completeCase(c)).toEqual({
+      result: "refused",
+      code: "case_not_done",
+      message: "Checks failing: amountPositive",
+    });
+    await edit(1285);
+    const done = await runtime.completeCase(c);
+    expect(done).toMatchObject({
+      result: "ok",
+      state: { status: "completed" },
+    });
+    expect(await runtime.completeCase(c)).toMatchObject({
+      result: "refused",
+      code: "case_not_completable",
+    });
   });
 });
