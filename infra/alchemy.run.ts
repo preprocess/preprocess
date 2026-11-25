@@ -293,6 +293,8 @@ export default Alchemy.Stack(
         LOG_STREAM: stream,
         LOG_SQL_BUCKET: n.logs,
         LOG_SQL_TOKEN: logCatalogToken,
+        CLOUDFLARE_ACCOUNT_ID: (yield* yield* Cloudflare.CloudflareEnvironment)
+          .accountId,
       };
     }
 
