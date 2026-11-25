@@ -606,10 +606,24 @@ const roomKey = (agentId: string, caseId: string) =>
 export function resetCaseRooms() {
   rooms.clear();
   caseFiles.clear();
+  caseFileBodies.clear();
 }
 
 // Files attached in the room, kept like the rooms' changes.
 const caseFiles = new Map<string, CaseFile[]>();
+const caseFileBodies = new Map<string, File>();
+
+/** An attached file's bytes, as the download route returns them. */
+export function caseFileBody(
+  agentId: string,
+  caseId: string,
+  file: CaseFile,
+): Promise<File> {
+  const body = caseFileBodies.get(`${roomKey(agentId, caseId)}:${file.id}`);
+  return body
+    ? Promise.resolve(body)
+    : Promise.reject(new Error("No such file."));
+}
 
 export function getCaseFiles(agentId: string, caseId: string) {
   return Promise.resolve(caseFiles.get(roomKey(agentId, caseId)) ?? []);
@@ -630,16 +644,18 @@ export async function attachFiles(
     };
   const key = roomKey(agentId, caseId);
   const now = new Date().toISOString();
-  caseFiles.set(key, [
-    ...(caseFiles.get(key) ?? []),
-    ...files.map((file) => ({
-      id: `file_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`,
+  const attached = files.map((file) => {
+    const id = `file_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    caseFileBodies.set(`${key}:${id}`, file);
+    return {
+      id,
       name: file.name,
       contentType: file.type || "application/octet-stream",
       size: file.size,
       createdAt: now,
-    })),
-  ]);
+    };
+  });
+  caseFiles.set(key, [...(caseFiles.get(key) ?? []), ...attached]);
   return { ok: true };
 }
 

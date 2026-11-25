@@ -89,11 +89,15 @@ export type CaseInputItem = {
   readonly family: CaseInputFamily;
   readonly url: string;
   readonly parentId?: string;
+  /** Set when the item is an attached case file, which its own list shows. */
+  readonly caseFileId?: string;
 };
 
 export type CaseFiles = {
   readonly files: readonly CaseFile[];
   readonly attach?: (files: readonly File[]) => Promise<ApprovalDecision>;
+  /** Downloads an attached file so the viewers can open it. */
+  readonly open?: (file: CaseFile) => Promise<File>;
 };
 
 export type CaseInputWorkspaceProps = {
@@ -306,6 +310,50 @@ function isTabDrag(transfer: DataTransfer | null) {
   return Array.from(types).includes("application/x-case-file-tab");
 }
 
+/** An attached case file; a click downloads it and opens it in a viewer. */
+function CaseFileListRow({
+  file,
+  onOpen,
+}: {
+  file: CaseFile;
+  onOpen?: (file: CaseFile) => Promise<void>;
+}) {
+  const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
+  const meta = `${familyLabel(familyOf(file.name, file.contentType))} · ${formatSize(file.size)}`;
+  const body = (
+    <>
+      <span className="truncate text-body text-foreground">{file.name}</span>
+      <span className="text-caption text-muted-foreground">
+        {state === "opening"
+          ? "Opening…"
+          : state === "failed"
+            ? `${meta} · Could not open this file.`
+            : meta}
+      </span>
+    </>
+  );
+  if (!onOpen || !canOpenInput(file.name, file.contentType))
+    return <li className="flex min-w-0 flex-col px-3 py-1.5">{body}</li>;
+  return (
+    <li>
+      <button
+        className="flex w-full min-w-0 flex-col rounded-lg px-3 py-1.5 text-left outline-none hover:bg-hover focus-visible:bg-hover"
+        disabled={state === "opening"}
+        onClick={() => {
+          setState("opening");
+          onOpen(file).then(
+            () => setState("idle"),
+            () => setState("failed"),
+          );
+        }}
+        type="button"
+      >
+        {body}
+      </button>
+    </li>
+  );
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -361,6 +409,7 @@ type CaseInputContextValue = {
   readonly selectItem: (id: string, click: InputListClick) => void;
   readonly addFiles: (files: FileList | File[]) => void;
   readonly caseFiles?: CaseFiles;
+  readonly openCaseFile?: (file: CaseFile) => Promise<void>;
   readonly openItem: (id: string) => void;
   readonly openItemInBackground: (ids: readonly string[]) => void;
   readonly openItemInOtherPane?: (ids: readonly string[]) => void;
@@ -466,6 +515,33 @@ export function CaseInputWorkspace({
     setActiveId(id);
   };
 
+  // An attached file downloads once, then opens like any input item.
+  const [pendingOpen, setPendingOpen] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pendingOpen || !items.some((item) => item.id === pendingOpen)) return;
+    setPendingOpen(null);
+    openItem(pendingOpen);
+  }, [items, pendingOpen]);
+  const open = caseFiles?.open;
+  const openCaseFile = open
+    ? async (file: CaseFile) => {
+        const id = `case-file:${file.id}`;
+        if (!items.some((item) => item.id === id)) {
+          const item = {
+            ...itemFromFile(await open(file)),
+            id,
+            caseFileId: file.id,
+          };
+          setItems((current) =>
+            current.some((entry) => entry.id === id)
+              ? current
+              : [...current, item],
+          );
+        }
+        setPendingOpen(id);
+      }
+    : undefined;
+
   const openableIds = (ids: readonly string[]) =>
     ids.filter((id) => openableItem(id));
 
@@ -501,7 +577,9 @@ export function CaseInputWorkspace({
     );
 
   const availableFamilies = useMemo(() => {
-    const present = new Set(items.map((item) => item.family));
+    const present = new Set(
+      items.filter((item) => !item.caseFileId).map((item) => item.family),
+    );
     return CASE_INPUT_FAMILIES.filter((family) => present.has(family));
   }, [items]);
 
@@ -521,7 +599,7 @@ export function CaseInputWorkspace({
       children?: readonly CaseInputItem[];
     }[] = [];
     for (const item of items) {
-      if (item.parentId) continue;
+      if (item.parentId || item.caseFileId) continue;
       if (item.family === "archive") {
         const children = items.filter((child) => child.parentId === item.id);
         const visibleChildren = children.filter(matches);
@@ -571,6 +649,7 @@ export function CaseInputWorkspace({
         selectItem,
         addFiles,
         caseFiles,
+        openCaseFile,
         openItem,
         openItemInBackground,
         openItemInOtherPane,
@@ -928,6 +1007,7 @@ export function CaseInputPane({
     selectItem,
     addFiles,
     caseFiles,
+    openCaseFile,
     openItem,
     openItemInBackground,
     openItemInOtherPane,
@@ -1063,15 +1143,11 @@ export function CaseInputPane({
           {visibleCaseFiles.length > 0 ? (
             <ul className="flex flex-col px-2">
               {visibleCaseFiles.map((file) => (
-                <li className="flex min-w-0 flex-col px-3 py-1.5" key={file.id}>
-                  <span className="truncate text-body text-foreground">
-                    {file.name}
-                  </span>
-                  <span className="text-caption text-muted-foreground">
-                    {familyLabel(familyOf(file.name, file.contentType))} ·{" "}
-                    {formatSize(file.size)}
-                  </span>
-                </li>
+                <CaseFileListRow
+                  file={file}
+                  key={file.id}
+                  onOpen={openCaseFile}
+                />
               ))}
             </ul>
           ) : null}

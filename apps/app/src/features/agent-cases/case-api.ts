@@ -725,7 +725,7 @@ export const liveUploadFile = createServerFn({ method: "POST" })
     return (await response.json<{ id: string }>()).id;
   });
 
-/** A file attached to a case. There is no download route yet, so no bytes. */
+/** A file attached to a case; its bytes come from the download route. */
 export type CaseFile = {
   readonly id: string;
   readonly name: string;

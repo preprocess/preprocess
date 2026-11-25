@@ -796,6 +796,27 @@ describe("files and OCR", () => {
       { id: file.id, name: "receipt.txt" },
     ]);
 
+    // Anyone who sees the case downloads it, always as a sandboxed attachment.
+    const download = (cookie: string, fileId = file.id) =>
+      worker.fetch(
+        new Request(new URL(`${path}/${fileId}`, environment.APP_URL), {
+          headers: { cookie, origin: environment.APP_URL },
+        }),
+        environment,
+        { waitUntil: () => {}, passThroughOnException: () => {}, props: {} },
+      );
+    const bytes = await download(owner.cookie);
+    expect(bytes.status).toBe(200);
+    expect(await bytes.text()).toBe("receipt");
+    expect(bytes.headers.get("content-type")).toBe("text/plain");
+    expect(bytes.headers.get("content-disposition")).toBe(
+      "attachment; filename*=UTF-8''receipt.txt",
+    );
+    expect(bytes.headers.get("content-security-policy")).toBe("sandbox");
+    expect((await download(outsider.cookie)).status).toBe(404);
+    const loose = await upload("loose", "loose.txt", "text/plain");
+    expect((await download(owner.cookie, loose.id)).status).toBe(404);
+
     calls.length = 0;
     expect(
       (

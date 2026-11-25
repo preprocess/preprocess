@@ -12,6 +12,7 @@ import {
   liveSearchOptions,
   liveUploadFile,
 } from "./case-api";
+import type { CaseFile } from "./case-api";
 import type { ApprovalDecision } from "./case-room-state";
 import * as seed from "./case-room-seed";
 import type { CaseWorkActions } from "./case-work-context";
@@ -30,6 +31,27 @@ export function getCaseFiles(agentId: string, caseId: string) {
   return live()
     ? liveCaseFiles({ data: caseId })
     : seed.getCaseFiles(agentId, caseId);
+}
+
+/**
+ * An attached file's bytes for the viewers. Live files stream through the
+ * app's /v1 proxy with the session, so the API checks who may see the case.
+ */
+export async function openCaseFile(
+  organizationId: string | undefined,
+  agentId: string,
+  caseId: string,
+  file: CaseFile,
+): Promise<File> {
+  if (!live()) return seed.caseFileBody(agentId, caseId, file);
+  const response = await fetch(
+    `/v1/orgs/${encodeURIComponent(organizationId ?? "")}/cases/${encodeURIComponent(caseId)}/files/${encodeURIComponent(file.id)}`,
+    { credentials: "same-origin" },
+  );
+  if (!response.ok) throw new Error(`Could not open ${file.name}.`);
+  return new File([await response.blob()], file.name, {
+    type: file.contentType,
+  });
 }
 
 /** Uploads each file, then attaches them all to the case. */
