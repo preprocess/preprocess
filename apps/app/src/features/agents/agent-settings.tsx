@@ -21,9 +21,12 @@ import { FIELDS, type Field } from "../settings/defaults-panel";
 import {
   ErrorLine,
   PatternList,
+  RequestRows,
+  useGuardrailRequests,
   type Rules,
 } from "../settings/guardrails-panel";
 import {
+  SettingsEmpty,
   SettingsError,
   SettingsRow,
   SettingsRows,
@@ -55,6 +58,7 @@ type AgentRules = {
 export const AGENT_SETTINGS_ANCHORS: readonly SectionAnchor[] = [
   { id: "effective", label: "Effective settings" },
   { id: "network", label: "Network" },
+  { id: "requests", label: "Guardrail requests" },
 ];
 
 const SOURCE = {
@@ -72,7 +76,13 @@ const parse = (field: Field | undefined, value: string): Scalar => {
   return value;
 };
 
-export function AgentSettings({ agentSlug }: { agentSlug: string }) {
+export function AgentSettings({
+  agentSlug,
+  request,
+}: {
+  agentSlug: string;
+  request?: string;
+}) {
   return (
     <SettingsStacked>
       <div className="scroll-mt-8" id="effective">
@@ -81,7 +91,50 @@ export function AgentSettings({ agentSlug }: { agentSlug: string }) {
       <div className="scroll-mt-8" id="network">
         <AgentNetwork agentSlug={agentSlug} />
       </div>
+      <div className="scroll-mt-8" id="requests">
+        <AgentRequests agentSlug={agentSlug} highlight={request} />
+      </div>
     </SettingsStacked>
+  );
+}
+
+// This agent's pending asks to reach hosts, receive secrets or use MCP
+// servers, and the linked one whatever its status.
+function AgentRequests({
+  agentSlug,
+  highlight,
+}: {
+  agentSlug: string;
+  highlight?: string;
+}) {
+  const requests = useGuardrailRequests();
+  const shown = (requests.data ?? []).filter(
+    (r) =>
+      r.agent === agentSlug && (r.status === "pending" || r.id === highlight),
+  );
+  return (
+    <SettingsSection
+      description="This agent's asks to reach a host, receive a secret or use an MCP server. Owners and Admins decide them here or in Organization settings → Guardrails."
+      title="Guardrail requests"
+    >
+      {requests.isError ? (
+        <SettingsError error={requests.error} />
+      ) : requests.isPending ? (
+        <SettingsSkeletonRows count={1} />
+      ) : highlight && !shown.some((r) => r.id === highlight) ? (
+        <SettingsEmpty
+          description="It may have been withdrawn after the deployment that filed it was replaced."
+          title="This request no longer exists"
+        />
+      ) : shown.length === 0 ? (
+        <SettingsEmpty
+          description="Nothing is waiting on a guardrail for this agent."
+          title="No pending requests"
+        />
+      ) : (
+        <RequestRows highlight={highlight} requests={shown} />
+      )}
+    </SettingsSection>
   );
 }
 
