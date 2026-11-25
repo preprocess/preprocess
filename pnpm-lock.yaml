@@ -22,7 +22,7 @@ catalogs:
       specifier: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051
       version: 0.1.0
     '@preprocess/ui':
-      specifier: https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520
+      specifier: https://pkg.pr.new/preprocess/kit/@preprocess/ui@df481fd
       version: 0.1.0
     '@tailwindcss/vite':
       specifier: ^4.3.3
@@ -221,7 +221,7 @@ importers:
         version: link:../../packages/sdk
       '@preprocess/ui':
         specifier: 'catalog:'
-        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
+        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@df481fd(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
       '@streamdown/code':
         specifier: ^1.1.1
         version: 1.1.1(react@19.2.8)
@@ -2696,8 +2696,8 @@ packages:
     resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051}
     version: 0.1.0
 
-  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520':
-    resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520}
+  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@df481fd':
+    resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/ui@df481fd}
     version: 0.1.0
     peerDependencies:
       react: ^19.2.0
@@ -8641,7 +8641,7 @@ snapshots:
 
   '@preprocess/runmode@https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051': {}
 
-  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@913c520(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)':
+  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@df481fd(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)':
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       boring-avatars: 2.0.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

@@ -5,6 +5,7 @@ import {
   LoadingButton,
   type LoadingButtonHandle,
 } from "@preprocess/ui/components/loading-button";
+import type { IconComponentProps } from "@preprocess/ui/lib/icon-context";
 import { useRef, useState, type FormEvent } from "react";
 
 import { authPost } from "../features/auth/client";
@@ -138,12 +139,10 @@ export function PasswordlessForm({
             className="w-full"
             disabled={pending || opening}
             onClick={() => void onGoogle()}
+            leadingIcon={GoogleMark}
             variant="secondary"
           >
-            <span className="inline-flex items-center gap-2">
-              <GoogleMark />
-              {opening ? "Opening Google…" : "Continue with Google"}
-            </span>
+            {opening ? "Opening Google…" : "Continue with Google"}
           </Button>
         </>
       ) : null}
@@ -181,9 +180,9 @@ export const linkSentFooter = (onBack: () => void) => (
 );
 
 /** Google's own "G", which its brand rules ask for on the button. */
-function GoogleMark() {
+function GoogleMark({ size = 16 }: IconComponentProps) {
   return (
-    <svg aria-hidden className="size-4" viewBox="0 0 24 24">
+    <svg aria-hidden height={size} viewBox="0 0 24 24" width={size}>
       <path
         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1Z"
         fill="#4285F4"

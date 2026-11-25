@@ -52,6 +52,13 @@ export const Route = createRootRoute({
     ],
     links: [
       {
+        rel: "preload",
+        href: "/fonts/InterVariable.woff2",
+        as: "font",
+        type: "font/woff2",
+        crossOrigin: "anonymous",
+      },
+      {
         rel: "icon",
         type: "image/png",
         href: FAVICON_LIGHT,
