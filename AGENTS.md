@@ -30,6 +30,31 @@ code reads it only through `@preprocess/runmode`. Never hard-code a region.
 `apps/*/wrangler.jsonc` is generated for local development; `pnpm lint` fails if
 it drifts. Deploys run through `infra/`, never `wrangler deploy`.
 
+Every push to `main` deploys staging, runs the staging smoke test
+(`infra/scripts/smoke.ts`), and then ships the same commit to production with no
+manual step (`.github/workflows/deploy.yml`). Treat a merge as a production
+deploy. `v*` tags are self-hosted releases only: versioned, with upgrade notes,
+and they deploy nothing of ours.
+
+## Migrations
+
+Expand and contract. Each deploy applies `packages/db/migrations` while the
+previous Workers still serve, and a rollback runs the previous Workers on the
+newer schema, so every migration must work with both the old and the new code.
+
+- **Expand** in one release: add tables, nullable columns, or columns with a
+  default; add indexes; backfill. The new code may use them, and the old code
+  must not break because they exist.
+- **Contract** in a later release, once no deployed code reads or writes the old
+  shape: drop, rename, retype, or make NOT NULL. Rename by adding the new
+  column, writing both, backfilling, switching reads, and only then dropping the
+  old one.
+- Never edit or delete a migration once it is on `main`; add a new one.
+- `pnpm check:migrations` (run on every pull request) fails on edited or deleted
+  migrations and on contracting statements. A contract migration must say why it
+  is safe on its own line: `-- contract: <reason>`, naming the release that
+  stopped using what it removes.
+
 ## Design system
 
 The app uses Fluid Functionalism from `@preprocess/ui` (preprocess/kit): Base UI

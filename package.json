@@ -11,6 +11,7 @@
     "bootstrap": "pnpm install --frozen-lockfile",
     "build": "turbo run build",
     "check:boundaries": "node scripts/check-boundaries.ts",
+    "check:migrations": "node scripts/check-migrations.ts",
     "clean": "turbo run clean && rm -rf .turbo",
     "db:migrate": "pnpm --filter @preprocess/db migrate",
     "db:seed": "pnpm --filter @preprocess/db seed",
