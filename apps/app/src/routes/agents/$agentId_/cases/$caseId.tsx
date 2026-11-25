@@ -19,6 +19,9 @@ import {
   orgCaseStatusSetter,
 } from "../../../../features/agent-cases/list-org-cases";
 
+/** `view=review` opens the room on its Review view. */
+type CaseRoomSearch = { view?: "review" };
+
 // Not nested under /agents/$agentId, like the agent's case list: seeded
 // cases name agents the API doesn't have.
 export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
@@ -27,6 +30,8 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
     parse: (raw) => parseAgentCaseRef(raw),
     stringify: (ref) => stringifyAgentCaseRef(ref),
   },
+  validateSearch: (search: Record<string, unknown>): CaseRoomSearch =>
+    search.view === "review" ? { view: "review" } : {},
   loader: async ({ params }) => {
     const [agent, item, neighbors, room] = await Promise.all([
       getCaseAgent(params.agentId),
@@ -51,6 +56,7 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
 
 function AgentCasePage() {
   const caseRef = Route.useParams();
+  const { view } = Route.useSearch();
   const { agent, item, neighbors, room } = Route.useLoaderData();
   const router = useRouter();
   const { agentId, caseId } = caseRef;
@@ -66,6 +72,7 @@ function AgentCasePage() {
       agent={agent}
       caseItem={item}
       caseRef={caseRef}
+      initialView={view}
       // Seeded input so the viewers are exercisable, for seeded cases only.
       // Builds outside dev serve none.
       inputSamples={

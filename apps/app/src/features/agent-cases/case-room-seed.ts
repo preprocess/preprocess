@@ -5,6 +5,7 @@ import type {
   CaseRoomState,
   RoomAnswer,
   RoomApproval,
+  RoomMemory,
   RoomField,
   RoomMessage,
   WriteResult,
@@ -141,14 +142,34 @@ const answersOf = (fields: readonly RoomField[]) =>
       .map((f) => [f.path, f.answer!.value]),
   );
 
-type SeededWork = Omit<CaseRoomState, "approvals"> & {
+type SeededWork = Omit<CaseRoomState, "approvals" | "memories"> & {
   readonly approvals?: readonly RoomApproval[];
+  readonly memories?: readonly RoomMemory[];
 };
 
 function seededRoom(scenario: CaseWorkScenario): CaseRoomState {
   const work = seededWork(scenario);
-  return { ...work, approvals: work.approvals ?? [] };
+  return {
+    ...work,
+    approvals: work.approvals ?? [],
+    memories: work.memories ?? [],
+  };
 }
+
+const memory = (
+  id: string,
+  text: string,
+  reason: string,
+  minutes: number,
+): RoomMemory => ({
+  id,
+  text,
+  reason,
+  status: "proposed",
+  proposedAt: new Date(T0 + minutes * 60_000).toISOString(),
+  decidedAt: null,
+  decidedByName: null,
+});
 
 function seededWork(scenario: CaseWorkScenario): SeededWork {
   switch (scenario) {
@@ -513,6 +534,20 @@ function seededWork(scenario: CaseWorkScenario): SeededWork {
             ...decided(10, "Ana"),
           }),
         ],
+        memories: [
+          memory(
+            "mem_gl_software",
+            "Software subscriptions go to GL account 6200, not 6400.",
+            "Ana rejected 6400 for a software invoice and asked for 6200.",
+            6,
+          ),
+          memory(
+            "mem_globex_finance",
+            "Globex payments over 1,000 EUR need Finance to approve post_payment.",
+            "Finance approved the Globex payment after checking PO 7731.",
+            9,
+          ),
+        ],
       };
     }
     case "live":
@@ -724,6 +759,37 @@ export async function decideApproval(
         group: found.group,
       },
     ],
+  }));
+  return { ok: true };
+}
+
+export async function decideMemory(
+  agentId: string,
+  caseId: string,
+  input: { memoryId: string; decision: "accept" | "dismiss" },
+): Promise<ApprovalDecision> {
+  const room = await getCaseRoom(agentId, caseId);
+  const found = room.memories.find((m) => m.id === input.memoryId);
+  if (!found)
+    return { ok: false, code: "not_found", message: "No such proposal." };
+  if (found.status !== "proposed")
+    return {
+      ok: false,
+      code: "memory_decided",
+      message: `The rule is ${found.status}.`,
+    };
+  await update(agentId, caseId, (current) => ({
+    ...current,
+    memories: current.memories.map((m) =>
+      m.id === found.id
+        ? {
+            ...m,
+            status: input.decision === "accept" ? "accepted" : "dismissed",
+            decidedAt: new Date().toISOString(),
+            decidedByName: "You",
+          }
+        : m,
+    ),
   }));
   return { ok: true };
 }

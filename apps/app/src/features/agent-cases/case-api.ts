@@ -12,6 +12,7 @@ import type {
   ApprovalDecision,
   CaseRoomState,
   RoomApproval,
+  RoomMemory,
   WriteResult,
 } from "./case-room-state";
 
@@ -102,9 +103,13 @@ export type LiveCaseListPage = {
 
 const server = () => import("../../server/api.server");
 
-async function getJson<T>(path: string): Promise<T> {
+/** GETs a /v1 route; with `notFound`, a 404 returns it instead of throwing. */
+async function getJson<T>(path: string, ...notFound: [] | [T]): Promise<T> {
   const { activeOrgJson } = await server();
-  return activeOrgJson<T>(path);
+  return activeOrgJson<T>(
+    path,
+    notFound.length > 0 ? { notFound: notFound[0] } : {},
+  );
 }
 
 async function send(path: string, init: RequestInit = {}) {
@@ -373,16 +378,28 @@ export const liveCase = createServerFn({ method: "GET" })
     return item ? toCase(organizationId, item, peopleById(members)) : null;
   });
 
-type ApiRoom = Partial<Omit<CaseRoomState, "approvals">> & {
+type ApiRoom = Partial<Omit<CaseRoomState, "approvals" | "memories">> & {
   status: CaseRoomState["status"];
   approvals?: Omit<RoomApproval, "decidedByName">[];
 };
 
-/** Fills what a queued case's room leaves out, and names who decided. */
-async function roomOf(room: ApiRoom): Promise<CaseRoomState> {
+type ApiMemory = Omit<RoomMemory, "decidedByName"> & {
+  /** The deciding person's user id. */
+  decidedBy: string | null;
+};
+
+/**
+ * Fills what a queued case's room leaves out, adds the rules the agent
+ * proposed on the case, and names who decided.
+ */
+async function roomOf(
+  room: ApiRoom,
+  apiMemories: ApiMemory[],
+): Promise<CaseRoomState> {
   const approvals = room.approvals ?? [];
   const people = peopleById(
-    approvals.some((approval) => approval.decidedBy)
+    approvals.some((approval) => approval.decidedBy) ||
+      apiMemories.some((m) => m.decidedBy)
       ? await getJson<ApiMember[]>("/members")
       : [],
   );
@@ -401,6 +418,17 @@ async function roomOf(room: ApiRoom): Promise<CaseRoomState> {
         ? (people.get(approval.decidedBy.replace(/^person:/, ""))?.name ?? null)
         : null,
     })),
+    memories: apiMemories.map((m) => ({
+      id: m.id,
+      text: m.text,
+      reason: m.reason,
+      status: m.status,
+      proposedAt: m.proposedAt,
+      decidedAt: m.decidedAt,
+      decidedByName: m.decidedBy
+        ? (people.get(m.decidedBy)?.name ?? null)
+        : null,
+    })),
   };
 }
 
@@ -411,11 +439,16 @@ async function roomOf(room: ApiRoom): Promise<CaseRoomState> {
 const caseRoomJson = createServerFn({ method: "GET" })
   .validator((caseId: string) => caseId)
   .handler(async ({ data: caseId }): Promise<string> => {
-    const response = await send(`/cases/${encodeURIComponent(caseId)}/room`);
+    const path = `/cases/${encodeURIComponent(caseId)}`;
+    const [response, memories] = await Promise.all([
+      send(`${path}/room`),
+      getJson<{ memories: ApiMemory[] } | null>(`${path}/memories`, null),
+    ]);
+    const proposals = memories?.memories ?? [];
     if (response.status === 404)
-      return JSON.stringify(await roomOf({ status: "queued" }));
+      return JSON.stringify(await roomOf({ status: "queued" }, proposals));
     if (!response.ok) throw new Error((await apiError(response)).message);
-    return JSON.stringify(await roomOf(await response.json()));
+    return JSON.stringify(await roomOf(await response.json(), proposals));
   });
 
 /** The case room's work: fields, answers, checks, thread and approvals. */
@@ -472,6 +505,27 @@ export const liveCaseCommand = createServerFn({ method: "POST" })
     );
     if (!response.ok) throw new Error((await apiError(response)).message);
     return null;
+  });
+
+/**
+ * Accepts or dismisses a rule the agent proposed. Refusals come back as data
+ * so the Review tab shows them beside the rule.
+ */
+export const liveMemoryDecision = createServerFn({ method: "POST" })
+  .validator(
+    (input: {
+      caseId: string;
+      memoryId: string;
+      decision: "accept" | "dismiss";
+    }) => input,
+  )
+  .handler(async ({ data }): Promise<ApprovalDecision> => {
+    const response = await send(
+      `/cases/${encodeURIComponent(data.caseId)}/memories/${encodeURIComponent(data.memoryId)}/${data.decision}`,
+      { method: "POST" },
+    );
+    if (response.ok) return { ok: true };
+    return { ok: false, ...(await apiError(response)) };
   });
 
 /** Posts to the case thread. Refusals come back as data for the composer. */
