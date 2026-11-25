@@ -4,10 +4,6 @@ import {
   CheckboxGroup,
   CheckboxItem,
 } from "@preprocess/ui/components/checkbox-group";
-import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
 import { InputCopy } from "@preprocess/ui/components/input-copy";
 import {
   AsyncActionAbortError,
@@ -38,6 +34,10 @@ import {
 } from "../settings/kit";
 import { useCanAdminister } from "../settings/use-role";
 import { SettingsStacked } from "../settings/settings-widgets";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 /**
  * Developers → Keys & webhooks: the organization's API keys (Better Auth's
@@ -247,7 +247,7 @@ function CreateKeyDialog({
   organizationId: string;
   onCreated: () => void;
 }>) {
-  const nameRef = useRef<InlineValidationHandle>(null);
+  const nameRef = useRef<ValidatedFieldHandle>(null);
   const createRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState("");
   const [secret, setSecret] = useState<string | null>(null);
@@ -298,7 +298,7 @@ function CreateKeyDialog({
             createRef.current?.run();
           }}
         >
-          <InlineValidation
+          <ValidatedField
             autoFocus
             hint="Say where it's used, like CI."
             id="api-key-name"
@@ -438,7 +438,7 @@ function AddEndpointDialog({
   organizationId: string;
   onAdded: () => void;
 }>) {
-  const urlRef = useRef<InlineValidationHandle>(null);
+  const urlRef = useRef<ValidatedFieldHandle>(null);
   const addRef = useRef<LoadingButtonHandle>(null);
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<string[]>(
@@ -501,7 +501,7 @@ function AddEndpointDialog({
             addRef.current?.run();
           }}
         >
-          <InlineValidation
+          <ValidatedField
             autoFocus
             hint="A public https URL."
             id="webhook-url"

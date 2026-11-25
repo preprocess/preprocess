@@ -1,10 +1,6 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
@@ -37,6 +33,10 @@ import {
   type SecretScope,
   type SecretSummary,
 } from "./platform-store";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 export type SecretItem = SecretSummary;
 
@@ -120,8 +120,8 @@ function SecretDialog({
   const [scope, setScope] = useState<SecretScope>(
     item?.scope ?? DEFAULT_SECRET_SCOPE,
   );
-  const keyRef = useRef<InlineValidationHandle>(null);
-  const valueRef = useRef<InlineValidationHandle>(null);
+  const keyRef = useRef<ValidatedFieldHandle>(null);
+  const valueRef = useRef<ValidatedFieldHandle>(null);
   const saveRef = useRef<LoadingButtonHandle>(null);
   const [key, setKey] = useState(item?.key ?? "");
   const [value, setValue] = useState("");
@@ -162,7 +162,7 @@ function SecretDialog({
         }}
       >
         {editing ? null : (
-          <InlineValidation
+          <ValidatedField
             autoFocus
             hint="Capital letters, numbers, and underscores."
             id="secret-key"
@@ -174,7 +174,7 @@ function SecretDialog({
             value={key}
           />
         )}
-        <InlineValidation
+        <ValidatedField
           autoFocus={editing}
           hint="Stored encrypted."
           id="secret-value"

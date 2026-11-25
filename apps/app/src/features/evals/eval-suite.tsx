@@ -5,10 +5,6 @@ import {
   CheckboxItem,
 } from "@preprocess/ui/components/checkbox-group";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
 } from "@preprocess/ui/components/loading-button";
@@ -48,6 +44,10 @@ import {
   type EvalRun,
   type EvalSuiteDetail,
 } from "./eval-api";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 const countFormat = new Intl.NumberFormat();
 const moving = (run: EvalRun) =>
@@ -468,8 +468,8 @@ function EditSuiteForm({
   close: () => void;
   onSave: (body: { name: string; cap?: number }) => Promise<void>;
 }>) {
-  const nameRef = useRef<InlineValidationHandle>(null);
-  const capRef = useRef<InlineValidationHandle>(null);
+  const nameRef = useRef<ValidatedFieldHandle>(null);
+  const capRef = useRef<ValidatedFieldHandle>(null);
   const [name, setName] = useState(suite.name);
   const [cap, setCap] = useState(String(suite.cap ?? ""));
   const [pending, setPending] = useState(false);
@@ -497,7 +497,7 @@ function EditSuiteForm({
       className="flex flex-col gap-4"
       onSubmit={(event: FormEvent<HTMLFormElement>) => event.preventDefault()}
     >
-      <InlineValidation
+      <ValidatedField
         ref={nameRef}
         autoComplete="off"
         id="eval-suite-edit-name"
@@ -507,7 +507,7 @@ function EditSuiteForm({
         value={name}
       />
       {suite.kind === "automatic" ? (
-        <InlineValidation
+        <ValidatedField
           ref={capRef}
           hint="Older cases leave the suite when it's full. Lowering this removes them now."
           id="eval-suite-cap"

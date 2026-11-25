@@ -8,10 +8,6 @@ import {
   DialogTitle,
 } from "@preprocess/ui/components/dialog";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
@@ -20,6 +16,7 @@ import { useRef, useState, type FormEvent } from "react";
 
 import { createOrganization } from "../features/organizations/user-organizations";
 import { validateOrganizationName } from "../server/organization-name";
+import { ValidatedField, type ValidatedFieldHandle } from "./validated-field";
 
 function validateOrgName(value: string) {
   const result = validateOrganizationName(value);
@@ -33,7 +30,7 @@ function CreateOrganizationDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const nameFieldRef = useRef<InlineValidationHandle>(null);
+  const nameFieldRef = useRef<ValidatedFieldHandle>(null);
   const createRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +81,7 @@ function CreateOrganizationDialog({
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <InlineValidation
+          <ValidatedField
             ref={nameFieldRef}
             autoComplete="organization"
             autoFocus
