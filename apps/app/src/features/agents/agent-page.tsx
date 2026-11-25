@@ -37,7 +37,13 @@ import {
 import { SizeProvider } from "@preprocess/ui/lib/size-context";
 import { cn } from "@preprocess/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 
 import { PageHeader } from "../../components/page-header";
 import {
@@ -94,6 +100,7 @@ export function AgentPage({
   agent,
   tab,
   detail,
+  parent,
   anchors,
   children,
 }: Readonly<{
@@ -101,6 +108,8 @@ export function AgentPage({
   tab: AgentSection;
   /** The detail page's own crumb, after its section's. */
   detail?: string;
+  /** A crumb between the section and the detail, such as a run's suite. */
+  parent?: { label: string; link: ReactElement };
   /** Jump links under the current section, to element ids on the page. */
   anchors?: readonly SectionAnchor[];
   children: ReactNode;
@@ -149,6 +158,16 @@ export function AgentPage({
               linked={detail !== undefined}
               section={tab}
             />
+            {parent ? (
+              <>
+                <BreadcrumbSeparator>/</BreadcrumbSeparator>
+                <BreadcrumbItem className="min-w-0">
+                  <BreadcrumbLink className="truncate" render={parent.link}>
+                    {parent.label}
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+              </>
+            ) : null}
             {detail !== undefined ? (
               <>
                 <BreadcrumbSeparator>/</BreadcrumbSeparator>
