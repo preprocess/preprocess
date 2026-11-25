@@ -540,6 +540,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
+      '@types/pg':
+        specifier: 'catalog:'
+        version: 8.23.1
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12

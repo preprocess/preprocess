@@ -31,6 +31,7 @@
     "@cloudflare/workers-types": "catalog:",
     "@preprocess/sdk": "workspace:*",
     "@types/node": "catalog:",
+    "@types/pg": "catalog:",
     "esbuild": "^0.25.0",
     "prettier": "^3.6.2",
     "tsx": "catalog:",
