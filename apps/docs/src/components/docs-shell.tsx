@@ -323,7 +323,13 @@ function SectionSwitch({
 // Light or dark, one icon button as www.preprocess.com has it. The system
 // theme applies until the person picks one. The server can't know the
 // theme, so the first render assumes light.
-function ThemeToggle() {
+function ThemeToggle({
+  className,
+  variant = "ghost",
+}: {
+  className?: string;
+  variant?: "ghost" | "tertiary";
+}) {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -333,12 +339,12 @@ function ThemeToggle() {
     <Button
       aria-label={`Switch to ${nextTheme} mode`}
       aria-pressed={isDark}
-      className="text-muted-foreground hover:text-foreground"
+      className={cn("text-muted-foreground hover:text-foreground", className)}
       onClick={() => setTheme(nextTheme)}
       size="icon-sm"
       title={`Switch to ${nextTheme} mode`}
       type="button"
-      variant="ghost"
+      variant={variant}
     >
       {isDark ? <Sun aria-hidden /> : <Moon aria-hidden />}
     </Button>
@@ -349,10 +355,10 @@ function ThemeToggle() {
 // icons, so the kit has none to offer.
 function GitHubLink({
   className,
-  size,
+  variant = "ghost",
 }: {
   className?: string;
-  size?: "icon" | "icon-sm";
+  variant?: "ghost" | "tertiary";
 }) {
   return (
     <Button
@@ -365,9 +371,9 @@ function GitHubLink({
           target="_blank"
         />
       }
-      size={size ?? "icon-sm"}
+      size="icon-sm"
       title="GitHub"
-      variant="ghost"
+      variant={variant}
     >
       <svg
         aria-hidden
@@ -654,29 +660,27 @@ function Lockup({ onClick }: { onClick?: () => void }) {
   );
 }
 
-// The bar below lg: the menu control at the left, the lockup, then search
-// and GitHub.
-// The open menu repeats it in place, with the close control where the menu
-// button was.
+// The bar below lg: the lockup at the left, then search and the menu control
+// at the right edge. The open menu repeats it in place, with the close control
+// where the menu button was.
 function MobileBar({
   children,
   className,
-  leading,
   onSearch,
+  trigger,
 }: {
   children: ReactNode;
   className?: string;
-  leading: ReactNode;
   onSearch: () => void;
+  trigger: ReactNode;
 }) {
   return (
     <header
       className={cn(
-        "relative z-20 flex h-13 shrink-0 items-center gap-1 bg-surface-2 px-[11px] lg:hidden",
+        "relative z-20 flex h-13 shrink-0 items-center gap-1 bg-surface-2 pr-[11px] pl-5 lg:hidden",
         className,
       )}
     >
-      {leading}
       <div className="min-w-0 flex-1">{children}</div>
       <Button
         aria-label="Search documentation"
@@ -687,7 +691,7 @@ function MobileBar({
       >
         <Search size={18} />
       </Button>
-      <GitHubLink className="shrink-0" size="icon" />
+      <div className="shrink-0">{trigger}</div>
     </header>
   );
 }
@@ -724,8 +728,8 @@ function SectionRow({
 }
 
 // Below lg the menu fills the screen under the same bar: the two halves of
-// the docs as rows, the section's pages below a divider, then the theme and
-// the way into the app at the end of the list.
+// the docs as rows, the section's pages below a divider, then one row at the
+// end of the list: the way into the app, the theme and GitHub.
 function MobileMenu({
   appUrl,
   onClose,
@@ -747,7 +751,9 @@ function MobileMenu({
   return (
     <>
       <MobileBar
-        leading={
+        className="shadow-[inset_0_-1px_0_var(--border)]"
+        onSearch={onSearch}
+        trigger={
           <SheetClose
             render={
               <Button
@@ -761,8 +767,6 @@ function MobileMenu({
             <X size={18} />
           </SheetClose>
         }
-        className="shadow-[inset_0_-1px_0_var(--border)]"
-        onSearch={onSearch}
       >
         <Lockup onClick={onClose} />
       </MobileBar>
@@ -799,23 +803,25 @@ function MobileMenu({
               <GuideRows nodes={guides} pathname={pathname} />
             )}
             <hr className="mx-2 my-3 h-px border-0 bg-border" />
-            <div className="flex items-center justify-between pr-2 pl-2">
-              <span className={cn(typeClass("body"), "text-foreground")}>
-                Theme
-              </span>
-              <ThemeToggle />
-            </div>
-            <div className="px-2 pt-6">
-              <ShapeProvider defaultShape="pill">
+            <ShapeProvider defaultShape="pill">
+              <div className="flex items-center gap-2 px-2 pt-3">
                 <Button
-                  className="h-11 w-full rounded-full"
+                  className="h-11 min-w-0 flex-1 rounded-full"
                   render={<a href={appUrl} />}
                   trailingIcon={ArrowUpRight}
                 >
                   Open the app
                 </Button>
-              </ShapeProvider>
-            </div>
+                <ThemeToggle
+                  className="size-11 rounded-full"
+                  variant="tertiary"
+                />
+                <GitHubLink
+                  className="size-11 rounded-full"
+                  variant="tertiary"
+                />
+              </div>
+            </ShapeProvider>
           </nav>
         </ScrollArea>
       </ShapeProvider>
@@ -874,7 +880,8 @@ function MobileHeader({
           "transition-shadow",
           scrolled && "shadow-[inset_0_-1px_0_var(--border)]",
         )}
-        leading={
+        onSearch={onSearch}
+        trigger={
           <Button
             aria-label="Open navigation"
             className="text-muted-foreground"
@@ -885,7 +892,6 @@ function MobileHeader({
             <Menu size={18} />
           </Button>
         }
-        onSearch={onSearch}
       >
         <Lockup />
       </MobileBar>
