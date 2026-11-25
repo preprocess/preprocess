@@ -146,6 +146,7 @@ jobs:
                 "",
                 `- App: ${o.app}`,
                 `- API: ${o.api}`,
+                `- Docs: ${o.docs}`,
                 `- PlanetScale branch \`${o.branch}\``,
                 "",
                 `Torn down when this pull request closes. [Run](${run})`,

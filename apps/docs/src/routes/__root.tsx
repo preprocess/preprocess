@@ -1,3 +1,4 @@
+import { FluidProvider } from "@preprocess/ui/lib/fluid-provider";
 import {
   createRootRoute,
   HeadContent,
@@ -7,6 +8,16 @@ import {
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
 
 import appCss from "@/styles/app.css?url";
+
+const translations = {
+  "Path Parameters(operation page)": "Path parameters",
+  "Query Parameters(operation page)": "Query parameters",
+  "Header Parameters(operation page)": "Header parameters",
+  "Cookie Parameters(operation page)": "Cookie parameters",
+  "Request Body(operation page)": "Request body",
+  "Filter Properties(schema UI)": "Filter properties",
+  "Response Body(operation page)": "Responses",
+};
 
 export const Route = createRootRoute({
   head: () => ({
@@ -39,9 +50,11 @@ export const Route = createRootRoute({
           media="(prefers-color-scheme: dark)"
         />
       </head>
-      <body className="flex min-h-screen flex-col">
-        <RootProvider>
-          <Outlet />
+      <body className="fixed inset-0 h-svh overflow-hidden overscroll-none">
+        <RootProvider i18n={{ translations }} search={{ enabled: false }}>
+          <FluidProvider shape="pill">
+            <Outlet />
+          </FluidProvider>
         </RootProvider>
         <Scripts />
       </body>
