@@ -31,7 +31,8 @@ type Page = {
     | "/settings/organization/groups"
     | "/settings/organization/defaults"
     | "/settings/organization/guardrails"
-    | "/settings/organization/audit-logs";
+    | "/settings/organization/audit-logs"
+    | "/settings/organization/opentelemetry";
   label: string;
   anchors?: readonly { id: string; label: string }[];
 };
@@ -61,6 +62,10 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
         anchors: GUARDRAIL_SECTIONS,
       },
       { to: "/settings/organization/audit-logs", label: "Audit log" },
+      {
+        to: "/settings/organization/opentelemetry",
+        label: "OpenTelemetry export",
+      },
     ],
   },
 ];
