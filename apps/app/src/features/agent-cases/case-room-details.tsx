@@ -11,6 +11,9 @@ import {
   assigneesLabel,
 } from "./assignee-stack";
 import { CaseStatusIcon } from "./case-status-icon";
+import { HALT_REASONS } from "./case-room-state";
+import { groupName } from "./case-room-review";
+import { useCaseWork } from "./case-work-context";
 
 /** The open case, for views deep in the workspace panes. */
 export const CaseRecordContext = createContext<Case | null>(null);
@@ -39,11 +42,35 @@ function Muted({ children }: Readonly<{ children: ReactNode }>) {
   return <span className="text-muted-foreground">{children}</span>;
 }
 
-/** The Details view: the case's properties, Linear's issue sidebar as a card. */
+/** The Details inspector: the case's properties, beside the work. */
 export function CaseRoomDetails({ item }: Readonly<{ item: Case }>) {
+  const room = useCaseWork()?.room;
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
-      <div className="mx-auto flex w-full max-w-xl flex-col gap-8 px-5 py-6">
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-8 px-4 py-5">
+        {room && room.status !== "queued" ? (
+          <SettingsSection title="Run">
+            <SettingsRows>
+              <Property label="Runs">{room.run}</Property>
+              {room.waitingOn ? (
+                <Property label="Waiting on">
+                  <Badge size="sm">{groupName(room.waitingOn.group)}</Badge>
+                  {room.waitingOn.reason ? (
+                    <Muted>{room.waitingOn.reason}</Muted>
+                  ) : null}
+                </Property>
+              ) : null}
+              {room.status === "halted" ? (
+                <Property label="Halted">
+                  {HALT_REASONS[room.reason ?? ""] ?? room.reason}
+                </Property>
+              ) : null}
+              {room.status === "failed" && room.reason ? (
+                <Property label="Failed">{room.reason}</Property>
+              ) : null}
+            </SettingsRows>
+          </SettingsSection>
+        ) : null}
         <SettingsSection title="Properties">
           <SettingsRows>
             <Property label="Status">

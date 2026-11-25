@@ -7,13 +7,7 @@ import {
   type ItemRect,
 } from "@preprocess/ui/hooks/use-fluid-hover";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
-import {
-  Clock,
-  FileIcon,
-  InfoIcon,
-  ListIcon,
-  XIcon,
-} from "@preprocess/ui/lib/icons";
+import { Clock, FileIcon, ListIcon, XIcon } from "@preprocess/ui/lib/icons";
 import { useShape } from "@preprocess/ui/lib/shape-context";
 import { spring } from "@preprocess/ui/lib/springs";
 import { cn } from "@preprocess/ui/lib/utils";
@@ -38,8 +32,7 @@ import {
 export const ROOM_VIEWS = [
   { id: INPUT_TAB, label: "Input", icon: FileIcon },
   { id: "review", label: "Review", icon: ListIcon },
-  { id: "events", label: "Events", icon: Clock },
-  { id: "details", label: "Details", icon: InfoIcon },
+  { id: "run", label: "Run", icon: Clock },
 ] as const;
 
 export type RoomViewId = (typeof ROOM_VIEWS)[number]["id"];

@@ -21,6 +21,19 @@ export const SCENARIO_SURFACES = {
     label: "Case room",
     states: ["conversation", "empty", "streaming"],
   },
+  // The case room's work: fields, answers, checks and run state.
+  "case-work": {
+    label: "Case work",
+    states: [
+      "waiting",
+      "review",
+      "running",
+      "completed",
+      "halted",
+      "failed",
+      "empty",
+    ],
+  },
 } as const;
 
 export type ScenarioSurface = keyof typeof SCENARIO_SURFACES;
@@ -41,6 +54,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   inbox: "seeded",
   cases: "seeded",
   "case-room": "conversation",
+  "case-work": "waiting",
 };
 
 /** Builds without `import.meta.env.DEV` never serve seeded records. */
@@ -48,6 +62,7 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   inbox: "empty",
   cases: "empty",
   "case-room": "empty",
+  "case-work": "empty",
 };
 
 export function isScenarioSurface(value: string): value is ScenarioSurface {

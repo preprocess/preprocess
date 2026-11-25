@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { resetCaseRooms } from "../../../features/agent-cases/case-room-seed";
 import { resetInboxStore } from "../../../features/inbox/load-inbox";
 import {
   SCENARIO_COOKIE_NAME,
@@ -19,7 +20,10 @@ function scenarioResponse(request: Request): Response {
 
   const url = new URL(request.url);
   const reset = url.searchParams.get("reset") === "1";
-  if (reset) resetInboxStore();
+  if (reset) {
+    resetInboxStore();
+    resetCaseRooms();
+  }
 
   const current = reset
     ? SEEDED_SCENARIO
