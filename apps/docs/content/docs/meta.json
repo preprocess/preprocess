@@ -1,7 +1,8 @@
 {
   "pages": [
-    "---Start here---",
     "index",
+    "---Start here---",
+    "introduction",
     "quickstart",
     "how-it-works",
     "---Concepts---",

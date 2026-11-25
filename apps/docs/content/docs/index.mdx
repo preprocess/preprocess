@@ -3,70 +3,11 @@ title: Preprocess
 description: Build, deploy and supervise agents that work cases.
 ---
 
-Preprocess is where you deploy agents you write as code, and where the rest of
-your company works the cases those agents handle. You write the agent in
-TypeScript with the SDK. Preprocess runs it and gives everyone else what they
-need to work with it: an inbox, a case room with the agent's thread, a review
-screen built from the agent's output schema, and approvals that go to the right
-team.
-
-## What you write and what you get
-
-An agent is a module in your own git repository. It declares its instructions,
-its model, the tools it can call, the shape of the answer it produces, the
-checks that answer must pass, and what a person has to approve. Nobody changes
-that behavior in the app; it changes when you deploy new code.
-
-Everything around the agent comes from Preprocess:
-
-- **Deployments.** Every deploy is stored and pinned. Your production branch
-  serves production, other branches are previews, and rolling back means serving
-  an earlier deployment again.
-- **Cases.** An API call, a schedule, someone in the app or an MCP client starts
-  a case: one job for one agent, with its own thread and answers.
-- **Review and approvals.** People check the agent's answers field by field,
-  change them, and approve what your code says needs approving.
-- **Access.** Groups decide who works or reads an agent's cases, and which team
-  a case waits on.
-- **Records.** Every run is captured, logged and audited, and completed cases
-  become evals for the next version.
-
-## Who uses it
-
-| Who       | What they do                                                                 | How they get access                       |
-| --------- | ---------------------------------------------------------------------------- | ----------------------------------------- |
-| Developer | Writes agents with the SDK, deploys them, sets configuration and runs evals. | The organization's Developers group       |
-| Operator  | Works cases: reviews answers, approves, reruns and completes them.           | A group with operator access to the agent |
-| Viewer    | Reads an agent's cases.                                                      | A group with viewer access to the agent   |
-
-Separately, everyone in the organization has one fixed role: Owner, Admin or
-Member. Roles govern the organization, groups govern agents. See
-[Groups and access](/concepts/groups-and-access).
-
-## Where it runs
-
-Preprocess runs entirely on Cloudflare: Workers, Durable Objects, R2, Queues and
-Postgres through Hyperdrive. Use our cloud, or install the same stack in your
-own Cloudflare account with `preprocess install`.
-
-## Start here
-
-<Cards>
-  <Card
-    title="Quickstart"
-    href="/quickstart"
-    icon="terminal"
-    hint="preprocess deploy"
-    description="Write an agent, deploy it and take one case from start to finished."
-  />
-  <Card
-    title="How it works"
-    href="/how-it-works"
-    description="Follow one case from the call that opens it to the result going out."
-  />
-</Cards>
-
-## Tools
+An agent on Preprocess is a TypeScript module. It declares its instructions, its
+model, the tools it may call, and the shape of the answers it produces for each
+case. You deploy it with the CLI. Preprocess runs it on Cloudflare Workers, and
+your team supervises its cases in the app: they review answers, approve what
+needs approval, and teach it rules it will follow next time.
 
 <Cards>
   <Card
