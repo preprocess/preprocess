@@ -1011,6 +1011,49 @@ export const caseRoutes = new OpenAPIHono<{
   )
   .openapi(
     createRoute({
+      method: "get",
+      path: "/cases/{id}/files/{file}",
+      tags: ["Case room"],
+      summary: "Download one of a case's files",
+      description:
+        "Streams the file's bytes for anyone who can see the case. It is always sent as an attachment in a sandbox, so a file never runs as a page on the app's origin.",
+      request: { params: CaseParam.extend({ file: z.string() }) },
+      responses: {
+        200: {
+          content: {
+            "application/octet-stream": {
+              schema: z.any().openapi({ type: "string", format: "binary" }),
+            },
+          },
+          description: "The file's bytes, with its content type",
+        },
+        404: error("No such case or file"),
+      },
+    }),
+    async (c) => {
+      const params = c.req.valid("param");
+      const { key } = await loadCase(c, params.id, false);
+      const [row] = await withOrg(c.env, c.var.org, (tx) =>
+        tx
+          .select()
+          .from(files)
+          .where(and(eq(files.id, params.file), eq(files.caseId, key.caseId))),
+      );
+      const object = row && (await c.env.FILES.get(row.r2Key));
+      if (!row || !object)
+        throw new ApiError(404, "not_found", "No such file.");
+      return c.body(object.body, 200, {
+        "content-type": row.contentType,
+        "content-length": String(row.size),
+        "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+        "content-security-policy": "sandbox",
+        "x-content-type-options": "nosniff",
+        "cache-control": "private, no-store",
+      });
+    },
+  )
+  .openapi(
+    createRoute({
       method: "post",
       path: "/cases/{id}/files",
       tags: ["Case room"],

@@ -10,8 +10,10 @@ import {
   attachCaseFiles,
   caseWorkActions,
   getCaseFiles,
+  openCaseFile,
   getCaseRoom,
 } from "../../../../features/agent-cases/case-room-data";
+import { useAuth } from "../../../../features/auth/auth-context";
 import { FLUE_LAB_INPUT_SAMPLES } from "../../../../features/agent-cases/flue-lab-input-samples";
 import { currentScenario } from "../../../../scenarios/current-scenario";
 import {
@@ -66,6 +68,7 @@ function AgentCasePage() {
   const { view } = Route.useSearch();
   const { agent, item, neighbors, room, access, files } = Route.useLoaderData();
   const router = useRouter();
+  const { organizationId } = useAuth();
   const { agentId, caseId } = caseRef;
   const refresh = async <T,>(result: Promise<T>) => {
     const value = await result;
@@ -88,6 +91,7 @@ function AgentCasePage() {
       }
       caseFiles={{
         files,
+        open: (file) => openCaseFile(organizationId, agentId, caseId, file),
         attach:
           canWork && room.status !== "cancelled"
             ? (picked) => refresh(attachCaseFiles(agentId, caseId, picked))
