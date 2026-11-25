@@ -3,7 +3,8 @@ import pg from "pg";
 import { localDatabaseUrl, migrate } from "../scripts/migrate-lib.ts";
 
 // Login roles that reach preprocess_app only through membership: one without
-// BYPASSRLS, and one with it, the shape DB has on every deployed stage.
+// BYPASSRLS, the shape DB has on deployed stages, and one with it, which
+// withOrg must refuse.
 const deployedRoles = `
   DO $$
   BEGIN

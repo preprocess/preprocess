@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS deps (path TEXT NOT NULL, reads TEXT NOT NULL, PRIMAR
 CREATE INDEX IF NOT EXISTS deps_reads ON deps (reads);
 CREATE TABLE IF NOT EXISTS fetched (path TEXT PRIMARY KEY, key TEXT NOT NULL, data TEXT, fetched_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS checks (name TEXT PRIMARY KEY, ok INTEGER NOT NULL, field TEXT, message TEXT);
-CREATE TABLE IF NOT EXISTS approval_rules (target TEXT PRIMARY KEY, grp TEXT);`;
+CREATE TABLE IF NOT EXISTS approval_rules (target TEXT PRIMARY KEY, grp TEXT);
+CREATE TABLE IF NOT EXISTS success (id INTEGER PRIMARY KEY CHECK (id = 1), ok INTEGER NOT NULL, message TEXT);`;
 
 // What /schema/evaluate adds for approvals (PLAT-39's SDK): a field's rule
 // when it is visible and applies, and the completion rule when it applies.
@@ -251,6 +252,29 @@ export class SchemaState {
       .map((f) => f.path);
   }
 
+  // Whether the case may complete (design doc 05): every check passes and the
+  // schema's success condition, if it declares one, is met.
+  done(): { ok: true } | { ok: false; reason: string } {
+    const failing = this.checks().filter((c) => !c.ok);
+    if (failing.length)
+      return {
+        ok: false,
+        reason: `Checks failing: ${failing.map((c) => c.name).join(", ")}`,
+      };
+    const row = this.sql
+      .exec<{
+        ok: number;
+        message: string | null;
+      }>("SELECT ok, message FROM success")
+      .toArray()[0];
+    if (row && !row.ok)
+      return {
+        ok: false,
+        reason: row.message ?? "The success condition is not met",
+      };
+    return { ok: true };
+  }
+
   // The current answers as the nested object a caller receives: visible
   // fields only, hidden values excluded (design doc 05).
   output(): Record<string, unknown> {
@@ -309,6 +333,13 @@ export class SchemaState {
           .map((row) => [row.path, { key: row.key, data: parse(row.data) }]),
       ),
       targets,
+      confirmed: this.sql
+        .exec<{ path: string }>(
+          "SELECT path FROM answers WHERE status = 'confirmed'",
+        )
+        .toArray()
+        .map((row) => row.path),
+      unreviewed: this.unreviewed(),
     };
     const response = await this.worker().fetch("/schema/evaluate", {
       method: "POST",
@@ -406,6 +437,15 @@ export class SchemaState {
         check.field ?? null,
         check.message ?? null,
       );
+    // An agent built before success conditions sends none: checks decide.
+    if (result.success)
+      this.sql.exec(
+        `INSERT INTO success (id, ok, message) VALUES (1, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET ok = excluded.ok, message = excluded.message`,
+        result.success.ok ? 1 : 0,
+        result.success.message ?? null,
+      );
+    else if (targets === "all") this.sql.exec("DELETE FROM success");
 
     if (depth < MAX_PROPAGATION)
       for (const change of changed) await this.propagate(change, depth + 1);

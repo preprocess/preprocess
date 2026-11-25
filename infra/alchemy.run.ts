@@ -42,6 +42,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
+import { GrantAppRole } from "./src/app-role.ts";
 import {
   roleOrigin,
   schemaDigest,
@@ -344,14 +345,22 @@ export default Alchemy.Stack(
             branch,
             inheritedRoles: ["postgres"],
           });
-          return { app: role.origin, system: role.origin };
+          const appRole = yield* Planetscale.PostgresRole("AppRole", {
+            database,
+            branch,
+            inheritedRoles: [],
+          });
+          const app = yield* GrantAppRole("GrantAppRole", {
+            admin: role.origin,
+            app: appRole.origin,
+          });
+          return { app, system: role.origin };
         });
-    // On our stages PlanetScale roles can inherit only built-in roles, so DB
-    // and DB_SYSTEM both log in as the stage's role, which bypasses RLS.
-    // withOrg switches each DB transaction to preprocess_app (migration 0001),
-    // so RLS applies there; DB_SYSTEM stays the only bypass path. A
-    // self-hosted install logs in as preprocess_app and preprocess_system
-    // directly. Auth reads then writes (SCIM, API key revocation, sessions),
+    // On our stages DB logs in as its own PlanetScale role, made a member of
+    // preprocess_app (migration 0001) without BYPASSRLS by GrantAppRole, and
+    // withOrg switches each transaction to preprocess_app. DB_SYSTEM logs in
+    // as the stage's role, the only bypass path. A self-hosted install logs in
+    // as preprocess_app and preprocess_system directly. Auth reads then writes (SCIM, API key revocation, sessions),
     // so query caching stays off on both configs (PLAT-27).
     const db = yield* Cloudflare.Hyperdrive.Connection("Db", {
       origin: roles.app,

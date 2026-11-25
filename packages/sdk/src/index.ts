@@ -43,7 +43,7 @@ export type {
   ProjectSettings,
   Reasoning,
 } from "./protocol.ts";
-export { schema } from "./schema.ts";
+export { allReviewed, schema } from "./schema.ts";
 export type {
   Answers,
   Approval,
@@ -55,6 +55,7 @@ export type {
   Review,
   Source,
   SourceResult,
+  Success,
 } from "./schema.ts";
 
 export const SDK_VERSION = "0.1.0";

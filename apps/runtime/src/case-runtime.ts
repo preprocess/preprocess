@@ -1201,13 +1201,14 @@ export class CaseRuntime extends DurableObject<Env> {
     });
   }
 
-  // Where a case stands once its run is done: waiting on a group or on
-  // approvals, or completed.
+  // Where a case stands once its run is done: waiting on a group, on its
+  // checks and success condition, or on approvals; or completed.
   private async close(meta: Meta) {
     const schema = this.schema(meta);
-    const blocking = this.settleApprovals(meta);
+    const done = schema.enabled ? schema.done() : { ok: true as const };
+    const blocking = done.ok ? this.settleApprovals(meta) : [];
     const status: CaseStatus =
-      meta.waitingOn || blocking.length ? "waiting" : "completed";
+      meta.waitingOn || !done.ok || blocking.length ? "waiting" : "completed";
     const next: Meta = { ...meta, status };
     if (status === "completed") delete next.reason;
     this.save(next);
@@ -1224,6 +1225,7 @@ export class CaseRuntime extends DurableObject<Env> {
       reason:
         status === "waiting"
           ? (next.waitingOn?.reason ??
+            (done.ok ? null : done.reason) ??
             next.reason ??
             (first ? `Approval needed: ${subject(first)}` : null))
           : null,
@@ -1630,6 +1632,38 @@ export class CaseRuntime extends DurableObject<Env> {
         message: input.text,
       });
     return { id, mentioned: [...new Set(mentioned)] };
+  }
+
+  // A person completes a waiting case (spec 6): the same rule as the agent,
+  // so it completes only when its checks pass and its success condition is
+  // met, and approvals the code declared still apply.
+  async complete(): Promise<
+    | { result: "ok"; state: CaseState }
+    | { result: "refused"; code: string; message: string }
+  > {
+    const meta = this.meta();
+    if (!meta) throw new Error("case has not started");
+    if (meta.status !== "waiting")
+      return {
+        result: "refused",
+        code: "case_not_completable",
+        message: `The case is ${meta.status}.`,
+      };
+    const schema = this.schema(meta);
+    if (schema.enabled) {
+      await schema.evaluate("all");
+      const done = schema.done();
+      if (!done.ok)
+        return {
+          result: "refused",
+          code: "case_not_done",
+          message: done.reason,
+        };
+    }
+    const next: Meta = { ...meta, waitingOn: null };
+    delete next.reason;
+    await this.close(next);
+    return { result: "ok", state: this.state() };
   }
 
   async cancel() {
