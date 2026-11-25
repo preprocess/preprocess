@@ -14,17 +14,36 @@ class GrantFailed extends Data.TaggedError("GrantFailed")<{
   message: string;
 }> {}
 
-const grant = async (admin: PostgresOrigin, user: string) => {
+const connect = async <T>(
+  origin: PostgresOrigin,
+  fn: (client: pg.Client) => Promise<T>,
+) => {
   const client = new pg.Client({
-    host: admin.host,
-    port: admin.port,
-    database: admin.database,
-    user: admin.user,
-    password: Redacted.value(admin.password),
+    host: origin.host,
+    port: origin.port,
+    database: origin.database,
+    user: origin.user,
+    password: Redacted.value(origin.password),
     ssl: true,
   });
   await client.connect();
   try {
+    return await fn(client);
+  } finally {
+    await client.end();
+  }
+};
+
+// The login user carries PlanetScale's routing suffix, so the Postgres role
+// name is read by logging in as it.
+const grant = async (admin: PostgresOrigin, app: PostgresOrigin) => {
+  const user = await connect(app, async (client) => {
+    const { rows } = await client.query<{ user: string }>(
+      "select current_user as user",
+    );
+    return rows[0]!.user;
+  });
+  await connect(admin, async (client) => {
     await client.query(
       `GRANT preprocess_app TO ${client.escapeIdentifier(user)}`,
     );
@@ -42,16 +61,14 @@ const grant = async (admin: PostgresOrigin, user: string) => {
       throw new Error(
         `${user} must be a member of preprocess_app without BYPASSRLS`,
       );
-  } finally {
-    await client.end();
-  }
+  });
 };
 
 export const GrantAppRole = Action(
   "Preprocess.GrantAppRole",
-  (input: { admin: PostgresOrigin; app: PostgresOrigin; role: string }) =>
+  (input: { admin: PostgresOrigin; app: PostgresOrigin }) =>
     Effect.tryPromise({
-      try: () => grant(input.admin, input.role),
+      try: () => grant(input.admin, input.app),
       catch: (error) =>
         new GrantFailed({
           message: `Granting preprocess_app failed: ${error instanceof Error ? error.message : String(error)}`,

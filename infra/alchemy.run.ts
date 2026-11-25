@@ -353,8 +353,6 @@ export default Alchemy.Stack(
           const app = yield* GrantAppRole("GrantAppRole", {
             admin: role.origin,
             app: appRole.origin,
-            // The login user carries a routing suffix; this is the role.
-            role: appRole.name,
           });
           return { app, system: role.origin };
         });
