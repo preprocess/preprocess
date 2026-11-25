@@ -344,7 +344,7 @@ function LogRow({
                         agentId: agentSlug,
                         caseId: log.caseId,
                       })}
-                      to="/cases/$agentId/$caseId"
+                      to="/agents/$agentId/cases/$caseId"
                     >
                       {log.caseId}
                     </Link>

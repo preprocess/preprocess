@@ -199,7 +199,7 @@ function LinkedCaseCard({ item }: Readonly<{ item: Case }>) {
     <Link
       className="group flex items-center gap-3 rounded-xl bg-surface-3 px-4 py-3 outline-none transition-colors duration-80 hover:bg-surface-4 focus-visible:ring-1 focus-visible:ring-(--focus-ring)"
       params={{ agentId: item.agentId, caseId: item.id }}
-      to="/cases/$agentId/$caseId"
+      to="/agents/$agentId/cases/$caseId"
     >
       <CaseStatusIcon status={item.status} />
       <span className="flex min-w-0 flex-1 flex-col">
@@ -244,7 +244,7 @@ function InboxReader({
               render={
                 <Link
                   params={{ agentId: linked.agentId, caseId: linked.id }}
-                  to="/cases/$agentId/$caseId"
+                  to="/agents/$agentId/cases/$caseId"
                 />
               }
               type="button"
@@ -335,7 +335,7 @@ export function Inbox({
     const linked = selected ? linkedCase(selected, cases) : undefined;
     if (!linked) return;
     void navigate({
-      to: "/cases/$agentId/$caseId",
+      to: "/agents/$agentId/cases/$caseId",
       params: { agentId: linked.agentId, caseId: linked.id },
     });
   };

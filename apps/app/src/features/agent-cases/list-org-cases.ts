@@ -13,6 +13,7 @@ import {
   type CasesInboxSearch,
 } from "./case-inbox-search";
 import { createCaseSeed } from "./case-seed";
+import { getOrgAgent, type OrgAgentDetail } from "../agents/list-org-agents";
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { ScenarioState } from "../../scenarios/scenarios";
 
@@ -294,6 +295,25 @@ function seededCaseList(
     hasCases: all.length > 0,
     loadError: currentScenario().cases === "load-error",
   });
+}
+
+/**
+ * The agent whose cases a page shows. Seeded cases name agents the API
+ * doesn't have, so a seeded scenario stands one in by its slug.
+ */
+export async function getCaseAgent(
+  slug: string,
+): Promise<OrgAgentDetail | null> {
+  const agent = await getOrgAgent({ data: slug });
+  if (agent || (live() && currentScenario()["case-work"] === "live"))
+    return agent;
+  return {
+    id: slug,
+    name: slug,
+    productionBranch: "main",
+    productionDeploymentId: null,
+    production: null,
+  };
 }
 
 export function getOrgCase(
