@@ -1,6 +1,7 @@
 // The inbox (design doc 06): cases waiting on the person's groups, mentions of
-// their groups, and cases assigned to them, computed on read from membership
-// and assignment. Read marks are kept per item key.
+// their groups, cases assigned to them, and memory rules proposed on the
+// agents they work (spec 10), computed on read from membership and
+// assignment. Read marks are kept per item key.
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { withOrg } from "@preprocess/db/client";
@@ -11,9 +12,11 @@ import {
   cases,
   inboxReads,
 } from "@preprocess/db/schema/cases";
-import { and, desc, eq, ne, notInArray } from "drizzle-orm";
+import { agentMemories } from "@preprocess/db/schema/memories";
+import { and, desc, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
+import { workedAgents } from "../access.ts";
 import type { Caller, OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
 
@@ -30,9 +33,9 @@ const InboxItem = z
   .object({
     key: z.string().openapi({
       description:
-        '"waiting:<caseId>:<since>", "mention:<id>" or "assigned:<caseId>:<at>"',
+        '"waiting:<caseId>:<since>", "mention:<id>", "assigned:<caseId>:<at>" or "memory:<id>"',
     }),
-    kind: z.enum(["waiting", "mention", "assigned"]),
+    kind: z.enum(["waiting", "mention", "assigned", "memory"]),
     at: z.string().datetime(),
     read: z.boolean(),
     case: z.object({
@@ -44,7 +47,9 @@ const InboxItem = z
     group: z
       .object({ id: z.string(), slug: z.string(), name: z.string() })
       .nullable(),
-    message: z.string().nullable(),
+    message: z.string().nullable().openapi({
+      description: "A mention's message, or a proposed memory rule's text",
+    }),
   })
   .openapi("InboxItem");
 
@@ -101,58 +106,80 @@ export const inboxRoutes = new OpenAPIHono<{
       const userId = person(c.var.caller);
       const items = await withOrg(c.env, c.var.org, async (tx) => {
         const group = { id: groups.id, slug: groups.slug, name: groups.name };
-        const [waiting, mentions, assigned, reads] = await Promise.all([
-          tx
-            .select({ ...caseColumns, since: cases.waitingSince, group })
-            .from(cases)
-            .innerJoin(agents, eq(agents.id, cases.agentId))
-            .innerJoin(groups, eq(groups.id, cases.waitingOnGroupId))
-            .innerJoin(
-              groupMembers,
-              and(
-                eq(groupMembers.groupId, cases.waitingOnGroupId),
-                eq(groupMembers.userId, userId),
+        const worked = await workedAgents(tx, userId);
+        const [waiting, mentions, assigned, proposals, reads] =
+          await Promise.all([
+            tx
+              .select({ ...caseColumns, since: cases.waitingSince, group })
+              .from(cases)
+              .innerJoin(agents, eq(agents.id, cases.agentId))
+              .innerJoin(groups, eq(groups.id, cases.waitingOnGroupId))
+              .innerJoin(
+                groupMembers,
+                and(
+                  eq(groupMembers.groupId, cases.waitingOnGroupId),
+                  eq(groupMembers.userId, userId),
+                ),
+              )
+              .where(eq(cases.status, "waiting")),
+            tx
+              .select({
+                ...caseColumns,
+                mentionId: caseMentions.id,
+                message: caseMentions.message,
+                at: caseMentions.at,
+                group,
+              })
+              .from(caseMentions)
+              .innerJoin(cases, eq(cases.id, caseMentions.caseId))
+              .innerJoin(agents, eq(agents.id, cases.agentId))
+              .innerJoin(groups, eq(groups.id, caseMentions.groupId))
+              .innerJoin(
+                groupMembers,
+                and(
+                  eq(groupMembers.groupId, caseMentions.groupId),
+                  eq(groupMembers.userId, userId),
+                ),
+              )
+              .where(ne(caseMentions.by, `person:${userId}`))
+              .orderBy(desc(caseMentions.at))
+              .limit(MENTIONS),
+            tx
+              .select({ ...caseColumns, at: caseAssignees.assignedAt })
+              .from(caseAssignees)
+              .innerJoin(cases, eq(cases.id, caseAssignees.caseId))
+              .innerJoin(agents, eq(agents.id, cases.agentId))
+              .where(
+                and(
+                  eq(caseAssignees.userId, userId),
+                  notInArray(cases.status, ["completed", "cancelled"]),
+                ),
               ),
-            )
-            .where(eq(cases.status, "waiting")),
-          tx
-            .select({
-              ...caseColumns,
-              mentionId: caseMentions.id,
-              message: caseMentions.message,
-              at: caseMentions.at,
-              group,
-            })
-            .from(caseMentions)
-            .innerJoin(cases, eq(cases.id, caseMentions.caseId))
-            .innerJoin(agents, eq(agents.id, cases.agentId))
-            .innerJoin(groups, eq(groups.id, caseMentions.groupId))
-            .innerJoin(
-              groupMembers,
-              and(
-                eq(groupMembers.groupId, caseMentions.groupId),
-                eq(groupMembers.userId, userId),
-              ),
-            )
-            .where(ne(caseMentions.by, `person:${userId}`))
-            .orderBy(desc(caseMentions.at))
-            .limit(MENTIONS),
-          tx
-            .select({ ...caseColumns, at: caseAssignees.assignedAt })
-            .from(caseAssignees)
-            .innerJoin(cases, eq(cases.id, caseAssignees.caseId))
-            .innerJoin(agents, eq(agents.id, cases.agentId))
-            .where(
-              and(
-                eq(caseAssignees.userId, userId),
-                notInArray(cases.status, ["completed", "cancelled"]),
-              ),
-            ),
-          tx
-            .select({ key: inboxReads.itemKey })
-            .from(inboxReads)
-            .where(eq(inboxReads.userId, userId)),
-        ]);
+            worked?.length === 0
+              ? []
+              : tx
+                  .select({
+                    ...caseColumns,
+                    memoryId: agentMemories.id,
+                    text: agentMemories.text,
+                    at: agentMemories.proposedAt,
+                  })
+                  .from(agentMemories)
+                  .innerJoin(cases, eq(cases.id, agentMemories.caseId))
+                  .innerJoin(agents, eq(agents.id, cases.agentId))
+                  .where(
+                    and(
+                      eq(agentMemories.status, "proposed"),
+                      worked
+                        ? inArray(agentMemories.agentId, worked)
+                        : undefined,
+                    ),
+                  ),
+            tx
+              .select({ key: inboxReads.itemKey })
+              .from(inboxReads)
+              .where(eq(inboxReads.userId, userId)),
+          ]);
         const read = new Set(reads.map((r) => r.key));
         const all: Omit<Item, "read">[] = [
           ...waiting.map((w) => {
@@ -181,6 +208,14 @@ export const inboxRoutes = new OpenAPIHono<{
             case: caseOf(a),
             group: null,
             message: null,
+          })),
+          ...proposals.map((m) => ({
+            key: `memory:undefined`,
+            kind: "memory" as const,
+            at: m.at.toISOString(),
+            case: caseOf(m),
+            group: null,
+            message: m.text,
           })),
         ];
         return all

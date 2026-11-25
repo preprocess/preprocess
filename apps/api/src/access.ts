@@ -66,6 +66,32 @@ export const visibleAgents = async (
   return [...new Set(rows.flatMap((r) => (r.agentId ? [r.agentId] : [])))];
 };
 
+// The agents whose cases a person works (operator grants or Developers), or
+// null for every agent.
+export const workedAgents = async (
+  tx: Tx,
+  userId: string,
+): Promise<string[] | null> => {
+  const rows = await tx
+    .select({
+      isDevelopers: groups.isDevelopers,
+      agentId: agentGrants.agentId,
+      access: agentGrants.access,
+    })
+    .from(groupMembers)
+    .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+    .leftJoin(agentGrants, eq(agentGrants.groupId, groups.id))
+    .where(eq(groupMembers.userId, userId));
+  if (rows.some((r) => r.isDevelopers)) return null;
+  return [
+    ...new Set(
+      rows.flatMap((r) =>
+        r.agentId && r.access === "operator" ? [r.agentId] : [],
+      ),
+    ),
+  ];
+};
+
 export const canWorkCase = (role: AgentRole) =>
   role === "manage" || role === "operator";
 
