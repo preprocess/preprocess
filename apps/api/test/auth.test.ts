@@ -35,6 +35,41 @@ describe("sign-up and sign-in", () => {
     expect(none.body).toBeNull();
   });
 
+  it("lets only the deploy smoke test derive its own sign-in token", async () => {
+    const environment = testEnv();
+    const tokenFor = async (email: string) => {
+      const key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(environment.BETTER_AUTH_SECRET),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+      );
+      const minute = Math.floor(Date.now() / 60_000);
+      const mac = await crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(`smoke-test:${email}:${minute}`),
+      );
+      return [...new Uint8Array(mac)]
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+    };
+    const open = async (email: string) => {
+      const client = new Client(environment);
+      await client.call("/api/auth/sign-in/magic-link", {
+        body: { email, callbackURL: "/" },
+      });
+      await client.call(
+        `/api/auth/magic-link/verify?token=${await tokenFor(email)}&callbackURL=/`,
+      );
+      return (await client.call("/api/auth/get-session")).body;
+    };
+    const smoke = `smoke-test+${unique("stage")}@example.test`;
+    expect(await open(smoke)).toMatchObject({ user: { email: smoke } });
+    expect(await open(`${unique("person")}@example.test`)).toBeNull();
+  });
+
   it("has no password sign-in or sign-up", async () => {
     const { email } = await signUp("Pat");
     const client = new Client();

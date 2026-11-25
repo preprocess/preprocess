@@ -18,6 +18,7 @@ import { groups } from "@preprocess/db/schema/access";
 import * as authSchema from "@preprocess/db/schema/auth";
 import { runMode } from "@preprocess/runmode";
 import { betterAuth } from "better-auth";
+import { generateRandomString } from "better-auth/crypto";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { magicLink, organization } from "better-auth/plugins";
@@ -32,6 +33,30 @@ import { and, count, eq, gt, sql } from "drizzle-orm";
 
 import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
+
+// The deploy smoke test (infra/scripts/smoke.ts) has no mailbox, so for its
+// own address only the sign-in token is an HMAC of the address and the
+// current minute under the auth secret, which the smoke test also holds.
+// Everyone else gets a random token.
+const SMOKE_TEST_EMAIL = /^smoke-test\+[a-z0-9-]+@/;
+const smokeTestToken = async (secret: string, email: string) => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const minute = Math.floor(Date.now() / 60_000);
+  const mac = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`smoke-test:${email}:${minute}`),
+  );
+  return [...new Uint8Array(mac)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
 
 // Owner, Admin and Member are Better Auth's own roles. The only addition is
 // that Admins manage organization API keys (mvp-surface), which by default
@@ -266,6 +291,10 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     plugins: [
       magicLink({
         expiresIn: 15 * 60,
+        generateToken: (email) =>
+          SMOKE_TEST_EMAIL.test(email)
+            ? smokeTestToken(env.BETTER_AUTH_SECRET, email)
+            : generateRandomString(32, "a-z", "A-Z"),
         async sendMagicLink({ email, url }) {
           await sendMagicLinkEmail(env, { email, url });
         },
