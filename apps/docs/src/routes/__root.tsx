@@ -9,6 +9,15 @@ import { RootProvider } from "fumadocs-ui/provider/tanstack";
 
 import appCss from "@/styles/app.css?url";
 
+const translations = {
+  "Path Parameters(operation page)": "Path parameters",
+  "Query Parameters(operation page)": "Query parameters",
+  "Header Parameters(operation page)": "Header parameters",
+  "Cookie Parameters(operation page)": "Cookie parameters",
+  "Request Body(operation page)": "Request body",
+  "Response Body(operation page)": "Response body",
+};
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -36,7 +45,7 @@ export const Route = createRootRoute({
         <HeadContent />
       </head>
       <body className="fixed inset-0 h-svh overflow-hidden overscroll-none">
-        <RootProvider search={{ enabled: false }}>
+        <RootProvider i18n={{ translations }} search={{ enabled: false }}>
           <FluidProvider shape="pill">
             <Outlet />
           </FluidProvider>
