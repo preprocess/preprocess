@@ -47,7 +47,6 @@ const vendors = [
 export default agent({
   instructions:
     "You code supplier invoices for the accounts payable team. Read the invoice, find the vendor with find_vendor, and fill in every field.",
-  model: "inkling-2-small",
   ocr: true,
   tools: {
     find_vendor: tool({
