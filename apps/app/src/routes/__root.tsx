@@ -31,8 +31,6 @@ import "@preprocess/ui/styles.css";
 import "../styles.css";
 
 const NAME_PATH = "/onboarding/name";
-const FAVICON_LIGHT = "/brand/favicon-light.png";
-const FAVICON_DARK = "/brand/favicon-dark.png";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -58,27 +56,10 @@ export const Route = createRootRoute({
         type: "font/woff2",
         crossOrigin: "anonymous",
       },
-      {
-        rel: "icon",
-        type: "image/png",
-        href: FAVICON_LIGHT,
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        rel: "icon",
-        type: "image/png",
-        href: FAVICON_DARK,
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        rel: "icon",
-        type: "image/png",
-        href: FAVICON_LIGHT,
-      },
-      {
-        rel: "shortcut icon",
-        href: "/favicon.ico",
-      },
+      { rel: "icon", href: "/favicon.ico", sizes: "32x32" },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/site.webmanifest" },
     ],
   }),
   // Loaders run in parallel, so the active organization has to be set
@@ -195,6 +176,17 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
       <head>
         <ThemeScript defaultTheme="system" storageKey="preprocess-theme" />
         <HeadContent />
+        {/* Outside head().meta, which keeps one meta per name. */}
+        <meta
+          name="theme-color"
+          content="#fbf7f0"
+          media="(prefers-color-scheme: light)"
+        />
+        <meta
+          name="theme-color"
+          content="#15120f"
+          media="(prefers-color-scheme: dark)"
+        />
       </head>
       <body className="fixed inset-0 h-svh overflow-hidden overscroll-none">
         <ThemeProvider defaultTheme="system" storageKey="preprocess-theme">
