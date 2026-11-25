@@ -66,17 +66,29 @@ const code = createCodePlugin({
 // Hoisted so Streamdown can memoize blocks across streaming updates.
 const markdownComponents: Components = {
   h1: ({ children, ...props }) => (
-    <h1 className="an-md-h1 text-subtitle font-semibold mt-3 mb-1.5" {...props}>
+    <h1
+      className="an-md-h1 text-subtitle mt-3 mb-1.5"
+      style={{ fontVariationSettings: fontWeights.medium }}
+      {...props}
+    >
       {children}
     </h1>
   ),
   h2: ({ children, ...props }) => (
-    <h2 className="an-md-h2 text-subtitle font-semibold mt-3 mb-1.5" {...props}>
+    <h2
+      className="an-md-h2 text-subtitle mt-3 mb-1.5"
+      style={{ fontVariationSettings: fontWeights.medium }}
+      {...props}
+    >
       {children}
     </h2>
   ),
   h3: ({ children, ...props }) => (
-    <h3 className="an-md-h3 text-body font-semibold mt-2 mb-1" {...props}>
+    <h3
+      className="an-md-h3 text-body mt-2 mb-1"
+      style={{ fontVariationSettings: fontWeights.medium }}
+      {...props}
+    >
       {children}
     </h3>
   ),
@@ -181,7 +193,7 @@ const markdownComponents: Components = {
   th: ({ children, ...props }) => (
     <th
       className="px-3 py-2 text-left text-caption text-muted-foreground"
-      style={{ fontVariationSettings: fontWeights.semibold }}
+      style={{ fontVariationSettings: fontWeights.medium }}
       {...props}
     >
       {children}

@@ -71,8 +71,8 @@ rejects `lucide-react` elsewhere), and the spring tokens in
 `@preprocess/ui/lib/springs`. Use the Fluid component when one exists; compose
 or wrap it rather than editing vendored files (kit's
 `packages/ui/registry-inventory.json` lists them). Text uses the six type roles,
-three weights and two colors. Overflow panes use `ScrollArea`. Forms use
-`InlineValidation` and `LoadingButton`.
+two weights (400 and 500; nothing heavier) and two colors. Overflow panes use
+`ScrollArea`. Forms use `InlineValidation` and `LoadingButton`.
 
 ## Development rules
 
