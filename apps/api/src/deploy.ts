@@ -15,10 +15,23 @@ import {
   secretGrants,
   type WaitingFor,
 } from "@preprocess/db/schema/deployments";
+import {
+  guardrailRequests,
+  type GuardrailChange,
+} from "@preprocess/db/schema/guardrails";
 import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { secrets } from "@preprocess/db/schema/secrets";
 import { MODELS, PROTOCOL, REASONING } from "@preprocess/sdk/protocol";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
@@ -350,12 +363,143 @@ export const syncDeployment = async (
     .update(deployments)
     .set({ status, waitingFor, network })
     .where(eq(deployments.id, deploymentId));
+  const existingSecrets = waiting.length
+    ? await tx
+        .select({ name: secrets.name })
+        .from(secrets)
+        .where(inArray(secrets.name, waiting))
+    : [];
+  const existingMcp = waitingMcp.length
+    ? await tx
+        .select({ slug: mcpServers.slug })
+        .from(mcpServers)
+        .where(inArray(mcpServers.slug, waitingMcp))
+    : [];
+  await requestLoosening(tx, org, deployment, [
+    ...waitingNetwork.map((host) => ({
+      kind: "network" as const,
+      hosts: [host],
+    })),
+    ...existingSecrets.map((s) => ({
+      kind: "secret" as const,
+      secret: s.name,
+    })),
+    ...existingMcp.map((m) => ({ kind: "mcp" as const, server: m.slug })),
+  ]);
   return [
     ...waiting,
     ...waitingMcp.map((slug) => `MCP server ${slug}`),
     ...waitingNetwork.map((host) => `network access to ${host}`),
     ...waitingGroups.map((slug) => `access for group ${slug}`),
   ];
+};
+
+const covers = (asked: GuardrailChange, needed: GuardrailChange) => {
+  switch (needed.kind) {
+    case "network":
+      return (
+        asked.kind === "network" &&
+        needed.hosts.every((host) => asked.hosts.includes(host))
+      );
+    case "secret":
+      return asked.kind === "secret" && asked.secret === needed.secret;
+    case "mcp":
+      return asked.kind === "mcp" && asked.server === needed.server;
+    case "spending_limit":
+      return false;
+  }
+};
+
+// A live deployment that asks for more than its guardrails allow files the
+// loosening requests itself (spec 5): one per blocked host, secret or MCP
+// server, unless a pending request already covers it or this deployment
+// already asked. Its pending requests are withdrawn once it no longer needs
+// them or another deployment supersedes it.
+const requestLoosening = async (
+  tx: Tx,
+  org: OrgId,
+  deployment: { id: string; agentId: string },
+  blocked: GuardrailChange[],
+) => {
+  const live = new Set(
+    (await liveDeployments(tx, deployment.agentId)).map((d) => d.id),
+  );
+  const needed = live.has(deployment.id) ? blocked : [];
+  const requests = await tx
+    .select({
+      id: guardrailRequests.id,
+      agentId: guardrailRequests.agentId,
+      deploymentId: guardrailRequests.deploymentId,
+      change: guardrailRequests.change,
+      status: guardrailRequests.status,
+    })
+    .from(guardrailRequests)
+    .where(
+      or(
+        eq(guardrailRequests.deploymentId, deployment.id),
+        and(
+          eq(guardrailRequests.status, "pending"),
+          or(
+            eq(guardrailRequests.agentId, deployment.agentId),
+            isNull(guardrailRequests.agentId),
+          ),
+        ),
+      ),
+    );
+  const withdrawn = requests.filter(
+    (r) =>
+      r.status === "pending" &&
+      r.deploymentId !== null &&
+      r.agentId === deployment.agentId &&
+      (!live.has(r.deploymentId) ||
+        (r.deploymentId === deployment.id &&
+          !needed.some((change) => covers(r.change, change)))),
+  );
+  if (withdrawn.length)
+    await tx.delete(guardrailRequests).where(
+      inArray(
+        guardrailRequests.id,
+        withdrawn.map((r) => r.id),
+      ),
+    );
+  for (const r of withdrawn)
+    await audit(tx, {
+      organizationId: org,
+      actorType: "platform",
+      actorId: r.deploymentId!,
+      action: "guardrail.request.withdrawn",
+      targetType: "guardrail_request",
+      targetId: r.id,
+      data: { change: r.change, agent: r.agentId },
+    });
+  const standing = requests.filter(
+    (r) =>
+      !withdrawn.includes(r) &&
+      (r.status === "pending" || r.deploymentId === deployment.id),
+  );
+  for (const change of needed) {
+    if (standing.some((r) => covers(r.change, change))) continue;
+    const id = newId("guardrailRequest");
+    await tx.insert(guardrailRequests).values({
+      id,
+      organizationId: org,
+      kind: change.kind,
+      agentId: deployment.agentId,
+      deploymentId: deployment.id,
+      change,
+      requestedByType: "deployment",
+      requestedBy: deployment.id,
+    });
+    await audit(tx, {
+      organizationId: org,
+      actorType: "platform",
+      actorId: deployment.id,
+      action: "guardrail.request.created",
+      targetType: "guardrail_request",
+      targetId: id,
+      data: { change, agent: deployment.agentId, deployment: deployment.id },
+    });
+  }
 };
 
 // Live deployments (doc 03): the production deployment and the newest

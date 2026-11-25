@@ -25,6 +25,7 @@ import {
   SettingsSection,
   SettingsSkeletonRows,
 } from "./kit";
+import { shortDeploymentId } from "../agents/agent-store";
 import { GUARDRAIL_SECTIONS } from "./settings-nav";
 import { SettingsStacked } from "./settings-widgets";
 import { useCanAdminister } from "./use-role";
@@ -198,7 +199,9 @@ function Requests() {
                 `asked by ${
                   request.requestedBy.type === "person"
                     ? (names.get(request.requestedBy.id) ?? "a member")
-                    : "an API key"
+                    : request.requestedBy.type === "deployment"
+                      ? `deployment ${shortDeploymentId(request.requestedBy.id)}`
+                      : "an API key"
                 }`,
                 formatRelative(request.createdAt),
                 request.reason ? `“${request.reason}”` : null,
