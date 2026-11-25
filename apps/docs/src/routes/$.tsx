@@ -1,5 +1,6 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { env } from "cloudflare:workers";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
 import { DocsLayout } from "fumadocs-ui/layouts/notebook";
 import {
@@ -11,6 +12,7 @@ import {
 import { Suspense, use } from "react";
 
 import { OpenAPIPage } from "@/components/api-page";
+import { ApiUrlContext } from "@/components/configured";
 import { useMDXComponents } from "@/components/mdx";
 import { docs } from "@/lib/collections";
 import { baseOptions } from "@/lib/layout";
@@ -29,7 +31,12 @@ const loadPage = createServerFn({ method: "GET" })
         pageTree,
         props: page.data.getOpenAPIPageProps(),
       };
-    return { type: "docs" as const, path: page.path, pageTree };
+    return {
+      type: "docs" as const,
+      path: page.path,
+      apiUrl: env.API_URL,
+      pageTree,
+    };
   });
 
 export const Route = createFileRoute("/$")({
@@ -76,9 +83,11 @@ function Page() {
           </DocsBody>
         </DocsPage>
       ) : (
-        <Suspense>
-          <Content path={page.path} />
-        </Suspense>
+        <ApiUrlContext value={page.apiUrl}>
+          <Suspense>
+            <Content path={page.path} />
+          </Suspense>
+        </ApiUrlContext>
       )}
     </DocsLayout>
   );

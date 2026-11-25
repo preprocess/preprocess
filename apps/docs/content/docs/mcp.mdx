@@ -3,4 +3,71 @@ title: MCP
 description: Connect an MCP client to your organization.
 ---
 
-This guide is on its way.
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+
+Preprocess serves a remote MCP server for each organization. An MCP client, such
+as Claude Code or Cursor, can use it to look after your agents and cases: list
+and read them, start cases, edit answers, read logs, and run evals.
+
+## Connect
+
+The server speaks MCP over streamable HTTP at:
+
+<Configured lang="text" code="{api}/orgs/<your org id>/mcp" />
+
+It takes an organization API key as a bearer token. An Owner or Admin creates
+one in Developers → Keys & webhooks. A signed-in person's session doesn't work
+here.
+
+<Tabs items={["Claude Code", "Cursor", "Other clients"]}>
+  <Tab value="Claude Code">
+    <Configured
+      lang="sh"
+      code={`claude mcp add --transport http preprocess \\
+  {api}/orgs/$PREPROCESS_ORG/mcp \\
+  --header "Authorization: Bearer $PREPROCESS_API_KEY"`}
+    />
+  </Tab>
+  <Tab value="Cursor">
+    <Configured
+      lang="json"
+      code={`{
+  "mcpServers": {
+    "preprocess": {
+      "url": "{api}/orgs/<your org id>/mcp",
+      "headers": { "Authorization": "Bearer <your API key>" }
+    }
+  }
+}`}
+    />
+  </Tab>
+  <Tab value="Other clients">
+    Use the URL above with the streamable HTTP transport and send
+    `Authorization: Bearer <your API key>` on every request.
+  </Tab>
+</Tabs>
+
+## What it can do
+
+There is one tool for each API operation that makes sense to an agent. A tool
+call is a request to that operation with your key, so the key's permissions
+apply exactly as they do in the API.
+
+| Area      | Tools                                                                                                                                                                                                   |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agents    | `list_agents`, `get_agent`, `archive_agent`, `list_deployments`, `get_deployment`, `promote_deployment`, `list_builds`, `get_build`                                                                     |
+| Settings  | `get_agent_settings`, `set_agent_setting`, `clear_agent_setting`, `get_defaults`, `get_agent_network`, `list_guardrail_requests`, `request_guardrail_change`, `get_spending`                            |
+| Schedules | `list_schedules`, `pause_schedule`, `resume_schedule`                                                                                                                                                   |
+| Cases     | `list_cases`, `get_case`, `create_case`, `get_case_room`, `edit_answer`, `confirm_answer`, `accept_suggestion`, `search_field_options`, `post_case_message`, `rerun_case`, `cancel_case`, `assign_case` |
+| Logs      | `get_case_logs`, `search_logs`                                                                                                                                                                          |
+| Evals     | `list_eval_suites`, `create_eval_suite`, `get_eval_suite`, `update_eval_suite`, `delete_eval_suite`, `add_eval_suite_cases`, `remove_eval_suite_cases`, `run_eval_suite`, `get_eval_run`                |
+| Memory    | `list_agent_memories`, `list_case_memories`, `delete_agent_memory`                                                                                                                                      |
+
+Read-only tools are marked as such. Tools that archive, cancel, promote or
+delete are marked destructive, so clients that ask before destructive calls will
+ask.
+
+Some decisions belong to people, so the server leaves them out: approving or
+rejecting, accepting or dismissing a memory rule, and deciding a guardrail
+request. Members, groups, keys, secrets, GitHub, MCP connections, webhooks,
+OpenTelemetry export and the audit log stay in the app and the API.

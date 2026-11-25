@@ -6,4 +6,67 @@ description: The preprocess command.
 import { DynamicCodeBlock } from "fumadocs-ui/components/dynamic-codeblock";
 import { usage } from "@preprocess/cli/usage";
 
+## Install
+
+```sh
+npm install --save-dev @preprocess/cli
+```
+
+## Sign in
+
+The CLI reads three environment variables:
+
+<Configured
+  lang="sh"
+  code={`export PREPROCESS_API_URL={origin}
+export PREPROCESS_ORG=org_...
+export PREPROCESS_API_KEY=...`}
+/>
+
+- `PREPROCESS_API_URL` is the origin your organization's app is served from.
+- `PREPROCESS_ORG` is your organization's id.
+- `PREPROCESS_API_KEY` is an organization API key. An Owner or Admin creates one
+  in Developers → Keys & webhooks. The key is shown once, so copy it then. The
+  CLI reads the key only from the environment, so it never lands in your shell
+  history or CI logs.
+
+`--api` and `--org` override the first two for one command.
+
+## Deploy
+
+```sh
+npx preprocess deploy
+```
+
+`deploy` bundles `src/index.ts` (or the entry you name), uploads it, and prints
+the new deployment's status and any warnings. The first deploy creates the
+agent. Settings in `preprocess.config.json`, beside your package.json, ship with
+the code.
+
+## Keep settings in step
+
+People can change an agent's settings in the app. `config pull` writes those
+overrides into `preprocess.config.json`, so the next deploy keeps them.
+`groups pull` writes the organization's groups into the same file.
+
+```sh
+npx preprocess config pull
+npx preprocess groups pull
+```
+
+## Logs and evals
+
+```sh
+npx preprocess logs --case <case id> --level error
+npx preprocess evals list
+npx preprocess evals run regressions --model inkling-2-small --model kimi-k3.1-pro
+```
+
+`logs` prints run logs, newest first, for a case, an agent, a deployment, or the
+whole organization. Organization-wide logs need Developers or Admins.
+`evals run` runs a suite against a deployment (production by default), once per
+`--model`, and waits for the results.
+
+## Reference
+
 <DynamicCodeBlock lang="text" code={usage} />
