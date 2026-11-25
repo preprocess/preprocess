@@ -28,8 +28,9 @@ import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
 import { joinAutomaticSuite } from "./evals.ts";
 import { effectiveSettings } from "./settings.ts";
 import { refuseOverLimit } from "./spend.ts";
+import { notifyLater } from "./notify.ts";
 import { queueWebhooks } from "./webhooks.ts";
-import type { OutboxMessage } from "./outbox.ts";
+import type { OutboxKind, OutboxMessage } from "./outbox.ts";
 
 // Errors in doc 04's shape: { error: { code, message } }.
 export class ApiError extends HTTPException {
@@ -397,9 +398,10 @@ const groupBySlug = async (tx: Tx, slug: string) => {
 };
 
 // The one writer of the case index: status, the group a case waits on, and
-// mentions for the inbox.
+// mentions for the inbox. Webhooks and notification emails it decides are
+// queued in the same transaction and drained after it commits.
 export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
-  let webhookRows: string[] = [];
+  const rows: { id: string; kind: OutboxKind }[] = [];
   await withOrg(env, orgId(event.organizationId), async (tx) => {
     const own = and(
       eq(cases.id, event.caseId),
@@ -438,7 +440,7 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
         .onConflictDoUpdate({ target: caseApprovals.id, set: decided });
       // A new request notifies the group the code named, or any operator.
       if (a.status !== "pending" || a.decidedAt !== null) return;
-      webhookRows = await queueWebhooks(env, tx, event.organizationId, {
+      const webhookRows = await queueWebhooks(env, tx, event.organizationId, {
         caseId: event.caseId,
         agentId: event.agentId,
         status: "waiting",
@@ -453,14 +455,16 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
           payload: a.payload,
         },
       });
+      for (const id of webhookRows) rows.push({ id, kind: "webhook" });
       return;
     }
     if (event.type === "mention") {
       const groupId = await groupBySlug(tx, event.group);
       const [known] = await tx.select({ id: cases.id }).from(cases).where(own);
       if (!groupId || !known) return;
+      const mentionId = newId("mention");
       await tx.insert(caseMentions).values({
-        id: newId("mention"),
+        id: mentionId,
         organizationId: event.organizationId,
         caseId: event.caseId,
         groupId,
@@ -468,6 +472,12 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
         by: event.by,
         message: event.message,
       });
+      rows.push(
+        await notifyLater(tx, event.organizationId, {
+          type: "mention",
+          mentionId,
+        }),
+      );
       return;
     }
     const group = event.waitingOn
@@ -479,10 +489,15 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
         )[0] ?? null)
       : null;
     const [before] = await tx
-      .select({ status: cases.status, group: cases.waitingOnGroupId })
+      .select({
+        status: cases.status,
+        group: cases.waitingOnGroupId,
+        since: cases.waitingSince,
+      })
       .from(cases)
       .where(own);
     if (!before) return;
+    const now = new Date();
     const done = event.status === "completed" || event.status === "failed";
     // Every completed case joins its agent's automatic eval suite (doc 09).
     if (event.status === "completed" && event.completed)
@@ -492,26 +507,42 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
         answers: event.answers,
         captureKey: event.completed.captureKey,
       });
+    const newWait =
+      event.status === "waiting" &&
+      group !== null &&
+      (before.status !== "waiting" || before.group !== group.id);
     await tx
       .update(cases)
       .set({
         status: event.status,
         waitingOnGroupId: group?.id ?? null,
+        waitingSince:
+          event.status === "waiting" && group
+            ? newWait
+              ? now
+              : before.since
+            : null,
         haltReason:
           event.status === "halted" ? (event.haltReason ?? null) : null,
-        updatedAt: new Date(),
-        completedAt: done ? new Date() : null,
+        updatedAt: now,
+        completedAt: done ? now : null,
       })
       .where(own);
+    if (newWait)
+      rows.push(
+        await notifyLater(tx, event.organizationId, {
+          type: "waiting",
+          caseId: event.caseId,
+          groupId: group.id,
+          since: now.toISOString(),
+          reason: event.reason,
+        }),
+      );
     // Webhooks: completion, failure, and every wait on a new group.
-    // Cancellation sends none.
-    const newWait =
-      event.status === "waiting" &&
-      group !== null &&
-      event.approvalId === undefined &&
-      (before.status !== "waiting" || before.group !== group.id);
-    if (!done && !newWait) return;
-    webhookRows = await queueWebhooks(env, tx, event.organizationId, {
+    // Cancellation and halts send none.
+    // A wait on an approval sends its own webhook from the approval event.
+    if (!done && !(newWait && event.approvalId === undefined)) return;
+    const webhookRows = await queueWebhooks(env, tx, event.organizationId, {
       caseId: event.caseId,
       agentId: event.agentId,
       status: event.status as "completed" | "failed" | "waiting",
@@ -520,11 +551,7 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
       answers: event.answers,
       error: event.error,
     });
+    for (const id of webhookRows) rows.push({ id, kind: "webhook" });
   });
-  if (webhookRows.length)
-    await drainOutbox(
-      env,
-      orgId(event.organizationId),
-      webhookRows.map((id) => ({ id, kind: "webhook" as const })),
-    );
+  if (rows.length) await drainOutbox(env, orgId(event.organizationId), rows);
 };

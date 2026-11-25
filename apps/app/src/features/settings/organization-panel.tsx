@@ -12,20 +12,18 @@ import {
   type LoadingButtonHandle,
 } from "@preprocess/ui/components/loading-button";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
-import { useServerFn } from "@tanstack/react-start";
-import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import { useRef, useState, type FormEvent } from "react";
 
 import { validateOrganizationName } from "../../server/organization-name";
+import { useAuth } from "../auth/auth-context";
 import {
   useOrganizations,
   useRenameOrganization,
 } from "../organizations/organizations-context";
 import {
-  deleteUserOrganization,
-  updateUserOrganization,
+  deleteOrganization,
+  updateOrganization,
 } from "../organizations/user-organizations";
-import { useClientApiSession } from "../workos-client-api/client-api-session";
 import {
   type SettingsAttemptError,
   SettingsError,
@@ -58,7 +56,7 @@ function EditOrganizationNameDialog({
   name: string;
   onSaved: (name: string) => void;
 }) {
-  const updateOrg = useServerFn(updateUserOrganization);
+  const { organizationId } = useAuth();
   const nameRef = useRef<InlineValidationHandle>(null);
   const saveRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState(initialName);
@@ -72,7 +70,8 @@ function EditOrganizationNameDialog({
     }
 
     try {
-      const result = await updateOrg({ data: { name } });
+      if (!organizationId) throw new Error("No active organization.");
+      const result = await updateOrganization(organizationId, name);
       onSaved(result.name);
       close();
     } catch (cause) {
@@ -120,36 +119,16 @@ function EditOrganizationNameDialog({
   );
 }
 
-// The root loader already has the user's organizations (server-rendered for
-// the sidebar), so the General tab renders its real content on first paint;
-// the client session's list takes over once it loads.
+// The root loader has the person's organizations, so settings render their
+// real content on first paint.
 function useCurrentOrganization() {
-  const {
-    organizations: clientOrganizations,
-    session,
-    loading: clientLoading,
-    updateOrganizationName,
-  } = useClientApiSession();
-  const serverOrganizations = useOrganizations();
+  const organizations = useOrganizations();
   const { organizationId } = useAuth();
   const renameOrganization = useRenameOrganization();
-  const organizations =
-    clientOrganizations.length > 0 ? clientOrganizations : serverOrganizations;
   const current =
-    organizations.find((organization) => organization.isCurrent) ??
-    organizations.find(
-      (organization) =>
-        organization.id === (session?.organizationId ?? organizationId),
-    ) ??
+    organizations.find((organization) => organization.id === organizationId) ??
     null;
-
-  return {
-    current,
-    loading: !current && clientLoading,
-    organizations,
-    renameOrganization,
-    updateOrganizationName,
-  };
+  return { current, loading: false, organizations, renameOrganization };
 }
 
 function organizationInitials(name: string) {
@@ -318,8 +297,7 @@ function OrganizationLogoEdit({ mode }: { mode: OrganizationLogoMode }) {
 }
 
 export function OrganizationPanel() {
-  const { current, loading, renameOrganization, updateOrganizationName } =
-    useCurrentOrganization();
+  const { current, loading, renameOrganization } = useCurrentOrganization();
 
   if (loading) {
     return (
@@ -352,10 +330,7 @@ export function OrganizationPanel() {
       <SettingsRow label="Name" value={current.name}>
         <OrganizationNameEdit
           name={current.name}
-          onSaved={(name) => {
-            updateOrganizationName(current.id, name);
-            renameOrganization(current.id, name);
-          }}
+          onSaved={(name) => renameOrganization(current.id, name)}
         />
       </SettingsRow>
       <SettingsRow
@@ -398,7 +373,6 @@ export function OrganizationDetailsPanel() {
 
 export function DeleteOrganizationPanel() {
   const { current, loading, organizations } = useCurrentOrganization();
-  const deleteOrg = useServerFn(deleteUserOrganization);
   const { switchToOrganization } = useAuth();
 
   if (loading || !current) {
@@ -415,16 +389,14 @@ export function DeleteOrganizationPanel() {
 
   async function onDelete() {
     if (!current) return;
-    await deleteOrg();
+    await deleteOrganization(current.id);
     const next = organizations.find(
       (organization) => organization.id !== current.id,
     );
     if (next) {
-      const switched = await switchToOrganization(next.id);
-      if (!switched || !("error" in switched && switched.error)) {
-        window.location.assign("/");
-        return;
-      }
+      await switchToOrganization(next.id);
+      window.location.assign("/");
+      return;
     }
     window.location.assign("/onboarding");
   }

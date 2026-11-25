@@ -1,11 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { OrganizationSettingsAction } from "../../../features/settings/settings-widgets";
+import { MembersPanel } from "../../../features/settings/members-panel";
 
 export const Route = createFileRoute("/settings/organization/members")({
-  component: OrganizationMembersPage,
+  component: MembersPanel,
 });
-
-function OrganizationMembersPage() {
-  return <OrganizationSettingsAction action="members" />;
-}

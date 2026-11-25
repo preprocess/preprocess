@@ -1,6 +1,6 @@
 {
-  "id": "070a6990-f945-43b6-8321-46eabc7c4409",
-  "prevId": "a44ea909-0696-4527-af03-51c1d2c5a400",
+  "id": "74914e9d-e59b-41cc-9fdc-b200f20fad52",
+  "prevId": "25923522-08eb-450e-a835-261541c86334",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1321,6 +1321,13 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "email_notifications": {
+          "name": "email_notifications",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         }
       },
       "indexes": {},
@@ -1791,6 +1798,12 @@
         "waiting_on_group_id": {
           "name": "waiting_on_group_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "waiting_since": {
+          "name": "waiting_since",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

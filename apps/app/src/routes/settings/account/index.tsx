@@ -1,11 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { AccountSettingsAction } from "../../../features/settings/settings-widgets";
+import { ProfilePanel } from "../../../features/settings/profile-panel";
 
 export const Route = createFileRoute("/settings/account/")({
-  component: AccountProfilePage,
+  component: ProfilePanel,
 });
-
-function AccountProfilePage() {
-  return <AccountSettingsAction action="profile" />;
-}

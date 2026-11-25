@@ -55,14 +55,3 @@ if (process.env.EXPECT_PDF_WORKER === "present") {
   );
   console.log("Verified the regular shell build excludes the PDF.js probe.");
 }
-
-// The preview sign-in (src/preview) must never reach a deployable bundle.
-if (process.env.EXPECT_PREVIEW_SIGN_IN === "absent") {
-  assert.ok(
-    sources.every(
-      ({ content }) => !content.includes("preprocess-preview-session"),
-    ),
-    "Build includes the preview sign-in",
-  );
-  console.log("Verified the build excludes the preview sign-in.");
-}

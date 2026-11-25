@@ -9,6 +9,7 @@
   "compatibility_date": "2026-07-26",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  "services": [{ "binding": "API", "service": "preprocess-api-development" }],
   "env": {
     "staging": { "name": "preprocess-app-staging", "workers_dev": true },
   },

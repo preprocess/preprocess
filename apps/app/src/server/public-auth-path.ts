@@ -1,13 +1,14 @@
-/** AuthKit callback / sign-in / sign-out routes that must stay public. */
-export function isPublicAuthPath(pathname: string) {
-  return pathname === "/api/auth" || pathname.startsWith("/api/auth/");
-}
-
 /**
- * Case room (`/cases/{agentId}/{caseId}`). AuthKit sign-in currently trips
- * PKCE cookie size limits on this path. The `/cases` inbox is not public.
+ * Routes that render without the product shell or an organization: Better
+ * Auth's API, sign-in and sign-up, and accepting an invitation (which loads
+ * the session itself, so a signed-out invitee can choose to sign in or up).
  */
-export function isPublicCasePath(pathname: string) {
-  const segments = pathname.split("/").filter(Boolean);
-  return segments[0] === "cases" && segments.length >= 3;
+export function isPublicAuthPath(pathname: string) {
+  return (
+    pathname === "/sign-in" ||
+    pathname === "/sign-up" ||
+    pathname === "/api/auth" ||
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/invitations/")
+  );
 }

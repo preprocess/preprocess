@@ -39,6 +39,9 @@ const configs: Record<string, object> = {
     name: local.app,
     main: "@tanstack/react-start/server-entry",
     ...common,
+    // The app serves Better Auth (/api/auth/*) and /v1 from the API Worker on
+    // its own origin, so session cookies stay first-party.
+    services: [{ binding: "API", service: local.api }],
     // The app builds per stage (CLOUDFLARE_ENV selects the environment).
     env: { staging: { name: names("staging").app, workers_dev: true } },
   },
@@ -91,6 +94,7 @@ const configs: Record<string, object> = {
         { binding: "JOBS", queue: local.queue },
         { binding: "CASES", queue: local.casesQueue },
         { binding: "WEBHOOKS", queue: local.webhooksQueue },
+        { binding: "EMAILS", queue: local.emailsQueue },
         { binding: "LOGS", queue: local.logsQueue },
       ],
       consumers: [
@@ -98,9 +102,11 @@ const configs: Record<string, object> = {
         { queue: local.casesQueue, max_batch_timeout: 1 },
         // Retries are timed by the consumer (webhooks.ts) over 24 hours.
         { queue: local.webhooksQueue, max_batch_timeout: 1, max_retries: 20 },
+        { queue: local.emailsQueue, max_batch_timeout: 1 },
         { queue: local.logsQueue, max_batch_timeout: 1, max_batch_size: 100 },
       ],
     },
+    kv_namespaces: [{ binding: "EMAILS_SENT", id: local.emailsSent }],
     r2_buckets: [
       { binding: "FILES", bucket_name: local.bucket },
       { binding: "AUDIT", bucket_name: local.auditBucket },

@@ -33,6 +33,9 @@ export const names = (stage: string) => ({
   casesQueue: `preprocess-cases-${stage}`,
   // Webhook deliveries (design doc 06), retried with backoff for 24 hours.
   webhooksQueue: `preprocess-webhooks-${stage}`,
+  // Notification emails (design doc 06) and the keys already sent, for a day.
+  emailsQueue: `preprocess-emails-${stage}`,
+  emailsSent: `preprocess-emails-sent-${stage}`,
   // Run logs (design doc 09): every producer's records, consumed by the API.
   logsQueue: `preprocess-logs-${stage}`,
   logs: `preprocess-logs-${stage}`,
@@ -52,16 +55,6 @@ export const names = (stage: string) => ({
   runs: `preprocess-runs-${stage}`,
   branch: stage,
 });
-
-// The app's WorkOS AuthKit secrets, read from the deploy environment and bound
-// as secret_text. Required on staging; optional on previews,
-// where sign-in stays unavailable until Better Auth replaces WorkOS (step 1).
-export const appSecrets = [
-  "WORKOS_CLIENT_ID",
-  "WORKOS_API_KEY",
-  "WORKOS_COOKIE_PASSWORD",
-  "WORKOS_REDIRECT_URI",
-] as const;
 
 // The API's secrets, read from the deploy environment and bound as
 // secret_text. Locally `pnpm dev` writes generated values to apps/api/.dev.vars.
