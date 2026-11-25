@@ -1,9 +1,7 @@
 "use client";
 
-import { Button } from "@preprocess/ui/components/button";
 import { ChatMessage } from "@preprocess/ui/components/chat-message";
 import { InputMessage } from "@preprocess/ui/components/input-message";
-import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { ThinkingIndicator } from "@preprocess/ui/components/thinking-indicator";
 import {
@@ -13,75 +11,14 @@ import {
   ThinkingStepsContent,
   ThinkingStepsHeader,
 } from "@preprocess/ui/components/thinking-steps";
-import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import type { IconName } from "@preprocess/ui/lib/icon-context";
-import { Brain } from "@preprocess/ui/lib/icons";
 import { cn } from "@preprocess/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Markdown } from "../../components/agent-elements/markdown";
-import { approveAgentMemory } from "../agents/agent-memories";
 import { currentScenario } from "../../scenarios/current-scenario";
 import { caseRoomTranscript, seededReply } from "./case-room-transcripts";
-
-/** What the seeded transcript's agent proposes to remember. */
-const PROPOSED_MEMORY =
-  "When a renewal pack has no signed exhibit B, ask Legal before extracting terms.";
-
-/**
- * A memory the agent proposes from feedback in this chat. Approving it saves
- * it for every future case on the agent; memories are only approved here.
- */
-function ProposedMemory({
-  agentId,
-  caseLabel,
-}: Readonly<{ agentId: string; caseLabel: string }>) {
-  const [state, setState] = useState<"proposed" | "approved" | "dismissed">(
-    "proposed",
-  );
-  if (state === "dismissed") return null;
-
-  return (
-    <div className="flex flex-col gap-3 rounded-2xl bg-muted px-4 py-3">
-      <div className="flex items-center gap-2 text-caption text-muted-foreground">
-        <Brain aria-hidden="true" className="size-3.5" />
-        {state === "approved"
-          ? "Saved to this agent's memories"
-          : "Remember this for future cases?"}
-      </div>
-      <p
-        className="text-body text-foreground"
-        style={{ fontVariationSettings: fontWeights.semibold }}
-      >
-        {PROPOSED_MEMORY}
-      </p>
-      {state === "proposed" ? (
-        <div className="flex items-center gap-2">
-          <LoadingButton
-            onAction={async () => {
-              await approveAgentMemory(agentId, PROPOSED_MEMORY, caseLabel);
-              window.setTimeout(() => setState("approved"), 500);
-            }}
-            pendingLabel="Saving…"
-            size="compact"
-            successLabel="Saved"
-          >
-            Approve
-          </LoadingButton>
-          <Button
-            onClick={() => setState("dismissed")}
-            size="compact"
-            type="button"
-            variant="ghost"
-          >
-            Dismiss
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 const REPLY_DELAY_MS = 700;
 /** Output lines a tool step shows before the rest folds away. */
@@ -196,11 +133,7 @@ function AssistantMessage({ message }: Readonly<{ message: UIMessage }>) {
  * Sending appends the message and a canned reply, so the composer's
  * streaming and stop states stay exercisable. There is no agent runtime yet.
  */
-export function CaseRoomChat({
-  agentId,
-  caseLabel,
-  className,
-}: Readonly<{ agentId: string; caseLabel: string; className?: string }>) {
+export function CaseRoomChat({ className }: Readonly<{ className?: string }>) {
   const [transcript] = useState(() =>
     caseRoomTranscript(currentScenario()["case-room"]),
   );
@@ -261,9 +194,6 @@ export function CaseRoomChat({
               <AssistantMessage key={message.id} message={message} />
             ),
           )}
-          {import.meta.env.DEV && transcript.messages.length > 0 ? (
-            <ProposedMemory agentId={agentId} caseLabel={caseLabel} />
-          ) : null}
           {streaming ? <ThinkingIndicator className="px-0" /> : null}
         </div>
       </ScrollArea>

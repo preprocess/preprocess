@@ -12,7 +12,6 @@ import {
   type CasesGrouping,
   type CasesInboxSearch,
 } from "./case-inbox-search";
-import { agentSummaries, type AgentSummary } from "../agents/agent-store";
 import { createCaseSeed } from "./case-seed";
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { ScenarioState } from "../../scenarios/scenarios";
@@ -38,8 +37,6 @@ export type CaseListPage = {
   readonly nextCursor: string | null;
   /** Agents with at least one case, for the agent filter. */
   readonly agents: readonly string[];
-  /** Name and mark for each agent the rows and filter show. */
-  readonly agentInfo: Readonly<Record<string, AgentSummary>>;
   readonly counts: CaseFacetCounts;
   /** The Awaiting filter's options: group names, and "none" where offered. */
   readonly awaitingOptions: readonly string[];
@@ -247,7 +244,6 @@ export async function listOrgCases(
     });
     return {
       ...page,
-      agentInfo: {},
       assignmentOptions: [],
       loadError: false,
     };
@@ -258,7 +254,6 @@ export async function listOrgCases(
       total: 0,
       nextCursor: null,
       agents: [],
-      agentInfo: {},
       counts: { status: {}, agent: {}, awaiting: {}, unassigned: {} },
       awaitingOptions: [],
       assignmentOptions: [],
@@ -296,7 +291,6 @@ function seededCaseList(
     total: ordered.length,
     nextCursor: end < shown.length ? String(end) : null,
     agents: [...new Set(all.map((item) => item.agentId))].sort(),
-    agentInfo: agentSummaries(),
     counts: facetCounts(search),
     awaitingOptions: [AWAITING_NONE, ...CASE_GROUPS],
     assignmentOptions: [UNASSIGNED_ANY, ...CASE_GROUPS],

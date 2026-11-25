@@ -82,7 +82,6 @@ import {
   type CasesInboxSearch,
   type CasesView,
 } from "./case-inbox-search";
-import type { AgentSummary } from "../agents/agent-store";
 import { AssigneeStack, NeedsAssignmentTag } from "./assignee-stack";
 import { CaseStatusIcon } from "./case-status-icon";
 import {
@@ -171,14 +170,11 @@ function CaseFilterMenu({
             key: "agent",
             label: "Agent",
             icon: OrbitSparkle,
-            options: page.agents.map((agent) => {
-              const info = page.agentInfo[agent];
-              return {
-                value: agent,
-                label: info?.name ?? agent,
-                count: counts.agent[agent] ?? 0,
-              };
-            }),
+            options: page.agents.map((agent) => ({
+              value: agent,
+              label: agent,
+              count: counts.agent[agent] ?? 0,
+            })),
             selected: search.agent,
             onChange: (agent) => onChange({ agent }),
           },
@@ -335,9 +331,7 @@ function CaseEnvironmentSelect({
 function CaseFilterChips({
   search,
   onChange,
-  agentInfo,
 }: Readonly<{
-  agentInfo: Readonly<Record<string, AgentSummary>>;
   search: CasesInboxSearch;
   onChange: (patch: Partial<CasesInboxSearch>) => void;
 }>) {
@@ -356,9 +350,7 @@ function CaseFilterChips({
           key: "agent",
           label: "Agent",
           lead: search.agent.length > 1 ? "Agent is one of" : "Agent is",
-          values: search.agent
-            .map((agent) => agentInfo[agent]?.name ?? agent)
-            .join(", "),
+          values: search.agent.join(", "),
           onClear: () => onChange({ agent: [] }),
         },
         {
@@ -416,13 +408,11 @@ function CaseRow({
   index,
   registerItem,
   showStatus,
-  agent,
 }: Readonly<{
   item: Case;
   index: number;
   registerItem: (index: number, element: HTMLElement | null) => void;
   showStatus: boolean;
-  agent: AgentSummary | null;
 }>) {
   const ref = useRef<HTMLAnchorElement>(null);
   useRegisterFluidHoverItem(registerItem, index, ref);
@@ -466,7 +456,7 @@ function CaseRow({
             </Badge>
           ) : null}
           <span className="shrink-0 text-caption text-muted-foreground">
-            {agent?.name ?? item.agentId}
+            {item.agentId}
           </span>
         </span>
         <AwaitingTag groups={item.awaiting} />
@@ -512,15 +502,12 @@ function GroupHeader({
   total,
   collapsed,
   onToggle,
-  agent,
 }: Readonly<{
   groupKey: string;
   grouping: CasesGrouping;
   total: number;
   collapsed: boolean;
   onToggle: () => void;
-  /** The agent, when grouping by agent. */
-  agent: AgentSummary | null;
 }>) {
   const shape = useShape();
   return (
@@ -548,7 +535,7 @@ function GroupHeader({
         className="text-foreground"
         style={{ fontVariationSettings: fontWeights.semibold }}
       >
-        {grouping === "agent" ? (agent?.name ?? groupKey) : groupKey}
+        {groupKey}
       </span>
       <span className="text-caption text-muted-foreground tabular-nums">
         {countLabel(total)}
@@ -666,9 +653,7 @@ function CaseRows({
   scrollElement,
   hasMore,
   onLoadMore,
-  agentInfo,
 }: Readonly<{
-  agentInfo: Readonly<Record<string, AgentSummary>>;
   rows: readonly Case[];
   groups: CaseListPage["groups"];
   search: CasesInboxSearch;
@@ -772,17 +757,11 @@ function CaseRows({
                 collapsed={entry.collapsed}
                 groupKey={entry.key}
                 grouping={search.group}
-                agent={
-                  search.group === "agent"
-                    ? (agentInfo[entry.key] ?? null)
-                    : null
-                }
                 onToggle={() => onToggleGroup(entry.key)}
                 total={entry.total}
               />
             ) : (
               <CaseRow
-                agent={agentInfo[entry.item.agentId] ?? null}
                 index={entry.row}
                 item={entry.item}
                 registerItem={hover.registerItem}
@@ -959,7 +938,6 @@ export function CaseInbox({
         />
       </PageHeader>
       <CaseFilterChips
-        agentInfo={page.agentInfo}
         onChange={(patch) => onSearchChange(patch)}
         search={search}
       />
@@ -978,7 +956,6 @@ export function CaseInbox({
           >
             <ShapeProvider defaultShape="rounded">
               <CaseRows
-                agentInfo={page.agentInfo}
                 collapsed={collapsed}
                 groups={page.groups}
                 hasMore={current.nextCursor !== null}

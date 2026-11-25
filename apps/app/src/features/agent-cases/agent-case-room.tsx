@@ -58,13 +58,10 @@ import {
   type CaseWorkActions,
 } from "./case-work-context";
 import type { CaseNeighbors } from "./list-org-cases";
-import type { AgentSummary } from "../agents/agent-store";
 import type { CaseInputSample } from "./flue-lab-input-samples";
 
 export type AgentCaseRoomProps = {
   readonly caseRef: AgentCaseRef;
-  /** The agent's name and mark, or null when it isn't known. */
-  readonly agent: AgentSummary | null;
   /** The case record, or null when the list has no such case. */
   readonly caseItem: Case | null;
   readonly neighbors?: CaseNeighbors;
@@ -241,7 +238,6 @@ function CaseWorkspacePane({
 
 export function AgentCaseRoom({
   caseRef,
-  agent,
   caseItem,
   neighbors,
   onStatusChange,
@@ -504,7 +500,6 @@ export function AgentCaseRoom({
           data-testid="agent-case-room"
         >
           <CaseRoomHeader
-            agent={agent}
             caseItem={caseItem}
             caseRef={caseRef}
             detailsOpen={caseItem ? isDetailsOpen : undefined}
@@ -663,8 +658,6 @@ export function AgentCaseRoom({
                 }
               >
                 <CaseRoomChat
-                  agentId={caseRef.agentId}
-                  caseLabel={caseRef.caseId}
                   className="h-full min-h-0"
                   key={`${caseRef.agentId}/${caseRef.caseId}`}
                 />
