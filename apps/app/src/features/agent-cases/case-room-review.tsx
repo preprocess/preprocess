@@ -64,7 +64,12 @@ export function CaseWorkNotice({
       break;
     case "waiting":
       tone = "warning";
-      title = `Waiting on ${groupName(room.waitingOn?.group ?? "a group")}`;
+      // A case held for an approval waits on no group of its own.
+      title = room.waitingOn
+        ? `Waiting on ${groupName(room.waitingOn.group)}`
+        : room.approvals.some((a) => a.status === "pending")
+          ? "Waiting for approval"
+          : "Waiting on people";
       body = room.waitingOn?.reason ?? null;
       break;
     case "halted":

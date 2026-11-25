@@ -375,7 +375,7 @@ function seededWork(scenario: CaseWorkScenario): SeededWork {
       return {
         status: "waiting",
         run: 1,
-        waitingOn: { group: "finance", reason: null },
+        waitingOn: null,
         reason: null,
         fields,
         checks: [
@@ -419,7 +419,7 @@ function seededWork(scenario: CaseWorkScenario): SeededWork {
       return {
         status: "waiting",
         run: 1,
-        waitingOn: { group: "accounts-payable", reason: null },
+        waitingOn: null,
         reason: null,
         fields,
         checks: [
