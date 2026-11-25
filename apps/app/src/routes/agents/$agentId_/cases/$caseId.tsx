@@ -7,7 +7,9 @@ import {
 import { AgentCaseRoom } from "../../../../features/agent-cases/agent-case-room";
 import { rememberedCasesSearch } from "../../../../features/agent-cases/case-inbox-search";
 import {
+  attachCaseFiles,
   caseWorkActions,
+  getCaseFiles,
   getCaseRoom,
 } from "../../../../features/agent-cases/case-room-data";
 import { FLUE_LAB_INPUT_SAMPLES } from "../../../../features/agent-cases/flue-lab-input-samples";
@@ -36,7 +38,7 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
   validateSearch: (search: Record<string, unknown>): CaseRoomSearch =>
     search.view === "review" ? { view: "review" } : {},
   loader: async ({ params }) => {
-    const [agent, item, neighbors, room, access] = await Promise.all([
+    const [agent, item, neighbors, room, access, files] = await Promise.all([
       getCaseAgent(params.agentId),
       getOrgCase(params.agentId, params.caseId),
       // Prev/next step through the list as it was last shown.
@@ -47,9 +49,10 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
       ),
       getCaseRoom(params.agentId, params.caseId),
       getCaseAccess(),
+      getCaseFiles(params.agentId, params.caseId),
     ]);
     if (!agent) throw notFound();
-    return { agent, item, neighbors, room, access };
+    return { agent, item, neighbors, room, access, files };
   },
   component: AgentCasePage,
   errorComponent: AgentCaseParamsError,
@@ -61,7 +64,7 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
 function AgentCasePage() {
   const caseRef = Route.useParams();
   const { view } = Route.useSearch();
-  const { agent, item, neighbors, room, access } = Route.useLoaderData();
+  const { agent, item, neighbors, room, access, files } = Route.useLoaderData();
   const router = useRouter();
   const { agentId, caseId } = caseRef;
   const refresh = async <T,>(result: Promise<T>) => {
@@ -70,6 +73,7 @@ function AgentCasePage() {
     return value;
   };
   const setStatus = orgCaseStatusSetter();
+  const canWork = access.startAgents.includes(agentId);
 
   return (
     <AgentCaseRoom
@@ -82,6 +86,13 @@ function AgentCasePage() {
             }
           : undefined
       }
+      caseFiles={{
+        files,
+        attach:
+          canWork && room.status !== "cancelled"
+            ? (picked) => refresh(attachCaseFiles(agentId, caseId, picked))
+            : undefined,
+      }}
       caseItem={item}
       caseRef={caseRef}
       initialView={view}
@@ -95,12 +106,7 @@ function AgentCasePage() {
       neighbors={neighbors}
       work={{
         room,
-        actions: caseWorkActions(
-          agentId,
-          caseId,
-          refresh,
-          access.startAgents.includes(agentId),
-        ),
+        actions: caseWorkActions(agentId, caseId, refresh, canWork),
       }}
       onStatusChange={
         setStatus

@@ -1,6 +1,6 @@
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { ScenarioState } from "../../scenarios/scenarios";
-import { OPTION_PAGE_SIZE, type OptionPage } from "./case-api";
+import { OPTION_PAGE_SIZE, type CaseFile, type OptionPage } from "./case-api";
 import type {
   ApprovalDecision,
   CaseRoomState,
@@ -605,6 +605,42 @@ const roomKey = (agentId: string, caseId: string) =>
 
 export function resetCaseRooms() {
   rooms.clear();
+  caseFiles.clear();
+}
+
+// Files attached in the room, kept like the rooms' changes.
+const caseFiles = new Map<string, CaseFile[]>();
+
+export function getCaseFiles(agentId: string, caseId: string) {
+  return Promise.resolve(caseFiles.get(roomKey(agentId, caseId)) ?? []);
+}
+
+/** Attaches files as the API does: refused on a cancelled case. */
+export async function attachFiles(
+  agentId: string,
+  caseId: string,
+  files: readonly File[],
+): Promise<ApprovalDecision> {
+  const room = await getCaseRoom(agentId, caseId);
+  if (room.status === "cancelled")
+    return {
+      ok: false,
+      code: "case_cancelled",
+      message: "The case is cancelled.",
+    };
+  const key = roomKey(agentId, caseId);
+  const now = new Date().toISOString();
+  caseFiles.set(key, [
+    ...(caseFiles.get(key) ?? []),
+    ...files.map((file) => ({
+      id: `file_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`,
+      name: file.name,
+      contentType: file.type || "application/octet-stream",
+      size: file.size,
+      createdAt: now,
+    })),
+  ]);
+  return { ok: true };
 }
 
 export function getCaseRoom(

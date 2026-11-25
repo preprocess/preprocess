@@ -2,13 +2,17 @@ import { currentScenario } from "../../scenarios/current-scenario";
 import {
   liveAnswerWrite,
   liveApprovalDecision,
+  liveAttachFiles,
   liveCaseCommand,
+  liveCaseFiles,
   liveCaseRoom,
   liveCompleteCase,
   liveMemoryDecision,
   livePostMessage,
   liveSearchOptions,
+  liveUploadFile,
 } from "./case-api";
+import type { ApprovalDecision } from "./case-room-state";
 import * as seed from "./case-room-seed";
 import type { CaseWorkActions } from "./case-work-context";
 
@@ -20,6 +24,28 @@ const live = () => currentScenario()["case-work"] === "live";
 
 export function getCaseRoom(agentId: string, caseId: string) {
   return live() ? liveCaseRoom(caseId) : seed.getCaseRoom(agentId, caseId);
+}
+
+export function getCaseFiles(agentId: string, caseId: string) {
+  return live()
+    ? liveCaseFiles({ data: caseId })
+    : seed.getCaseFiles(agentId, caseId);
+}
+
+/** Uploads each file, then attaches them all to the case. */
+export async function attachCaseFiles(
+  agentId: string,
+  caseId: string,
+  files: readonly File[],
+): Promise<ApprovalDecision> {
+  if (!live()) return seed.attachFiles(agentId, caseId, files);
+  const ids: string[] = [];
+  for (const file of files) {
+    const form = new FormData();
+    form.set("file", file);
+    ids.push(await liveUploadFile({ data: form }));
+  }
+  return liveAttachFiles({ data: { caseId, files: ids } });
 }
 
 /**

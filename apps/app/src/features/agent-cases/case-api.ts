@@ -725,6 +725,39 @@ export const liveUploadFile = createServerFn({ method: "POST" })
     return (await response.json<{ id: string }>()).id;
   });
 
+/** A file attached to a case. There is no download route yet, so no bytes. */
+export type CaseFile = {
+  readonly id: string;
+  readonly name: string;
+  readonly contentType: string;
+  readonly size: number;
+  readonly createdAt: string;
+};
+
+/** The case's files, oldest first. */
+export const liveCaseFiles = createServerFn({ method: "GET" })
+  .validator((caseId: string) => caseId)
+  .handler(async ({ data: caseId }): Promise<CaseFile[]> => {
+    const response = await send(`/cases/${encodeURIComponent(caseId)}/files`);
+    if (!response.ok) throw new Error((await apiError(response)).message);
+    return (await response.json<{ files: CaseFile[] }>()).files;
+  });
+
+/**
+ * Attaches uploaded files to the case. Refusals (a cancelled case, files that
+ * already belong to a case) come back as data for the Input tab.
+ */
+export const liveAttachFiles = createServerFn({ method: "POST" })
+  .validator((input: { caseId: string; files: string[] }) => input)
+  .handler(async ({ data }): Promise<ApprovalDecision> => {
+    const response = await send(
+      `/cases/${encodeURIComponent(data.caseId)}/files`,
+      { method: "POST", body: JSON.stringify({ files: data.files }) },
+    );
+    if (response.ok) return { ok: true };
+    return { ok: false, ...(await apiError(response)) };
+  });
+
 /**
  * Starts a case by hand. The key makes a retried submit start one case, not
  * two; each submit sends a fresh one.
