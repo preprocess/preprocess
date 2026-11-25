@@ -9,7 +9,8 @@
     "preprocess": "./src/main.ts"
   },
   "exports": {
-    ".": "./src/deploy.ts"
+    ".": "./src/deploy.ts",
+    "./usage": "./src/usage.ts"
   },
   "engines": {
     "node": ">=24"

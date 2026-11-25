@@ -87,6 +87,7 @@ agentRoutes.openapi(
   createRoute({
     method: "get",
     path: "/agents",
+    tags: ["Agents"],
     request: { params: z.object({ org: z.string() }) },
     responses: {
       200: {
@@ -110,6 +111,7 @@ agentRoutes.openapi(
   createRoute({
     method: "get",
     path: "/agents/{agent}",
+    tags: ["Agents"],
     request: { params: AgentParams },
     responses: {
       200: {
@@ -132,6 +134,7 @@ agentRoutes.openapi(
   createRoute({
     method: "post",
     path: "/agents/{agent}/deployments",
+    tags: ["Agents"],
     summary:
       "Deploy an agent's bundled code; creates the agent on its first deploy",
     request: {
@@ -168,6 +171,7 @@ agentRoutes.openapi(
   createRoute({
     method: "get",
     path: "/agents/{agent}/deployments",
+    tags: ["Agents"],
     request: { params: AgentParams },
     responses: {
       200: {
@@ -190,6 +194,7 @@ agentRoutes.openapi(
   createRoute({
     method: "get",
     path: "/agents/{agent}/deployments/{deployment}",
+    tags: ["Agents"],
     request: { params: DeploymentParams },
     responses: {
       200: {
@@ -212,6 +217,7 @@ agentRoutes.openapi(
   createRoute({
     method: "post",
     path: "/agents/{agent}/deployments/{deployment}/promote",
+    tags: ["Agents"],
     summary:
       "Serve this deployment in production; promoting an earlier one is a rollback",
     request: { params: DeploymentParams },
@@ -249,6 +255,7 @@ agentRoutes.openapi(
   createRoute({
     method: "post",
     path: "/agents/{agent}/archive",
+    tags: ["Agents"],
     request: { params: AgentParams },
     responses: {
       200: {

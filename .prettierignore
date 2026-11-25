@@ -1,6 +1,6 @@
 coverage/
 dist/
-docs/
+/docs/
 node_modules/
 .turbo/
 .wrangler/
@@ -17,3 +17,5 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 .kit/
 apps/runtime/test/dist/
+apps/docs/openapi.json
+apps/docs/.source/
