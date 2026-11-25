@@ -115,10 +115,9 @@ describe("the MCP server", () => {
         /approvals|\/memories\/\{memory\}\/|guardrail-requests\/|secrets|groups|webhooks/,
       );
     const create = tools.find((t) => t.name === "create_case")!;
-    expect(create.inputSchema).toMatchObject({
-      type: "object",
-      required: expect.arrayContaining(["agent"]),
-    });
+    const schema = create.inputSchema as { type: string; required: string[] };
+    expect(schema.type).toBe("object");
+    expect(schema.required).toContain("agent");
   });
 
   it("calls the API with the key's rights", async () => {
