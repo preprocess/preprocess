@@ -27,7 +27,7 @@ import {
   useFluidHover,
   useRegisterFluidHoverItem,
 } from "@preprocess/ui/hooks/use-fluid-hover";
-import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
+import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
   OrbitSparkle,
@@ -935,19 +935,19 @@ export function CaseInbox({
     <div className="flex items-center gap-2">
       <Tabs
         aria-label="Case status"
-        onValueChange={(view) => onSearchChange({ view: view as CasesView })}
+        onSelect={(index) =>
+          onSearchChange({ view: VIEW_ORDER[index] ?? "all" })
+        }
+        selectedIndex={Math.max(0, VIEW_ORDER.indexOf(search.view))}
         size="compact"
-        value={search.view}
       >
-        <TabsList>
-          {VIEW_ORDER.map((view) => (
-            <TabItem
-              key={view}
-              label={`${VIEW_LABEL[view]} ${countFormat.format(viewCount(view))}`}
-              value={view}
-            />
-          ))}
-        </TabsList>
+        {VIEW_ORDER.map((view, index) => (
+          <TabsItem
+            index={index}
+            key={view}
+            label={`${VIEW_LABEL[view]} ${countFormat.format(viewCount(view))}`}
+          />
+        ))}
       </Tabs>
       {/* The buttons share one hover highlight, indexed left to right. */}
       <Toolbar label="Case options">

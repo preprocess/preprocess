@@ -7,7 +7,7 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
-import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
+import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { XIcon } from "@preprocess/ui/lib/icons";
 import { MODEL_CATALOG, MODELS } from "@preprocess/sdk/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,6 +38,12 @@ export type Change =
   | { kind: "mcp"; server: string }
   | { kind: "spending_limit"; limitUsd: number | null };
 type Status = "pending" | "approved" | "rejected";
+
+const STATUSES: readonly { value: Status; label: string }[] = [
+  { value: "pending", label: "Pending" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+];
 export type GuardrailRequest = {
   id: string;
   agent: string | null;
@@ -275,14 +281,20 @@ function Requests({ highlight }: { highlight?: string }) {
     <SettingsSection
       actions={
         <Tabs
-          onValueChange={(value) => setStatus(value as Status)}
-          value={status}
+          aria-label="Request status"
+          onSelect={(index) => setStatus(STATUSES[index]?.value ?? "pending")}
+          selectedIndex={Math.max(
+            0,
+            STATUSES.findIndex((option) => option.value === status),
+          )}
         >
-          <TabsList aria-label="Request status">
-            <TabItem label={`Pending ${count("pending")}`} value="pending" />
-            <TabItem label={`Approved ${count("approved")}`} value="approved" />
-            <TabItem label={`Rejected ${count("rejected")}`} value="rejected" />
-          </TabsList>
+          {STATUSES.map((option, index) => (
+            <TabsItem
+              index={index}
+              key={option.value}
+              label={`${option.label} ${count(option.value)}`}
+            />
+          ))}
         </Tabs>
       }
       description="Asks to loosen a guardrail, from Developers and from deployments that need more than the guardrails allow."

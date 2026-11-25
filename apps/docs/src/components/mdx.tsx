@@ -1,9 +1,8 @@
 import { Button } from "@preprocess/ui/components/button";
 import {
-  TabItem,
-  TabPanel,
   Tabs as FluidTabs,
-  TabsList,
+  TabsItem,
+  TabsPanel,
 } from "@preprocess/ui/components/tabs";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
@@ -25,7 +24,7 @@ import { typeClass } from "@preprocess/ui/lib/type-scale";
 import { cn } from "@preprocess/ui/lib/utils";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
-import { use, type ReactNode } from "react";
+import { createContext, use, useId, useState, type ReactNode } from "react";
 
 import { Pre } from "./code-block";
 import { Configured } from "./configured";
@@ -290,24 +289,45 @@ function EndpointTags() {
   );
 }
 
+const TabsContext = createContext<{
+  items: string[];
+  selectedIndex: number;
+  idPrefix: string;
+} | null>(null);
+
 function Tabs({ items, children }: { items: string[]; children: ReactNode }) {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const idPrefix = useId();
   return (
-    <FluidTabs className="not-typeset" defaultValue={items[0]}>
-      <TabsList>
-        {items.map((item) => (
-          <TabItem key={item} label={item} value={item} />
+    <div className="not-typeset">
+      <FluidTabs
+        idPrefix={idPrefix}
+        onSelect={setSelectedIndex}
+        selectedIndex={selectedIndex}
+      >
+        {items.map((item, index) => (
+          <TabsItem index={index} key={item} label={item} />
         ))}
-      </TabsList>
-      {children}
-    </FluidTabs>
+      </FluidTabs>
+      <TabsContext value={{ items, selectedIndex, idPrefix }}>
+        {children}
+      </TabsContext>
+    </div>
   );
 }
 
 function Tab({ value, children }: { value: string; children: ReactNode }) {
+  const tabs = use(TabsContext);
+  if (!tabs) return null;
   return (
-    <TabPanel className="mt-3" value={value}>
+    <TabsPanel
+      className="mt-3"
+      idPrefix={tabs.idPrefix}
+      index={tabs.items.indexOf(value)}
+      selectedIndex={tabs.selectedIndex}
+    >
       {children}
-    </TabPanel>
+    </TabsPanel>
   );
 }
 
