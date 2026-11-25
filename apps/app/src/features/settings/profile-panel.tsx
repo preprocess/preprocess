@@ -10,6 +10,7 @@ import {
   type LoadingButtonHandle,
 } from "@preprocess/ui/components/loading-button";
 import { Button } from "@preprocess/ui/components/button";
+import { Switch } from "@preprocess/ui/components/switch";
 import { useRef, useState, type FormEvent } from "react";
 
 import { useAuth } from "../auth/auth-context";
@@ -93,10 +94,63 @@ function EditNameDialog({
   );
 }
 
+function EmailNotifications({ initial }: { initial: boolean }) {
+  const [enabled, setEnabled] = useState(initial);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle() {
+    const next = !enabled;
+    setEnabled(next);
+    setError(null);
+    setPending(true);
+    try {
+      await authPost("/update-user", { emailNotifications: next });
+    } catch (cause) {
+      setEnabled(!next);
+      setError(
+        actionErrorMessage(cause, "Could not change your email setting."),
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <SettingsRows>
+      <div className="flex flex-col gap-2 px-5 py-3">
+        <Switch
+          checked={enabled}
+          disabled={pending}
+          label="Email notifications"
+          onToggle={() => void toggle()}
+        />
+        <span className="text-caption text-muted-foreground">
+          Email me right away when a case waits on one of my groups, one of my
+          groups is mentioned, or a case is assigned to me. The inbox lists them
+          either way.
+        </span>
+        {error ? (
+          <SettingsPanelMessage tone="danger">{error}</SettingsPanelMessage>
+        ) : null}
+      </div>
+    </SettingsRows>
+  );
+}
+
 export function ProfilePanel() {
   const { user } = useAuth();
   if (!user) return null;
 
+  return (
+    <div className="flex flex-col gap-6">
+      <ProfileRows user={user} />
+      <EmailNotifications initial={user.emailNotifications} />
+    </div>
+  );
+}
+
+function ProfileRows({ user }: { user: { name: string; email: string } }) {
   return (
     <SettingsRows>
       <SettingsRow label="Name" value={user.name}>
