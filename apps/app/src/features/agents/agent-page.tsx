@@ -8,15 +8,6 @@ import {
   BreadcrumbSeparator,
 } from "@preprocess/ui/components/breadcrumb";
 import { Button } from "@preprocess/ui/components/button";
-import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
-  AsyncActionAbortError,
-  LoadingButton,
-  type LoadingButtonHandle,
-} from "@preprocess/ui/components/loading-button";
 import { Tooltip } from "@preprocess/ui/components/tooltip";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import {
@@ -26,67 +17,30 @@ import {
   SelectTrigger,
 } from "@preprocess/ui/components/select";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
-import {
-  Check,
-  Copy,
-  Pencil,
-  Play,
-  RotateCcw,
-  Rocket,
-} from "@preprocess/ui/lib/icons";
+import { Check, Copy } from "@preprocess/ui/lib/icons";
 import { SizeProvider } from "@preprocess/ui/lib/size-context";
 import { cn } from "@preprocess/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
-import {
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactElement,
-  type ReactNode,
-} from "react";
+import { useState, type ReactElement, type ReactNode } from "react";
 
 import { PageHeader } from "../../components/page-header";
 import {
-  CASE_STATUSES,
-  formatCost,
-  type CaseStatus,
-} from "../agent-cases/case";
-import { CaseStatusIcon } from "../agent-cases/case-status-icon";
-import {
-  SettingsCard,
-  SettingsConfirmDialog,
-  SettingsDialogActions,
-  SettingsDialogShell,
   SettingsEmpty,
-  SettingsPanelMessage,
   SettingsRow,
-  SettingsRowMenu,
   SettingsRows,
   SettingsSection,
   SettingsStatus,
-  actionErrorMessage,
   formatRelative,
 } from "../settings/kit";
-import { MemoryList } from "./agent-knowledge";
-import { RunCaseDialog, deploymentTestCommand } from "./deployment-actions";
-import { SEED_GROUPS, type AgentAccessLevel } from "./agent-seed";
-import {
-  DEFAULT_PRODUCTION_BRANCH,
-  deploymentEnvironment,
-  modelLabel,
-  shortDeploymentId,
-  type AgentDeployment,
-  type ReasoningLevel,
-} from "./agent-store";
-import type { OrgAgentDetail } from "./list-org-agents";
+import type { AgentAccessLevel } from "./agent-seed";
+import { shortDeploymentId } from "./agent-store";
+import type { AgentDeploymentSummary, OrgAgentDetail } from "./list-org-agents";
 import {
   AgentSectionCrumb,
   AgentSectionNav,
   type AgentSection,
   type SectionAnchor,
 } from "./agent-shell";
-
-const countFormat = new Intl.NumberFormat();
 
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
@@ -193,233 +147,6 @@ export function AgentPage({
 
 // ─── Overview ────────────────────────────────────────────────────────────────
 
-function StatTile({
-  label,
-  value,
-}: Readonly<{
-  label: string;
-  value: ReactNode;
-}>) {
-  return (
-    <SettingsCard className="flex flex-col gap-1 p-4">
-      <span className="text-caption text-muted-foreground">{label}</span>
-      <span
-        className="text-title text-foreground tabular-nums"
-        style={{ fontVariationSettings: fontWeights.semibold }}
-      >
-        {value}
-      </span>
-    </SettingsCard>
-  );
-}
-
-/** One status's count; a zero count dims. */
-function CaseStatusTile({
-  status,
-  count,
-}: Readonly<{ status: CaseStatus; count: number }>) {
-  return (
-    <SettingsCard className="flex flex-col gap-1 p-4">
-      <span className="flex items-center gap-1.5 text-caption text-muted-foreground">
-        <CaseStatusIcon status={status} />
-        {status}
-      </span>
-      <span
-        className={cn(
-          "text-title tabular-nums",
-          count === 0 ? "text-muted-foreground" : "text-foreground",
-        )}
-        style={{ fontVariationSettings: fontWeights.semibold }}
-      >
-        {countFormat.format(count)}
-      </span>
-    </SettingsCard>
-  );
-}
-
-function DeploymentStatus({
-  deployment,
-}: Readonly<{ deployment: AgentDeployment }>) {
-  return deployment.status === "ready" ? (
-    <SettingsStatus state="success">Ready</SettingsStatus>
-  ) : (
-    <SettingsStatus state="error">Failed</SettingsStatus>
-  );
-}
-
-const REASONING_LABEL: Record<ReasoningLevel, string> = {
-  low: "Low reasoning",
-  medium: "Medium reasoning",
-  high: "High reasoning",
-};
-
-/**
- * A deployment's model and reasoning over who shipped it, when, and how
- * long the build took. When `previous` is given, a change from it is noted.
- */
-function DeploymentMeta({
-  deployment,
-  previous,
-}: Readonly<{
-  deployment: AgentDeployment;
-  previous?: AgentDeployment;
-}>) {
-  const changes = previous
-    ? [
-        previous.model !== deployment.model ? "Model changed" : null,
-        previous.reasoning !== deployment.reasoning
-          ? "Reasoning changed"
-          : null,
-      ].filter((change): change is string => change !== null)
-    : [];
-  return (
-    <span className="flex min-w-0 flex-col">
-      <span className="flex min-w-0 items-center gap-2 text-body text-foreground">
-        <span className="truncate">
-          {modelLabel(deployment.model)} ·{" "}
-          {REASONING_LABEL[deployment.reasoning]}
-        </span>
-        {changes.map((change) => (
-          <Badge className="shrink-0" color="blue" key={change} size="sm">
-            {change}
-          </Badge>
-        ))}
-      </span>
-      <span className="truncate text-caption text-muted-foreground">
-        {deployment.branch} · {deployment.author} ·{" "}
-        {formatRelative(deployment.createdAt)} · {deployment.durationSeconds}s
-      </span>
-    </span>
-  );
-}
-
-/** Preview builds say so; production builds need no badge until live. */
-function EnvironmentBadge({
-  branch,
-  productionBranch,
-}: Readonly<{ branch: string; productionBranch: string }>) {
-  if (deploymentEnvironment(branch, productionBranch) === "preview") {
-    return (
-      <Badge color="gray" size="sm">
-        Preview
-      </Badge>
-    );
-  }
-  return null;
-}
-
-function DeploymentLabel({
-  deployment,
-  production,
-  productionBranch,
-}: Readonly<{
-  deployment: AgentDeployment;
-  production: boolean;
-  productionBranch: string;
-}>) {
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span
-        className="text-body text-foreground"
-        style={{ fontVariationSettings: fontWeights.semibold }}
-      >
-        {shortDeploymentId(deployment.id)}
-      </span>
-      {production ? (
-        <Badge color="green" size="sm">
-          Production
-        </Badge>
-      ) : (
-        <EnvironmentBadge
-          branch={deployment.branch}
-          productionBranch={productionBranch}
-        />
-      )}
-    </span>
-  );
-}
-
-/** A description is one line on what the agent does. */
-const DESCRIPTION_MAX = 120;
-
-function DetailsDialog({
-  agent,
-  onOpenChange,
-  onSave,
-}: Readonly<{
-  agent: OrgAgentDetail;
-  onOpenChange: (open: boolean) => void;
-  onSave: (details: { name: string; description: string }) => Promise<unknown>;
-}>) {
-  const nameRef = useRef<InlineValidationHandle>(null);
-  const saveRef = useRef<LoadingButtonHandle>(null);
-  const [name, setName] = useState(agent.name);
-  const [description, setDescription] = useState(agent.description);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    setError(null);
-    if (!nameRef.current?.commit()) throw new AsyncActionAbortError();
-    try {
-      await onSave({ name: name.trim(), description: description.trim() });
-      window.setTimeout(() => onOpenChange(false), 400);
-    } catch (cause) {
-      setError(actionErrorMessage(cause, "Could not save the agent."));
-      throw cause;
-    }
-  }
-
-  return (
-    <SettingsDialogShell onOpenChange={onOpenChange} open title="Edit details">
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event: FormEvent<HTMLFormElement>) => {
-          event.preventDefault();
-          saveRef.current?.run();
-        }}
-      >
-        <InlineValidation
-          autoFocus
-          id="agent-name"
-          label="Name"
-          onChange={setName}
-          ref={nameRef}
-          validate={(value) => (value.trim() ? null : "Enter a name.")}
-          value={name}
-        />
-        <InlineValidation
-          hint={`One line on what the agent does, up to ${DESCRIPTION_MAX} characters.`}
-          id="agent-description"
-          label="Description"
-          // Typing stops at the limit rather than erroring past it.
-          onChange={(next) => setDescription(next.slice(0, DESCRIPTION_MAX))}
-          validate={() => null}
-          value={description}
-        />
-        {error ? (
-          <SettingsPanelMessage tone="danger">{error}</SettingsPanelMessage>
-        ) : null}
-        <SettingsDialogActions
-          onCancel={() => onOpenChange(false)}
-          pending={pending}
-        >
-          <LoadingButton
-            onAction={save}
-            onStatusChange={(status) => setPending(status === "pending")}
-            pendingLabel="Saving…"
-            ref={saveRef}
-            successLabel="Saved"
-            type="submit"
-          >
-            Save
-          </LoadingButton>
-        </SettingsDialogActions>
-      </form>
-    </SettingsDialogShell>
-  );
-}
-
 /** The agent's ID as text sized to fit, with a copy button. */
 function AgentIdCopy({ id }: Readonly<{ id: string }>) {
   const [copied, setCopied] = useState(false);
@@ -447,91 +174,37 @@ function AgentIdCopy({ id }: Readonly<{ id: string }>) {
   );
 }
 
-/**
- * The agent's identity at the top of its overview: its name and
- * description, with its ID and an edit button top right.
- */
-function AgentIdentity({
-  agent,
-  onSaveDetails,
-}: Readonly<{
-  agent: OrgAgentDetail;
-  onSaveDetails: (details: {
-    name: string;
-    description: string;
-  }) => Promise<unknown>;
-}>) {
-  const [editing, setEditing] = useState(false);
-  return (
-    <div className="flex items-center gap-4">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <h1
-          className="truncate text-title tracking-[-0.02em] text-foreground"
-          style={{ fontVariationSettings: fontWeights.semibold }}
-        >
-          {agent.name}
-        </h1>
-        <p className="text-body text-muted-foreground">
-          {agent.description || "No description"}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <AgentIdCopy id={agent.id} />
-        <Tooltip content="Edit details" side="bottom">
-          <Button
-            aria-label="Edit details"
-            onClick={() => setEditing(true)}
-            size="icon-compact"
-            type="button"
-            variant="ghost"
-          >
-            <Pencil aria-hidden="true" />
-          </Button>
-        </Tooltip>
-      </div>
-      {editing ? (
-        <DetailsDialog
-          agent={agent}
-          onOpenChange={setEditing}
-          onSave={onSaveDetails}
-        />
-      ) : null}
-    </div>
-  );
+function DeploymentStatus({
+  deployment,
+}: Readonly<{ deployment: AgentDeploymentSummary }>) {
+  switch (deployment.status) {
+    case "ready":
+      return <SettingsStatus state="success">Ready</SettingsStatus>;
+    case "waiting":
+      return <SettingsStatus state="warning">Waiting</SettingsStatus>;
+    case "failed":
+      return <SettingsStatus state="error">Failed</SettingsStatus>;
+  }
 }
 
-const RECENT_MEMORIES = 5;
-
-export function AgentOverview({
-  agent,
-  onSaveDetails,
-}: Readonly<{
-  agent: OrgAgentDetail;
-  onSaveDetails: (details: {
-    name: string;
-    description: string;
-  }) => Promise<unknown>;
-}>) {
-  const { stats } = agent;
-  const average =
-    stats.total > 0 ? Math.round(stats.costCents / stats.total) : 0;
-  const production = agent.deployments.find(
-    (item) => item.id === agent.productionId,
-  );
-
+/** The agent's name and production branch, with its ID top right. */
+export function AgentOverview({ agent }: Readonly<{ agent: OrgAgentDetail }>) {
+  const production = agent.production;
   return (
     <>
-      <AgentIdentity agent={agent} onSaveDetails={onSaveDetails} />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        {CASE_STATUSES.map((status) => (
-          <CaseStatusTile
-            count={stats.byStatus[status]}
-            key={status}
-            status={status}
-          />
-        ))}
-        <StatTile label="Total cost" value={formatCost(stats.costCents)} />
-        <StatTile label="Cost per case" value={formatCost(average)} />
+      <div className="flex items-center gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <h1
+            className="truncate text-title tracking-[-0.02em] text-foreground"
+            style={{ fontVariationSettings: fontWeights.semibold }}
+          >
+            {agent.name}
+          </h1>
+          <p className="text-body text-muted-foreground">
+            Deploys production from {agent.productionBranch}
+          </p>
+        </div>
+        <AgentIdCopy id={agent.id} />
       </div>
       <SettingsSection
         actions={
@@ -554,17 +227,32 @@ export function AgentOverview({
         {production ? (
           <SettingsRows>
             <SettingsRow
-              description={production.message}
+              description={[
+                production.branch,
+                production.commit?.slice(0, 7),
+                production.source === "cli" ? "CLI" : "GitHub",
+                formatRelative(production.createdAt),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
               label={
-                <DeploymentLabel
-                  deployment={production}
-                  production
-                  productionBranch={
-                    agent.repo?.productionBranch ?? DEFAULT_PRODUCTION_BRANCH
-                  }
-                />
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="text-body text-foreground"
+                    style={{ fontVariationSettings: fontWeights.semibold }}
+                  >
+                    {shortDeploymentId(production.id)}
+                  </span>
+                  <Badge color="green" size="sm">
+                    Production
+                  </Badge>
+                </span>
               }
-              value={<DeploymentMeta deployment={production} />}
+              value={
+                <span className="truncate text-body text-foreground">
+                  {production.model} · {production.reasoning} reasoning
+                </span>
+              }
             >
               <DeploymentStatus deployment={production} />
             </SettingsRow>
@@ -576,144 +264,7 @@ export function AgentOverview({
           />
         )}
       </SettingsSection>
-      <SettingsSection
-        actions={
-          <Button
-            render={
-              <Link
-                params={{ agentId: agent.id }}
-                to="/agents/$agentId/memories"
-              />
-            }
-            size="compact"
-            type="button"
-            variant="ghost"
-          >
-            View all
-          </Button>
-        }
-        title="Recent memories"
-      >
-        <MemoryList memories={agent.memories.slice(0, RECENT_MEMORIES)} />
-      </SettingsSection>
     </>
-  );
-}
-
-// ─── Deployments ─────────────────────────────────────────────────────────────
-
-export function AgentDeployments({
-  agent,
-  onPromote,
-}: Readonly<{
-  agent: OrgAgentDetail;
-  onPromote: (deploymentId: string) => Promise<unknown>;
-}>) {
-  const [promoting, setPromoting] = useState<AgentDeployment | null>(null);
-  const [running, setRunning] = useState<AgentDeployment | null>(null);
-  const productionIndex = agent.deployments.findIndex(
-    (item) => item.id === agent.productionId,
-  );
-  // Newest first, so a lower index is a newer deployment.
-  const isRollback = (deployment: AgentDeployment) =>
-    agent.deployments.indexOf(deployment) > productionIndex;
-
-  return (
-    <SettingsSection
-      description={`Every push deploys: ${agent.repo?.productionBranch ?? DEFAULT_PRODUCTION_BRANCH} builds for production, other branches to previews. Promote or roll back to any ready build; it serves production right away.`}
-      title="Deployments"
-    >
-      <SettingsRows>
-        {agent.deployments.map((deployment, index) => {
-          const production = deployment.id === agent.productionId;
-          const canServe = deployment.status === "ready" && !production;
-          return (
-            <SettingsRow
-              description={deployment.message}
-              key={deployment.id}
-              label={
-                <DeploymentLabel
-                  deployment={deployment}
-                  production={production}
-                  productionBranch={
-                    agent.repo?.productionBranch ?? DEFAULT_PRODUCTION_BRANCH
-                  }
-                />
-              }
-              value={
-                <DeploymentMeta
-                  deployment={deployment}
-                  previous={agent.deployments[index + 1]}
-                />
-              }
-            >
-              <DeploymentStatus deployment={deployment} />
-              <SettingsRowMenu
-                actions={[
-                  {
-                    label: isRollback(deployment)
-                      ? `Roll back to ${shortDeploymentId(deployment.id)}`
-                      : `Promote ${shortDeploymentId(deployment.id)}`,
-                    icon: isRollback(deployment) ? RotateCcw : Rocket,
-                    disabled: !canServe,
-                    onSelect: () => setPromoting(deployment),
-                  },
-                  {
-                    label: "Run a case",
-                    icon: Play,
-                    disabled: deployment.status !== "ready",
-                    onSelect: () => setRunning(deployment),
-                  },
-                  {
-                    label: "Copy test command",
-                    icon: Copy,
-                    disabled: deployment.status !== "ready",
-                    onSelect: () =>
-                      void navigator.clipboard?.writeText(
-                        deploymentTestCommand(deployment, production),
-                      ),
-                  },
-                ]}
-                label={`Actions for ${shortDeploymentId(deployment.id)}`}
-              />
-            </SettingsRow>
-          );
-        })}
-      </SettingsRows>
-      {running ? (
-        <RunCaseDialog
-          deployment={running}
-          onOpenChange={(open) => (open ? undefined : setRunning(null))}
-          production={running.id === agent.productionId}
-        />
-      ) : null}
-      <SettingsConfirmDialog
-        confirmLabel={
-          promoting && isRollback(promoting) ? "Roll back" : "Promote"
-        }
-        description={
-          promoting
-            ? `${shortDeploymentId(promoting.id)} serves production right away. Runs already underway finish on ${shortDeploymentId(agent.deploymentId)}.`
-            : undefined
-        }
-        onConfirm={() =>
-          promoting ? onPromote(promoting.id) : Promise.resolve()
-        }
-        onOpenChange={(open) => (open ? undefined : setPromoting(null))}
-        open={promoting !== null}
-        pendingLabel={
-          promoting && isRollback(promoting) ? "Rolling back…" : "Promoting…"
-        }
-        successLabel="Live"
-        title={
-          promoting
-            ? isRollback(promoting)
-              ? `Roll back to ${shortDeploymentId(promoting.id)}?`
-              : `Promote ${shortDeploymentId(promoting.id)}?`
-            : "Promote"
-        }
-      />
-    </SettingsSection>
   );
 }
 
@@ -767,73 +318,3 @@ export const LEVEL_NAME: Record<AgentAccessLevel, string> = {
   operator: "Operator",
   viewer: "Viewer",
 };
-
-/**
- * Who can use the agent: a baseline for everyone in the organization, then
- * groups, each of which can raise its members above that baseline.
- */
-export function AgentAccess({
-  agent,
-  onChange,
-  onEveryoneChange,
-}: Readonly<{
-  agent: OrgAgentDetail;
-  onChange: (group: string, level: AgentAccessLevel | null) => Promise<unknown>;
-  onEveryoneChange: (level: AgentAccessLevel | null) => Promise<unknown>;
-}>) {
-  const everyone: AccessValue = agent.everyone ?? "none";
-  const levelOf = (group: string): AccessValue =>
-    agent.access.find((grant) => grant.group === group)?.level ?? "none";
-
-  return (
-    <>
-      <SettingsSection
-        description="Operators work this agent's cases; viewers can only see them. People without access can't see the agent or its cases."
-        title="Everyone"
-      >
-        <SettingsRows>
-          <SettingsRow
-            description="The least access anyone in the organization has"
-            label="Everyone in the organization"
-          >
-            <AccessSelect
-              label="Everyone's access"
-              onChange={(level) => void onEveryoneChange(level)}
-              value={everyone}
-            />
-          </SettingsRow>
-        </SettingsRows>
-      </SettingsSection>
-      <SettingsSection
-        description="Groups map to roles from your identity provider. A group can raise its members above everyone's access, never below it."
-        title="Groups"
-      >
-        <SettingsRows>
-          {SEED_GROUPS.map((group) => {
-            const level = levelOf(group);
-            const covered =
-              agent.everyone !== null &&
-              LEVEL_RANK[level] <= LEVEL_RANK[everyone];
-            return (
-              <SettingsRow
-                description={
-                  covered && agent.everyone
-                    ? `${LEVEL_NAME[agent.everyone]} through Everyone`
-                    : undefined
-                }
-                key={group}
-                label={group}
-              >
-                <AccessSelect
-                  label={`${group} access`}
-                  onChange={(next) => void onChange(group, next)}
-                  value={level}
-                />
-              </SettingsRow>
-            );
-          })}
-        </SettingsRows>
-      </SettingsSection>
-    </>
-  );
-}

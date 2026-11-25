@@ -5,7 +5,7 @@ import { getOrgAgent } from "../../features/agents/list-org-agents";
 export const Route = createFileRoute("/agents/$agentId")({
   staticData: { ownsHeader: true },
   loader: async ({ params }) => {
-    const agent = await getOrgAgent(params.agentId);
+    const agent = await getOrgAgent({ data: params.agentId });
     if (!agent) throw notFound();
     return agent;
   },

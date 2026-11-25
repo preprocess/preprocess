@@ -1,13 +1,18 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 
-import { AgentSettingsTab } from "../../../features/agents/agent-settings-tab";
-import { getPlatformSettings } from "../../../features/developers/platform-store";
+import { AgentAccess } from "../../../features/agents/agent-knowledge";
+import { AgentPage } from "../../../features/agents/agent-page";
+
+const agentRoute = getRouteApi("/agents/$agentId");
 
 export const Route = createFileRoute("/agents/$agentId/access")({
-  loader: () => getPlatformSettings(),
   component: AgentAccessPage,
 });
 
 function AgentAccessPage() {
-  return <AgentSettingsTab platform={Route.useLoaderData()} section="access" />;
+  return (
+    <AgentPage agent={agentRoute.useLoaderData()} tab="access">
+      <AgentAccess />
+    </AgentPage>
+  );
 }

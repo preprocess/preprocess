@@ -1,103 +1,90 @@
-import {
-  getOrgCaseStatsByAgent,
-  type AgentCaseStats,
-} from "../agent-cases/list-org-cases";
-import {
-  summarizeMcpServer,
-  summarizeSecret,
-  type McpServerSummary,
-  type NetworkRule,
-  type SecretSummary,
-} from "../developers/platform-store";
-import { listAgentMemories, type AgentMemory } from "./agent-memories";
-import type { AgentAccessLevel, AgentGrant } from "./agent-seed";
-import {
-  productionDeployment,
-  storedAgent,
-  storedAgents,
-  type AgentDeployment,
-  type AgentMcpGrant,
-  type AgentRepo,
-  type StoredAgent,
-} from "./agent-store";
-
-export type OrgAgent = {
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  /** The production deployment's id and when it was deployed. */
-  readonly deploymentId: string;
-  readonly deployedAt: string;
-  readonly access: readonly AgentGrant[];
-  /** Everyone's baseline level, or null for groups only. */
-  readonly everyone: AgentAccessLevel | null;
-  readonly stats: AgentCaseStats;
-};
-
-/** One agent with everything its management page shows. */
-export type OrgAgentDetail = OrgAgent & {
-  readonly deployments: readonly AgentDeployment[];
-  readonly productionId: string;
-  readonly env: readonly SecretSummary[];
-  readonly sandboxImageId: string | null;
-  readonly repo: AgentRepo | null;
-  readonly network: readonly NetworkRule[];
-  readonly mcp: readonly AgentMcpGrant[];
-  readonly mcpServers: readonly McpServerSummary[];
-  /** Newest first. */
-  readonly memories: readonly AgentMemory[];
-};
-
-const NO_CASES: AgentCaseStats = {
-  byStatus: { Waiting: 0, Active: 0, Done: 0 },
-  total: 0,
-  costCents: 0,
-  lastUpdatedAt: null,
-};
-
-function toOrgAgent(agent: StoredAgent, stats: AgentCaseStats): OrgAgent {
-  const production = productionDeployment(agent);
-  return {
-    id: agent.id,
-    name: agent.name,
-    description: agent.description,
-    deploymentId: production?.id ?? "",
-    deployedAt: production?.createdAt ?? "",
-    access: agent.access,
-    everyone: agent.everyone,
-    stats,
-  };
-}
+import { createServerFn } from "@tanstack/react-start";
 
 /**
- * The organization's agents with their case stats, most recently busy
- * first. Seeded in development; builds outside dev serve none.
+ * The organization's agents from the API. An agent is addressed by its slug,
+ * which doubles as its name until agents carry one. Reads run as server
+ * functions for the route loaders.
  */
-export async function listOrgAgents(): Promise<readonly OrgAgent[]> {
-  const stats = await getOrgCaseStatsByAgent();
-  return storedAgents()
-    .map((agent) => toOrgAgent(agent, stats.get(agent.id) ?? NO_CASES))
-    .sort(
-      (left, right) =>
-        Date.parse(right.stats.lastUpdatedAt ?? "0") -
-        Date.parse(left.stats.lastUpdatedAt ?? "0"),
-    );
-}
 
-export async function getOrgAgent(id: string): Promise<OrgAgentDetail | null> {
-  const agent = storedAgent(id);
-  if (!agent) return null;
-  const stats = await getOrgCaseStatsByAgent();
-  return {
-    ...toOrgAgent(agent, stats.get(id) ?? NO_CASES),
-    deployments: agent.deployments,
-    productionId: agent.productionId,
-    env: agent.env.map(summarizeSecret),
-    sandboxImageId: agent.sandboxImageId,
-    repo: agent.repo,
-    network: agent.network,
-    mcp: agent.mcp,
-    mcpServers: agent.mcpServers.map(summarizeMcpServer),
-    memories: listAgentMemories(id),
-  };
-}
+export type OrgAgent = {
+  /** The agent's slug, as the API and the URL name it. */
+  readonly id: string;
+  readonly name: string;
+  readonly productionBranch: string;
+  readonly productionDeploymentId: string | null;
+};
+
+export type AgentDeploymentSummary = {
+  readonly id: string;
+  readonly status: "ready" | "waiting" | "failed";
+  readonly model: string;
+  readonly reasoning: string;
+  readonly branch: string | null;
+  readonly commit: string | null;
+  readonly source: "cli" | "github";
+  readonly createdAt: string;
+};
+
+/** One agent with what its page header and overview show. */
+export type OrgAgentDetail = OrgAgent & {
+  readonly production: AgentDeploymentSummary | null;
+};
+
+type ApiAgent = {
+  id: string;
+  slug: string;
+  productionBranch: string;
+  productionDeploymentId: string | null;
+  archived: boolean;
+};
+
+type ApiDeployment = AgentDeploymentSummary & {
+  git: { branch: string | null; commit: string | null };
+};
+
+const toOrgAgent = (agent: ApiAgent): OrgAgent => ({
+  id: agent.slug,
+  name: agent.slug,
+  productionBranch: agent.productionBranch,
+  productionDeploymentId: agent.productionDeploymentId,
+});
+
+/** The organization's agents that aren't archived, by name. */
+export const listOrgAgents = createServerFn({ method: "GET" }).handler(
+  async (): Promise<OrgAgent[]> => {
+    const { activeOrgJson } = await import("../../server/api.server");
+    const agents = await activeOrgJson<ApiAgent[]>("/agents");
+    return agents.filter((agent) => !agent.archived).map(toOrgAgent);
+  },
+);
+
+/** One agent by slug with its production deployment, or null. */
+export const getOrgAgent = createServerFn({ method: "GET" })
+  .validator((slug: string) => slug)
+  .handler(async ({ data: slug }): Promise<OrgAgentDetail | null> => {
+    const { activeOrgJson } = await import("../../server/api.server");
+    const path = `/agents/${encodeURIComponent(slug)}`;
+    const agent = await activeOrgJson<ApiAgent | null>(path, {
+      notFound: null,
+    });
+    if (!agent) return null;
+    const deployment = agent.productionDeploymentId
+      ? await activeOrgJson<ApiDeployment | null>(
+          `${path}/deployments/${encodeURIComponent(agent.productionDeploymentId)}`,
+          { notFound: null },
+        )
+      : null;
+    return {
+      ...toOrgAgent(agent),
+      production: deployment && {
+        id: deployment.id,
+        status: deployment.status,
+        model: deployment.model,
+        reasoning: deployment.reasoning,
+        branch: deployment.git.branch,
+        commit: deployment.git.commit,
+        source: deployment.source,
+        createdAt: deployment.createdAt,
+      },
+    };
+  });
