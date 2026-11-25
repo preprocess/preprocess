@@ -1,5 +1,5 @@
-// Better Auth, run in our own code (spec 13): email and password, the
-// organization plugin with the fixed roles, and organization-wide API keys.
+// Better Auth, run in our own code (spec 13): passwordless sign-in by
+// emailed magic link or Google (when configured), the organization plugin with the fixed roles, and organization-wide API keys.
 //
 // Every auth request runs inside one Postgres transaction on DB_SYSTEM: the
 // Drizzle adapter writes through that transaction, and the hooks below write
@@ -20,7 +20,7 @@ import { runMode } from "@preprocess/runmode";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { organization } from "better-auth/plugins";
+import { magicLink, organization } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import {
   adminAc,
@@ -30,7 +30,7 @@ import {
 } from "better-auth/plugins/organization/access";
 import { and, count, eq, gt, sql } from "drizzle-orm";
 
-import { sendInvitationEmail, sendVerificationEmail } from "./email.ts";
+import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 
 // Owner, Admin and Member are Better Auth's own roles. The only addition is
@@ -84,21 +84,51 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     { id: string; referenceId: string; name: string | null } | undefined;
   const person = (fallback: string) => request.actorId ?? fallback;
 
+  // Sign-up is open on our cloud. A self-hosted install takes its first
+  // person, then only people with a pending invitation.
+  const mayJoin = async (email: string) => {
+    if (runMode(env).kind === "cloud") return true;
+    const [{ users = 0 } = {}] = await tx
+      .select({ users: count() })
+      .from(authSchema.user);
+    if (users === 0) return true;
+    const [invited] = await tx
+      .select({ id: authSchema.invitation.id })
+      .from(authSchema.invitation)
+      .where(
+        and(
+          sql`lower(${authSchema.invitation.email}) = lower(${email})`,
+          eq(authSchema.invitation.status, "pending"),
+          gt(authSchema.invitation.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    return Boolean(invited);
+  };
+  const needsInvitation = () =>
+    new APIError("FORBIDDEN", {
+      message: "Sign-up on this install needs an invitation.",
+    });
+
   return betterAuth({
     baseURL: env.APP_URL,
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: [env.APP_URL],
     database: drizzleAdapter(tx, { provider: "pg", schema: authSchema }),
-    emailAndPassword: { enabled: true },
-    // Accepting an invitation needs a verified email (Better Auth's default),
-    // so nobody can sign up with someone else's address and take their seat.
-    emailVerification: {
-      sendOnSignUp: true,
-      autoSignInAfterVerification: true,
-      async sendVerificationEmail({ user, url }) {
-        await sendVerificationEmail(env, { email: user.email, url });
-      },
-    },
+    // No passwords. Both ways in prove the address (the link reaches it, or
+    // Google vouches for it), and accepting an invitation needs a verified
+    // email, so nobody can take someone else's seat.
+    emailAndPassword: { enabled: false },
+    socialProviders:
+      env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? {
+            google: {
+              clientId: env.GOOGLE_CLIENT_ID,
+              clientSecret: env.GOOGLE_CLIENT_SECRET,
+            },
+          }
+        : {},
+    account: { accountLinking: { trustedProviders: ["google"] } },
     advanced: {
       ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
       database: {
@@ -120,29 +150,8 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     databaseHooks: {
       user: {
         create: {
-          // Sign-up is open on our cloud. A self-hosted install takes its
-          // first person, then only people with a pending invitation.
           async before(user) {
-            if (runMode(env).kind === "cloud") return;
-            const [{ users = 0 } = {}] = await tx
-              .select({ users: count() })
-              .from(authSchema.user);
-            if (users === 0) return;
-            const [invited] = await tx
-              .select({ id: authSchema.invitation.id })
-              .from(authSchema.invitation)
-              .where(
-                and(
-                  sql`lower(${authSchema.invitation.email}) = lower(${user.email})`,
-                  eq(authSchema.invitation.status, "pending"),
-                  gt(authSchema.invitation.expiresAt, new Date()),
-                ),
-              )
-              .limit(1);
-            if (!invited)
-              throw new APIError("FORBIDDEN", {
-                message: "Sign-up on this install needs an invitation.",
-              });
+            if (!(await mayJoin(user.email))) throw needsInvitation();
           },
         },
       },
@@ -167,6 +176,19 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       // The key a revoke names, read before the plugin deletes it, so the
       // audit event can say which organization and key it was.
       before: createAuthMiddleware(async (ctx) => {
+        // Refuse a sign-up link up front rather than at the link, so the
+        // person sees why on the page instead of after opening the email.
+        if (ctx.path === "/sign-in/magic-link") {
+          const email = (ctx.body as { email?: unknown } | undefined)?.email;
+          if (typeof email !== "string") return;
+          const [known] = await tx
+            .select({ id: authSchema.user.id })
+            .from(authSchema.user)
+            .where(sql`lower(${authSchema.user.email}) = lower(${email})`)
+            .limit(1);
+          if (!known && !(await mayJoin(email))) throw needsInvitation();
+          return;
+        }
         if (ctx.path !== "/api-key/delete") return;
         const keyId = (ctx.body as { keyId?: unknown } | undefined)?.keyId;
         if (typeof keyId !== "string") return;
@@ -213,6 +235,12 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       }),
     },
     plugins: [
+      magicLink({
+        expiresIn: 15 * 60,
+        async sendMagicLink({ email, url }) {
+          await sendMagicLinkEmail(env, { email, url });
+        },
+      }),
       organization({
         ac,
         roles,
