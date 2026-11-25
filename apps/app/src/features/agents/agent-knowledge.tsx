@@ -20,18 +20,6 @@ function Placeholder({
   );
 }
 
-/** Placeholder: how this agent's runs are going. */
-export function AgentObservability() {
-  return (
-    <Placeholder
-      description="Runs, errors, latency, and cost for this agent's cases."
-      emptyDescription="Metrics and traces from this agent's runs will show up here."
-      emptyTitle="Nothing to show yet"
-      title="Observability"
-    />
-  );
-}
-
 /** Placeholder: the agent's evaluation suites. */
 export function AgentEvaluations() {
   return (
