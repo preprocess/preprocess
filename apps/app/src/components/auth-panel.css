@@ -276,8 +276,8 @@
 
 .pp-card-title {
   font-variation-settings:
-    "wght" 550,
-    "opsz" 18;
+    "wght" 500,
+    "opsz" 16.75;
   letter-spacing: -0.01em;
 }
 
