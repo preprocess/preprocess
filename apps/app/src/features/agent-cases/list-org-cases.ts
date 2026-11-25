@@ -158,6 +158,7 @@ function matches(item: Case, search: CasesInboxSearch, query: string) {
 
 /** How many cases have each filter value. */
 export type CaseFacetCounts = {
+  /** Cases per status under the search and filters, whatever the tab. */
   readonly status: Readonly<Record<string, number>>;
   readonly agent: Readonly<Record<string, number>>;
   readonly awaiting: Readonly<Record<string, number>>;
@@ -179,9 +180,10 @@ function facetCounts(search: CasesInboxSearch): CaseFacetCounts {
   const bump = (counts: Record<string, number>, key: string) => {
     counts[key] = (counts[key] ?? 0) + 1;
   };
+  const anyStatus = { ...search, view: "all" as const, status: [] };
   for (const item of seededCases()) {
+    if (matches(item, anyStatus, query)) bump(status, item.status);
     if (!matchesView(item, search, query)) continue;
-    bump(status, item.status);
     bump(agent, item.agentId);
     if (item.awaiting.length === 0) bump(awaiting, AWAITING_NONE);
     for (const group of item.awaiting) bump(awaiting, group);

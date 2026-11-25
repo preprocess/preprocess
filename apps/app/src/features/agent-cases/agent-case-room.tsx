@@ -78,7 +78,8 @@ export type AgentCaseRoomProps = {
 const CHAT_PANEL_SIZE_STORAGE_KEY = "preprocess-agent-case-chat-panel-size";
 const DEFAULT_CHAT_PANEL_SIZE = 520;
 const MIN_CHAT_PANEL_SIZE = 320;
-const MIN_WORKSPACE_PANEL_SIZE = 200;
+/** Room for the workspace's Input, Review and Run tabs and its pane buttons. */
+const MIN_WORKSPACE_PANEL_SIZE = 400;
 
 function readStoredChatPanelSize(): number {
   if (typeof window === "undefined") return DEFAULT_CHAT_PANEL_SIZE;
@@ -110,7 +111,7 @@ function getInitialChatPanelLayoutScript(panelId: string) {
   const storageKey = JSON.stringify(CHAT_PANEL_SIZE_STORAGE_KEY);
   const encodedPanelId = JSON.stringify(panelId);
 
-  return `(function(){try{var p=document.getElementById(${encodedPanelId});if(!p)return;var r=null;try{r=localStorage.getItem(${storageKey})}catch(e){}var n=Number(r);var s=r!==null&&Number.isFinite(n)&&n>=${MIN_CHAT_PANEL_SIZE}?n:${DEFAULT_CHAT_PANEL_SIZE};var g=p.parentElement;var m=g?g.getBoundingClientRect().width*.7:s;s=Math.min(s,m);p.style.flexBasis=s+'px'}catch(e){}})();`;
+  return `(function(){try{var p=document.getElementById(${encodedPanelId});if(!p)return;var r=null;try{r=localStorage.getItem(${storageKey})}catch(e){}var n=Number(r);var s=r!==null&&Number.isFinite(n)&&n>=${MIN_CHAT_PANEL_SIZE}?n:${DEFAULT_CHAT_PANEL_SIZE};var g=p.parentElement;var w=g?g.getBoundingClientRect().width:0;var m=g?Math.max(Math.min(w*.7,w-${MIN_WORKSPACE_PANEL_SIZE}),0):s;s=Math.min(s,m);p.style.flexBasis=s+'px'}catch(e){}})();`;
 }
 
 type WorkspacePaneState = {

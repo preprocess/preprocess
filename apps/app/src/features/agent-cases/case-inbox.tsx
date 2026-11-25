@@ -27,6 +27,7 @@ import {
   useFluidHover,
   useRegisterFluidHoverItem,
 } from "@preprocess/ui/hooks/use-fluid-hover";
+import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
   OrbitSparkle,
@@ -55,7 +56,7 @@ import {
   type FilterFacetDef,
 } from "../../components/list-controls";
 import { PageHeader, PageTitle } from "../../components/page-header";
-import { Toolbar, ToolbarButton, ToolbarTabs } from "../../components/toolbar";
+import { Toolbar, ToolbarButton } from "../../components/toolbar";
 import { useHotkeys } from "../../components/use-hotkeys";
 import { AgentPage } from "../agents/agent-page";
 import type { OrgAgentDetail } from "../agents/list-org-agents";
@@ -73,7 +74,6 @@ import {
   AWAITING_NONE,
   CASES_ENVIRONMENTS,
   CASES_GROUPINGS,
-  CASES_VIEWS,
   DEFAULT_CASES_SEARCH,
   UNASSIGNED_ANY,
   type UnassignedFilter,
@@ -98,6 +98,11 @@ const VIEW_LABEL: Record<CasesView, string> = {
   waiting: "Waiting",
   done: "Done",
 };
+
+/** The status filter's order (spec 14a): everything, then what needs people. */
+const VIEW_ORDER: readonly CasesView[] = ["all", "waiting", "active", "done"];
+
+const countFormat = new Intl.NumberFormat("en");
 
 const GROUPING_LABEL: Record<CasesGrouping, string> = {
   status: "Status",
@@ -917,33 +922,46 @@ export function CaseInbox({
       : "empty";
 
   const agentScoped = agent !== undefined;
-  // Tabs and buttons share one hover highlight, indexed left to right.
+  const statusCounts = page.counts.status;
+  const viewCount = (view: CasesView) =>
+    view === "all"
+      ? Object.values(statusCounts).reduce((total, n) => total + n, 0)
+      : (statusCounts[VIEW_LABEL[view]] ?? 0);
   const toolbar = (
-    <Toolbar label="Case views and options">
-      <ToolbarTabs
-        label="Case views"
-        layoutId="cases-view-tab"
-        onSelect={(view) => onSearchChange({ view })}
-        selected={search.view}
-        tabs={CASES_VIEWS.map((view) => ({
-          value: view,
-          label: VIEW_LABEL[view],
-        }))}
-      />
-      <CaseFilterMenu
-        agentScoped={agentScoped}
-        onChange={(patch) => onSearchChange(patch)}
-        page={page}
-        search={search}
-        toolbarIndex={CASES_VIEWS.length}
-      />
-      <DisplayMenu
-        agentScoped={agentScoped}
-        onChange={(patch) => onSearchChange(patch)}
-        search={search}
-        toolbarIndex={CASES_VIEWS.length + 1}
-      />
-    </Toolbar>
+    <div className="flex items-center gap-2">
+      <Tabs
+        aria-label="Case status"
+        onValueChange={(view) => onSearchChange({ view: view as CasesView })}
+        size="compact"
+        value={search.view}
+      >
+        <TabsList>
+          {VIEW_ORDER.map((view) => (
+            <TabItem
+              key={view}
+              label={`${VIEW_LABEL[view]} ${countFormat.format(viewCount(view))}`}
+              value={view}
+            />
+          ))}
+        </TabsList>
+      </Tabs>
+      {/* The buttons share one hover highlight, indexed left to right. */}
+      <Toolbar label="Case options">
+        <CaseFilterMenu
+          agentScoped={agentScoped}
+          onChange={(patch) => onSearchChange(patch)}
+          page={page}
+          search={search}
+          toolbarIndex={0}
+        />
+        <DisplayMenu
+          agentScoped={agentScoped}
+          onChange={(patch) => onSearchChange(patch)}
+          search={search}
+          toolbarIndex={1}
+        />
+      </Toolbar>
+    </div>
   );
   const scope = (
     <>
