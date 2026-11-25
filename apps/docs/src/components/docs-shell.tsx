@@ -28,6 +28,8 @@ import {
   Sun,
 } from "@preprocess/ui/lib/icons";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
+import type { TOCItemType } from "fumadocs-core/toc";
+import { TOCProvider } from "fumadocs-ui/components/toc";
 import { cn } from "@preprocess/ui/lib/utils";
 import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import type * as PageTree from "fumadocs-core/page-tree";
@@ -41,6 +43,8 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
+
+import { OnThisPagePopover } from "./docs-toc";
 
 // The docs read as a document: a plain section list on the left, a top bar
 // with search and the way into the app, and the page in a centered column.
@@ -457,23 +461,31 @@ function TopBar({ tree, appUrl }: { tree: PageTree.Root; appUrl: string }) {
 export function DocsShell({
   tree,
   appUrl,
+  toc = [],
   children,
 }: {
   tree: PageTree.Root;
   appUrl: string;
+  toc?: TOCItemType[];
   children: ReactNode;
 }) {
   return (
-    <div className="flex h-svh bg-background">
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-border lg:flex">
-        <SidebarBody tree={tree} />
-      </aside>
-      <main className="flex min-w-0 flex-1 flex-col">
-        <TopBar appUrl={appUrl} tree={tree} />
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
-          {children}
-        </ScrollArea>
-      </main>
-    </div>
+    <TOCProvider toc={toc}>
+      <div className="flex h-svh bg-background">
+        <aside className="hidden w-72 shrink-0 flex-col border-r border-border lg:flex">
+          <SidebarBody tree={tree} />
+        </aside>
+        <main className="flex min-w-0 flex-1 flex-col">
+          <TopBar appUrl={appUrl} tree={tree} />
+          {toc.length > 0 ? <OnThisPagePopover /> : null}
+          <ScrollArea
+            className="min-h-0 flex-1"
+            viewportClassName="scroll-fade"
+          >
+            {children}
+          </ScrollArea>
+        </main>
+      </div>
+    </TOCProvider>
   );
 }

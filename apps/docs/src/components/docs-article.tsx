@@ -11,48 +11,11 @@ import { ChevronLeftIcon, ChevronRight } from "@preprocess/ui/lib/icons";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
 import { cn } from "@preprocess/ui/lib/utils";
 import * as PageTree from "fumadocs-core/page-tree";
-import {
-  AnchorProvider,
-  TOCItem,
-  useActiveAnchors,
-  type TOCItemType,
-} from "fumadocs-core/toc";
+import { useTOCItems } from "fumadocs-ui/components/toc";
 import { Fragment, type ReactNode } from "react";
 
 import { contains, firstPage, PageLink, splitTree, textOf } from "./docs-shell";
-
-function OnThisPage({ toc }: { toc: TOCItemType[] }) {
-  const active = useActiveAnchors();
-  return (
-    <nav aria-label="On this page">
-      <p
-        className={cn(typeClass("body"), "text-foreground")}
-        style={{ fontVariationSettings: fontWeights.semibold }}
-      >
-        On this page
-      </p>
-      <ul className="mt-3 flex flex-col gap-1 border-l border-border">
-        {toc.map((item) => (
-          <li key={item.url}>
-            <TOCItem
-              className={cn(
-                typeClass("body"),
-                "-ml-px block border-l py-1 transition-colors",
-                item.depth > 2 ? "pl-7" : "pl-4",
-                active.includes(item.url.slice(1))
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-              href={item.url}
-            >
-              {item.title}
-            </TOCItem>
-          </li>
-        ))}
-      </ul>
-    </nav>
-  );
-}
+import { OnThisPage } from "./docs-toc";
 
 // Where the page sits: Guides, or Reference and the folders above it.
 function Crumbs({ tree, url }: { tree: PageTree.Root; url: string }) {
@@ -142,20 +105,19 @@ function Neighbours({ tree, url }: { tree: PageTree.Root; url: string }) {
 export function DocsArticle({
   title,
   description,
-  toc = [],
   tree,
   url,
   children,
 }: {
   title: ReactNode;
   description?: ReactNode;
-  toc?: TOCItemType[];
   tree: PageTree.Root;
   url: string;
   children: ReactNode;
 }) {
+  const toc = useTOCItems();
   return (
-    <AnchorProvider toc={toc}>
+    <div className="@container">
       <div className="mx-auto flex w-full max-w-7xl justify-center gap-16 px-6 pt-12 pb-24 md:px-12">
         <article className="min-w-0 max-w-4xl flex-1">
           <Crumbs tree={tree} url={url} />
@@ -179,11 +141,11 @@ export function DocsArticle({
           {url === "/" ? null : <Neighbours tree={tree} url={url} />}
         </article>
         {toc.length > 0 ? (
-          <aside className="sticky top-12 hidden w-56 shrink-0 self-start xl:block">
-            <OnThisPage toc={toc} />
+          <aside className="sticky top-12 hidden max-h-[calc(100svh-8rem)] w-56 shrink-0 self-start xl:flex">
+            <OnThisPage />
           </aside>
         ) : null}
       </div>
-    </AnchorProvider>
+    </div>
   );
 }

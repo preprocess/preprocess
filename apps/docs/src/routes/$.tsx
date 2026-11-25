@@ -48,10 +48,12 @@ export const Route = createFileRoute("/$")({
 });
 
 function Content({
+  appUrl,
   path,
   tree,
   url,
 }: {
+  appUrl: string;
   path: string;
   tree: Parameters<typeof DocsArticle>[0]["tree"];
   url: string;
@@ -61,35 +63,42 @@ function Content({
   const { toc } = use(page.load());
   const MDX = page.body;
   return (
-    <DocsArticle
-      description={page.description}
-      title={page.title}
-      toc={toc}
-      tree={tree}
-      url={url}
-    >
-      <MDX components={useMDXComponents()} />
-    </DocsArticle>
+    <DocsShell appUrl={appUrl} toc={toc} tree={tree}>
+      <DocsArticle
+        description={page.description}
+        title={page.title}
+        tree={tree}
+        url={url}
+      >
+        <MDX components={useMDXComponents()} />
+      </DocsArticle>
+    </DocsShell>
   );
 }
 
 function Page() {
   const page = useFumadocsLoader(Route.useLoaderData());
-  return (
-    <DocsShell appUrl={new URL(page.apiUrl).origin} tree={page.pageTree}>
-      {page.type === "openapi" ? (
+  const appUrl = new URL(page.apiUrl).origin;
+  if (page.type === "openapi")
+    return (
+      <DocsShell appUrl={appUrl} tree={page.pageTree}>
         <DocsArticle title={page.title} tree={page.pageTree} url={page.url}>
           <div className="not-typeset">
             <OpenAPIPage {...page.props} />
           </div>
         </DocsArticle>
-      ) : (
-        <ApiUrlContext value={page.apiUrl}>
-          <Suspense>
-            <Content path={page.path} tree={page.pageTree} url={page.url} />
-          </Suspense>
-        </ApiUrlContext>
-      )}
-    </DocsShell>
+      </DocsShell>
+    );
+  return (
+    <ApiUrlContext value={page.apiUrl}>
+      <Suspense>
+        <Content
+          appUrl={appUrl}
+          path={page.path}
+          tree={page.pageTree}
+          url={page.url}
+        />
+      </Suspense>
+    </ApiUrlContext>
   );
 }
