@@ -346,13 +346,9 @@ function ThemeSwitch() {
   );
 }
 
-function OpenApp({ appUrl, compact }: { appUrl: string; compact?: boolean }) {
+function OpenApp({ appUrl }: { appUrl: string }) {
   return (
-    <Button
-      render={<a href={appUrl} />}
-      size={compact ? "compact" : undefined}
-      trailingIcon={ArrowUpRight}
-    >
+    <Button render={<a href={appUrl} />} trailingIcon={ArrowUpRight}>
       Open the app
     </Button>
   );
@@ -622,17 +618,15 @@ function Lockup({ onClick }: { onClick?: () => void }) {
   );
 }
 
-// The bar below lg: the menu control at the left, then the lockup (or the
-// folded contents), search and the way into the app. The open menu repeats
-// it in place, with the close control where the menu button was.
+// The bar below lg: the menu control at the left, the lockup, and search.
+// The open menu repeats it in place, with the close control where the menu
+// button was.
 function MobileBar({
-  appUrl,
   children,
   className,
   leading,
   onSearch,
 }: {
-  appUrl: string;
   children: ReactNode;
   className?: string;
   leading: ReactNode;
@@ -641,24 +635,21 @@ function MobileBar({
   return (
     <header
       className={cn(
-        "relative z-20 flex h-13 shrink-0 items-center gap-1 bg-surface-2 pr-5 pl-[11px] lg:hidden",
+        "relative z-20 flex h-13 shrink-0 items-center gap-1 bg-surface-2 px-[11px] lg:hidden",
         className,
       )}
     >
       {leading}
       <div className="min-w-0 flex-1">{children}</div>
-      <div className="flex shrink-0 items-center">
-        <Button
-          aria-label="Search documentation"
-          className="w-8! text-muted-foreground"
-          onClick={onSearch}
-          size="icon"
-          variant="ghost"
-        >
-          <Search size={18} />
-        </Button>
-        <OpenApp appUrl={appUrl} compact />
-      </div>
+      <Button
+        aria-label="Search documentation"
+        className="shrink-0 text-muted-foreground"
+        onClick={onSearch}
+        size="icon"
+        variant="ghost"
+      >
+        <Search size={18} />
+      </Button>
     </header>
   );
 }
@@ -695,8 +686,8 @@ function SectionRow({
 }
 
 // Below lg the menu fills the screen under the same bar: the two halves of
-// the docs as rows, the section's pages below a divider, and the theme at
-// the end of the list.
+// the docs as rows, the section's pages below a divider, then the theme and
+// the way into the app at the end of the list.
 function MobileMenu({
   appUrl,
   onClose,
@@ -718,7 +709,6 @@ function MobileMenu({
   return (
     <>
       <MobileBar
-        appUrl={appUrl}
         leading={
           <SheetClose
             render={
@@ -777,6 +767,17 @@ function MobileMenu({
               </span>
               <ThemeSwitch />
             </div>
+            <div className="px-2 pt-6">
+              <ShapeProvider defaultShape="pill">
+                <Button
+                  className="h-11 w-full rounded-full"
+                  render={<a href={appUrl} />}
+                  trailingIcon={ArrowUpRight}
+                >
+                  Open the app
+                </Button>
+              </ShapeProvider>
+            </div>
           </nav>
         </ScrollArea>
       </ShapeProvider>
@@ -784,8 +785,8 @@ function MobileMenu({
   );
 }
 
-// Below lg: one compact bar. The lockup sits left until the title scrolls
-// away, then folds to the mark and the section in view.
+// Below lg: one bar that never changes on scroll, and a contents bar that
+// slides in under it once the title has scrolled away.
 function MobileHeader({
   appUrl,
   hasToc,
@@ -831,7 +832,6 @@ function MobileHeader({
   return (
     <>
       <MobileBar
-        appUrl={appUrl}
         className={cn(
           "transition-shadow",
           scrolled && "shadow-[inset_0_-1px_0_var(--border)]",
