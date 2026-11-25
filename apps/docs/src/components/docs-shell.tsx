@@ -10,6 +10,12 @@ import {
   type CommandMenuItemData,
 } from "@preprocess/ui/components/command-menu";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@preprocess/ui/components/sheet";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
   BookOpen,
@@ -18,6 +24,7 @@ import {
   FileIcon,
   Moon,
   Search,
+  SidebarLeftIcon,
   Sun,
 } from "@preprocess/ui/lib/icons";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
@@ -221,14 +228,16 @@ export function splitTree(tree: PageTree.Root) {
   };
 }
 
-function DocsSidebar({ tree }: { tree: PageTree.Root }) {
+// The sidebar's contents: beside the page on wide screens, in a sheet below
+// lg.
+function SidebarBody({ tree }: { tree: PageTree.Root }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { guides, reference } = splitTree(tree);
   const inReference = reference.some((folder) => contains(folder, pathname));
   const referenceUrl = reference[0] ? firstPage(reference[0]) : undefined;
 
   return (
-    <aside className="hidden w-72 shrink-0 flex-col border-r border-border lg:flex">
+    <>
       <PageLink className="flex h-14 shrink-0 items-center gap-2 px-6" url="/">
         <img
           alt=""
@@ -290,7 +299,33 @@ function DocsSidebar({ tree }: { tree: PageTree.Root }) {
           )}
         </nav>
       </ScrollArea>
-    </aside>
+    </>
+  );
+}
+
+function MobileMenu({ tree }: { tree: PageTree.Root }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [pathname]);
+  return (
+    <Sheet onOpenChange={setOpen} open={open}>
+      <SheetTrigger
+        render={
+          <Button
+            aria-label="Open navigation"
+            className="lg:hidden"
+            size="icon"
+            variant="ghost"
+          />
+        }
+      >
+        <SidebarLeftIcon size={16} />
+      </SheetTrigger>
+      <SheetContent className="w-72 gap-0 bg-background p-0" side="left">
+        <SheetTitle className="sr-only">Navigation</SheetTitle>
+        <SidebarBody tree={tree} />
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -390,20 +425,25 @@ function TopBar({ tree, appUrl }: { tree: PageTree.Root; appUrl: string }) {
   }, []);
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-6">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
+      <MobileMenu tree={tree} />
       <button
         className={cn(
           typeClass("body"),
-          "flex h-9 w-full max-w-xs items-center gap-2 rounded-full border border-border bg-card px-3 text-muted-foreground transition-colors hover:text-foreground",
+          "flex h-9 min-w-0 flex-1 items-center gap-2 rounded-full border border-border bg-card px-3 text-muted-foreground transition-colors hover:text-foreground sm:max-w-xs",
         )}
         onClick={() => setSearchOpen(true)}
         type="button"
       >
         <Search className="shrink-0" size={16} />
-        <span className="flex-1 text-left">Search documentation</span>
-        <kbd className={cn(typeClass("micro"), "font-sans")}>{shortcut}</kbd>
+        <span className="min-w-0 flex-1 truncate text-left">
+          Search documentation
+        </span>
+        <kbd className={cn(typeClass("micro"), "hidden font-sans sm:inline")}>
+          {shortcut}
+        </kbd>
       </button>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         <ThemeButton />
         <Button render={<a href={appUrl} />} trailingIcon={ChevronRight}>
           Open the app
@@ -425,7 +465,9 @@ export function DocsShell({
 }) {
   return (
     <div className="flex h-svh bg-background">
-      <DocsSidebar tree={tree} />
+      <aside className="hidden w-72 shrink-0 flex-col border-r border-border lg:flex">
+        <SidebarBody tree={tree} />
+      </aside>
       <main className="flex min-w-0 flex-1 flex-col">
         <TopBar appUrl={appUrl} tree={tree} />
         <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
