@@ -123,5 +123,25 @@
         "content": "Rerun done: I still read Acme as the vendor."
       }
     ]
+  },
+  {
+    "name": "memory-proposal",
+    "match": "Order form for Globex renewal",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "memory_propose",
+            "arguments": {
+              "text": "Globex renewal packs put the term dates in the order form, not the MSA.",
+              "reason": "The MSA in this pack had no dates; the order form did."
+            }
+          }
+        ]
+      },
+      {
+        "content": "Read the term dates from the order form. {{results}}"
+      }
+    ]
   }
 ]

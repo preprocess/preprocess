@@ -12,7 +12,15 @@ export const SCENARIO_COOKIE_NAME = "preprocess-scenario";
 export const SCENARIO_SURFACES = {
   inbox: {
     label: "Inbox",
-    states: ["seeded", "empty", "all-read", "single-unread", "long-copy"],
+    // "live" reads the API; the rest are seeded.
+    states: [
+      "seeded",
+      "empty",
+      "all-read",
+      "single-unread",
+      "long-copy",
+      "live",
+    ],
   },
   cases: {
     label: "Cases",
@@ -64,7 +72,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
 
 /** Builds without `import.meta.env.DEV` never serve seeded records. */
 export const UNSEEDED_SCENARIO: ScenarioSelection = {
-  inbox: "empty",
+  inbox: "live",
   cases: "live",
   "case-room": "empty",
   "case-work": "live",

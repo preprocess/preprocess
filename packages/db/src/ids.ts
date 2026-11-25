@@ -32,6 +32,7 @@ export const prefixes = {
   guardrailRequest: "grq",
   evalSuite: "evs",
   evalRun: "evr",
+  memory: "mry",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -23,6 +23,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { agentRole, canSeeCase, canWorkCase } from "./access.ts";
 import type { Caller } from "./caller.ts";
 import type { Manifest } from "./deploy.ts";
+import { acceptedMemories } from "./memories.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
 import { joinAutomaticSuite } from "./evals.ts";
@@ -336,6 +337,7 @@ export const startQueuedCase = async (env: Env, message: OutboxMessage) => {
       ),
       input: { text, files: caseFiles },
       groups: await agentGroups(tx, found.agentId),
+      memories: await acceptedMemories(tx, found.agentId),
     } satisfies StartCase;
   });
   if (!start) return;

@@ -121,6 +121,9 @@ export const evalRuns = pgTable(
     neededPerson: integer().notNull().default(0),
     failed: integer().notNull().default(0),
     costMicroUsd: bigint({ mode: "number" }).notNull().default(0),
+    // The agent's accepted memory rules when the run started, which every
+    // case of the run uses. Null on runs from before memory.
+    memories: jsonb().$type<{ id: string; text: string }[]>(),
     createdBy: text().notNull(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp({ withTimezone: true }),

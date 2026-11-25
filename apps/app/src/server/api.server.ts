@@ -37,10 +37,14 @@ export async function activeOrganizationId() {
   return organizationId;
 }
 
+/** A /v1 path in the session's active organization. */
+export async function activeOrgPath(path: string) {
+  return `/v1/orgs/${await activeOrganizationId()}${path}`;
+}
+
 /** Calls a /v1 route in the session's active organization. */
 export async function activeOrgRequest(path: string, init?: RequestInit) {
-  const organizationId = await activeOrganizationId();
-  return apiRequest(`/v1/orgs/${organizationId}${path}`, init);
+  return apiRequest(await activeOrgPath(path), init);
 }
 
 /**
