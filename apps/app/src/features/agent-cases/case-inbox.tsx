@@ -685,6 +685,7 @@ function CaseRows({
     getScrollElement: () => scrollElement,
     estimateSize: (index) => entrySize(entries[index]),
     overscan: 12,
+    initialRect: { width: 0, height: 1080 },
     // Air between the header and the first group, and below the last row.
     paddingStart: LIST_PADDING,
     paddingEnd: LIST_PADDING,
