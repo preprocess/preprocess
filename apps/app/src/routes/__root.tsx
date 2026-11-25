@@ -19,6 +19,7 @@ import {
   activateOrganization,
   loadOrganizations,
   loadSession,
+  needsName,
 } from "../features/auth/session";
 import { loadInbox } from "../features/inbox/load-inbox";
 import { OrganizationsProvider } from "../features/organizations/organizations-context";
@@ -29,6 +30,7 @@ import { isPublicAuthPath } from "../server/public-auth-path";
 import "@preprocess/ui/styles.css";
 import "../styles.css";
 
+const NAME_PATH = "/onboarding/name";
 const FAVICON_LIGHT = "/brand/favicon-light.png";
 const FAVICON_DARK = "/brand/favicon-dark.png";
 
@@ -105,13 +107,23 @@ export const Route = createRootRoute({
       });
     }
 
+    // Names come before everything else, however the person signed in.
+    const onName = location.pathname === NAME_PATH;
+    if (needsName(session.user) && !onName) {
+      const redirectTo = `${location.pathname}${location.searchStr}`;
+      throw redirect({
+        href: `${NAME_PATH}?redirect=${encodeURIComponent(redirectTo)}`,
+      });
+    }
+    if (onName && !needsName(session.user)) throw redirect({ to: "/" });
+
     const organizations = await loadOrganizations();
 
     const onOnboarding = isOnboardingPath(location.pathname);
-    if (!session.organizationId && !onOnboarding) {
+    if (!onName && !session.organizationId && !onOnboarding) {
       throw redirect({ to: "/onboarding" });
     }
-    if (session.organizationId && onOnboarding) {
+    if (!onName && session.organizationId && onOnboarding) {
       throw redirect({ to: "/" });
     }
 

@@ -14,7 +14,11 @@ import {
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
+  // "First Last", kept for every existing reader; firstName and lastName are
+  // what the person entered (null for people who joined before they existed).
   name: text("name").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
