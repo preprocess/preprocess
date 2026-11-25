@@ -15,7 +15,8 @@ import {
   type MarkReadSelector,
 } from "./notification";
 
-export type InboxScenario = ScenarioState<"inbox">;
+/** The seeded states; "live" reads the API instead. */
+export type InboxScenario = Exclude<ScenarioState<"inbox">, "live">;
 
 export type InboxLoad = InboxPage & { readonly loadError: boolean };
 

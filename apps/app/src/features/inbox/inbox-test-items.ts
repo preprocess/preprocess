@@ -55,8 +55,44 @@ export const INBOX_OVERDUE_ITEM: InboxItem = {
   link: { kind: "case", caseId: "cas_7f3a2b1c9e04", agentId: "lab" },
 };
 
+export const INBOX_APPROVAL_ITEM: InboxItem = {
+  id: "ntf_approval_payment",
+  title: "Acme vendor diligence",
+  summary: "Approve the pay_invoice tool call",
+  body: "The invoice total is over the payment limit set for this agent.",
+  kind: "approval",
+  createdAt: "2026-08-19T10:28:00.000Z",
+  unread: true,
+  link: { kind: "case", caseId: "cas_7f3a2b1c9e04", agentId: "lab" },
+  details: [
+    { label: "Approves", value: "Finance" },
+    { label: "Tool", value: "pay_invoice" },
+    {
+      label: "Request",
+      value: '{\n  "amount": 12400,\n  "currency": "USD"\n}',
+    },
+  ],
+};
+
+export const INBOX_GUARDRAIL_ITEM: InboxItem = {
+  id: "ntf_guardrail_network",
+  title: "Guardrail request",
+  summary: "Let lab reach erp.example.com",
+  body: "The ERP moved to a new host and the agent can no longer look up vendors.",
+  kind: "guardrail",
+  createdAt: "2026-08-19T10:20:00.000Z",
+  unread: true,
+  link: { kind: "guardrail", agentId: "lab" },
+  details: [
+    { label: "Agent", value: "lab" },
+    { label: "Hosts", value: "erp.example.com" },
+  ],
+};
+
 export const INBOX_TEST_ITEMS: readonly InboxItem[] = [
+  INBOX_APPROVAL_ITEM,
   INBOX_AGENT_ITEM,
+  INBOX_GUARDRAIL_ITEM,
   INBOX_MENTION_ITEM,
   INBOX_ASSIGNMENT_ITEM,
   INBOX_CASE_UPDATE_ITEM,

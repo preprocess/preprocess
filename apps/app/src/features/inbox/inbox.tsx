@@ -17,10 +17,12 @@ import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
   OrbitSparkle,
   ArrowRight,
+  BadgeCheck,
   CheckIcon,
   Clock,
   Folder4,
   MessageCircle,
+  Shield,
   User,
 } from "@preprocess/ui/lib/icons";
 import { ShapeProvider, useShape } from "@preprocess/ui/lib/shape-context";
@@ -31,12 +33,14 @@ import { useEffect, useRef, type ComponentType, type SVGProps } from "react";
 import { PageHeader, PageTitle } from "../../components/page-header";
 import { useHotkeys } from "../../components/use-hotkeys";
 import { awaitingPhrase, caseTitle, type Case } from "../agent-cases/case";
+import { parseAgentId, parseCaseId } from "../agent-cases/agent-case-ref";
 import { CaseStatusIcon } from "../agent-cases/case-status-icon";
 import { InboxEmpty } from "./inbox-empty";
 import {
   formatInboxTime,
   inboxKindLabel,
   unreadCount,
+  type InboxDetail,
   type InboxItem,
   type InboxKind,
 } from "./notification";
@@ -52,6 +56,8 @@ const KIND_ICON: Record<InboxKind, KindIcon> = {
   "case-update": Folder4,
   agent: OrbitSparkle,
   overdue: Clock,
+  approval: BadgeCheck,
+  guardrail: Shield,
 };
 
 /** Linked cases by `agentId/caseId`, as the route loads them. */
@@ -225,12 +231,85 @@ function LinkedCaseCard({ item }: Readonly<{ item: Case }>) {
   );
 }
 
+function InboxDetails({
+  details,
+}: Readonly<{ details: readonly InboxDetail[] }>) {
+  return (
+    <dl className="flex flex-col gap-3 rounded-xl bg-surface-3 px-4 py-3">
+      {details.map((detail) => (
+        <div className="flex min-w-0 flex-col gap-0.5" key={detail.label}>
+          <dt className="text-caption text-muted-foreground">{detail.label}</dt>
+          <dd className="whitespace-pre-wrap break-words text-body text-foreground">
+            {detail.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function ReaderAction({ item }: Readonly<{ item: InboxItem }>) {
+  const link = item.link;
+  if (!link) return null;
+  switch (link.kind) {
+    case "case":
+      return (
+        <Button
+          render={
+            <Link
+              params={{
+                agentId: parseAgentId(link.agentId),
+                caseId: parseCaseId(link.caseId),
+              }}
+              to="/cases/$agentId/$caseId"
+            />
+          }
+          type="button"
+          variant="secondary"
+        >
+          {item.kind === "approval" ? "Review in case" : "Open case"}
+        </Button>
+      );
+    case "agent":
+      return (
+        <Button
+          render={<Link search={{ agent: [link.agentId] }} to="/cases" />}
+          type="button"
+          variant="secondary"
+        >
+          View cases
+        </Button>
+      );
+    case "guardrail":
+      return (
+        <Button
+          render={
+            link.agentId ? (
+              <Link
+                params={{ agentId: link.agentId }}
+                to="/agents/$agentId/settings"
+              />
+            ) : (
+              <Link to="/developers/network" />
+            )
+          }
+          type="button"
+          variant="secondary"
+        >
+          {link.agentId ? "Open agent settings" : "Open network rules"}
+        </Button>
+      );
+    default: {
+      const exhaustive: never = link;
+      return exhaustive;
+    }
+  }
+}
+
 function InboxReader({
   item,
   linked,
 }: Readonly<{ item: InboxItem; linked: Case | undefined }>) {
-  const agentLink = item.link?.kind === "agent" ? item.link.agentId : null;
-
   return (
     <section
       aria-label="Notification"
@@ -238,30 +317,7 @@ function InboxReader({
     >
       <PageHeader
         sidebarTrigger={false}
-        trailing={
-          linked ? (
-            <Button
-              render={
-                <Link
-                  params={{ agentId: linked.agentId, caseId: linked.id }}
-                  to="/cases/$agentId/$caseId"
-                />
-              }
-              type="button"
-              variant="secondary"
-            >
-              Open case
-            </Button>
-          ) : agentLink ? (
-            <Button
-              render={<Link search={{ agent: [agentLink] }} to="/cases" />}
-              type="button"
-              variant="secondary"
-            >
-              View cases
-            </Button>
-          ) : null
-        }
+        trailing={<ReaderAction item={item} />}
       >
         <span className="flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
           <span>{inboxKindLabel(item.kind)}</span>
@@ -286,6 +342,9 @@ function InboxReader({
             <p className="text-body leading-relaxed text-foreground">
               {item.body}
             </p>
+            {item.details?.length ? (
+              <InboxDetails details={item.details} />
+            ) : null}
             {linked ? <LinkedCaseCard item={linked} /> : null}
           </article>
         </ScrollArea>
@@ -332,11 +391,14 @@ export function Inbox({
   };
 
   const openLinked = () => {
-    const linked = selected ? linkedCase(selected, cases) : undefined;
-    if (!linked) return;
+    const link = selected?.link;
+    if (link?.kind !== "case") return;
     void navigate({
       to: "/cases/$agentId/$caseId",
-      params: { agentId: linked.agentId, caseId: linked.id },
+      params: {
+        agentId: parseAgentId(link.agentId),
+        caseId: parseCaseId(link.caseId),
+      },
     });
   };
 
