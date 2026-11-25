@@ -24,11 +24,19 @@ extend these rules within their directories.
 `infra/` is an Alchemy stack and the source of truth for Cloudflare resources.
 Declare every Worker, binding, var, secret, route and domain in
 `infra/src/stages.ts` and `infra/alchemy.run.ts`, never in hand-edited wrangler
-config or the dashboard. Region is configuration: every deploy names it with
-`PREPROCESS_REGION`, `infra/src/regions.ts` maps it to provider locations, and
-code reads it only through `@preprocess/runmode`. Never hard-code a region.
-`apps/*/wrangler.jsonc` is generated for local development; `pnpm lint` fails if
-it drifts. Deploys run through `infra/`, never `wrangler deploy`.
+config or the dashboard. Region is configuration: every deploy of our cloud
+names it with `PREPROCESS_REGION`, `infra/src/regions.ts` maps it to provider
+locations, and code reads it only through `@preprocess/runmode`. Never hard-code
+a region. Self-hosted installs are `selfhost` stages of the same stack and never
+set `PREPROCESS_REGION`.
+
+Portability (spec 16): product code uses only what the self-hosted installer
+creates in a customer's own Cloudflare account. Nothing may depend on
+preprocess/internal, on our account's resources, or on Cloudflare features a
+customer's account can't get; our hosted extras stay behind run mode. Review
+enforces this rule. `apps/*/wrangler.jsonc` is generated for local development;
+`pnpm lint` fails if it drifts. Deploys run through `infra/`, never
+`wrangler deploy`.
 
 Every push to `main` deploys staging, runs the staging smoke test
 (`infra/scripts/smoke.ts`), and then ships the same commit to production with no

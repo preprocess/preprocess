@@ -9,7 +9,7 @@
 // Container), the PDF renderer (apps/pdf-render, a Container), the stub model service (apps/model-stub) unless
 // MODEL_SERVICE_URL names a real one, and Postgres behind Hyperdrive.
 //
-// Stages differ only in their database and what survives a destroy:
+// Stages differ only in their database, run mode and what survives a destroy:
 // - pr-<number>: its own PlanetScale branch, migrated and seeded, removed with
 //   the stage.
 // - staging: a long-lived "staging" branch of the same database, migrated,
@@ -17,7 +17,14 @@
 // - production: the default branch of its own database, migrated, never
 //   seeded, protected. Its hostname comes from APP_DOMAIN, so no production
 //   configuration lives in this repository.
+// - selfhost[-<name>]: a customer's install in their own account (spec 16).
+//   Their own Postgres from DATABASE_URL, bootstrapped and migrated, never
+//   seeded, never dropped. No PREPROCESS_REGION is bound, so it runs in
+//   self-hosted mode; R2_LOCATION_HINT places its buckets. The API's signing
+//   and auth secrets are generated once into the stack's state. It refuses to
+//   deploy without a real MODEL_SERVICE_URL unless that is "stub".
 
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 
@@ -25,6 +32,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Planetscale from "@alchemy.run/planetscale";
 import * as Alchemy from "alchemy";
 import { adopt } from "alchemy/AdoptPolicy";
+import { KeyPair } from "alchemy/KeyPair";
 import * as Output from "alchemy/Output";
 import { Random } from "alchemy/Random";
 import * as RemovalPolicy from "alchemy/RemovalPolicy";
@@ -34,6 +42,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
+import {
+  roleOrigin,
+  schemaDigest,
+  SelfHostDatabase,
+  SelfHostDatabaseProvider,
+} from "./src/database.ts";
 import { regionConfig } from "./src/regions.ts";
 import {
   apiCrons,
@@ -43,9 +57,11 @@ import {
   compatibility,
   durableObjects,
   isPreviewStage,
+  isSelfHostStage,
   isStage,
   names,
   runtimeDurableObjects,
+  type SelfHostStage,
   type Stage,
 } from "./src/stages.ts";
 
@@ -59,7 +75,8 @@ const worker = {
 
 // Deploys upload what the app's build script built and verified (the preview
 // sign-in check included), so refuse any other build. Staging and production
-// use build:<stage>; previews use build:development.
+// use build:<stage>, self-hosted installs build:production, and previews
+// build:development.
 const builtApp = (stage: Stage) => {
   const dist = at("apps/app/dist");
   let target: unknown;
@@ -74,7 +91,12 @@ const builtApp = (stage: Stage) => {
   } catch {
     throw new Error("apps/app/dist is missing. Build the app first.");
   }
-  const expected = isPreviewStage(stage) ? undefined : stage;
+  // A self-hosted install runs the production build: no preview sign-in.
+  const expected = isPreviewStage(stage)
+    ? undefined
+    : isSelfHostStage(stage)
+      ? "production"
+      : stage;
   if (target !== expected) {
     throw new Error(
       `apps/app/dist is not a build for ${stage}. Run ${expected ? `build:${expected}` : "build:development"} in apps/app.`,
@@ -88,7 +110,7 @@ const builtApp = (stage: Stage) => {
 // migrations must work with the code already running (AGENTS.md). Alchemy
 // refuses a directory holding drizzle-kit's meta/ journal, so it reads a copy
 // of the .sql files alone, applied in filename order like pnpm db migrate.
-const postgres = (stage: Stage) =>
+const planetscale = (stage: Exclude<Stage, SelfHostStage>) =>
   Effect.gen(function* () {
     const migrations = at("infra/.alchemy/migrations");
     rmSync(migrations, { recursive: true, force: true });
@@ -124,6 +146,75 @@ const postgres = (stage: Stage) =>
 // bytes, generated once per stage, kept in the account's Secrets Store and
 // bound only to the API. Replacing it would make every stored secret
 // unreadable, so long-lived stages protect it.
+// A self-hosted install's Postgres: the customer's server from DATABASE_URL,
+// with bootstrap.sql's roles under generated passwords, and Hyperdrive logging
+// in as preprocess_app and preprocess_system once the migrations have run.
+const selfHostPostgres = Effect.gen(function* () {
+  const url = yield* Config.Redacted("DATABASE_URL");
+  const keep = RemovalPolicy.protect();
+  const password = (id: string) =>
+    Random(id, { bytes: 24 }).pipe(
+      keep,
+      Effect.map((random) => random.text),
+    );
+  const passwords = {
+    migrator_password: yield* password("MigratorPassword"),
+    app_password: yield* password("AppPassword"),
+    system_password: yield* password("SystemPassword"),
+    purge_password: yield* password("AuditPurgePassword"),
+  };
+  const database = yield* SelfHostDatabase("Database", {
+    url,
+    passwords,
+    digest: schemaDigest(at("packages/db")),
+  });
+  const origin = (user: string, secret: (typeof passwords)["app_password"]) =>
+    Output.map(Output.all(database.digest, secret), ([, value]) =>
+      roleOrigin(Redacted.value(url), user, value),
+    );
+  return {
+    app: origin("preprocess_app", passwords.app_password),
+    system: origin("preprocess_system", passwords.system_password),
+  };
+});
+
+// The API's own secrets. Our stages take them from the deploy environment; a
+// self-hosted install generates them once and keeps them in its state:
+// BETTER_AUTH_SECRET as 32 random bytes and AUDIT_SIGNING_KEY as an Ed25519
+// key in PKCS #8 DER, both base64, with a key id derived from the public key.
+const apiSecretBindings = (stage: Stage) =>
+  Effect.gen(function* () {
+    if (!isSelfHostStage(stage))
+      return {
+        AUDIT_SIGNING_KEY_ID: yield* Config.String("AUDIT_SIGNING_KEY_ID"),
+        ...Object.fromEntries(
+          apiSecrets.map((name) => [name, Config.Redacted(name)]),
+        ),
+      };
+    const keep = RemovalPolicy.protect();
+    const authSecret = yield* Random("BetterAuthSecret", { bytes: 32 }).pipe(
+      keep,
+    );
+    const auditKey = yield* KeyPair("AuditSigningKey").pipe(keep);
+    const pemBody = (pem: string) =>
+      pem.replace(/-----[A-Z ]+-----/g, "").replace(/\s+/g, "");
+    return {
+      BETTER_AUTH_SECRET: Output.map(authSecret.text, (hex) =>
+        Redacted.make(
+          Buffer.from(Redacted.value(hex), "hex").toString("base64"),
+        ),
+      ),
+      AUDIT_SIGNING_KEY: Output.map(auditKey.privateKey, (pem) =>
+        Redacted.make(pemBody(Redacted.value(pem))),
+      ),
+      AUDIT_SIGNING_KEY_ID: Output.map(
+        auditKey.publicKey,
+        (pem) =>
+          `audit-ed25519-${createHash("sha256").update(pemBody(pem)).digest("hex").slice(0, 16)}`,
+      ),
+    };
+  });
+
 const secretsMasterKey = (stage: Stage) =>
   Effect.gen(function* () {
     const keep = RemovalPolicy.protect(!isPreviewStage(stage));
@@ -145,7 +236,11 @@ const secretsMasterKey = (stage: Stage) =>
 export default Alchemy.Stack(
   "preprocess",
   {
-    providers: Layer.mergeAll(Cloudflare.providers(), Planetscale.providers()),
+    providers: Layer.mergeAll(
+      Cloudflare.providers(),
+      Planetscale.providers(),
+      SelfHostDatabaseProvider(),
+    ),
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
@@ -153,15 +248,37 @@ export default Alchemy.Stack(
     if (!isStage(stage)) {
       return yield* Effect.die(
         new Error(
-          `Unknown stage "${stage}". This stack deploys staging, production and pr-<number>.`,
+          `Unknown stage "${stage}". This stack deploys staging, production, pr-<number> and selfhost[-<name>].`,
         ),
       );
     }
     const preview = isPreviewStage(stage);
+    const selfHost = isSelfHostStage(stage);
     const n = names(stage);
     const dist = builtApp(stage);
-    const region = yield* Config.String("PREPROCESS_REGION");
-    const { r2LocationHint } = regionConfig(region);
+    // Run mode (spec 16): our stages bind PREPROCESS_REGION, which places
+    // their resources and marks them as our cloud. A self-hosted install
+    // binds nothing, and takes R2 placement from its own optional input.
+    const region = yield* Config.String("PREPROCESS_REGION").pipe(
+      Config.withDefault(""),
+    );
+    if (selfHost && region)
+      return yield* Effect.die(
+        new Error(
+          "PREPROCESS_REGION marks a deploy as our cloud (spec 16). Unset it for a self-hosted install; R2_LOCATION_HINT places its buckets.",
+        ),
+      );
+    if (!selfHost && !region)
+      return yield* Effect.die(
+        new Error(`PREPROCESS_REGION is required for ${stage}.`),
+      );
+    const r2LocationHint = region
+      ? regionConfig(region).r2LocationHint
+      : ((yield* Config.String("R2_LOCATION_HINT").pipe(
+          Config.withDefault(undefined),
+        )) as Cloudflare.R2.Bucket.Location | undefined);
+    const placement = r2LocationHint ? { locationHint: r2LocationHint } : {};
+    const runMode = region ? { PREPROCESS_REGION: region } : {};
     const keep = RemovalPolicy.protect(!preview);
 
     // The API, tail, runtime and app bind each other's entrypoints; Alchemy
@@ -182,7 +299,7 @@ export default Alchemy.Stack(
       workersDev: !appDomain,
       ...(appDomain && { domain: appDomain }),
       env: {
-        PREPROCESS_REGION: region,
+        ...runMode,
         API: Cloudflare.WorkerEntrypoint(apiRef),
       },
     });
@@ -218,30 +335,36 @@ export default Alchemy.Stack(
     });
     const docsUrl = docsDomain ? `https://${docsDomain}` : docs.url;
 
-    const { database, branch } = yield* postgres(stage);
-    const role = yield* Planetscale.PostgresRole("Role", {
-      database,
-      branch,
-      inheritedRoles: ["postgres"],
-    });
-    // PlanetScale roles can inherit only built-in roles, so DB and DB_SYSTEM
-    // both log in as the stage's role, which bypasses RLS. withOrg switches
-    // each DB transaction to preprocess_app (migration 0001), so RLS applies
-    // there; DB_SYSTEM stays the only bypass path. Auth reads then writes
-    // (SCIM, API key revocation, sessions), so query caching stays off on both
-    // configs (PLAT-27).
+    const roles = selfHost
+      ? yield* selfHostPostgres
+      : yield* Effect.gen(function* () {
+          const { database, branch } = yield* planetscale(stage);
+          const role = yield* Planetscale.PostgresRole("Role", {
+            database,
+            branch,
+            inheritedRoles: ["postgres"],
+          });
+          return { app: role.origin, system: role.origin };
+        });
+    // On our stages PlanetScale roles can inherit only built-in roles, so DB
+    // and DB_SYSTEM both log in as the stage's role, which bypasses RLS.
+    // withOrg switches each DB transaction to preprocess_app (migration 0001),
+    // so RLS applies there; DB_SYSTEM stays the only bypass path. A
+    // self-hosted install logs in as preprocess_app and preprocess_system
+    // directly. Auth reads then writes (SCIM, API key revocation, sessions),
+    // so query caching stays off on both configs (PLAT-27).
     const db = yield* Cloudflare.Hyperdrive.Connection("Db", {
-      origin: role.origin,
+      origin: roles.app,
       caching: { disabled: true },
     });
     const dbSystem = yield* Cloudflare.Hyperdrive.Connection("DbSystem", {
-      origin: role.origin,
+      origin: roles.system,
       caching: { disabled: true },
     });
 
     const files = yield* Cloudflare.R2.Bucket("Files", {
       name: n.bucket,
-      locationHint: r2LocationHint,
+      ...placement,
     }).pipe(keep);
     const jobs = yield* Cloudflare.Queues.Queue("Jobs", { name: n.queue });
     const casesQueue = yield* Cloudflare.Queues.Queue("Cases", {
@@ -267,7 +390,7 @@ export default Alchemy.Stack(
     });
     const logsBucket = yield* Cloudflare.R2.Bucket("LogBucket", {
       name: n.logs,
-      locationHint: r2LocationHint,
+      ...placement,
     });
     const logCatalogToken = yield* Config.Redacted("LOG_CATALOG_TOKEN").pipe(
       Config.withDefault(undefined),
@@ -323,7 +446,7 @@ export default Alchemy.Stack(
     // stages skip the lock so destroying the stage can empty the bucket.
     const auditBucket = yield* Cloudflare.R2.Bucket("Audit", {
       name: n.auditBucket,
-      locationHint: r2LocationHint,
+      ...placement,
       locks: preview
         ? []
         : [
@@ -342,14 +465,21 @@ export default Alchemy.Stack(
     const modelServiceUrl = yield* Config.String("MODEL_SERVICE_URL").pipe(
       Config.withDefault(""),
     );
-    const modelStub = modelServiceUrl
-      ? undefined
-      : yield* Cloudflare.Worker("ModelStub", {
-          ...worker,
-          name: n.modelStub,
-          main: at("apps/model-stub/src/index.ts"),
-          workersDev: true,
-        });
+    if (selfHost && !modelServiceUrl)
+      return yield* Effect.die(
+        new Error(
+          'A self-hosted install needs MODEL_SERVICE_URL and MODEL_SERVICE_KEY: our hosted model service or your own. Set MODEL_SERVICE_URL to "stub" only to try Preprocess with fixture answers.',
+        ),
+      );
+    const modelStub =
+      modelServiceUrl && modelServiceUrl !== "stub"
+        ? undefined
+        : yield* Cloudflare.Worker("ModelStub", {
+            ...worker,
+            name: n.modelStub,
+            main: at("apps/model-stub/src/index.ts"),
+            workersDev: true,
+          });
     const modelService = modelStub
       ? {
           MODEL_SERVICE_URL: Output.map(modelStub.url, (url) => {
@@ -413,11 +543,11 @@ export default Alchemy.Stack(
     // through the Worker Loader.
     const runs = yield* Cloudflare.R2.Bucket("Runs", {
       name: n.runs,
-      locationHint: r2LocationHint,
+      ...placement,
     }).pipe(keep);
     const bundles = yield* Cloudflare.R2.Bucket("Bundles", {
       name: n.bundles,
-      locationHint: r2LocationHint,
+      ...placement,
     }).pipe(keep);
     const runtime = yield* Cloudflare.Worker("Runtime", {
       ...worker,
@@ -446,7 +576,7 @@ export default Alchemy.Stack(
       crons: apiCrons,
       env: {
         STAGE: stage,
-        PREPROCESS_REGION: region,
+        ...runMode,
         ...modelService,
         DB: db,
         DB_SYSTEM: dbSystem,
@@ -454,10 +584,7 @@ export default Alchemy.Stack(
         EMAIL: Cloudflare.Email.SendEmail("Email"),
         EMAIL_FROM: yield* Config.String("EMAIL_FROM"),
         AUDIT: auditBucket,
-        AUDIT_SIGNING_KEY_ID: yield* Config.String("AUDIT_SIGNING_KEY_ID"),
-        ...Object.fromEntries(
-          apiSecrets.map((name) => [name, Config.Redacted(name)]),
-        ),
+        ...(yield* apiSecretBindings(stage)),
         SECRETS_MASTER_KEY: yield* secretsMasterKey(stage),
         COUNTER: Cloudflare.DurableObject(durableObjects.COUNTER),
         BUILDS: Cloudflare.DurableObject(durableObjects.BUILDS),

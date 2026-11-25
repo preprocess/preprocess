@@ -518,6 +518,9 @@ importers:
       '@effect/platform-node':
         specifier: ^4.1.4
         version: 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.10.0))
+      '@preprocess/db':
+        specifier: workspace:*
+        version: link:../packages/db
       alchemy:
         specifier: 2.0.0-beta.87
         version: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.10.0)))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.5(@types/node@24.19.2)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1))(ws@8.23.0)
