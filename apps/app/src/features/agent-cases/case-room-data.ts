@@ -4,6 +4,7 @@ import {
   liveApprovalDecision,
   liveCaseCommand,
   liveCaseRoom,
+  livePostMessage,
 } from "./case-api";
 import * as seed from "./case-room-seed";
 import type { CaseWorkActions } from "./case-work-context";
@@ -32,6 +33,7 @@ export function caseWorkActions(
       rerun: () => refresh(seed.rerunCase(agentId, caseId)),
       cancel: () => refresh(seed.cancelCase(agentId, caseId)),
       decide: (input) => refresh(seed.decideApproval(agentId, caseId, input)),
+      post: (text) => refresh(seed.postMessage(agentId, caseId, text)),
     };
   const write = (
     kind: "edit" | "confirm" | "accept",
@@ -47,5 +49,6 @@ export function caseWorkActions(
       refresh(liveCaseCommand({ data: { caseId, command: "cancel" } })),
     decide: (input) =>
       refresh(liveApprovalDecision({ data: { caseId, ...input } })),
+    post: (text) => refresh(livePostMessage({ data: { caseId, text } })),
   };
 }

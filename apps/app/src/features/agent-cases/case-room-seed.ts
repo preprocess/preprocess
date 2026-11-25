@@ -728,6 +728,28 @@ export async function decideApproval(
   return { ok: true };
 }
 
+export async function postMessage(
+  agentId: string,
+  caseId: string,
+  text: string,
+): Promise<ApprovalDecision> {
+  await update(agentId, caseId, (room) => ({
+    ...room,
+    thread: [
+      ...room.thread,
+      {
+        id: `msg_${Date.now()}`,
+        at: new Date().toISOString(),
+        by: YOU,
+        kind: "person",
+        text,
+        group: null,
+      },
+    ],
+  }));
+  return { ok: true };
+}
+
 export function cancelCase(agentId: string, caseId: string) {
   return update(agentId, caseId, (room) => ({
     ...room,

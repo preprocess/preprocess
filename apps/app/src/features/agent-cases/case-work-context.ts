@@ -28,6 +28,8 @@ export type CaseWorkActions = {
     decision: "approve" | "reject";
     text: string;
   }) => Promise<ApprovalDecision>;
+  /** Posts to the case thread; @group mentions notify that group. */
+  readonly post: (text: string) => Promise<ApprovalDecision>;
 };
 
 /** The open case's work and what a person can do to it, for the room's views. */

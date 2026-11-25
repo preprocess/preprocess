@@ -475,6 +475,18 @@ export const liveCaseCommand = createServerFn({ method: "POST" })
     return null;
   });
 
+/** Posts to the case thread. Refusals come back as data for the composer. */
+export const livePostMessage = createServerFn({ method: "POST" })
+  .validator((input: { caseId: string; text: string }) => input)
+  .handler(async ({ data }): Promise<ApprovalDecision> => {
+    const response = await send(
+      `/cases/${encodeURIComponent(data.caseId)}/messages`,
+      { method: "POST", body: JSON.stringify({ text: data.text }) },
+    );
+    if (response.ok) return { ok: true };
+    return { ok: false, ...(await apiError(response)) };
+  });
+
 /**
  * Approves, with an optional note, or rejects, with a reason. Refusals come
  * back as data so the room shows them beside the approval.
