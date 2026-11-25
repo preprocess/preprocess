@@ -90,3 +90,13 @@
 button:is(.bg-fd-primary, .bg-fd-secondary) {
   border-radius: 9999px;
 }
+
+/* Docs prose reads at the subtitle size with a relaxed measure, and sections
+   breathe more than they do in the app. */
+.docs-prose {
+  --typeset-body: var(--fs-subtitle);
+  --typeset-body-leading: calc(var(--fs-subtitle) * 1.75);
+  --typeset-space-block: 1rem;
+  --typeset-space-section: 2.5rem;
+  --typeset-space-subsection: 2rem;
+}

@@ -22,6 +22,7 @@ const loadPage = createServerFn({ method: "GET" })
       return {
         type: "openapi" as const,
         url: page.url,
+        apiUrl: env.API_URL,
         title: page.data.title,
         pageTree,
         props: page.data.getOpenAPIPageProps(),
@@ -75,7 +76,7 @@ function Content({
 function Page() {
   const page = useFumadocsLoader(Route.useLoaderData());
   return (
-    <DocsShell tree={page.pageTree}>
+    <DocsShell appUrl={new URL(page.apiUrl).origin} tree={page.pageTree}>
       {page.type === "openapi" ? (
         <DocsArticle title={page.title} tree={page.pageTree} url={page.url}>
           <div className="not-typeset">

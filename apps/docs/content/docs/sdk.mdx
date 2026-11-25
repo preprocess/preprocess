@@ -3,6 +3,12 @@ title: SDK
 description: Write an agent with @preprocess/sdk.
 ---
 
+Hand this prompt to your coding agent to write an agent and deploy it.
+
+<AgentPrompt name="sdk" />
+
+Or follow the steps yourself.
+
 ## Install
 
 ```sh
@@ -63,9 +69,13 @@ person must approve before it runs (see [Approvals](#approvals)).
 `secrets` lists the organization secrets the code needs. Only the secrets an
 Admin has granted to the agent are bound, and the rest are `undefined`. Values
 reach only your code. They never reach the model, the case thread, logs or run
-capture. As a second line of defence, the SDK removes bound values from tool
-results, errors and console output. Code that transforms a value can still leak
-it, so return only what the model needs.
+capture.
+
+<Callout>
+  As a second line of defence, the SDK removes bound values from tool results,
+  errors and console output. Code that transforms a value can still leak it, so
+  return only what the model needs.
+</Callout>
 
 ## MCP servers
 

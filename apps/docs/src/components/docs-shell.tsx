@@ -1,3 +1,4 @@
+import { Button } from "@preprocess/ui/components/button";
 import {
   CommandMenu,
   CommandMenuDialog,
@@ -9,30 +10,18 @@ import {
   type CommandMenuItemData,
 } from "@preprocess/ui/components/command-menu";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
+import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@preprocess/ui/components/sidebar";
-import { FileIcon, Moon, Search, Sun } from "@preprocess/ui/lib/icons";
-import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
-import { SurfaceProvider } from "@preprocess/ui/lib/surface-context";
+  BookOpen,
+  ChevronRight,
+  Code,
+  FileIcon,
+  Moon,
+  Search,
+  Sun,
+} from "@preprocess/ui/lib/icons";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
 import { cn } from "@preprocess/ui/lib/utils";
-import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { useDocsSearch } from "fumadocs-core/search/client";
@@ -46,11 +35,12 @@ import {
   type ReactNode,
 } from "react";
 
-// The docs wear the app's shell: the same inset sidebar, search row, command
-// menu and theme switch, fed by Fumadocs' page tree and search index.
+// The docs read as a document: a plain section list on the left, a top bar
+// with search and the way into the app, and the page in a centered column.
+// Fumadocs supplies the page tree and the search index.
 
-// Page tree names reach the client as spans of escaped HTML; the command
-// menu and card labels want their text.
+// Page tree names reach the client as spans of escaped HTML; labels, crumbs
+// and the command menu want their text.
 export function textOf(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(textOf).join("");
@@ -73,7 +63,7 @@ export function textOf(node: ReactNode): string {
     .replaceAll("&amp;", "&");
 }
 
-// API operation names end with their HTTP method; the row shows it apart from
+// API operation names end with their HTTP method; rows show it apart from
 // the label so a long label truncates instead of wrapping.
 function rowLabel(node: ReactNode) {
   const text = textOf(node).replace(/\s+/g, " ").trim();
@@ -81,26 +71,7 @@ function rowLabel(node: ReactNode) {
   return match ? { label: match[1], method: match[2] } : { label: text };
 }
 
-// The menu row truncates only a leading string child, so the label goes in
-// as text and the method follows it.
-function rowContent(node: ReactNode): ReactNode[] {
-  const { label, method } = rowLabel(node);
-  if (!method) return [label];
-  return [
-    label,
-    <span
-      className={cn(
-        typeClass("caption"),
-        "ml-auto shrink-0 font-mono text-muted-foreground",
-      )}
-      key="method"
-    >
-      {method}
-    </span>,
-  ];
-}
-
-function contains(node: PageTree.Node, url: string): boolean {
+export function contains(node: PageTree.Node, url: string): boolean {
   if (node.type === "page") return node.url === url;
   if (node.type === "folder")
     return (
@@ -109,11 +80,38 @@ function contains(node: PageTree.Node, url: string): boolean {
   return false;
 }
 
-// Every docs page is the splat route; links go through the router so the
-// sidebar's highlight can measure them.
-function PageLink({ url, ...props }: { url: string } & ComponentProps<"a">) {
+export function firstPage(node: PageTree.Folder): string | undefined {
+  if (node.index) return node.index.url;
+  for (const child of node.children) {
+    if (child.type === "page") return child.url;
+    if (child.type === "folder") {
+      const url = firstPage(child);
+      if (url) return url;
+    }
+  }
+  return undefined;
+}
+
+// Every docs page is the splat route; links go through the router.
+export function PageLink({
+  url,
+  ...props
+}: { url: string } & ComponentProps<"a">) {
   return <Link {...props} params={{ _splat: url.slice(1) }} to="/$" />;
 }
+
+const rowClass = (active: boolean) =>
+  cn(
+    typeClass("subtitle"),
+    "flex h-9 w-full min-w-0 items-center gap-2 rounded-full px-3 text-left transition-colors",
+    active
+      ? "bg-hover text-foreground"
+      : "text-muted-foreground hover:bg-hover hover:text-foreground",
+  );
+
+const weight = (active: boolean) => ({
+  fontVariationSettings: active ? fontWeights.semibold : fontWeights.normal,
+});
 
 function PageRow({
   item,
@@ -122,19 +120,32 @@ function PageRow({
   item: PageTree.Item;
   pathname: string;
 }) {
+  const active = item.url === pathname;
+  const { label, method } = rowLabel(item.name);
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        isActive={item.url === pathname}
-        render={<PageLink url={item.url} />}
+    <li>
+      <PageLink
+        className={rowClass(active)}
+        style={weight(active)}
+        url={item.url}
       >
-        {rowContent(item.name)}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {method ? (
+          <span
+            className={cn(
+              typeClass("micro"),
+              "shrink-0 font-mono text-muted-foreground",
+            )}
+          >
+            {method}
+          </span>
+        ) : null}
+      </PageLink>
+    </li>
   );
 }
 
-// A folder inside a section (an API tag): a row that opens its pages.
+// A folder (an API tag): a row whose chevron opens its pages in place.
 function FolderRow({
   folder,
   pathname,
@@ -147,27 +158,35 @@ function FolderRow({
   useEffect(() => {
     if (current) setOpen(true);
   }, [current]);
-  const pages = folder.children.filter(
-    (child): child is PageTree.Item => child.type === "page",
-  );
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton aria-expanded={open} onClick={() => setOpen(!open)}>
-        {textOf(folder.name)}
-      </SidebarMenuButton>
-      <SidebarMenuSub open={open}>
-        {pages.map((page) => (
-          <SidebarMenuSubItem key={page.url}>
-            <SidebarMenuSubButton
-              isActive={page.url === pathname}
-              render={<PageLink url={page.url} />}
-            >
-              {rowContent(page.name)}
-            </SidebarMenuSubButton>
-          </SidebarMenuSubItem>
-        ))}
-      </SidebarMenuSub>
-    </SidebarMenuItem>
+    <li>
+      <button
+        aria-expanded={open}
+        className={rowClass(false)}
+        onClick={() => setOpen(!open)}
+        type="button"
+      >
+        <span className="min-w-0 flex-1 truncate">{textOf(folder.name)}</span>
+        <ChevronRight
+          className={cn(
+            "shrink-0 transition-transform duration-150",
+            open && "rotate-90",
+          )}
+          size={14}
+        />
+      </button>
+      {open ? (
+        <ul className="my-1 ml-4 flex flex-col gap-0.5 border-l border-border pl-2">
+          {folder.children.map((child, index) =>
+            child.type === "page" ? (
+              <PageRow item={child} key={child.url} pathname={pathname} />
+            ) : child.type === "folder" ? (
+              <FolderRow folder={child} key={index} pathname={pathname} />
+            ) : null,
+          )}
+        </ul>
+      ) : null}
+    </li>
   );
 }
 
@@ -179,7 +198,7 @@ function Rows({
   pathname: string;
 }) {
   return (
-    <SidebarMenu className="gap-1">
+    <ul className="flex flex-col gap-0.5">
       {nodes.map((node, index) =>
         node.type === "page" ? (
           <PageRow item={node} key={node.url} pathname={pathname} />
@@ -187,7 +206,91 @@ function Rows({
           <FolderRow folder={node} key={index} pathname={pathname} />
         ) : null,
       )}
-    </SidebarMenu>
+    </ul>
+  );
+}
+
+// The two halves of the docs: prose guides at the top level of the tree,
+// and the reference folders (the API) beneath them.
+export function splitTree(tree: PageTree.Root) {
+  return {
+    guides: tree.children.filter((node) => node.type !== "folder"),
+    reference: tree.children.filter(
+      (node): node is PageTree.Folder => node.type === "folder",
+    ),
+  };
+}
+
+function DocsSidebar({ tree }: { tree: PageTree.Root }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { guides, reference } = splitTree(tree);
+  const inReference = reference.some((folder) => contains(folder, pathname));
+  const referenceUrl = reference[0] ? firstPage(reference[0]) : undefined;
+
+  return (
+    <aside className="hidden w-72 shrink-0 flex-col border-r border-border lg:flex">
+      <PageLink className="flex h-14 shrink-0 items-center gap-2 px-6" url="/">
+        <img
+          alt=""
+          className="size-5 dark:hidden"
+          src="/brand/favicon-light.svg"
+        />
+        <img
+          alt=""
+          className="hidden size-5 dark:block"
+          src="/brand/favicon-dark.svg"
+        />
+        <span
+          className={cn(typeClass("title"), "text-foreground")}
+          style={{ fontVariationSettings: fontWeights.semibold }}
+        >
+          Preprocess
+        </span>
+        <span
+          className={cn(
+            typeClass("caption"),
+            "rounded-full border border-border px-2 text-muted-foreground",
+          )}
+        >
+          Docs
+        </span>
+      </PageLink>
+      <nav aria-label="Sections" className="flex flex-col gap-0.5 px-3 pt-4">
+        <PageLink
+          className={rowClass(!inReference)}
+          style={weight(!inReference)}
+          url="/"
+        >
+          <BookOpen className="shrink-0" size={16} />
+          Guides
+        </PageLink>
+        {referenceUrl ? (
+          <PageLink
+            className={rowClass(inReference)}
+            style={weight(inReference)}
+            url={referenceUrl}
+          >
+            <Code className="shrink-0" size={16} />
+            Reference
+          </PageLink>
+        ) : null}
+      </nav>
+      <div className="mx-6 my-4 border-t border-border" />
+      <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
+        <nav
+          aria-label={inReference ? "Reference" : "Guides"}
+          className="w-72 px-3 pb-6"
+        >
+          {inReference ? (
+            reference.map((folder, index) => (
+              <Rows key={index} nodes={folder.children} pathname={pathname} />
+            ))
+          ) : (
+            <Rows nodes={guides} pathname={pathname} />
+          )}
+        </nav>
+      </ScrollArea>
+    </aside>
   );
 }
 
@@ -215,8 +318,8 @@ function DocsSearch({
       void router.navigate({ href: url });
     };
     if (search === "" || query.data === "empty")
-      return tree.children
-        .filter((node): node is PageTree.Item => node.type === "page")
+      return splitTree(tree)
+        .guides.filter((node): node is PageTree.Item => node.type === "page")
         .map((page) => ({
           value: page.url,
           label: rowLabel(page.name).label,
@@ -244,7 +347,7 @@ function DocsSearch({
         onQueryChange={setSearch}
         query={search}
       >
-        <CommandMenuInput placeholder="Search" />
+        <CommandMenuInput placeholder="Search documentation" />
         <CommandMenuList>
           <CommandMenuEmpty>No results found</CommandMenuEmpty>
         </CommandMenuList>
@@ -254,27 +357,25 @@ function DocsSearch({
   );
 }
 
-function ThemeRow() {
+function ThemeButton() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const dark = mounted && resolvedTheme === "dark";
+  const Icon = dark ? Sun : Moon;
   return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          icon={dark ? Sun : Moon}
-          onClick={() => setTheme(dark ? "light" : "dark")}
-        >
-          {dark ? "Switch to light mode" : "Switch to dark mode"}
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </SidebarMenu>
+    <Button
+      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+      onClick={() => setTheme(dark ? "light" : "dark")}
+      size="icon"
+      variant="ghost"
+    >
+      <Icon size={16} />
+    </Button>
   );
 }
 
-function DocsSidebar({ tree }: { tree: PageTree.Root }) {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+function TopBar({ tree, appUrl }: { tree: PageTree.Root; appUrl: string }) {
   const shortcut = useShortcutLabel();
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
@@ -288,88 +389,49 @@ function DocsSidebar({ tree }: { tree: PageTree.Root }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const pages = tree.children.filter((node) => node.type !== "folder");
-  const sections = tree.children.filter(
-    (node): node is PageTree.Folder => node.type === "folder",
-  );
-
   return (
-    <ShapeProvider defaultShape="rounded">
-      <Sidebar rail={false} variant="inset">
-        <SidebarHeader>
-          <PageLink className="flex h-9 items-center gap-2 px-2" url="/">
-            <img
-              alt=""
-              className="size-5 dark:hidden"
-              src="/brand/favicon-light.svg"
-            />
-            <img
-              alt=""
-              className="hidden size-5 dark:block"
-              src="/brand/favicon-dark.svg"
-            />
-            <span
-              className={typeClass("body")}
-              style={{ fontVariationSettings: fontWeights.semibold }}
-            >
-              Preprocess
-            </span>
-          </PageLink>
-          <SidebarMenu aria-label="Search">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                icon={Search}
-                onClick={() => setSearchOpen(true)}
-              >
-                Search
-              </SidebarMenuButton>
-              <SidebarMenuBadge>{shortcut}</SidebarMenuBadge>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
-            <Rows nodes={pages} pathname={pathname} />
-          </SidebarGroup>
-          {sections.map((section, index) => (
-            <SidebarGroup key={index}>
-              <SidebarGroupLabel>{textOf(section.name)}</SidebarGroupLabel>
-              <Rows nodes={section.children} pathname={pathname} />
-            </SidebarGroup>
-          ))}
-        </SidebarContent>
-        <SidebarFooter>
-          <ThemeRow />
-        </SidebarFooter>
-      </Sidebar>
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-6">
+      <button
+        className={cn(
+          typeClass("body"),
+          "flex h-9 w-full max-w-xs items-center gap-2 rounded-full border border-border bg-card px-3 text-muted-foreground transition-colors hover:text-foreground",
+        )}
+        onClick={() => setSearchOpen(true)}
+        type="button"
+      >
+        <Search className="shrink-0" size={16} />
+        <span className="flex-1 text-left">Search documentation</span>
+        <kbd className={cn(typeClass("micro"), "font-sans")}>{shortcut}</kbd>
+      </button>
+      <div className="ml-auto flex items-center gap-2">
+        <ThemeButton />
+        <Button render={<a href={appUrl} />} trailingIcon={ChevronRight}>
+          Open the app
+        </Button>
+      </div>
       <DocsSearch onOpenChange={setSearchOpen} open={searchOpen} tree={tree} />
-    </ShapeProvider>
+    </header>
   );
 }
 
 export function DocsShell({
   tree,
+  appUrl,
   children,
 }: {
   tree: PageTree.Root;
+  appUrl: string;
   children: ReactNode;
 }) {
   return (
-    <SidebarProvider className="h-svh" persist={false} shortcut={null}>
+    <div className="flex h-svh bg-background">
       <DocsSidebar tree={tree} />
-      <SidebarInset className="min-h-0 overflow-hidden">
-        <header className="flex h-12 shrink-0 items-center gap-2 px-1.5">
-          <SidebarTrigger />
-        </header>
-        <SurfaceProvider value={2}>
-          <ScrollArea
-            className="min-h-0 flex-1"
-            viewportClassName="scroll-fade"
-          >
-            {children}
-          </ScrollArea>
-        </SurfaceProvider>
-      </SidebarInset>
-    </SidebarProvider>
+      <main className="flex min-w-0 flex-1 flex-col">
+        <TopBar appUrl={appUrl} tree={tree} />
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
+          {children}
+        </ScrollArea>
+      </main>
+    </div>
   );
 }
