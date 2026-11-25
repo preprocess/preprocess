@@ -2,3 +2,14 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 @import "fumadocs-openapi/css/preset.css";
+
+/* Fumadocs draws Lucide icons. Hold them at the stroke the app and marketing
+   take from @preprocess/ui's globals.css: 0.9375px on screen at every size,
+   Fluid Functionalism's own icon weight. */
+svg.lucide {
+  stroke-width: 0.9375px;
+}
+
+svg.lucide * {
+  vector-effect: non-scaling-stroke;
+}
