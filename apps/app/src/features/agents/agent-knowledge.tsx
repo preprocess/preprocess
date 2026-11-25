@@ -45,21 +45,6 @@ export function MemoryList({
   );
 }
 
-/** Placeholder: how this agent's runs are going. */
-export function AgentObservability() {
-  return (
-    <SettingsSection
-      description="Runs, errors, latency, and cost for this agent's cases."
-      title="Observability"
-    >
-      <SettingsEmpty
-        description="Metrics and traces from this agent's runs will show up here."
-        title="Nothing to show yet"
-      />
-    </SettingsSection>
-  );
-}
-
 /** What the agent keeps between cases. */
 export function AgentMemories({
   memories,
