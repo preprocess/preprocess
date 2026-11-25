@@ -238,6 +238,19 @@ export class SchemaState {
       }));
   }
 
+  // Visible fields that need a person's review and have no confirmed answer
+  // yet: what the inbox lists as fields to review.
+  unreviewed(): Path[] {
+    return this.fields()
+      .filter(
+        (f) =>
+          f.visible &&
+          f.review === "required" &&
+          f.answer?.status !== "confirmed",
+      )
+      .map((f) => f.path);
+  }
+
   // The current answers as the nested object a caller receives: visible
   // fields only, hidden values excluded (design doc 05).
   output(): Record<string, unknown> {

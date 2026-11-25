@@ -149,6 +149,9 @@ export type CaseEvent = CaseKey &
         message: string;
       }
     | { type: "approval"; approval: Approval }
+    // Fields still waiting for a person's review, after a run settles or a
+    // person changes an answer.
+    | { type: "review"; fields: string[] }
   );
 
 export type Platform = {

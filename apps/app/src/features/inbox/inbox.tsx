@@ -22,6 +22,7 @@ import {
   CheckIcon,
   Clock,
   Folder4,
+  ListIcon,
   MessageCircle,
   Shield,
   User,
@@ -60,6 +61,7 @@ const KIND_ICON: Record<InboxKind, KindIcon> = {
   approval: BadgeCheck,
   guardrail: Shield,
   memory: Brain,
+  review: ListIcon,
 };
 
 /** Linked cases by `agentId/caseId`, as the route loads them. */

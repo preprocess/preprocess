@@ -63,6 +63,13 @@ export const cases = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp({ withTimezone: true }),
+    // Visible fields that need a person's review and are not confirmed yet,
+    // as the runtime last reported them, and when that set last changed.
+    reviewFields: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    reviewSince: timestamp({ withTimezone: true }),
   },
   (t) => [
     unique("cases_org_id_unique").on(t.organizationId, t.id),

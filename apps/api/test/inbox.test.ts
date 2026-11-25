@@ -50,6 +50,7 @@ type Inbox = {
     message: string | null;
     approval: { id: string; level: string; target: string } | null;
     guardrail: { id: string; agent: { slug: string } | null } | null;
+    review: { fields: string[] } | null;
   }[];
   unread: number;
 };
@@ -427,6 +428,18 @@ describe("assignment", () => {
       (await inbox(quiet.client)).items.some((i) => i.case?.id === key.caseId),
     ).toBe(false);
 
+    const mine = await lee.client.call<{ items: { id: string }[] }>(
+      `/v1/orgs/${org}/cases?assignee=me&status=running`,
+    );
+    expect(mine.body.items.map((c) => c.id)).toContain(key.caseId);
+    const theirs = await owner.call<{ items: { id: string }[] }>(
+      `/v1/orgs/${org}/cases?assignee=${quiet.userId}&status=running`,
+    );
+    expect(theirs.body.items.map((c) => c.id)).not.toContain(key.caseId);
+    expect((await keyed.call(`/v1/orgs/${org}/cases?assignee=me`)).status).toBe(
+      400,
+    );
+
     const audit = await owner.call<{
       events: { data: { added: string[]; removed: string[] } }[];
     }>(`/v1/orgs/${org}/audit-events?action=case.assignees.updated`);
@@ -436,5 +449,48 @@ describe("assignment", () => {
         { added: [], removed: [quiet.userId] },
       ]),
     );
+  });
+});
+
+describe("fields to review", () => {
+  const review = (
+    key: { organizationId: string; agentId: string; caseId: string },
+    fields: string[],
+  ) => recordCaseEvent(environment, { ...key, type: "review", fields });
+  const item = async (client: Client, caseId: string) =>
+    (await inbox(client)).items.find(
+      (i) => i.kind === "review" && i.case?.id === caseId,
+    );
+
+  it("lists a case's unreviewed fields to operators once the run settles", async () => {
+    const key = await newCase("Invoice 4001");
+    await review(key, ["vendor", "total"]);
+    expect(await item(lee.client, key.caseId)).toBeUndefined();
+    await waitOn(key, null, "completed");
+    const seen = await item(lee.client, key.caseId);
+    expect(seen).toMatchObject({ review: { fields: ["vendor", "total"] } });
+    expect(await item(quiet.client, key.caseId)).toBeDefined();
+    expect(await item(viewer.client, key.caseId)).toBeUndefined();
+    expect(await item(outsider.client, key.caseId)).toBeUndefined();
+  });
+
+  it("keeps its key while fields get reviewed, and goes when none are left", async () => {
+    const key = await newCase("Invoice 4002");
+    await waitOn(key, null, "completed");
+    await review(key, ["vendor", "total"]);
+    const first = (await item(lee.client, key.caseId))!;
+    await lee.client.call(`/v1/orgs/${org}/inbox/read`, {
+      body: { keys: [first.key] },
+    });
+    await review(key, ["total"]);
+    expect(await item(lee.client, key.caseId)).toMatchObject({
+      key: first.key,
+      read: true,
+      review: { fields: ["total"] },
+    });
+    await review(key, ["total", "date"]);
+    expect((await item(lee.client, key.caseId))!.key).not.toBe(first.key);
+    await review(key, []);
+    expect(await item(lee.client, key.caseId)).toBeUndefined();
   });
 });

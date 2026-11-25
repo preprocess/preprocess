@@ -1,6 +1,6 @@
 // The inbox (design doc 06): cases waiting on the person's groups, mentions of
 // their groups, cases assigned to them, approvals and memory rules (spec 10)
-// they may decide, and, for Owners and Admins, pending guardrail requests. Computed on read from
+// they may decide, fields to review on cases they can work, and, for Owners and Admins, pending guardrail requests. Computed on read from
 // membership, assignment and access. Read marks are kept per item key.
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
@@ -15,7 +15,7 @@ import {
 } from "@preprocess/db/schema/cases";
 import { guardrailRequests } from "@preprocess/db/schema/guardrails";
 import { agentMemories } from "@preprocess/db/schema/memories";
-import { and, desc, eq, ne, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne, notInArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { mayApprove } from "../access.ts";
@@ -36,7 +36,7 @@ const InboxItem = z
   .object({
     key: z.string().openapi({
       description:
-        '"waiting:<caseId>:<since>", "mention:<id>", "assigned:<caseId>:<at>", "approval:<approvalId>", "guardrail:<requestId>" or "memory:<memoryId>"',
+        '"waiting:<caseId>:<since>", "mention:<id>", "assigned:<caseId>:<at>", "approval:<approvalId>", "guardrail:<requestId>", "memory:<memoryId>" or "review:<caseId>:<since>"',
     }),
     kind: z.enum([
       "waiting",
@@ -45,6 +45,7 @@ const InboxItem = z
       "approval",
       "guardrail",
       "memory",
+      "review",
     ]),
     at: z.string().datetime(),
     read: z.boolean(),
@@ -94,6 +95,14 @@ const InboxItem = z
       .openapi({
         description: 'The loosening asked for; set when kind is "guardrail"',
       }),
+    review: z
+      .object({
+        fields: z.array(z.string()).openapi({
+          description: "Paths of visible fields waiting for a person's review",
+        }),
+      })
+      .nullable()
+      .openapi({ description: 'Set when kind is "review"' }),
   })
   .openapi("InboxItem");
 
@@ -160,6 +169,7 @@ export const inboxRoutes = new OpenAPIHono<{
           approvals,
           requests,
           proposals,
+          reviews,
           reads,
         ] = await Promise.all([
           tx
@@ -254,6 +264,20 @@ export const inboxRoutes = new OpenAPIHono<{
             .innerJoin(agents, eq(agents.id, cases.agentId))
             .where(eq(agentMemories.status, "proposed")),
           tx
+            .select({
+              ...caseColumns,
+              fields: cases.reviewFields,
+              since: cases.reviewSince,
+            })
+            .from(cases)
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .where(
+              and(
+                inArray(cases.status, ["waiting", "completed"]),
+                isNotNull(cases.reviewSince),
+              ),
+            ),
+          tx
             .select({ key: inboxReads.itemKey })
             .from(inboxReads)
             .where(eq(inboxReads.userId, userId)),
@@ -273,8 +297,13 @@ export const inboxRoutes = new OpenAPIHono<{
         const decidesMemory = await Promise.all(
           proposals.map((m) => mayDecide(m.agentId, null)),
         );
+        // Reviewing a field is working the case: any operator of the agent.
+        const reviewable = await Promise.all(
+          reviews.map((r) => mayDecide(r.agentId, null)),
+        );
         const read = new Set(reads.map((r) => r.key));
-        const all: Omit<Item, "read">[] = [
+        const all: (Omit<Item, "read" | "review"> &
+          Partial<Pick<Item, "review">>)[] = [
           ...waiting.map((w) => {
             const at = (w.since ?? new Date(0)).toISOString();
             return {
@@ -360,9 +389,25 @@ export const inboxRoutes = new OpenAPIHono<{
               approval: null,
               guardrail: null,
             })),
+          ...reviews
+            .filter((r, i) => reviewable[i] && r.fields.length)
+            .map((r) => {
+              const at = r.since!.toISOString();
+              return {
+                key: `review:${r.id}:${at}`,
+                kind: "review" as const,
+                at,
+                case: caseOf(r),
+                group: null,
+                message: null,
+                approval: null,
+                guardrail: null,
+                review: { fields: r.fields },
+              };
+            }),
         ];
         return all
-          .map((i) => ({ ...i, read: read.has(i.key) }))
+          .map((i) => ({ review: null, ...i, read: read.has(i.key) }))
           .sort((a, b) => b.at.localeCompare(a.at));
       });
       return c.json(
