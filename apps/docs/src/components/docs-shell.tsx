@@ -58,6 +58,7 @@ import {
   X,
 } from "@preprocess/ui/lib/icons";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
+import { spring } from "@preprocess/ui/lib/springs";
 import { SurfaceProvider } from "@preprocess/ui/lib/surface-context";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
 import { cn } from "@preprocess/ui/lib/utils";
@@ -66,6 +67,7 @@ import type { TOCItemType } from "fumadocs-core/toc";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { useDocsSearch } from "fumadocs-core/search/client";
 import { TOCProvider } from "fumadocs-ui/components/toc";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTheme } from "next-themes";
 import {
   Fragment,
@@ -802,23 +804,24 @@ function MobileHeader({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [folded, setFolded] = useState(false);
+  const [pastTitle, setPastTitle] = useState(false);
+  const reduceMotion = useReducedMotion();
   useEffect(() => setMenuOpen(false), [pathname]);
 
-  // The header hairline appears once the page scrolls, and the lockup folds
-  // into the contents once the title has scrolled under the header.
+  // The header hairline appears once the page scrolls, and the contents bar
+  // slides in under the header once the title has scrolled beneath it.
   useEffect(() => {
     const element = panel.current;
     if (!element) return;
     setScrolled(false);
-    setFolded(false);
+    setPastTitle(false);
     const onScroll = (event: Event) => {
       if (!(event.target instanceof HTMLElement)) return;
       setScrolled(event.target.scrollTop > 0);
       const title = element.querySelector("[data-page-title]");
       if (!hasToc || !title) return;
       const header = element.getBoundingClientRect().top + 52;
-      setFolded(title.getBoundingClientRect().bottom < header);
+      setPastTitle(title.getBoundingClientRect().bottom < header);
     };
     element.addEventListener("scroll", onScroll, { capture: true });
     return () =>
@@ -846,8 +849,21 @@ function MobileHeader({
         }
         onSearch={onSearch}
       >
-        {folded ? <MobileContents title={title} /> : <Lockup />}
+        <Lockup />
       </MobileBar>
+      <AnimatePresence>
+        {hasToc && pastTitle ? (
+          <motion.div
+            animate={{ y: 0, opacity: 1 }}
+            className="absolute inset-x-0 top-13 z-10 bg-surface-2 shadow-[inset_0_-1px_0_var(--border)] lg:hidden"
+            exit={reduceMotion ? { opacity: 0 } : { y: "-100%" }}
+            initial={reduceMotion ? { opacity: 0 } : { y: "-100%" }}
+            transition={reduceMotion ? { duration: 0 } : spring.moderate}
+          >
+            <MobileContents title={title} />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       <Sheet onOpenChange={setMenuOpen} open={menuOpen}>
         <SheetContent
           className="inset-0 h-svh w-full max-w-none gap-0 rounded-none border-0! bg-surface-2 p-0 text-foreground shadow-none! transition-none lg:hidden"
