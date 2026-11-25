@@ -36,9 +36,16 @@ import {
   useRegisterFluidHoverItem,
 } from "@preprocess/ui/hooks/use-fluid-hover";
 import {
+  AsyncActionAbortError,
+  LoadingButton,
+} from "@preprocess/ui/components/loading-button";
+import {
   ChevronDownIcon,
   DownloadIcon,
+  FileIcon,
   FilterIcon,
+  Plus,
+  XIcon,
 } from "@preprocess/ui/lib/icons";
 import { ShapeProvider, useShape } from "@preprocess/ui/lib/shape-context";
 import { SizeProvider } from "@preprocess/ui/lib/size-context";
@@ -65,6 +72,8 @@ import { FunnelArt, NoMatchArt } from "../../components/empty-art";
 import { SettingsSearchField } from "../settings/kit";
 import { CaseInputViewer } from "./case-input-viewer";
 import { filesFromZip } from "./case-input-zip";
+import type { CaseFile } from "./case-api";
+import type { ApprovalDecision } from "./case-room-state";
 import type { CaseInputSample } from "./flue-lab-input-samples";
 
 export const INPUT_TAB = "input";
@@ -82,9 +91,19 @@ export type CaseInputItem = {
   readonly parentId?: string;
 };
 
+export type CaseFiles = {
+  readonly files: readonly CaseFile[];
+  readonly attach?: (files: readonly File[]) => Promise<ApprovalDecision>;
+};
+
 export type CaseInputWorkspaceProps = {
   readonly idPrefix?: string;
   readonly samples?: ReadonlyArray<CaseInputSample>;
+  /**
+   * The files attached to the case, and attaching more, for people who work
+   * the case while it isn't cancelled.
+   */
+  readonly caseFiles?: CaseFiles;
   readonly activeId?: string;
   readonly onActiveIdChange?: (id: string) => void;
   readonly openIds?: readonly string[];
@@ -341,6 +360,7 @@ type CaseInputContextValue = {
   readonly selectedIds: readonly string[];
   readonly selectItem: (id: string, click: InputListClick) => void;
   readonly addFiles: (files: FileList | File[]) => void;
+  readonly caseFiles?: CaseFiles;
   readonly openItem: (id: string) => void;
   readonly openItemInBackground: (ids: readonly string[]) => void;
   readonly openItemInOtherPane?: (ids: readonly string[]) => void;
@@ -364,6 +384,7 @@ export function useCaseFileTabs(openIds: readonly string[]): CaseFileTab[] {
 export function CaseInputWorkspace({
   idPrefix = "case-input",
   samples,
+  caseFiles,
   activeId: activeIdProp,
   onActiveIdChange,
   openIds: openIdsProp,
@@ -549,6 +570,7 @@ export function CaseInputWorkspace({
         selectedIds,
         selectItem,
         addFiles,
+        caseFiles,
         openItem,
         openItemInBackground,
         openItemInOtherPane,
@@ -905,11 +927,28 @@ export function CaseInputPane({
     selectedIds,
     selectItem,
     addFiles,
+    caseFiles,
     openItem,
     openItemInBackground,
     openItemInOtherPane,
   } = useCaseInput();
   const idPrefix = idPrefixProp ?? contextPrefix;
+  const [staged, setStaged] = useState<File[]>([]);
+  const attach = caseFiles?.attach;
+  const visibleCaseFiles = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (caseFiles?.files ?? []).filter((file) => {
+      const family = familyOf(file.name, file.contentType);
+      if (familyFilter.length > 0 && !familyFilter.includes(family))
+        return false;
+      return (
+        !needle ||
+        [file.name, familyLabel(family)].some((value) =>
+          value.toLowerCase().includes(needle),
+        )
+      );
+    });
+  }, [caseFiles, familyFilter, query]);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedOpenableIds = useMemo(
     () =>
@@ -953,7 +992,9 @@ export function CaseInputPane({
       onDrop={(event) => {
         if (isTabDrag(event.dataTransfer)) return;
         event.preventDefault();
-        addFiles(event.dataTransfer.files);
+        if (attach)
+          setStaged((current) => [...current, ...event.dataTransfer.files]);
+        else addFiles(event.dataTransfer.files);
       }}
       role="tabpanel"
     >
@@ -970,11 +1011,23 @@ export function CaseInputPane({
             onChange={setFamilyFilter}
             selected={familyFilter}
           />
+          {attach ? (
+            <AddCaseFilesButton
+              onPick={(picked) =>
+                setStaged((current) => [...current, ...picked])
+              }
+            />
+          ) : null}
         </div>
       </SizeProvider>
+      {attach ? (
+        <StagedCaseFiles attach={attach} files={staged} onChange={setStaged} />
+      ) : null}
       <div className="relative min-h-0 flex-1">
         <EmptyPresence mode="wait">
-          {itemsReady && visibleRows.length === 0 ? (
+          {itemsReady &&
+          visibleRows.length === 0 &&
+          visibleCaseFiles.length === 0 ? (
             <Empty
               key={query.trim() === "" ? "input-empty" : "input-no-results"}
               className="pointer-events-none absolute inset-0 z-[1] border-0 p-0"
@@ -1007,6 +1060,21 @@ export function CaseInputPane({
           className="min-h-0 h-full"
           viewportClassName="scroll-fade"
         >
+          {visibleCaseFiles.length > 0 ? (
+            <ul className="flex flex-col px-2">
+              {visibleCaseFiles.map((file) => (
+                <li className="flex min-w-0 flex-col px-3 py-1.5" key={file.id}>
+                  <span className="truncate text-body text-foreground">
+                    {file.name}
+                  </span>
+                  <span className="text-caption text-muted-foreground">
+                    {familyLabel(familyOf(file.name, file.contentType))} ·{" "}
+                    {formatSize(file.size)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {visibleRows.length === 0 ? null : (
             <ShapeProvider defaultShape="rounded">
               <FileRowList>
@@ -1047,6 +1115,152 @@ export function CaseInputPane({
             </ShapeProvider>
           )}
         </ScrollArea>
+      </div>
+    </div>
+  );
+}
+
+/** Files are at most 100 MB, and the API attaches at most 20 at a time. */
+const MAX_FILE_BYTES = 100 * 1024 * 1024;
+const MAX_ATTACH = 20;
+
+function AddCaseFilesButton({
+  onPick,
+}: Readonly<{ onPick: (files: File[]) => void }>) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <Button
+        leadingIcon={Plus}
+        onClick={() => inputRef.current?.click()}
+        size="compact"
+        type="button"
+        variant="ghost"
+      >
+        Add files
+      </Button>
+      <input
+        aria-label="Add files to the case"
+        className="hidden"
+        multiple
+        onChange={(event) => {
+          const picked = [...(event.target.files ?? [])];
+          event.target.value = "";
+          if (picked.length > 0) onPick(picked);
+        }}
+        ref={inputRef}
+        type="file"
+      />
+    </>
+  );
+}
+
+/**
+ * Files picked for the case and not yet attached. Attaching uploads each one,
+ * attaches them, and reloads the room; the agent gets them on its next run.
+ */
+function StagedCaseFiles({
+  files,
+  onChange,
+  attach,
+}: Readonly<{
+  files: readonly File[];
+  onChange: (files: File[]) => void;
+  attach: (files: readonly File[]) => Promise<ApprovalDecision>;
+}>) {
+  const [error, setError] = useState<string | null>(null);
+  const [attached, setAttached] = useState(false);
+  if (files.length === 0)
+    return attached ? (
+      <p className="shrink-0 px-4 pb-2 text-body text-muted-foreground">
+        Attached. Rerun hands the new files to the agent.
+      </p>
+    ) : null;
+
+  const submit = async () => {
+    setError(null);
+    const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES);
+    if (tooLarge) {
+      setError(`${tooLarge.name} is over 100 MB, the most a file can be.`);
+      throw new AsyncActionAbortError();
+    }
+    if (files.length > MAX_ATTACH) {
+      setError("Attach up to 20 files at a time.");
+      throw new AsyncActionAbortError();
+    }
+    let result: ApprovalDecision;
+    try {
+      result = await attach(files);
+    } catch {
+      setError("Could not attach the files. Try again.");
+      throw new AsyncActionAbortError();
+    }
+    if (!result.ok) {
+      setError(result.message);
+      throw new AsyncActionAbortError();
+    }
+    setAttached(true);
+    onChange([]);
+  };
+
+  return (
+    <div className="flex shrink-0 flex-col gap-1.5 px-4 pb-3">
+      <ul className="flex flex-col gap-1">
+        {files.map((file, index) => (
+          <li
+            className="flex items-center gap-2 text-body"
+            key={`${file.name}-${index}`}
+          >
+            <FileIcon
+              aria-hidden
+              className="size-4 shrink-0 text-muted-foreground"
+            />
+            <span className="min-w-0 flex-1 truncate text-foreground">
+              {file.name}
+            </span>
+            <span className="shrink-0 text-muted-foreground tabular-nums">
+              {formatSize(file.size)}
+            </span>
+            <Button
+              aria-label={`Remove ${file.name}`}
+              onClick={() => onChange(files.filter((_, at) => at !== index))}
+              size="icon-compact"
+              type="button"
+              variant="ghost"
+            >
+              <XIcon aria-hidden />
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {error ? (
+        <p className="text-body text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          onClick={() => {
+            setError(null);
+            onChange([]);
+          }}
+          size="compact"
+          type="button"
+          variant="ghost"
+        >
+          Cancel
+        </Button>
+        <LoadingButton
+          className="w-auto shrink-0"
+          onAction={submit}
+          pendingLabel="Attaching"
+          size="compact"
+          successLabel="Attached"
+        >
+          {files.length === 1
+            ? "Attach 1 file"
+            : `Attach ${files.length} files`}
+        </LoadingButton>
       </div>
     </div>
   );
