@@ -90,7 +90,17 @@ CREATE TABLE IF NOT EXISTS field_state (path TEXT PRIMARY KEY, visible INTEGER N
 CREATE TABLE IF NOT EXISTS deps (path TEXT NOT NULL, reads TEXT NOT NULL, PRIMARY KEY (path, reads));
 CREATE INDEX IF NOT EXISTS deps_reads ON deps (reads);
 CREATE TABLE IF NOT EXISTS fetched (path TEXT PRIMARY KEY, key TEXT NOT NULL, data TEXT, fetched_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS checks (name TEXT PRIMARY KEY, ok INTEGER NOT NULL, field TEXT, message TEXT);`;
+CREATE TABLE IF NOT EXISTS checks (name TEXT PRIMARY KEY, ok INTEGER NOT NULL, field TEXT, message TEXT);
+CREATE TABLE IF NOT EXISTS approval_rules (target TEXT PRIMARY KEY, grp TEXT);`;
+
+// What /schema/evaluate adds for approvals (PLAT-39's SDK): a field's rule
+// when it is visible and applies, and the completion rule when it applies.
+// Empty target is completion.
+type ApprovalRule = { group: string | null };
+type Evaluated = EvaluateResponse & {
+  approval?: ApprovalRule;
+  fields: Record<Path, FieldEval & { approval?: ApprovalRule }>;
+};
 
 const json = (value: unknown) => JSON.stringify(value ?? null);
 const parse = <T>(text: string | null): T | null =>
@@ -250,6 +260,28 @@ export class SchemaState {
     return out;
   }
 
+  // The approvals the code requires as of the last evaluation: "" for
+  // completion, else a field path.
+  approvalRules(): Array<{ target: string; group: string | null }> {
+    return this.sql
+      .exec<{ target: string; grp: string | null }>(
+        "SELECT target, grp FROM approval_rules ORDER BY target",
+      )
+      .toArray()
+      .map((row) => ({ target: row.target, group: row.grp }));
+  }
+
+  // A field's value as the output holds it, a whole subtree for a group or
+  // list.
+  valueAt(path: Path): unknown {
+    let value: unknown = this.output();
+    for (const part of segments(path)) {
+      if (value === null || typeof value !== "object") return null;
+      value = (value as Record<string | number, unknown>)[part];
+    }
+    return value ?? null;
+  }
+
   async evaluate(targets: Path[] | "all", depth = 0): Promise<void> {
     if (!this.enabled || (targets !== "all" && targets.length === 0)) return;
     const request: EvaluateRequest = {
@@ -274,7 +306,24 @@ export class SchemaState {
       throw new Error(
         `agent Worker answered ${response.status} to /schema/evaluate`,
       );
-    const result = await response.json<EvaluateResponse>();
+    const result = await response.json<Evaluated>();
+    if (targets === "all") {
+      this.sql.exec("DELETE FROM approval_rules");
+      if (result.approval)
+        this.sql.exec(
+          "INSERT INTO approval_rules (target, grp) VALUES ('', ?)",
+          result.approval.group,
+        );
+    }
+    for (const [path, field] of Object.entries(result.fields)) {
+      this.sql.exec("DELETE FROM approval_rules WHERE target = ?", path);
+      if (field.approval && field.visible)
+        this.sql.exec(
+          "INSERT INTO approval_rules (target, grp) VALUES (?, ?)",
+          path,
+          field.approval.group,
+        );
+    }
     const now = Date.now();
     const changed: Array<{ path: Path; from: unknown; to: unknown }> = [];
 

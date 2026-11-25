@@ -22,6 +22,7 @@ import {
 } from "../src/schema/access.ts";
 import {
   caseAssignees,
+  caseApprovals,
   caseMentions,
   cases,
   files,
@@ -293,6 +294,18 @@ export const seedOrganization = async (name: string) =>
       by: "agent",
       message: "Please check the vendor",
     });
+    await tx.insert(caseApprovals).values({
+      id: `apr_${crypto.randomUUID()}`,
+      organizationId: org,
+      caseId,
+      level: "tool",
+      target: "pay_invoice",
+      groupId,
+      status: "pending",
+      payload: { amount: 120 },
+      reason: "Payments need a check",
+      requestedAt: new Date(),
+    });
     await tx.insert(inboxReads).values({
       organizationId: org,
       userId,
@@ -440,6 +453,7 @@ export const tenantTables = {
   files: "organization_id",
   review_events: "organization_id",
   case_mentions: "organization_id",
+  case_approvals: "organization_id",
   inbox_reads: "organization_id",
   outbox: "organization_id",
   webhook_endpoints: "organization_id",

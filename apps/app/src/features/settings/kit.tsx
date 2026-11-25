@@ -55,6 +55,7 @@ import {
   useRef,
   useState,
   type AnimationEvent,
+  type ComponentProps,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
@@ -260,6 +261,33 @@ export function SettingsSearchField({
         </button>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * A plain text field on the same tinted surface and size step as the
+ * search field and Select, for a value inside a settings row.
+ */
+export function SettingsTextField({
+  className,
+  ...props
+}: Omit<ComponentProps<"input">, "size">) {
+  const shape = useShape();
+  const sizes = useSize();
+  return (
+    <input
+      autoComplete="off"
+      className={cn(
+        "min-w-0 bg-hover px-2.5 text-foreground outline-none transition-colors duration-80 placeholder:text-muted-foreground hover:bg-active focus:bg-card focus:hover:bg-card disabled:pointer-events-none disabled:opacity-50 aria-invalid:outline-1 aria-invalid:outline-destructive",
+        sizes.control,
+        sizes.field,
+        shape.input,
+        className,
+      )}
+      spellCheck={false}
+      type="text"
+      {...props}
+    />
   );
 }
 

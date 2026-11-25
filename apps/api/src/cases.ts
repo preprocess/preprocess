@@ -9,6 +9,7 @@ import type { OrgId, Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { agentGrants, agents, groups } from "@preprocess/db/schema/access";
 import {
+  caseApprovals,
   caseMentions,
   cases,
   files,
@@ -342,6 +343,22 @@ export const startQueuedCase = async (env: Env, message: OutboxMessage) => {
   await env.RUNTIME.startCase(start);
 };
 
+// An approval as the runtime keeps it (apps/runtime/src/approvals.ts).
+export type Approval = {
+  id: string;
+  level: "completion" | "field" | "tool";
+  target: string;
+  group: string | null;
+  payload: unknown;
+  reason: string | null;
+  status: "pending" | "approved" | "rejected" | "stale";
+  run: number;
+  requestedAt: number;
+  decidedBy: string | null;
+  decidedAt: number | null;
+  note: string | null;
+};
+
 // What the runtime reports (apps/runtime/src/env.ts CaseEvent).
 export type CaseEvent = {
   organizationId: string;
@@ -357,8 +374,12 @@ export type CaseEvent = {
       answers: Record<string, unknown> | null;
       error: { code: string; message: string } | null;
       haltReason?: "credit_exhausted" | "spending_limit_reached";
+      // Set when the case waits on an approval, whose own event sends the
+      // webhook.
+      approvalId?: string;
       completed?: { input: StartCase["input"]; captureKey: string };
     }
+  | { type: "approval"; approval: Approval }
   | {
       type: "mention";
       group: string;
@@ -386,6 +407,57 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
       eq(cases.id, event.caseId),
       eq(cases.agentId, event.agentId),
     );
+    if (event.type === "approval") {
+      const a = event.approval;
+      const [known] = await tx.select({ id: cases.id }).from(cases).where(own);
+      if (!known) return;
+      const [group] = a.group
+        ? await tx
+            .select({ id: groups.id, slug: groups.slug, name: groups.name })
+            .from(groups)
+            .where(eq(groups.slug, a.group))
+        : [];
+      const decided = {
+        status: a.status,
+        decidedBy: a.decidedBy,
+        decidedAt: a.decidedAt === null ? null : new Date(a.decidedAt),
+        note: a.note,
+      };
+      await tx
+        .insert(caseApprovals)
+        .values({
+          id: a.id,
+          organizationId: event.organizationId,
+          caseId: event.caseId,
+          level: a.level,
+          target: a.target,
+          groupId: group?.id ?? null,
+          payload: a.payload,
+          reason: a.reason,
+          requestedAt: new Date(a.requestedAt),
+          ...decided,
+        })
+        .onConflictDoUpdate({ target: caseApprovals.id, set: decided });
+      // A new request notifies the group the code named, or any operator.
+      if (a.status !== "pending" || a.decidedAt !== null) return;
+      const webhookRows = await queueWebhooks(env, tx, event.organizationId, {
+        caseId: event.caseId,
+        agentId: event.agentId,
+        status: "waiting",
+        group: group ?? null,
+        reason: a.reason,
+        answers: null,
+        error: null,
+        approval: {
+          id: a.id,
+          level: a.level,
+          target: a.target,
+          payload: a.payload,
+        },
+      });
+      for (const id of webhookRows) rows.push({ id, kind: "webhook" });
+      return;
+    }
     if (event.type === "mention") {
       const groupId = await groupBySlug(tx, event.group);
       const [known] = await tx.select({ id: cases.id }).from(cases).where(own);
@@ -468,7 +540,8 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
       );
     // Webhooks: completion, failure, and every wait on a new group.
     // Cancellation and halts send none.
-    if (!done && !newWait) return;
+    // A wait on an approval sends its own webhook from the approval event.
+    if (!done && !(newWait && event.approvalId === undefined)) return;
     const webhookRows = await queueWebhooks(env, tx, event.organizationId, {
       caseId: event.caseId,
       agentId: event.agentId,

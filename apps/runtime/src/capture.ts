@@ -22,6 +22,8 @@ export type CaptureEvent = {
     | "case.halted"
     | "case.event"
     | "case.wait"
+    | "approval.requested"
+    | "approval.decided"
     | "platform.error"
     | "schema.answer"
     | "schema.error"

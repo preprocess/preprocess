@@ -46,3 +46,24 @@ export const canSeeCase = (caller: Caller, role: AgentRole) =>
 // Developers.
 export const canWorkCase = (role: AgentRole) =>
   role === "manage" || role === "operator";
+
+// Who may decide what the agent's code asked to approve (spec §9): a person,
+// never an API key, who works the agent's cases, and a member of the group
+// the code named, if it named one. Approving one's own edits is allowed in
+// the MVP; this is the one place to refuse it if Chip decides otherwise.
+export const mayApprove = async (
+  tx: Tx,
+  caller: Caller,
+  agentId: string,
+  group: string | null,
+) => {
+  if (caller.type !== "person") return false;
+  if (!canWorkCase(await agentRole(tx, caller, agentId))) return false;
+  if (group === null) return true;
+  const [member] = await tx
+    .select({ groupId: groupMembers.groupId })
+    .from(groupMembers)
+    .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+    .where(and(eq(groups.slug, group), eq(groupMembers.userId, caller.userId)));
+  return member !== undefined;
+};

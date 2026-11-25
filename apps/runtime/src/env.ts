@@ -1,5 +1,6 @@
 import type { LogRecord } from "@preprocess/logs";
 
+import type { Approval } from "./approvals.ts";
 import type { CaseRuntime } from "./case-runtime.ts";
 
 export type Env = {
@@ -120,6 +121,8 @@ export type CaseEvent = CaseKey &
         answers: Record<string, unknown> | null;
         error: { code: string; message: string } | null;
         haltReason?: Exclude<SpendVerdict, "ok">;
+        // Set when the case waits on an approval, whose own event notifies.
+        approvalId?: string;
         // On completion: what an eval suite keeps of the case (doc 09).
         completed?: { input: StartCase["input"]; captureKey: string };
       }
@@ -130,6 +133,7 @@ export type CaseEvent = CaseKey &
         by: string;
         message: string;
       }
+    | { type: "approval"; approval: Approval }
   );
 
 export type Platform = {
