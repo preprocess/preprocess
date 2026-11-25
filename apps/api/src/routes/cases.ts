@@ -151,6 +151,10 @@ const ListQuery = z.object({
   waitingOn: csv.openapi({
     description: "Group slugs the case waits on, comma-separated",
   }),
+  assignee: csv.openapi({
+    description:
+      "User ids assigned to the case, comma-separated; `me` is the signed-in person",
+  }),
   environment: z.enum(["production", "preview"]).default("production"),
   q: z.string().optional().openapi({ description: "Matches the title or id" }),
   sort: z.enum(["updatedAt", "createdAt"]).default("updatedAt"),
@@ -507,6 +511,16 @@ export const caseRoutes = new OpenAPIHono<{
           throw new ApiError(400, "invalid_request", "Bad cursor.");
         }
       }
+      const { caller } = c.var;
+      if (query.assignee.includes("me") && caller.type !== "person")
+        throw new ApiError(
+          400,
+          "invalid_request",
+          "assignee=me needs a signed-in person.",
+        );
+      const assignedTo = query.assignee.map((id) =>
+        id === "me" && caller.type === "person" ? caller.userId : id,
+      );
       const page = await withOrg(c.env, c.var.org, async (tx) => {
         const visible = await visibleAgents(tx, c.var.caller);
         if (visible?.length === 0) return { rows: [], counts: [] };
@@ -518,6 +532,15 @@ export const caseRoutes = new OpenAPIHono<{
           query.agent.length ? inArray(agents.slug, query.agent) : undefined,
           query.waitingOn.length
             ? inArray(groups.slug, query.waitingOn)
+            : undefined,
+          assignedTo.length
+            ? inArray(
+                cases.id,
+                tx
+                  .select({ id: caseAssignees.caseId })
+                  .from(caseAssignees)
+                  .where(inArray(caseAssignees.userId, assignedTo)),
+              )
             : undefined,
           query.q
             ? or(ilike(cases.title, `%${query.q}%`), eq(cases.id, query.q))

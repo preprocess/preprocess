@@ -7,6 +7,7 @@ export const INBOX_KINDS = [
   "approval",
   "guardrail",
   "memory",
+  "review",
 ] as const;
 
 export type InboxKind = (typeof INBOX_KINDS)[number];
@@ -240,6 +241,8 @@ export function inboxKindLabel(kind: InboxKind): string {
       return "Guardrail request";
     case "memory":
       return "Proposed memory";
+    case "review":
+      return "Review";
     default: {
       const _exhaustive: never = kind;
       return _exhaustive;

@@ -1237,6 +1237,15 @@ export class CaseRuntime extends DurableObject<Env> {
         completed: { input: next.input, captureKey: captureKey(next) },
       }),
     });
+    await this.reportReview(next);
+  }
+
+  private reportReview(meta: Meta) {
+    const schema = this.schema(meta);
+    return this.report(meta, {
+      type: "review",
+      fields: schema.enabled ? schema.unreviewed() : [],
+    });
   }
 
   // Output and completion approvals for the answers as they stand. Returns
@@ -1542,6 +1551,7 @@ export class CaseRuntime extends DurableObject<Env> {
       { person: input.userId },
       input.version,
     );
+    this.ctx.waitUntil(this.reportReview(meta));
     return {
       result,
       answer: this.schema(meta).answer(input.path),
@@ -1554,6 +1564,7 @@ export class CaseRuntime extends DurableObject<Env> {
     if (!meta) throw new Error("case has not started");
     const schema = this.schema(meta);
     const result = schema.confirm(input.path, input.version);
+    this.ctx.waitUntil(this.reportReview(meta));
     return {
       result,
       answer: schema.answer(input.path),

@@ -31,7 +31,13 @@ type ApiGuardrailChange =
 type ApiInboxItem = {
   key: string;
   kind:
-    "waiting" | "mention" | "assigned" | "approval" | "guardrail" | "memory";
+    | "waiting"
+    | "mention"
+    | "assigned"
+    | "approval"
+    | "guardrail"
+    | "memory"
+    | "review";
   at: string;
   read: boolean;
   case: ApiCase | null;
@@ -51,6 +57,7 @@ type ApiInboxItem = {
     reason: string | null;
     requestedBy: { type: string; id: string };
   } | null;
+  review?: { fields: string[] } | null;
 };
 
 type ApiInbox = { items: ApiInboxItem[]; unread: number };
@@ -151,6 +158,22 @@ function toItem(item: ApiInboxItem): InboxItem {
       body: guardrail.reason ?? "No reason was given.",
       link: { kind: "guardrail", requestId: guardrail.id, agentSlug: agent },
       details: [{ label: "Agent", value: agent ?? "Every agent" }],
+    };
+  }
+
+  if (item.kind === "review" && item.review) {
+    const { fields } = item.review;
+    return {
+      ...base,
+      kind: "review",
+      title,
+      summary:
+        fields.length === 1
+          ? "1 field needs your review"
+          : `${fields.length} fields need your review`,
+      body: "Confirm the agent's answers or correct them on the Review tab.",
+      link: caseLink && { ...caseLink, view: "review" },
+      details: [{ label: "Fields", value: fields.join(", ") }],
     };
   }
 

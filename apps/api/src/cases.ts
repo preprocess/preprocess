@@ -382,6 +382,7 @@ export type CaseEvent = {
       completed?: { input: StartCase["input"]; captureKey: string };
     }
   | { type: "approval"; approval: Approval }
+  | { type: "review"; fields: string[] }
   | {
       type: "mention";
       group: string;
@@ -458,6 +459,30 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
         },
       });
       for (const id of webhookRows) rows.push({ id, kind: "webhook" });
+      return;
+    }
+    if (event.type === "review") {
+      const [known] = await tx
+        .select({ fields: cases.reviewFields, since: cases.reviewSince })
+        .from(cases)
+        .where(own);
+      if (!known) return;
+      const before = new Set(known.fields);
+      const added = event.fields.some((f) => !before.has(f));
+      if (!added && known.fields.length === event.fields.length) return;
+      // The inbox item keeps its key (and read mark) while fields only get
+      // reviewed; a newly unreviewed field makes it new again.
+      await tx
+        .update(cases)
+        .set({
+          reviewFields: event.fields,
+          reviewSince: !event.fields.length
+            ? null
+            : added || !known.since
+              ? new Date()
+              : known.since,
+        })
+        .where(own);
       return;
     }
     if (event.type === "mention") {
