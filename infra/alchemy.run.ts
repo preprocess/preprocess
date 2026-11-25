@@ -121,16 +121,16 @@ const planetscale = (stage: Exclude<Stage, SelfHostStage>) =>
     });
     const name = yield* Config.String("PLANETSCALE_DATABASE");
     if (stage === "production") {
-      // The database is created once by hand in the stage's region; the stack
-      // adopts it and migrates its default branch. PLANETSCALE_CLUSTER_SIZE
-      // must name its current size, or the deploy would resize it.
-      const clusterSize = yield* Config.String("PLANETSCALE_CLUSTER_SIZE");
-      const database = yield* Planetscale.PostgresDatabase("Database", {
-        name,
-        clusterSize,
+      // The database is created once by hand in the stage's region, and its
+      // size and settings stay out of the stack: adopting a PostgresDatabase
+      // always rewrites its settings, which the production token may not do.
+      // The stack adopts only the default branch and migrates it.
+      const branch = yield* Planetscale.PostgresBranch("Branch", {
+        name: "main",
+        database: name,
         migrations,
       }).pipe(adopt(), RemovalPolicy.protect());
-      return { database, branch: "main" };
+      return { database: name, branch };
     }
     const preview = isPreviewStage(stage);
     const branch = yield* Planetscale.PostgresBranch("Branch", {
