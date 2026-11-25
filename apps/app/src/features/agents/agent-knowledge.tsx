@@ -44,18 +44,6 @@ export function AgentConfiguration() {
   );
 }
 
-/** Placeholder: every deployment, with promote and rollback. */
-export function AgentDeployments() {
-  return (
-    <Placeholder
-      description="Every push deploys: the production branch for production, other branches to previews."
-      emptyDescription="This agent's deployments will show up here."
-      emptyTitle="Nothing to show yet"
-      title="Deployments"
-    />
-  );
-}
-
 /** Placeholder: which groups can see and operate the agent. */
 export function AgentAccess() {
   return (
@@ -64,18 +52,6 @@ export function AgentAccess() {
       emptyDescription="Group access for this agent will show up here. Groups are managed in Settings → Groups."
       emptyTitle="Nothing to show yet"
       title="Access"
-    />
-  );
-}
-
-/** Placeholder: the agent's effective settings and overrides. */
-export function AgentSettings() {
-  return (
-    <Placeholder
-      description="This agent's settings, where each one comes from, and its own overrides."
-      emptyDescription="This agent's settings will show up here."
-      emptyTitle="Nothing to show yet"
-      title="Settings"
     />
   );
 }
