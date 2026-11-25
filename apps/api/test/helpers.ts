@@ -97,9 +97,11 @@ export class Client {
   }
 }
 
+// Test files run in parallel isolates, each with its own counter, so the
+// random part keeps two files' names apart.
 let counter = 0;
 export const unique = (name: string) =>
-  `${name}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
+  `${name}-${Date.now().toString(36)}-${(counter++).toString(36)}${crypto.randomUUID().slice(0, 6)}`;
 
 // Opens the link in the newest email to `email` (verification), as the person would.
 export const followEmailLink = async (client: Client, email: string) => {

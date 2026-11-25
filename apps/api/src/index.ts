@@ -20,6 +20,8 @@ import type { OutboxMessage } from "./outbox.ts";
 import { agentRoutes } from "./routes/agents.ts";
 import { caseRoutes } from "./routes/cases.ts";
 import { webhookRoutes } from "./routes/webhooks.ts";
+import { inboxRoutes } from "./routes/inbox.ts";
+import { sendNotice } from "./notify.ts";
 import { deliverWebhook } from "./webhooks.ts";
 import { auditRoutes } from "./routes/audit.ts";
 import { groupRoutes } from "./routes/groups.ts";
@@ -109,6 +111,7 @@ orgApi.route("/", guardrailRoutes);
 orgApi.route("/", settingsRoutes);
 orgApi.route("/", scheduleRoutes);
 orgApi.route("/", webhookRoutes);
+orgApi.route("/", inboxRoutes);
 orgApi.route("/", logRoutes);
 orgApi.route("/", otelRoutes);
 orgApi.route("/", evalRoutes);
@@ -183,6 +186,20 @@ export default {
           await startQueuedEval(env, message.body);
         else await startQueuedCase(env, message.body);
         message.ack();
+      }
+      return;
+    }
+    if (batch.queue.startsWith("preprocess-emails-")) {
+      for (const message of batch.messages as Message<OutboxMessage>[]) {
+        try {
+          await sendNotice(env, message.body);
+          message.ack();
+        } catch (error) {
+          console.error(
+            JSON.stringify({ event: "notice.failed", error: String(error) }),
+          );
+          message.retry();
+        }
       }
       return;
     }

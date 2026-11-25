@@ -117,6 +117,12 @@ const backend = (
     const webhooksQueue = yield* Cloudflare.Queues.Queue("Webhooks", {
       name: n.webhooksQueue,
     });
+    const emailsQueue = yield* Cloudflare.Queues.Queue("Emails", {
+      name: n.emailsQueue,
+    });
+    const emailsSent = yield* Cloudflare.KV.Namespace("EmailsSent", {
+      title: n.emailsSent,
+    });
 
     // Run logs (design doc 09). The API's LOGS consumer writes them. With
     // LOG_CATALOG_TOKEN set (R2 Data Catalog, R2 storage and R2 SQL access),
@@ -290,6 +296,8 @@ const backend = (
         JOBS: jobs,
         CASES: casesQueue,
         WEBHOOKS: webhooksQueue,
+        EMAILS: emailsQueue,
+        EMAILS_SENT: emailsSent,
         LOGS: logsQueue,
         LOG_BUCKET: logsBucket,
         ...logSql,
@@ -303,6 +311,11 @@ const backend = (
     });
     yield* Cloudflare.Queues.Consumer("CasesConsumer", {
       queueId: casesQueue.queueId,
+      scriptName: api.workerName,
+      settings: { maxWaitTimeMs: 1000 },
+    });
+    yield* Cloudflare.Queues.Consumer("EmailsConsumer", {
+      queueId: emailsQueue.queueId,
       scriptName: api.workerName,
       settings: { maxWaitTimeMs: 1000 },
     });

@@ -30,6 +30,7 @@ const queues: Partial<Record<OutboxKind, (env: Env) => Queue<OutboxMessage>>> =
     "case.start": (env) => env.CASES,
     "eval.start": (env) => env.CASES,
     webhook: (env) => env.WEBHOOKS,
+    email: (env) => env.EMAILS,
   };
 
 // Inside the transaction that decides the work.

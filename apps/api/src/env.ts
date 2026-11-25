@@ -155,6 +155,10 @@ export type Env = {
   CASES: Queue<OutboxMessage>;
   // Webhook deliveries from the outbox (webhooks.ts).
   WEBHOOKS: Queue<OutboxMessage>;
+  // Notification emails from the outbox (notify.ts), and the keys already
+  // sent, kept for a day.
+  EMAILS: Queue<OutboxMessage>;
+  EMAILS_SENT: KVNamespace;
   FILES: R2Bucket;
   RUNTIME: Runtime;
   // apps/pdf-render: PDF pages to PNGs in a sandbox container. Bound locally;
