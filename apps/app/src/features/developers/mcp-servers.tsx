@@ -5,10 +5,6 @@ import {
   CheckboxItem,
 } from "@preprocess/ui/components/checkbox-group";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
@@ -49,6 +45,10 @@ import type {
   McpServerInput,
   McpServerSummary,
 } from "./platform-store";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 /** An organization server turned on for an agent, as the agent page sees it. */
 export type McpGrant = {
@@ -141,9 +141,9 @@ function McpServerDialog({
   names: readonly string[];
   onSave: (input: McpServerInput) => Promise<unknown>;
 }>) {
-  const nameRef = useRef<InlineValidationHandle>(null);
-  const urlRef = useRef<InlineValidationHandle>(null);
-  const tokenRef = useRef<InlineValidationHandle>(null);
+  const nameRef = useRef<ValidatedFieldHandle>(null);
+  const urlRef = useRef<ValidatedFieldHandle>(null);
+  const tokenRef = useRef<ValidatedFieldHandle>(null);
   const saveRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState(server?.name ?? "");
   const [url, setUrl] = useState(server?.url ?? "");
@@ -189,7 +189,7 @@ function McpServerDialog({
           saveRef.current?.run();
         }}
       >
-        <InlineValidation
+        <ValidatedField
           autoFocus
           id="mcp-name"
           label="Name"
@@ -204,7 +204,7 @@ function McpServerDialog({
           }
           value={name}
         />
-        <InlineValidation
+        <ValidatedField
           hint="A remote server over streamable HTTP."
           id="mcp-url"
           label="URL"
@@ -234,7 +234,7 @@ function McpServerDialog({
           </Select>
         </div>
         {auth === "token" ? (
-          <InlineValidation
+          <ValidatedField
             hint={
               keepsToken
                 ? "Leave empty to keep the saved token."

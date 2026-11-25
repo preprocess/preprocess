@@ -1,10 +1,6 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import {
-  InlineValidation,
-  type InlineValidationHandle,
-} from "@preprocess/ui/components/inline-validation";
-import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
@@ -27,6 +23,10 @@ import {
   formatRelative,
 } from "../settings/kit";
 import type { SandboxImage } from "./platform-store";
+import {
+  ValidatedField,
+  type ValidatedFieldHandle,
+} from "../../components/validated-field";
 
 const REPOSITORY =
   /^[a-z0-9]+([._-][a-z0-9]+)*(\.[a-z0-9-]+)*(:\d+)?(\/[a-z0-9]+([._-][a-z0-9]+)*)+$/;
@@ -68,8 +68,8 @@ function AddImageDialog({
   onOpenChange: (open: boolean) => void;
   onAdd: (repository: string, tag: string) => Promise<unknown>;
 }>) {
-  const repositoryRef = useRef<InlineValidationHandle>(null);
-  const tagRef = useRef<InlineValidationHandle>(null);
+  const repositoryRef = useRef<ValidatedFieldHandle>(null);
+  const tagRef = useRef<ValidatedFieldHandle>(null);
   const saveRef = useRef<LoadingButtonHandle>(null);
   const [repository, setRepository] = useState("");
   const [tag, setTag] = useState("");
@@ -103,7 +103,7 @@ function AddImageDialog({
           saveRef.current?.run();
         }}
       >
-        <InlineValidation
+        <ValidatedField
           autoFocus
           hint="The registry path, without the tag."
           id="image-repository"
@@ -114,7 +114,7 @@ function AddImageDialog({
           validate={validateRepository}
           value={repository}
         />
-        <InlineValidation
+        <ValidatedField
           hint="Pin a version rather than latest, so runs stay repeatable."
           id="image-tag"
           label="Tag"
