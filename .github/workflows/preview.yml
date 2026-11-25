@@ -2,15 +2,23 @@
 # pr-<number>, with its own Workers, PlanetScale branch, R2
 # bucket, queue and Durable Objects. The URLs are posted on the PR, and the
 # stage and its branch are destroyed when the PR closes. See infra/README.md.
+# A closed PR whose teardown failed is destroyed again by dispatching this
+# workflow with its number.
 
 name: Preview
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Number of a closed pull request whose preview to destroy
+        required: true
+        type: number
 
 concurrency:
-  group: preview-${{ github.event.pull_request.number }}
+  group: preview-${{ github.event.pull_request.number || inputs.pr }}
   cancel-in-progress: false
 
 permissions:
@@ -19,7 +27,11 @@ permissions:
 
 env:
   CI: "true"
-  STAGE: pr-${{ github.event.pull_request.number }}
+  PR: ${{ github.event.pull_request.number || inputs.pr }}
+  STAGE: pr-${{ github.event.pull_request.number || inputs.pr }}
+  DESTROY:
+    ${{ github.event_name == 'workflow_dispatch' || github.event.action ==
+    'closed' }}
   PREPROCESS_REGION: ${{ vars.PREPROCESS_REGION }}
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -41,7 +53,8 @@ jobs:
     # previews are configured (the PREPROCESS_REGION repository variable, set
     # together with the preview secrets), the job is skipped rather than failed.
     if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository) &&
       vars.PREPROCESS_REGION != ''
     steps:
       # Until every preview secret is set, the job reports skipped steps and
@@ -60,6 +73,17 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the pull request is closed
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .state)
+          if [ "$state" != closed ]; then
+            echo "::error::Pull request #$PR is $state; only a closed pull request's preview is destroyed."
+            exit 1
           fi
 
       - if: steps.credentials.outputs.ready == 'true'
@@ -81,24 +105,18 @@ jobs:
 
       - name: Deploy stage
         id: deploy
-        if:
-          steps.credentials.outputs.ready == 'true' && github.event.action !=
-          'closed'
+        if: steps.credentials.outputs.ready == 'true' && env.DESTROY != 'true'
         run: pnpm --filter @preprocess/infra preview:deploy "$STAGE"
 
       - name: Smoke test
-        if:
-          steps.credentials.outputs.ready == 'true' && github.event.action !=
-          'closed'
+        if: steps.credentials.outputs.ready == 'true' && env.DESTROY != 'true'
         env:
           OUTPUTS: ${{ steps.deploy.outputs.outputs }}
         run: pnpm --filter @preprocess/infra smoke
 
       - name: Destroy stage
         id: destroy
-        if:
-          steps.credentials.outputs.ready == 'true' && github.event.action ==
-          'closed'
+        if: steps.credentials.outputs.ready == 'true' && env.DESTROY == 'true'
         run: pnpm --filter @preprocess/infra preview:destroy "$STAGE"
 
       - name: Comment on the pull request
@@ -107,7 +125,7 @@ jobs:
         env:
           OUTPUTS: ${{ steps.deploy.outputs.outputs }}
           OUTCOME:
-            ${{ github.event.action == 'closed' && format('destroy-{0}',
+            ${{ env.DESTROY == 'true' && format('destroy-{0}',
             steps.destroy.outcome) || steps.deploy.outcome }}
         with:
           script: |
@@ -137,11 +155,11 @@ jobs:
             }
             const { data: comments } = await github.rest.issues.listComments({
               ...context.repo,
-              issue_number: context.issue.number,
+              issue_number: Number(process.env.PR),
             });
             const existing = comments.find((c) => c.body?.startsWith(marker));
             if (existing) {
               await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
             } else {
-              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+              await github.rest.issues.createComment({ ...context.repo, issue_number: Number(process.env.PR), body });
             }

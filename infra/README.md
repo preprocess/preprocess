@@ -88,6 +88,17 @@ the default branch of a database created by hand and only migrates it; its size
 and settings are never managed by the stack. It usually also needs `APP_DOMAIN`
 and `DOCS_DOMAIN`.
 
+To drop a state record without touching the resource behind it (for example a
+row left by a failed adoption), run from `infra/` with that stage's deploy
+credentials exported:
+
+```sh
+pnpm exec alchemy state delete --backend cloudflare preprocess/<stage>/<resource>
+```
+
+Pass `--backend cloudflare` explicitly; the default configured backend crashes
+on a filtered install.
+
 Always read the plan first. Secrets come only from the deploy environment and
 are bound as `secret_text`; Alchemy keeps the deployed values in its state,
 encrypted with a key held in the account's Secrets Store, so treat the deploy
@@ -151,9 +162,16 @@ they are expand and contract (`AGENTS.md`).
 
 `.github/workflows/preview.yml` runs on every same-repository pull request: it
 deploys `pr-<number>`, runs `scripts/smoke.ts` against it, and posts one comment
-with the URLs, updated on each push. When the pull request closes it destroys
-the stage and updates the comment. Pull requests from forks get no secrets and
-no preview.
+with the URLs, updated on each push. When the pull request closes it empties the
+stage's R2 buckets, destroys the stage and updates the comment. Pull requests
+from forks get no secrets and no preview.
+
+If a teardown fails, dispatch the workflow with the pull request's number to
+destroy its stage again (it refuses a pull request that is still open):
+
+```sh
+gh workflow run preview.yml --ref main -f pr=<n>
+```
 
 Previews are off until the repository variable `PREPROCESS_REGION` is set:
 without it the job reports skipped. Set it together with the secrets below.
