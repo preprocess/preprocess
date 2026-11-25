@@ -2,9 +2,8 @@ import pg from "pg";
 
 import { localDatabaseUrl, migrate } from "../scripts/migrate-lib.ts";
 
-// Login roles shaped like the ones deployed stages get from PlanetScale: a
-// separate login role that is a member of preprocess_app, as DB is on every
-// stage, and one that also bypasses RLS, which withOrg must refuse.
+// Login roles that reach preprocess_app only through membership: one without
+// BYPASSRLS, and one with it, the shape DB has on every deployed stage.
 const deployedRoles = `
   DO $$
   BEGIN

@@ -53,6 +53,7 @@ export const withOrg = <T>(
   if (!org) throw new Error("withOrg needs an organization");
   return connect(env.DB.connectionString, (db) =>
     db.transaction(async (tx) => {
+      await tx.execute(sql`set local role preprocess_app`);
       const { rows } = await tx.execute<{ bypass: boolean }>(
         sql`select set_config('app.org_id', ${org}, true), (select rolsuper or rolbypassrls from pg_roles where rolname = current_user) as bypass`,
       );
