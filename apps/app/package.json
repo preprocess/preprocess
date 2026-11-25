@@ -7,6 +7,7 @@
     "build": "pnpm build:probe && pnpm build:staging && pnpm build:development",
     "build:development": "env -u CLOUDFLARE_ENV VITE_PREPROCESS_SHARED_UI_BUNDLE_PROBE=false vite build && EXPECT_PDF_WORKER=present tsx scripts/verify-build.ts && wrangler deploy --dry-run --env=\"\" --config dist/server/wrangler.json --outdir dist/dry-run-development",
     "build:probe": "VITE_PREPROCESS_SHARED_UI_BUNDLE_PROBE=true vite build && EXPECT_PDF_WORKER=present tsx scripts/verify-build.ts",
+    "build:production": "CLOUDFLARE_ENV=production VITE_PREPROCESS_SHARED_UI_BUNDLE_PROBE=false vite build && EXPECT_PDF_WORKER=present tsx scripts/verify-build.ts && wrangler deploy --dry-run --env=\"\" --config dist/server/wrangler.json --outdir dist/dry-run-production",
     "build:staging": "CLOUDFLARE_ENV=staging VITE_PREPROCESS_SHARED_UI_BUNDLE_PROBE=false vite build && EXPECT_PDF_WORKER=present tsx scripts/verify-build.ts && wrangler deploy --dry-run --env=\"\" --config dist/server/wrangler.json --outdir dist/dry-run-staging",
     "clean": "rm -rf .output .tanstack .wrangler coverage dist",
     "dev": "vite dev",
