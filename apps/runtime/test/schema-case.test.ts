@@ -119,7 +119,17 @@ describe("a case with an output schema", () => {
     const reported = view.capture
       .filter((e) => e.kind === "case.event")
       .map((e) => (e.data.type === "status" ? e.data.status : e.data.type));
-    expect(reported).toEqual(["running", "mention", "waiting"]);
+    expect(reported).toEqual(["running", "mention", "waiting", "review"]);
+    // The vendor needs a person's review until someone confirms it.
+    const reviews = () =>
+      runtime
+        .getCase(c)
+        .then((v) =>
+          v.capture
+            .filter((e) => e.kind === "case.event" && e.data.type === "review")
+            .map((e) => e.data.fields),
+        );
+    expect(await reviews()).toEqual([["vendor"]]);
 
     // A person corrects the vendor: currency read the vendor, so it is stale.
     const vendor = field(first, "vendor").answer!;
@@ -131,6 +141,7 @@ describe("a case with an output schema", () => {
       userId: "usr_ana",
     });
     expect(edited.result).toMatchObject({ result: "ok", stale: ["currency"] });
+    expect(await reviews()).toEqual([["vendor"], []]);
     const afterEdit = await runtime.caseState(c);
     expect(field(afterEdit, "vendor").answer).toMatchObject({
       value: "globex",

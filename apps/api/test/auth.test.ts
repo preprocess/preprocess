@@ -208,4 +208,32 @@ describe("API keys", () => {
     });
     expect(event?.actorId).not.toBe(userId);
   });
+
+  it("stop working once revoked, and the revoke is audited", async () => {
+    const { client, userId } = await signUp("Revoker");
+    const org = await createOrganization(client, "Revoked");
+    const created = await client.call<{ id: string; key: string }>(
+      "/api/auth/api-key/create",
+      { body: { name: "old", organizationId: org } },
+    );
+    const listed = await client.call<{ apiKeys: { id: string }[] }>(
+      `/api/auth/api-key/list?organizationId=${org}`,
+    );
+    expect(listed.body.apiKeys.map((k) => k.id)).toEqual([created.body.id]);
+    expect(
+      (
+        await client.call("/api/auth/api-key/delete", {
+          body: { keyId: created.body.id },
+        })
+      ).status,
+    ).toBe(200);
+    const keyed = new Client(testEnv(), { "x-api-key": created.body.key });
+    expect((await keyed.call(`/v1/orgs/${org}/groups`)).status).toBe(401);
+    const audit = await client.call<{
+      events: { action: string; actorId: string; targetId: string }[];
+    }>(`/v1/orgs/${org}/audit-events`);
+    expect(
+      audit.body.events.find((e) => e.action === "api_key.revoked"),
+    ).toMatchObject({ actorId: userId, targetId: created.body.id });
+  });
 });

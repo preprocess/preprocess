@@ -80,6 +80,8 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
   // afterCreateOrganization, when the chain does not exist yet. The
   // organization.created event records that owner instead.
   let creatingOrganization = false;
+  let revoking:
+    { id: string; referenceId: string; name: string | null } | undefined;
   const person = (fallback: string) => request.actorId ?? fallback;
 
   return betterAuth({
@@ -162,9 +164,29 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       },
     },
     hooks: {
+      // The key a revoke names, read before the plugin deletes it, so the
+      // audit event can say which organization and key it was.
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/api-key/delete") return;
+        const keyId = (ctx.body as { keyId?: unknown } | undefined)?.keyId;
+        if (typeof keyId !== "string") return;
+        [revoking] = await tx
+          .select({
+            id: authSchema.apikey.id,
+            referenceId: authSchema.apikey.referenceId,
+            name: authSchema.apikey.name,
+          })
+          .from(authSchema.apikey)
+          .where(eq(authSchema.apikey.id, keyId));
+      }),
       after: createAuthMiddleware(async (ctx) => {
         const returned = ctx.context.returned as
-          | { id?: string; referenceId?: string; name?: string | null }
+          | {
+              id?: string;
+              referenceId?: string;
+              name?: string | null;
+              success?: boolean;
+            }
           | undefined;
         if (!returned || returned instanceof Response || !request.actorId)
           return;
@@ -177,6 +199,16 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             targetType: "api_key",
             targetId: returned.id ?? null,
             data: { name: returned.name ?? null },
+          });
+        if (ctx.path === "/api-key/delete" && returned.success && revoking)
+          await record({
+            organizationId: revoking.referenceId,
+            actorType: "person",
+            actorId: request.actorId,
+            action: "api_key.revoked",
+            targetType: "api_key",
+            targetId: revoking.id,
+            data: { name: revoking.name },
           });
       }),
     },
