@@ -7,19 +7,28 @@ import {
   patchCasesSearch,
   type CasesSearchParams,
 } from "../../features/agent-cases/case-inbox-search";
-import { listOrgCases } from "../../features/agent-cases/list-org-cases";
+import {
+  getCaseAccess,
+  listOrgCases,
+} from "../../features/agent-cases/list-org-cases";
 
 export const Route = createFileRoute("/cases/")({
   staticData: { ownsHeader: true },
   validateSearch: (search: Record<string, unknown>): CasesSearchParams =>
     casesSearchForUrl(parseCasesSearch(search)),
   loaderDeps: ({ search }) => ({ search: parseCasesSearch(search) }),
-  loader: ({ deps }) => listOrgCases(deps.search),
+  loader: async ({ deps }) => {
+    const [page, access] = await Promise.all([
+      listOrgCases(deps.search),
+      getCaseAccess(),
+    ]);
+    return { page, access };
+  },
   component: CasesIndexPage,
 });
 
 function CasesIndexPage() {
-  const page = Route.useLoaderData();
+  const { page, access } = Route.useLoaderData();
   const search = parseCasesSearch(Route.useSearch());
   const navigate = Route.useNavigate();
 
@@ -33,6 +42,7 @@ function CasesIndexPage() {
       }}
       page={page}
       search={search}
+      startAgents={access.startAgents}
     />
   );
 }

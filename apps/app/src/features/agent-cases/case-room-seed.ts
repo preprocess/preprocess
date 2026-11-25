@@ -1,5 +1,6 @@
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { ScenarioState } from "../../scenarios/scenarios";
+import { OPTION_PAGE_SIZE, type OptionPage } from "./case-api";
 import type {
   ApprovalDecision,
   CaseRoomState,
@@ -8,6 +9,7 @@ import type {
   RoomMemory,
   RoomField,
   RoomMessage,
+  RoomOption,
   WriteResult,
 } from "./case-room-state";
 
@@ -32,6 +34,32 @@ const GL_ACCOUNTS = [
   { id: "6200", label: "6200 · Software" },
   { id: "6400", label: "6400 · Professional services" },
 ];
+
+/**
+ * The full lists behind the narrowed options the seeded rooms show, so the
+ * Review tab's option search finds more than the room lists.
+ */
+const FULL_OPTIONS: Readonly<Record<string, readonly RoomOption[]>> = {
+  vendor: [
+    ...VENDORS,
+    { id: "hooli", label: "Hooli Inc." },
+    { id: "initrode", label: "Initrode Systems" },
+    { id: "massive-dynamic", label: "Massive Dynamic" },
+    { id: "soylent", label: "Soylent Corp" },
+    { id: "stark", label: "Stark Industries" },
+    { id: "umbrella", label: "Umbrella Corporation" },
+    { id: "wayne", label: "Wayne Enterprises" },
+    { id: "weyland", label: "Weyland-Yutani" },
+  ],
+  glAccount: [
+    ...GL_ACCOUNTS,
+    { id: "6300", label: "6300 · Travel" },
+    { id: "6500", label: "6500 · Rent" },
+    { id: "6600", label: "6600 · Marketing" },
+    { id: "6700", label: "6700 · Training" },
+    { id: "6800", label: "6800 · Insurance" },
+  ],
+};
 
 const answer = (
   path: string,
@@ -833,4 +861,72 @@ export function cancelCase(agentId: string, caseId: string) {
       },
     ],
   }));
+}
+
+/**
+ * Completes a waiting case as the API does: refused unless it is waiting and
+ * its checks pass, and still waiting while an approval is pending.
+ */
+export async function completeCase(
+  agentId: string,
+  caseId: string,
+): Promise<ApprovalDecision> {
+  const room = await getCaseRoom(agentId, caseId);
+  if (room.status !== "waiting")
+    return {
+      ok: false,
+      code: "case_not_completable",
+      message: `The case is ${room.status}.`,
+    };
+  const failing = room.checks.filter((c) => !c.ok).map((c) => c.name);
+  if (failing.length > 0)
+    return {
+      ok: false,
+      code: "case_not_done",
+      message: `Checks failing: ${failing.join(", ")}`,
+    };
+  if (room.approvals.some((a) => a.status === "pending")) return { ok: true };
+  await update(agentId, caseId, (current) => ({
+    ...current,
+    status: "completed",
+    waitingOn: null,
+    thread: [
+      ...current.thread,
+      {
+        id: "ev_completed",
+        at: new Date().toISOString(),
+        by: "platform",
+        kind: "event",
+        text: "Completed",
+        group: null,
+      },
+    ],
+  }));
+  return { ok: true };
+}
+
+/** Searches a seeded field's full option list, as the API's search does. */
+export async function searchOptions(
+  agentId: string,
+  caseId: string,
+  input: { path: string; query: string },
+): Promise<OptionPage> {
+  const room = await getCaseRoom(agentId, caseId);
+  const all =
+    FULL_OPTIONS[input.path] ??
+    room.fields.find((f) => f.path === input.path)?.options ??
+    [];
+  const query = input.query.trim().toLowerCase();
+  const matches = query
+    ? all.filter((option) =>
+        [option.id, option.label, option.description ?? ""].some((text) =>
+          text.toLowerCase().includes(query),
+        ),
+      )
+    : all;
+  return {
+    items: matches.slice(0, OPTION_PAGE_SIZE),
+    total: matches.length,
+    more: matches.length > OPTION_PAGE_SIZE,
+  };
 }

@@ -16,7 +16,7 @@ import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { ShapeProvider, useShape } from "@preprocess/ui/lib/shape-context";
 import { cn } from "@preprocess/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 
 import { NoMatchArt, RobotArt } from "../../components/empty-art";
 import { PageHeader, PageTitle } from "../../components/page-header";
@@ -135,8 +135,11 @@ export function AgentList({
   agents,
   search,
   onSearchChange,
+  actions,
 }: Readonly<{
   agents: readonly OrgAgent[];
+  /** Page actions at the header's end, such as Add case. */
+  actions?: ReactNode;
   search: AgentListSearch;
   onSearchChange: (patch: Partial<AgentListSearch>) => void;
 }>) {
@@ -147,7 +150,7 @@ export function AgentList({
       className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
       data-testid="agent-list"
     >
-      <PageHeader>
+      <PageHeader trailing={actions}>
         <PageTitle id="agents-title">Agents</PageTitle>
         <SettingsSearchField
           className="w-64"

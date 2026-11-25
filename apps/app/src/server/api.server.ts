@@ -14,7 +14,8 @@ export async function apiRequest(path: string, init: RequestInit = {}) {
   const cookie = request.headers.get("cookie");
   if (cookie) headers.set("cookie", cookie);
   headers.set("origin", new URL(request.url).origin);
-  if (init.body) headers.set("content-type", "application/json");
+  if (typeof init.body === "string")
+    headers.set("content-type", "application/json");
   return env.API.fetch(
     new Request(new URL(path, request.url), { ...init, headers }),
   );

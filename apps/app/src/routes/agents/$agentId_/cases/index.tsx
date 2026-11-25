@@ -8,6 +8,7 @@ import {
   type CasesSearchParams,
 } from "../../../../features/agent-cases/case-inbox-search";
 import {
+  getCaseAccess,
   getCaseAgent,
   listOrgCases,
 } from "../../../../features/agent-cases/list-org-cases";
@@ -20,12 +21,13 @@ export const Route = createFileRoute("/agents/$agentId_/cases/")({
     casesSearchForUrl(parseCasesSearch(search)),
   loaderDeps: ({ search }) => ({ search: parseCasesSearch(search) }),
   loader: async ({ params, deps }) => {
-    const [agent, page] = await Promise.all([
+    const [agent, page, access] = await Promise.all([
       getCaseAgent(params.agentId),
       listOrgCases({ ...deps.search, agent: [params.agentId] }),
+      getCaseAccess(),
     ]);
     if (!agent) throw notFound();
-    return { agent, page };
+    return { agent, page, access };
   },
   component: AgentCasesPage,
   notFoundComponent: () => (
@@ -34,7 +36,7 @@ export const Route = createFileRoute("/agents/$agentId_/cases/")({
 });
 
 function AgentCasesPage() {
-  const { agent, page } = Route.useLoaderData();
+  const { agent, page, access } = Route.useLoaderData();
   const search = parseCasesSearch(Route.useSearch());
   const navigate = Route.useNavigate();
 
@@ -49,6 +51,7 @@ function AgentCasesPage() {
       }}
       page={page}
       search={{ ...search, agent: [agent.id] }}
+      startAgents={access.startAgents}
     />
   );
 }
