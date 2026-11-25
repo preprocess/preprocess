@@ -18,7 +18,6 @@ import {
 } from "@preprocess/ui/components/sheet";
 import {
   Sidebar,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarHeader,
@@ -49,7 +48,6 @@ import {
   Hash,
   Home,
   Menu,
-  Monitor,
   Moon,
   Plug,
   Search,
@@ -321,28 +319,28 @@ function SectionSwitch({
   );
 }
 
-// System, light or dark, as an icon-only segmented switch.
-function ThemeSwitch() {
-  const { theme, setTheme } = useTheme();
+// Light or dark, one icon button as www.preprocess.com has it. The system
+// theme applies until the person picks one. The server can't know the
+// theme, so the first render assumes light.
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+  const nextTheme = isDark ? "light" : "dark";
   return (
-    <Tabs
-      onValueChange={setTheme}
-      size="compact"
-      value={mounted ? (theme ?? "system") : "system"}
+    <Button
+      aria-label={`Switch to ${nextTheme} mode`}
+      aria-pressed={isDark}
+      className="text-muted-foreground hover:text-foreground"
+      onClick={() => setTheme(nextTheme)}
+      size="icon-sm"
+      title={`Switch to ${nextTheme} mode`}
+      type="button"
+      variant="ghost"
     >
-      <TabsList aria-label="Theme">
-        <TabItem
-          aria-label="System theme"
-          icon={Monitor}
-          label=""
-          value="system"
-        />
-        <TabItem aria-label="Light theme" icon={Sun} label="" value="light" />
-        <TabItem aria-label="Dark theme" icon={Moon} label="" value="dark" />
-      </TabsList>
-    </Tabs>
+      {isDark ? <Sun aria-hidden /> : <Moon aria-hidden />}
+    </Button>
   );
 }
 
@@ -395,9 +393,6 @@ function SidebarBody({
           )}
         </nav>
       </ScrollArea>
-      <SidebarFooter className="flex-row items-center justify-start px-4 pt-3 pb-4">
-        <ThemeSwitch />
-      </SidebarFooter>
     </>
   );
 }
@@ -591,6 +586,7 @@ function TopBar({
     <header className="hidden h-14 shrink-0 items-center gap-4 pr-2.5 pl-6 lg:flex">
       <Crumbs tree={tree} />
       <div className="ml-auto flex shrink-0 items-center gap-1">
+        <ThemeToggle />
         {markdown ? <CopyPage markdown={markdown} /> : null}
         <OpenApp appUrl={appUrl} />
       </div>
@@ -761,11 +757,11 @@ function MobileMenu({
               <GuideRows nodes={guides} pathname={pathname} />
             )}
             <hr className="mx-2 my-3 h-px border-0 bg-border" />
-            <div className="flex items-center gap-3 pl-2">
+            <div className="flex items-center justify-between pr-2 pl-2">
               <span className={cn(typeClass("body"), "text-foreground")}>
                 Theme
               </span>
-              <ThemeSwitch />
+              <ThemeToggle />
             </div>
             <div className="px-2 pt-6">
               <ShapeProvider defaultShape="pill">
