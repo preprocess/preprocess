@@ -146,6 +146,13 @@ type StatusChange = {
   reason: string | null;
   answers: Record<string, unknown> | null;
   error: { code: string; message: string } | null;
+  // What the group is asked to approve, when that is why the case waits.
+  approval?: {
+    id: string;
+    level: "completion" | "field" | "tool";
+    target: string;
+    payload: unknown;
+  };
 };
 
 const eventType = (change: StatusChange): WebhookEventType =>
@@ -229,7 +236,12 @@ export const queueWebhooks = async (
               message: change.reason ?? "The case failed.",
             },
           }
-        : { case: caseRef, group: change.group, reason: change.reason };
+        : {
+            case: caseRef,
+            group: change.group,
+            reason: change.reason,
+            ...(change.approval && { approval: change.approval }),
+          };
   const outboxIds: string[] = [];
   for (const endpoint of endpoints) {
     const id = newId("delivery");
