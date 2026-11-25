@@ -54,6 +54,49 @@ for (const [name, value] of Object.entries(github))
   if (!new RegExp(`^${name}=`, "m").test(present))
     appendFileSync(apiVars, `${name}=${value()}\n`);
 run(["--filter", "@preprocess/infra", "wrangler:generate"]);
+
+// In a git worktree portless prefixes each hostname with the branch
+// (fix-ui.app.preprocess.localhost), so the URLs the Workers use come from
+// portless and override wrangler.jsonc's defaults through each app's
+// .dev.vars. Better Auth trusts APP_URL as the sign-in origin.
+const origin = (name: string) => {
+  const result = spawnSync(
+    "pnpm",
+    ["exec", "portless", "get", name, "--json"],
+    {
+      encoding: "utf8",
+    },
+  );
+  if (result.status !== 0) {
+    console.error(result.stderr);
+    process.exit(result.status ?? 1);
+  }
+  return `https://${(JSON.parse(result.stdout) as { hostname: string }).hostname}`;
+};
+const appUrl = origin("app.preprocess");
+const modelStubUrl = origin("model-stub.preprocess");
+const setDevVars = (app: string, values: Record<string, string>) => {
+  const file = path.join(import.meta.dirname, `../apps/${app}/.dev.vars`);
+  const kept = existsSync(file)
+    ? readFileSync(file, "utf8")
+        .split("\n")
+        .filter(
+          (line) =>
+            line &&
+            !Object.keys(values).some((name) => line.startsWith(`${name}=`)),
+        )
+    : [];
+  writeFileSync(
+    file,
+    [
+      ...kept,
+      ...Object.entries(values).map(([name, value]) => `${name}=${value}`),
+    ].join("\n") + "\n",
+  );
+};
+setDevVars("api", { APP_URL: appUrl, MODEL_SERVICE_URL: modelStubUrl });
+setDevVars("runtime", { MODEL_SERVICE_URL: modelStubUrl });
+setDevVars("docs", { API_URL: `${appUrl}/v1` });
 // The docs site's API reference reads the API's OpenAPI document.
 run(["--filter", "@preprocess/docs", "openapi"]);
 run(["db:migrate"]);
