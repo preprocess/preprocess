@@ -173,29 +173,6 @@ v1.route("/", githubCallbacks);
 v1.doc31("/openapi.json", OPENAPI);
 app.route("/v1", v1);
 
-app.post("/orgs/:org/counter", async (c) => {
-  const counter = c.env.COUNTER.getByName(`${c.req.param("org")}:counter`);
-  return c.json({ count: await counter.increment() });
-});
-
-app.post("/orgs/:org/jobs", async (c) => {
-  const job: Job = {
-    organizationId: c.req.param("org"),
-    id: crypto.randomUUID(),
-    requestedAt: new Date().toISOString(),
-  };
-  await c.env.JOBS.send(job);
-  return c.json(job, 202);
-});
-
-app.get("/orgs/:org/jobs/:id", async (c) => {
-  const object = await c.env.FILES.get(
-    `${c.req.param("org")}/jobs/${c.req.param("id")}.json`,
-  );
-  if (!object) return c.json({ status: "pending" }, 404);
-  return c.json(await object.json());
-});
-
 export default {
   fetch: app.fetch,
   scheduled(controller, env, ctx) {
