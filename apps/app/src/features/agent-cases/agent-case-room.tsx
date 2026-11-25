@@ -49,7 +49,7 @@ import {
 } from "./case-room-tabs";
 import { CaseRoomDetails, CaseRecordContext } from "./case-room-details";
 import { CaseRoomHeader } from "./case-room-header";
-import { CaseRoomReview } from "./case-room-review";
+import { CaseRoomReview, hasReview } from "./case-room-review";
 import { CaseRoomRun } from "./case-room-run";
 import type { CaseRoomState } from "./case-room-state";
 import {
@@ -58,13 +58,10 @@ import {
   type CaseWorkActions,
 } from "./case-work-context";
 import type { CaseNeighbors } from "./list-org-cases";
-import type { AgentSummary } from "../agents/agent-store";
 import type { CaseInputSample } from "./flue-lab-input-samples";
 
 export type AgentCaseRoomProps = {
   readonly caseRef: AgentCaseRef;
-  /** The agent's name and mark, or null when it isn't known. */
-  readonly agent: AgentSummary | null;
   /** The case record, or null when the list has no such case. */
   readonly caseItem: Case | null;
   readonly neighbors?: CaseNeighbors;
@@ -150,7 +147,7 @@ function CaseWorkspacePane({
   const room = useCaseWork()?.room;
   const hasContent = (viewId: CaseRoomEmptyViewId) =>
     viewId === "review"
-      ? (room?.fields.length ?? 0) > 0
+      ? room !== undefined && hasReview(room)
       : (room?.thread.length ?? 0) > 0;
   const emptyViewId =
     isRoomViewId(pane.selectedId) && pane.selectedId !== INPUT_TAB
@@ -241,7 +238,6 @@ function CaseWorkspacePane({
 
 export function AgentCaseRoom({
   caseRef,
-  agent,
   caseItem,
   neighbors,
   onStatusChange,
@@ -504,7 +500,6 @@ export function AgentCaseRoom({
           data-testid="agent-case-room"
         >
           <CaseRoomHeader
-            agent={agent}
             caseItem={caseItem}
             caseRef={caseRef}
             detailsOpen={caseItem ? isDetailsOpen : undefined}
@@ -663,8 +658,6 @@ export function AgentCaseRoom({
                 }
               >
                 <CaseRoomChat
-                  agentId={caseRef.agentId}
-                  caseLabel={caseRef.caseId}
                   className="h-full min-h-0"
                   key={`${caseRef.agentId}/${caseRef.caseId}`}
                 />

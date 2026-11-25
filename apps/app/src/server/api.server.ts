@@ -27,14 +27,24 @@ export async function apiJson<T>(path: string, init?: RequestInit) {
   return (await response.json()) as T;
 }
 
-/** A /v1 path in the session's active organization. */
-export async function activeOrgPath(path: string) {
+/** The session's active organization. */
+export async function activeOrganizationId() {
   const session = await apiJson<{
     session: { activeOrganizationId?: string | null };
   } | null>("/api/auth/get-session");
   const organizationId = session?.session.activeOrganizationId;
   if (!organizationId) throw new Error("No active organization.");
-  return `/v1/orgs/${organizationId}${path}`;
+  return organizationId;
+}
+
+/** A /v1 path in the session's active organization. */
+export async function activeOrgPath(path: string) {
+  return `/v1/orgs/${await activeOrganizationId()}${path}`;
+}
+
+/** Calls a /v1 route in the session's active organization. */
+export async function activeOrgRequest(path: string, init?: RequestInit) {
+  return apiRequest(await activeOrgPath(path), init);
 }
 
 /**
@@ -45,7 +55,7 @@ export async function activeOrgJson<T>(
   path: string,
   options: { notFound?: T } = {},
 ) {
-  const response = await apiRequest(await activeOrgPath(path));
+  const response = await activeOrgRequest(path);
   if (response.status === 404 && "notFound" in options)
     return options.notFound as T;
   if (!response.ok) throw new Error(`GET ${path}: ${response.status}`);
