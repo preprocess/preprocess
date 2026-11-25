@@ -3,7 +3,7 @@ import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { AuthCard, authLinkClass } from "../../components/auth-card";
+import { AuthLayout, authLinkClass } from "../../components/auth-layout";
 import { useAuth } from "../../features/auth/auth-context";
 import { authPost } from "../../features/auth/client";
 import { loadInvitation, loadSession } from "../../features/auth/session";
@@ -36,7 +36,7 @@ function InvitationPage() {
 
   if (!session) {
     return (
-      <AuthCard
+      <AuthLayout
         description="Create an account with the email address the invitation was sent to, or sign in if you already have one."
         footer={
           <>
@@ -50,7 +50,8 @@ function InvitationPage() {
             </Link>
           </>
         }
-        title="You're invited"
+        subtitle="Join your team on Preprocess."
+        title="You're invited."
       >
         <Button
           className="w-full"
@@ -58,7 +59,7 @@ function InvitationPage() {
         >
           Create account
         </Button>
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
@@ -77,10 +78,10 @@ function InvitationPage() {
 
   if (!session.user.emailVerified) {
     return (
-      <AuthCard
+      <AuthLayout
         description={`Before you can join, confirm your email address with the link we sent to ${session.user.email}.`}
         footer={switchAccount}
-        title="Confirm your email"
+        title="Confirm your email."
       >
         <div className="flex flex-col gap-4">
           {resent ? (
@@ -103,43 +104,44 @@ function InvitationPage() {
             Send the link again
           </LoadingButton>
         </div>
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   if (!invitation) {
     return (
-      <AuthCard
+      <AuthLayout
         description={problem ?? "This invitation can't be opened."}
         footer={switchAccount}
-        title="Invitation unavailable"
+        title="Invitation unavailable."
       >
         <Button className="w-full" render={<a href="/" />} variant="secondary">
           Go to Preprocess
         </Button>
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   if (invitation.status !== "pending") {
     return (
-      <AuthCard
+      <AuthLayout
         description="This invitation has already been used or was revoked. Ask whoever invited you to send a new one."
         footer={switchAccount}
-        title="Invitation closed"
+        title="Invitation closed."
       >
         <Button className="w-full" render={<a href="/" />} variant="secondary">
           Go to Preprocess
         </Button>
-      </AuthCard>
+      </AuthLayout>
     );
   }
 
   return (
-    <AuthCard
+    <AuthLayout
       description={`${invitation.inviterEmail} invited you to join as ${ROLE_NAMES[invitation.role]}.`}
       footer={switchAccount}
-      title={`Join ${invitation.organizationName}`}
+      subtitle={`Join ${invitation.organizationName} on Preprocess.`}
+      title="Welcome aboard."
     >
       <div className="flex flex-col gap-3">
         {error ? (
@@ -184,6 +186,6 @@ function InvitationPage() {
           Decline
         </LoadingButton>
       </div>
-    </AuthCard>
+    </AuthLayout>
   );
 }
