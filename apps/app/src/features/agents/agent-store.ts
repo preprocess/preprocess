@@ -1,16 +1,11 @@
-import {
-  mcpServerFrom,
-  platformSecretKeys,
-  DEFAULT_SECRET_SCOPE,
-  type SecretScope,
-  type McpServer,
-  type McpServerInput,
-  type NetworkRule,
+import type {
+  SecretScope,
+  McpServer,
+  NetworkRule,
 } from "../developers/platform-store";
 import {
   AGENT_SEED,
   type AgentAccessLevel,
-  type AgentGrant,
   type AgentSeed,
 } from "./agent-seed";
 
@@ -134,14 +129,6 @@ export type AgentRepo = {
   readonly productionBranch: string;
 };
 
-/** Thrown when an agent variable would shadow an organization secret. */
-export class EnvOverrideError extends Error {
-  constructor(key: string) {
-    super(`${key} is set by the organization and can't be overridden here.`);
-    this.name = "EnvOverrideError";
-  }
-}
-
 const MESSAGES = [
   "Tighten counterparty extraction on scanned PDFs",
   "Ask for missing exhibits before review",
@@ -175,7 +162,7 @@ function seedDeploymentId(agentId: string, build: number) {
 
 /** A deployment id as it is shown: the first seven characters after the prefix. */
 export function shortDeploymentId(id: string) {
-  return id.replace(/^dpl_/, "").slice(0, 7);
+  return id.replace(/^(dep|dpl)_/, "").slice(-7);
 }
 
 function seedDeployments(seed: AgentSeed): AgentDeployment[] {
@@ -329,127 +316,6 @@ function store(): Map<string, StoredAgent> {
   return agents;
 }
 
-function update(id: string, change: (agent: StoredAgent) => StoredAgent) {
-  const agent = store().get(id);
-  if (!agent) throw new Error(`No agent ${id}.`);
-  const next = change(agent);
-  store().set(id, next);
-  return next;
-}
-
-export function storedAgents(): readonly StoredAgent[] {
-  return [...store().values()];
-}
-
-export function storedAgent(id: string): StoredAgent | undefined {
-  return store().get(id);
-}
-
-export function productionDeployment(
-  agent: StoredAgent,
-): AgentDeployment | undefined {
-  return agent.deployments.find((item) => item.id === agent.productionId);
-}
-
-/** Serves an earlier ready deployment in production again. */
-export function promoteDeployment(
-  agentId: string,
-  deploymentId: string,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => {
-      const target = agent.deployments.find((item) => item.id === deploymentId);
-      if (!target || target.status !== "ready") {
-        throw new Error("Only a ready deployment can serve production.");
-      }
-      return { ...agent, productionId: target.id };
-    }),
-  );
-}
-
-/**
- * Adds a variable or replaces the one with the same key. Keys the
- * organization sets as secrets are refused: agents never override them.
- */
-export function setAgentEnvVar(
-  agentId: string,
-  key: string,
-  value: string,
-  scope: SecretScope = DEFAULT_SECRET_SCOPE,
-): Promise<StoredAgent> {
-  if (platformSecretKeys().has(key)) {
-    return Promise.reject(new EnvOverrideError(key));
-  }
-  return Promise.resolve(
-    update(agentId, (agent) => {
-      const next = { key, value, scope, updatedAt: new Date().toISOString() };
-      const exists = agent.env.some((item) => item.key === key);
-      return {
-        ...agent,
-        env: exists
-          ? agent.env.map((item) => (item.key === key ? next : item))
-          : [...agent.env, next],
-      };
-    }),
-  );
-}
-
-export function deleteAgentEnvVar(
-  agentId: string,
-  key: string,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => ({
-      ...agent,
-      env: agent.env.filter((item) => item.key !== key),
-    })),
-  );
-}
-
-/** Grants a group a level on the agent, or removes its grant with null. */
-export function setAgentAccess(
-  agentId: string,
-  group: string,
-  level: AgentAccessLevel | null,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => {
-      const others = agent.access.filter((grant) => grant.group !== group);
-      const access: AgentGrant[] = level
-        ? [...others, { group, level }]
-        : [...others];
-      // Operators first, then viewers, each by name.
-      access.sort((left, right) =>
-        left.level === right.level
-          ? left.group.localeCompare(right.group)
-          : left.level === "operator"
-            ? -1
-            : 1,
-      );
-      return { ...agent, access };
-    }),
-  );
-}
-
-/** Sets everyone's baseline access to the agent; null removes it. */
-export function setAgentEveryoneAccess(
-  agentId: string,
-  level: AgentAccessLevel | null,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => ({ ...agent, everyone: level })),
-  );
-}
-
-export function updateAgentDetails(
-  agentId: string,
-  details: { name: string; description: string },
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => ({ ...agent, ...details })),
-  );
-}
-
 /** Keys each agent sets, so the organization can't add a clashing secret. */
 export function agentEnvKeys(): ReadonlyMap<string, readonly string[]> {
   const keys = new Map<string, string[]>();
@@ -459,43 +325,6 @@ export function agentEnvKeys(): ReadonlyMap<string, readonly string[]> {
     }
   }
   return keys;
-}
-
-export function setAgentSandboxImage(
-  agentId: string,
-  imageId: string | null,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => ({ ...agent, sandboxImageId: imageId })),
-  );
-}
-
-/** Adds an agent rule, replacing the agent's rule for the same pattern. */
-export function setAgentNetworkRule(
-  agentId: string,
-  rule: NetworkRule,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => ({
-      ...agent,
-      network: [
-        ...agent.network.filter((item) => item.pattern !== rule.pattern),
-        rule,
-      ],
-    })),
-  );
-}
-
-export function deleteAgentNetworkRule(
-  agentId: string,
-  pattern: string,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => ({
-      ...agent,
-      network: agent.network.filter((item) => item.pattern !== pattern),
-    })),
-  );
 }
 
 /** Agents using each image, by id; null counts agents on the default. */
@@ -529,81 +358,6 @@ export function agentSummaries(): Readonly<Record<string, AgentSummary>> {
       agent.id,
       { id: agent.id, name: agent.name },
     ]),
-  );
-}
-
-/** Points the agent at a repository folder, or disconnects it with null. */
-export function setAgentRepo(
-  agentId: string,
-  repo: AgentRepo | null,
-): Promise<StoredAgent> {
-  return Promise.resolve(update(agentId, (agent) => ({ ...agent, repo })));
-}
-
-/** Turns an organization MCP server on (every tool) or off for the agent. */
-export function setAgentMcpEnabled(
-  agentId: string,
-  serverId: string,
-  enabled: boolean,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => ({
-      ...agent,
-      mcp: enabled
-        ? [
-            ...agent.mcp.filter((grant) => grant.serverId !== serverId),
-            { serverId, tools: null },
-          ]
-        : agent.mcp.filter((grant) => grant.serverId !== serverId),
-    })),
-  );
-}
-
-/** Narrows a turned-on server to some tools, or allows all with null. */
-export function setAgentMcpTools(
-  agentId: string,
-  serverId: string,
-  tools: readonly string[] | null,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => ({
-      ...agent,
-      mcp: agent.mcp.map((grant) =>
-        grant.serverId === serverId ? { serverId, tools } : grant,
-      ),
-    })),
-  );
-}
-
-/** Adds one of the agent's own servers, or updates the one with `id`. */
-export function saveAgentMcpServer(
-  agentId: string,
-  input: McpServerInput,
-  id?: string,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => {
-      const previous = agent.mcpServers.find((server) => server.id === id);
-      const next = mcpServerFrom(input, previous);
-      return {
-        ...agent,
-        mcpServers: previous
-          ? agent.mcpServers.map((server) => (server.id === id ? next : server))
-          : [...agent.mcpServers, next],
-      };
-    }),
-  );
-}
-
-export function deleteAgentMcpServer(
-  agentId: string,
-  id: string,
-): Promise<StoredAgent> {
-  return Promise.resolve(
-    update(agentId, (agent) => ({
-      ...agent,
-      mcpServers: agent.mcpServers.filter((server) => server.id !== id),
-    })),
   );
 }
 

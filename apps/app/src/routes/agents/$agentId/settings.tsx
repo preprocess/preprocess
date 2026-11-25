@@ -1,15 +1,18 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 
-import { AgentSettingsTab } from "../../../features/agents/agent-settings-tab";
-import { getPlatformSettings } from "../../../features/developers/platform-store";
+import { AgentSettings } from "../../../features/agents/agent-knowledge";
+import { AgentPage } from "../../../features/agents/agent-page";
+
+const agentRoute = getRouteApi("/agents/$agentId");
 
 export const Route = createFileRoute("/agents/$agentId/settings")({
-  loader: () => getPlatformSettings(),
   component: AgentSettingsPage,
 });
 
 function AgentSettingsPage() {
   return (
-    <AgentSettingsTab platform={Route.useLoaderData()} section="settings" />
+    <AgentPage agent={agentRoute.useLoaderData()} tab="settings">
+      <AgentSettings />
+    </AgentPage>
   );
 }

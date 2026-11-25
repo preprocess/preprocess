@@ -14,12 +14,14 @@ app. Shared components belong in `packages/ui` only after a real
 cross-application need exists.
 
 `/inbox` is the notification inbox, `/cases` is the organization case list,
-`/cases/$agentId/$caseId` is the case room, and `/agents` lists the agents with
-their case stats. Each agent has a management page at `/agents/$agentId`
-(overview, deployments with rollback, access, settings). Organization API keys,
-integrations, webhooks, sandbox images, secrets, and network rules live under
-Developers (`/developers/*`). Organization settings hold members, groups and the
-audit log, from the API. Scrolling panes use `ScrollArea` with `scroll-fade`.
+`/cases/$agentId/$caseId` is the case room, and `/agents` lists the
+organization's agents from `/v1`. Each agent has a management page at
+`/agents/$agentId`, addressed by slug, with the section sidebar of spec 14a;
+sections without a real page yet are placeholders in
+`features/agents/agent-knowledge.tsx`. Organization API keys, integrations,
+webhooks, sandbox images, secrets, and network rules live under Developers
+(`/developers/*`). Organization settings hold members, groups and the audit log,
+from the API. Scrolling panes use `ScrollArea` with `scroll-fade`.
 
 Agents inherit the organization's secrets and network rules. An agent may
 override a network rule for itself, and the UI marks it "Overrides
