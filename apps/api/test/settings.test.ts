@@ -5,6 +5,7 @@
 import { orgId, withOrg, type OrgId } from "@preprocess/db/client";
 import { agents } from "@preprocess/db/schema/access";
 import { deployments } from "@preprocess/db/schema/deployments";
+import { organizationDefaults } from "@preprocess/db/schema/settings";
 import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -59,7 +60,7 @@ beforeAll(async () => {
 describe("agent settings", () => {
   it("come from the platform until code or the organization sets them", async () => {
     expect(await setting("model")).toMatchObject({
-      value: "inkling-2-small",
+      value: "deepseek-v4.1-flash",
       source: "default",
     });
     const patched = await key.call(`/v1/orgs/${org}/defaults`, {
@@ -140,5 +141,17 @@ describe("agent settings", () => {
     expect(audit.body.events.map((e) => e.data)).toEqual([
       { deployment: promoted.body.id, cleared: { reasoning: "high" } },
     ]);
+  });
+
+  it("read a model spec 1.5 retired as the model that replaced it", async () => {
+    await withOrg(testEnv(), org, (tx) =>
+      tx
+        .update(organizationDefaults)
+        .set({ values: { model: "inkling-2-small" } }),
+    );
+    expect(await setting("model")).toMatchObject({
+      value: "deepseek-v4.1-flash",
+      source: "organization",
+    });
   });
 });

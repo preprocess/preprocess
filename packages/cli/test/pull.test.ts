@@ -55,7 +55,7 @@ describe("config pull", () => {
   it("writes only dashboard overrides into settings and keeps groups", async () => {
     const p = project({
       settings: {
-        model: "inkling-2-mini",
+        model: "deepseek-v4.1-flash-fast",
         ocr: true,
         evals: { onPush: false },
       },

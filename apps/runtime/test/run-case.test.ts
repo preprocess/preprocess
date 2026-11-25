@@ -98,7 +98,7 @@ describe("one case end to end", () => {
       organizationId: "org_a",
       deploymentId: "dep_1",
       sdkVersion: "0.1.0",
-      model: "inkling-2-small",
+      model: "deepseek-v4.1-flash",
       status: "completed",
     });
     expect(capture.usage.input).toBeGreaterThan(0);

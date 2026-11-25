@@ -15,6 +15,7 @@ import {
   evalSuites,
   type FieldScore,
 } from "@preprocess/db/schema/evals";
+import { currentModel } from "@preprocess/sdk/protocol";
 import { and, asc, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
 
 import { agentGroups } from "./cases.ts";
@@ -345,7 +346,7 @@ export const startQueuedEval = async (env: Env, message: OutboxMessage) => {
       deploymentId: found.deploymentId,
       bundleHash: found.bundleSha256,
       network: found.network,
-      settings: { ...settings, model: found.model },
+      settings: { ...settings, model: currentModel(found.model) },
       input: found.input as StartCase["input"],
       groups: await agentGroups(tx, found.agentId),
       memories: found.memories ?? [],

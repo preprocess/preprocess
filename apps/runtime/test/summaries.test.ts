@@ -68,7 +68,7 @@ describe("large summaries", () => {
     });
     const recorded: Record<string, unknown>[] = [];
     const hook = beforeCompact(
-      largeSummaries(models, "inkling-2-small", "high", (d) =>
+      largeSummaries(models, "deepseek-v4.1-flash", "high", (d) =>
         recorded.push(d),
       ),
     );
@@ -96,7 +96,9 @@ describe("large summaries", () => {
     );
     const recorded: Record<string, unknown>[] = [];
     const hook = beforeCompact(
-      largeSummaries(models, "inkling-2-small", "low", (d) => recorded.push(d)),
+      largeSummaries(models, "deepseek-v4.1-flash", "low", (d) =>
+        recorded.push(d),
+      ),
     );
     expect(
       await hook({

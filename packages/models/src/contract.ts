@@ -7,8 +7,9 @@ import { z } from "zod";
 // validates requests with these same schemas, so the client cannot come to
 // rely on a looser stub.
 
+// Groundhog-1 is Baseten's serverless decision model; this is its slug there.
 export const models = {
-  decide: "groundhog-1",
+  decide: "decision-models/baseten-groundhog-latest",
   ocr: "lightonai/LightOnOCR-3-4B",
 } as const;
 
