@@ -361,7 +361,6 @@ const decideApproval = async (
         level: found.level,
         target: found.target,
         group: found.group,
-        note: note ?? null,
       },
     });
   });
