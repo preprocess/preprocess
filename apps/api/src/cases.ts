@@ -376,6 +376,9 @@ export type CaseEvent = {
       answers: Record<string, unknown> | null;
       error: { code: string; message: string } | null;
       haltReason?: "credit_exhausted" | "spending_limit_reached";
+      // Everything the case has been charged so far (spec 16a); a runtime
+      // older than metering sends none, which keeps the stored cost.
+      costMicroUsd?: number;
       // Set when the case waits on an approval, whose own event sends the
       // webhook.
       approvalId?: string;
@@ -551,6 +554,9 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
             : null,
         haltReason:
           event.status === "halted" ? (event.haltReason ?? null) : null,
+        ...(event.costMicroUsd !== undefined && {
+          costMicroUsd: event.costMicroUsd,
+        }),
         updatedAt: now,
         completedAt: done ? now : null,
       })

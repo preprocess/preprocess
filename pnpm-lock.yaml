@@ -465,6 +465,9 @@ importers:
       '@preprocess/models':
         specifier: workspace:*
         version: link:../../packages/models
+      '@preprocess/runmode':
+        specifier: 'catalog:'
+        version: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051
       '@preprocess/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk

@@ -191,6 +191,44 @@ describe("spending limit", () => {
     expect(audit.body.events.every((e) => e.actorId === ownerId)).toBe(true);
   });
 
+  it("trips on the cost a running case reports", async () => {
+    expect((await setLimit(owner, 10)).body.reached).toBe(false);
+    const gate = new Platform({} as ExecutionContext, environment);
+    const running = newId("case");
+    await withOrg(environment, orgId(org), (tx) =>
+      tx.insert(cases).values({
+        id: running,
+        organizationId: org,
+        agentId,
+        deploymentId,
+        source: "api",
+        createdBy: ownerId,
+        status: "running",
+      }),
+    );
+    const report = (costMicroUsd?: number) =>
+      gate.caseEvent({
+        type: "status",
+        organizationId: org,
+        agentId,
+        caseId: running,
+        status: "running",
+        waitingOn: null,
+        reason: null,
+        answers: null,
+        error: null,
+        ...(costMicroUsd !== undefined && { costMicroUsd }),
+      });
+    await report(4_000_000);
+    expect(await gate.spendGate(org)).toBe("ok");
+    await report(7_000_000);
+    expect(await gate.spendGate(org)).toBe("spending_limit_reached");
+    // A runtime older than metering reports no cost and keeps what is stored.
+    await report();
+    expect(await gate.spendGate(org)).toBe("spending_limit_reached");
+    expect((await setLimit(owner, null)).body.limitUsd).toBeNull();
+  });
+
   it("is invisible to other organizations", async () => {
     const other = await createOrganization(
       (await signUp("Elsewhere", environment)).client,

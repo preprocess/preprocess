@@ -11,6 +11,8 @@ import { initLogs, wideEvent } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { decide } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
+import { decideCostMicroUsd, microUsd } from "@preprocess/models/prices";
+import { runMode } from "@preprocess/runmode";
 import type { Effect, Manifest, ToolResult } from "@preprocess/sdk/protocol";
 import { PROTOCOL } from "@preprocess/sdk/protocol";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
@@ -324,23 +326,31 @@ export class CaseRuntime extends DurableObject<Env> {
       .map(({ grp, ...row }) => ({ ...row, group: grp }));
   }
 
+  // Tokens are the agent model's; cost is everything the case was charged:
+  // each model response as pi-ai priced it, and each decide and OCR call.
   private usage(events: CaptureEvent[]): Usage {
-    return events
-      .filter((e) => e.kind === "model.response")
-      .reduce<Usage>(
-        (total, e) => {
-          const usage = (e.data.usage ?? {}) as {
-            input?: number;
-            output?: number;
-          };
+    return events.reduce<Usage>(
+      (total, e) => {
+        if (e.kind === "decide" || e.kind === "ocr")
           return {
-            input: total.input + (usage.input ?? 0),
-            output: total.output + (usage.output ?? 0),
-            costMicroUsd: total.costMicroUsd,
+            ...total,
+            costMicroUsd:
+              total.costMicroUsd + ((e.data.costMicroUsd as number) ?? 0),
           };
-        },
-        { input: 0, output: 0, costMicroUsd: 0 },
-      );
+        if (e.kind !== "model.response") return total;
+        const usage = (e.data.usage ?? {}) as {
+          input?: number;
+          output?: number;
+          cost?: { total?: number };
+        };
+        return {
+          input: total.input + (usage.input ?? 0),
+          output: total.output + (usage.output ?? 0),
+          costMicroUsd: total.costMicroUsd + microUsd(usage.cost?.total ?? 0),
+        };
+      },
+      { input: 0, output: 0, costMicroUsd: 0 },
+    );
   }
 
   private expectName(start: {
@@ -381,6 +391,9 @@ export class CaseRuntime extends DurableObject<Env> {
   ) {
     const full = {
       ...event,
+      ...(event.type === "status" && {
+        costMicroUsd: this.usage(this.events()).costMicroUsd,
+      }),
       organizationId: meta.organizationId,
       agentId: meta.agentId,
       caseId: meta.caseId,
@@ -895,6 +908,10 @@ export class CaseRuntime extends DurableObject<Env> {
               options: options.length,
               picks: decided.picks,
               usage: decided.usage,
+              costMicroUsd:
+                runMode(this.env).kind === "cloud"
+                  ? decideCostMicroUsd(decided.usage.inputTokens)
+                  : 0,
             });
             return result({
               picks: decided.picks.map((p) => ({
@@ -1075,11 +1092,18 @@ export class CaseRuntime extends DurableObject<Env> {
     if (!meta.manifest.ocr || !this.env.PLATFORM)
       return `- ${file.name} (${file.contentType})`;
     try {
-      const { markdown } = await this.env.PLATFORM.ocrFile({
-        organizationId: meta.organizationId,
+      const { markdown, pages, costMicroUsd } = await this.env.PLATFORM.ocrFile(
+        {
+          organizationId: meta.organizationId,
+          fileId: file.id,
+        },
+      );
+      this.record("ocr", {
         fileId: file.id,
+        chars: markdown.length,
+        pages,
+        costMicroUsd,
       });
-      this.record("ocr", { fileId: file.id, chars: markdown.length });
       return `<file name="${file.name}">\n${markdown}\n</file>`;
     } catch (error) {
       this.record("ocr", { fileId: file.id, error: String(error) });

@@ -51,7 +51,11 @@ export class Platform extends WorkerEntrypoint<Env> {
       orgId(file.organizationId),
       file.fileId,
     );
-    return { markdown: result.pages.map((p) => p.markdown).join("\n\n") };
+    return {
+      markdown: result.pages.map((p) => p.markdown).join("\n\n"),
+      pages: result.pages.length,
+      costMicroUsd: result.costMicroUsd,
+    };
   }
 
   // Asked on every call into agent code: a new version loads a fresh isolate,

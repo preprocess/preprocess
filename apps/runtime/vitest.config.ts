@@ -45,7 +45,11 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        bindings: { MODEL_SERVICE_URL: "http://model-stub.test" },
+        // Our cloud's run mode, so model, decide and OCR calls are priced.
+        bindings: {
+          MODEL_SERVICE_URL: "http://model-stub.test",
+          PREPROCESS_REGION: "us",
+        },
         // The runtime's fetches: the model service, and the internet the
         // agent's code reaches past the network rules.
         outboundService: "internet",

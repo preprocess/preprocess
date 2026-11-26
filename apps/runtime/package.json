@@ -15,6 +15,7 @@
     "@earendil-works/pi-schema": "1.6.0",
     "@preprocess/logs": "workspace:*",
     "@preprocess/models": "workspace:*",
+    "@preprocess/runmode": "catalog:",
     "@preprocess/sdk": "workspace:*",
     "agents": "0.34.0",
     "evlog": "2.37.1"

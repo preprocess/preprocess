@@ -5,6 +5,9 @@ import type { CaseRuntime } from "./case-runtime.ts";
 
 export type Env = {
   STAGE: string;
+  // Set on our cloud, unset on a self-hosted install; read it through
+  // @preprocess/runmode. Only our cloud prices model, decide and OCR calls.
+  PREPROCESS_REGION?: string;
   MODEL_SERVICE_URL?: string;
   MODEL_SERVICE_KEY?: string;
   CASE_RUNTIME: DurableObjectNamespace<CaseRuntime>;
@@ -136,6 +139,9 @@ export type CaseEvent = CaseKey &
         answers: Record<string, unknown> | null;
         error: { code: string; message: string } | null;
         haltReason?: Exclude<SpendVerdict, "ok">;
+        // Everything the case has been charged so far (spec 16a), which the
+        // spending limit reads from the case index.
+        costMicroUsd?: number;
         // Set when the case waits on an approval, whose own event notifies.
         approvalId?: string;
         // On completion: what an eval suite keeps of the case (doc 09).
@@ -163,7 +169,7 @@ export type Platform = {
   ocrFile(file: {
     organizationId: string;
     fileId: string;
-  }): Promise<{ markdown: string }>;
+  }): Promise<{ markdown: string; pages: number; costMicroUsd: number }>;
   // Run-log records (design doc 09), queued for the API's consumer.
   logs(records: LogRecord[]): Promise<void>;
   // The memory_propose tool (spec 10); the answer is the tool's result.
