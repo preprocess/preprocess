@@ -19,7 +19,12 @@ import * as Alchemist from "alchemy/Alchemist";
 import * as Effect from "effect/Effect";
 
 import stack from "../alchemy.run.ts";
-import { cleanStage, credentials, stageImages } from "../src/registry.ts";
+import {
+  cleanStage,
+  credentials,
+  retrying,
+  stageImages,
+} from "../src/registry.ts";
 import { isPreviewStage, isSelfHostStage, names } from "../src/stages.ts";
 
 const [operation, stage = ""] = process.argv.slice(2);
@@ -43,7 +48,9 @@ const emptyBucket = async (bucket: string) => {
     "content-type": "application/json",
   };
   for (;;) {
-    const listed = await fetch(`${objects}?per_page=1000`, { headers });
+    const listed = await retrying(() =>
+      fetch(`${objects}?per_page=1000`, { headers }),
+    );
     if (listed.status === 404) return;
     if (!listed.ok) {
       throw new Error(
@@ -52,11 +59,13 @@ const emptyBucket = async (bucket: string) => {
     }
     const { result } = (await listed.json()) as { result: { key: string }[] };
     if (result.length === 0) return;
-    const deleted = await fetch(objects, {
-      method: "DELETE",
-      headers,
-      body: JSON.stringify(result.map((object) => object.key)),
-    });
+    const deleted = await retrying(() =>
+      fetch(objects, {
+        method: "DELETE",
+        headers,
+        body: JSON.stringify(result.map((object) => object.key)),
+      }),
+    );
     if (!deleted.ok) {
       throw new Error(
         `emptying ${bucket}: ${deleted.status} ${await deleted.text()}`,
