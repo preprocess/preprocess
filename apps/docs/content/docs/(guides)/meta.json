@@ -1,5 +1,11 @@
 {
   "title": "Guides",
   "root": true,
-  "pages": ["index", "---Connect---", "mcp"]
+  "pages": [
+    "index",
+    "---Connect---",
+    "mcp",
+    "---Deploy and operate---",
+    "...deploy-and-operate"
+  ]
 }

@@ -1,0 +1,97 @@
+---
+title: Cloud vs. self-hosted
+description:
+  Choose between Preprocess Cloud and running the same Cloudflare stack in your
+  own account.
+---
+
+Preprocess runs in two deployment models: **Preprocess Cloud**, operated by
+Preprocess, Inc., and **self-hosted**, installed into your own Cloudflare
+account. Both deploy the exact same application code and Alchemy infrastructure
+stack.
+
+## Why both exist
+
+Teams often start on Preprocess Cloud to ship an agent in minutes without
+provisioning Cloudflare resources, Postgres or model API keys. Organizations
+with strict data residency, private network access or compliance requirements
+run the same platform inside their own Cloudflare account and Postgres database
+so documents, secrets and audit logs never leave their infrastructure.
+
+## What stays identical
+
+Preprocess follows a strict portability guarantee: product code uses only the
+Cloudflare primitives that the self-hosted installer creates in a customer's own
+account. Nothing in the platform depends on internal services or
+account-specific features.
+
+Both Preprocess Cloud and self-hosted installs run the same Alchemy stack
+(`infra/alchemy.run.ts`):
+
+- **App and docs Workers** serving the web app, Better Auth (`/api/auth/*`) and
+  the `/v1` API from one origin so session cookies stay first-party.
+- **API Worker** with Hono, Durable Objects (`Counter`, `BuildQueue`,
+  `Scheduler`), Queues (`Jobs`, `Cases`, `Webhooks`, `Emails`, `Logs`), KV, R2
+  buckets (`Files`, `Logs`, `Audit`), Cloudflare Email Sending and Secrets Store
+  (`SECRETS_MASTER_KEY`).
+- **Case runtime Worker** with the `CaseRuntime` Durable Object, `Bundles` and
+  `Runs` R2 buckets, Dynamic Worker Loader for agent code, Tail Worker for run
+  logs, and Cloudflare Containers for case sandboxes (`small`, `medium` and
+  `large` presets), GitHub builds (`apps/builder`) and PDF rendering
+  (`apps/pdf-render`).
+- **Postgres behind Hyperdrive** using standard Postgres with Drizzle
+  migrations, Better Auth tables and row-level security (`preprocess_app` and
+  `preprocess_system` roles).
+
+The SDK, CLI, API, case room, guardrails, approvals, evals and audit hash chain
+behave the same way in both environments.
+
+## What differs
+
+A single deployment variable, `PREPROCESS_REGION`, selects the run mode.
+Preprocess Cloud sets it (for example `us`); self-hosted installs never set it.
+Run mode turns hosted-only extras on or off without changing how the core
+product works.
+
+| Dimension                    | Preprocess Cloud                                                              | Self-hosted                                                                    |
+| ---------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Cloudflare account**       | Operated by Preprocess, Inc.                                                  | Your own Cloudflare account (Workers Paid)                                     |
+| **Database**                 | Managed Postgres per region, branched for previews                            | Any Postgres database Hyperdrive can reach (`DATABASE_URL`)                    |
+| **Data and secret locality** | Stored in Preprocess's US region (`wnam` R2, `aws:us-west-2` Postgres)        | Stored in your Postgres and R2 buckets (`R2_LOCATION_HINT`)                    |
+| **Models, `decide` and OCR** | Hosted routing included (provider list price + 5% markup)                     | Your own provider keys, custom `MODEL_ENDPOINTS` or Workers AI in your account |
+| **Case sandboxes**           | Metered per second awake by size                                              | Paid directly to Cloudflare on your account                                    |
+| **Billing and licensing**    | Free, Team or Enterprise plans with active seats, prepaid credits and storage | Free plan by default, or flat annual seat license via `PREPROCESS_LICENSE_KEY` |
+| **Usage reporting**          | Metered per organization                                                      | None; licensed self-hosted installs report no usage                            |
+| **Upgrades**                 | Continuous deployment on every push to `main`                                 | Versioned `v*` releases applied on your schedule via `preprocess install`      |
+
+## Licensing and source
+
+Preprocess is source-available under the **Elastic License 2.0** (ELv2), with
+`@preprocess/sdk` and `@preprocess/cli` licensed under **MIT**. Under ELv2, a
+self-hosted install may run agents for your own organization, but you may not
+offer Preprocess as a hosted service to third parties.
+
+Without a license key, a self-hosted install runs the free feature set with no
+organization limit and no usage telemetry. Adding a signed
+`PREPROCESS_LICENSE_KEY` unlocks paid compliance and enterprise features and
+sets a seat limit for developers and operators.
+
+<Callout title="Coming soon">
+  Enterprise identity features (SSO, directory sync and synced groups), custom
+  roles, and hosted training with trained-model serving are not wired yet. Plan
+  and license flags for them exist in code, and they will activate when those
+  features ship.
+</Callout>
+
+## How to choose
+
+- **Start on Preprocess Cloud** if you want zero infrastructure setup, managed
+  Postgres and model routing out of the box, and pay-as-you-go pricing.
+- **Self-host on Cloudflare** if your security or compliance team requires
+  keeping Postgres, R2 buckets, encryption keys and model API calls inside your
+  own cloud accounts, or if you want full control over upgrade timing.
+
+Continue to [Self-hosting on Cloudflare](/deploy-and-operate/self-hosting) to
+deploy into your own account, or read
+[Billing, credits and spending limits](/deploy-and-operate/billing-and-limits)
+for Preprocess Cloud pricing and self-hosted licensing.
