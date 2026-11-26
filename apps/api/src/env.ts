@@ -159,6 +159,9 @@ export type Env = {
   BILLING_REQUIRED_FROM?: string;
   // Preprocess's own organizations, comma-separated ids: the internal plan.
   BILLING_INTERNAL_ORGS?: string;
+  // Self-hosted only: the signed license key (license.ts). Without a valid
+  // one the install runs the free plan.
+  PREPROCESS_LICENSE_KEY?: string;
   MODEL_SERVICE_URL?: string;
   MODEL_SERVICE_KEY?: string;
   // Postgres as preprocess_app (RLS enforced) and as preprocess_system (RLS

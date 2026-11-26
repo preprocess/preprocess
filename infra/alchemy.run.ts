@@ -60,6 +60,7 @@ import {
   githubVars,
   googleSecrets,
   googleVars,
+  licenseSecrets,
   compatibility,
   durableObjects,
   isPreviewStage,
@@ -681,6 +682,15 @@ export default Alchemy.Stack(
                 ] as const,
             ),
           )),
+        ...Object.fromEntries(
+          (selfHost ? licenseSecrets : []).map(
+            (name) =>
+              [
+                name,
+                Config.Redacted(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
         JOBS: jobs,
         CASES: casesQueue,
         WEBHOOKS: webhooksQueue,

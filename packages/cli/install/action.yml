@@ -74,6 +74,11 @@ inputs:
   github-app-private-key:
     description: Your GitHub App's private key, PKCS #8 PEM (optional).
     default: ""
+  license-key:
+    description:
+      Your Preprocess license key (optional); without it the install runs the
+      free plan.
+    default: ""
 runs:
   using: composite
   steps:
@@ -109,11 +114,12 @@ runs:
         GITHUB_CLIENT_SECRET: ${{ inputs.github-client-secret }}
         GITHUB_WEBHOOK_SECRET: ${{ inputs.github-webhook-secret }}
         GITHUB_APP_PRIVATE_KEY: ${{ inputs.github-app-private-key }}
+        PREPROCESS_LICENSE_KEY: ${{ inputs.license-key }}
       run: |
         # Empty optional inputs must stay unset, not empty, for the stack.
         for name in MODEL_SERVICE_KEY APP_DOMAIN R2_LOCATION_HINT GITHUB_APP_ID \
           GITHUB_APP_SLUG GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
-          GITHUB_WEBHOOK_SECRET GITHUB_APP_PRIVATE_KEY; do
+          GITHUB_WEBHOOK_SECRET GITHUB_APP_PRIVATE_KEY PREPROCESS_LICENSE_KEY; do
           [ -n "${!name}" ] || unset "$name"
         done
         node "$RUNNER_TEMP/preprocess-cli/src/main.ts" install \

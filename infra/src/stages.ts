@@ -106,6 +106,9 @@ export const billingVars = [
   "BILLING_REQUIRED_FROM",
   "BILLING_INTERNAL_ORGS",
 ] as const;
+// The license key (spec 16), optional and on selfhost stages only: without a
+// valid one the install runs the free plan. Our cloud never binds it.
+export const licenseSecrets = ["PREPROCESS_LICENSE_KEY"] as const;
 
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).

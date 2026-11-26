@@ -205,11 +205,14 @@ const requiredFrom = (env: Env) => {
 // The plan an organization without one is given without a card: internal for
 // our own, and Free for every organization created before cards were
 // required. Anyone else starts one at checkout.
-const planWithoutCard = async (env: Env, org: OrgId) => {
-  const internal = (env.BILLING_INTERNAL_ORGS ?? "")
+const isInternal = (env: Env, org: OrgId) =>
+  (env.BILLING_INTERNAL_ORGS ?? "")
     .split(",")
-    .map((id) => id.trim());
-  if (internal.includes(org)) return "internal";
+    .map((id) => id.trim())
+    .includes(org);
+
+const planWithoutCard = async (env: Env, org: OrgId) => {
+  if (isInternal(env, org)) return "internal";
   const from = requiredFrom(env);
   if (!from) return null;
   const created = await withoutOrg(env, "billing: organization age", (tx) =>
@@ -253,6 +256,13 @@ export const cloudPlan = async (env: Env, org: OrgId) => {
 export const planRequired = (env: Env, started: boolean, now = new Date()) => {
   const from = requiredFrom(env);
   return !started && from !== null && now >= from;
+};
+
+// Whether the plan's seat limit holds: like the card, only once billing is
+// enforced, and never for our own organizations.
+export const seatLimitApplies = (env: Env, org: OrgId, now = new Date()) => {
+  const from = requiredFrom(env);
+  return from !== null && now >= from && !isInternal(env, org);
 };
 
 // Whether the organization may use a feature: once cards are required it
