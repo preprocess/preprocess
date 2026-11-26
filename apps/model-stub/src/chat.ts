@@ -55,7 +55,7 @@ export const reply = (request: ChatRequest): Turn => {
   return { content: turn.content.replace("{{results}}", results) };
 };
 
-// The agent models (Inkling 2 Mini and Small, Kimi K3.1 Pro), OpenAI
+// The agent models (MODEL_CATALOG in the SDK protocol), OpenAI
 // chat-completions shape, streaming or not.
 export const agentChat = (c: Context, request: ChatRequest) => {
   if (!Array.isArray(request.messages) || request.messages.length === 0)

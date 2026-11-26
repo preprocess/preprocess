@@ -9,6 +9,7 @@ import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
 import { XIcon } from "@preprocess/ui/lib/icons";
+import { MODEL_CATALOG, MODELS } from "@preprocess/sdk/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -112,7 +113,9 @@ export function GuardrailsPanel({ request }: { request?: string }) {
           <SettingsRows>
             <SettingsRow
               description="Self-hosted serving URLs arrive with self-hosted installs."
-              label="Inkling 2 Mini, Inkling 2 Small, Kimi K3.1 Pro"
+              label={MODELS.map((model) => MODEL_CATALOG[model].label).join(
+                ", ",
+              )}
               value="Hosted service only"
             />
           </SettingsRows>

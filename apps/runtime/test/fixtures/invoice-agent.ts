@@ -6,7 +6,7 @@ import { z } from "zod";
 // disagrees with a person's edit (apps/model-stub/fixtures/chat.json).
 export default agent({
   instructions: "You fill in invoice cases for Acme's accounts payable.",
-  model: "inkling-2-small",
+  model: "deepseek-v4.1-flash",
   groups: ["accounts-payable"],
   schema: s.group(
     {

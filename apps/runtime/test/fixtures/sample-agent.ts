@@ -5,7 +5,7 @@ import { z } from "zod";
 // secret, one fetches through the network rules, one uses an MCP server.
 export default agent({
   instructions: "You check stock for Acme orders. Be brief.",
-  model: "inkling-2-small",
+  model: "deepseek-v4.1-flash",
   secrets: ["ERP_TOKEN"],
   tools: {
     lookup_stock: tool({

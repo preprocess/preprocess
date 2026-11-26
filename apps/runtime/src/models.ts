@@ -15,10 +15,15 @@ export const PROVIDER = "preprocess";
 
 type Stream = typeof stream;
 
-// The three supported models (spec 4), served OpenAI-compatible by our model
-// service, or the stub locally. MODEL_SERVICE_URL is the only thing that
-// selects which (doc 07). Prices are on the Later list, so cost is zero here
-// and token counts are what capture records.
+// The agent models (spec 12a), served OpenAI-compatible by our model service,
+// or the stub locally. MODEL_SERVICE_URL is the only thing that selects which
+// (doc 07). Prices are on the Later list, so cost is zero here and token
+// counts are what capture records.
+// TODO(PRE-29): there is no AI Gateway provider seam yet. Models whose
+// MODEL_CATALOG serving is "per-token" are to go through AI Gateway to
+// Baseten's per-token model APIs, which name them by their own slugs; the rest,
+// and every trained model, to the shared Baseten dedicated deployment for the
+// base model, which picks the adapter by model name.
 export const openModels = (env: Env, observe: (fn: Stream) => Stream) => {
   if (!env.MODEL_SERVICE_URL)
     throw new Error("model_unavailable: MODEL_SERVICE_URL is unset");

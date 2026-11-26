@@ -21,7 +21,12 @@ import {
 } from "@preprocess/db/schema/guardrails";
 import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { secrets } from "@preprocess/db/schema/secrets";
-import { MODELS, PROTOCOL, REASONING } from "@preprocess/sdk/protocol";
+import {
+  currentModel,
+  MODELS,
+  PROTOCOL,
+  REASONING,
+} from "@preprocess/sdk/protocol";
 import {
   and,
   desc,
@@ -59,7 +64,7 @@ const manifestSchema = z
     protocol: z.literal(PROTOCOL),
     sdk: z.object({ name: z.literal("@preprocess/sdk"), version: z.string() }),
     instructions: z.string(),
-    model: z.enum(MODELS),
+    model: z.string().transform(currentModel).pipe(z.enum(MODELS)),
     reasoning: z.enum(REASONING),
     secrets: z.array(z.string()),
     mcp: z.array(z.string()),
