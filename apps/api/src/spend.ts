@@ -20,7 +20,7 @@ export const monthStart = (now: Date) =>
 
 // Metered use of our hosted service this month, in micro-USD: the cost of the
 // organization's cases and eval runs created this month, every deployment
-// included, and the OCR API's calls, which have no case. A self-hosted
+// included, the OCR API's calls, which have no case, and case sandbox time. A self-hosted
 // install's own serving URLs never add cost.
 export const monthSpendParts = async (tx: Tx, now = new Date()) => {
   const [caseRow] = await tx
@@ -41,16 +41,26 @@ export const monthSpendParts = async (tx: Tx, now = new Date()) => {
         gte(usageRecords.at, monthStart(now)),
       ),
     );
+  const [sandboxRow] = await tx
+    .select({ total: sum(usageRecords.quantity) })
+    .from(usageRecords)
+    .where(
+      and(
+        eq(usageRecords.feature, "sandbox"),
+        gte(usageRecords.at, monthStart(now)),
+      ),
+    );
   return {
     cases: Number(caseRow?.total ?? 0),
     evals: Number(evalRow?.total ?? 0),
     ocr: Number(ocrRow?.total ?? 0),
+    sandbox: Number(sandboxRow?.total ?? 0),
   };
 };
 
 export const monthSpend = async (tx: Tx, now = new Date()) => {
   const parts = await monthSpendParts(tx, now);
-  return parts.cases + parts.evals + parts.ocr;
+  return parts.cases + parts.evals + parts.ocr + parts.sandbox;
 };
 
 export const spendingLimit = async (tx: Tx) => {

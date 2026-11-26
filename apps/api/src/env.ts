@@ -1,4 +1,5 @@
 import type { LogRecord } from "@preprocess/logs";
+import type { SandboxOwner } from "@preprocess/sandbox";
 import type { Pipeline } from "cloudflare:pipelines";
 
 import type { BuildQueue } from "./builds.ts";
@@ -132,6 +133,8 @@ export type BuildRequest = {
   directory: string;
   entry: string;
   timeoutSeconds: number;
+  // Whose build it is, for sandbox metering (sandbox.ts).
+  owner: SandboxOwner;
 };
 
 export type BuildResult =
@@ -199,7 +202,9 @@ export type Env = {
   FILES: R2Bucket;
   RUNTIME: Runtime;
   // apps/pdf-render: PDF pages to PNGs in a sandbox container.
-  PDF_RENDER?: { renderPdf(pdf: Uint8Array): Promise<Uint8Array[]> };
+  PDF_RENDER?: {
+    renderPdf(pdf: Uint8Array, owner: SandboxOwner): Promise<Uint8Array[]>;
+  };
   // 32 random bytes, base64: Secrets Store on our cloud, a local variable in
   // development and tests. Only this Worker binds it (design doc 01).
   SECRETS_MASTER_KEY: string | SecretsStoreSecret;

@@ -175,6 +175,8 @@ export type Platform = {
   ocrFile(file: {
     organizationId: string;
     fileId: string;
+    agentId?: string;
+    caseId?: string;
   }): Promise<{ markdown: string; pages: number; costMicroUsd: number }>;
   // Run-log records (design doc 09), queued for the API's consumer.
   logs(records: LogRecord[]): Promise<void>;

@@ -5,6 +5,7 @@
 
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { LogRecord } from "@preprocess/logs";
+import type { SandboxEvent } from "@preprocess/sandbox";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { recordCaseEvent } from "./cases.ts";
@@ -16,6 +17,7 @@ import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
 import { proposeMemory, type MemoryProposal } from "./memories.ts";
 import { ocrFile } from "./ocr.ts";
+import { recordSandboxEvent } from "./sandbox.ts";
 import { entitlement } from "./billing.ts";
 import { spendGate, type SpendVerdict } from "./spend.ts";
 
@@ -49,16 +51,29 @@ export class Platform extends WorkerEntrypoint<Env> {
       : "credit_exhausted";
   }
 
+  // A sandbox's start, wake, heartbeat, sleep, destroy or crash (spec 16a),
+  // timed here.
+  sandboxEvent(event: SandboxEvent) {
+    return recordSandboxEvent(this.env, event);
+  }
+
   // Run-log records from the runtime and the Tail Worker (design doc 09).
   logs(records: LogRecord[]) {
     return sendLogs(this.env, records);
   }
 
-  async ocrFile(file: { organizationId: string; fileId: string }) {
+  async ocrFile(file: {
+    organizationId: string;
+    fileId: string;
+    agentId?: string;
+    caseId?: string;
+  }) {
     const result = await ocrFile(
       this.env,
       orgId(file.organizationId),
       file.fileId,
+      false,
+      { agent: file.agentId, case: file.caseId },
     );
     return {
       markdown: result.pages.map((p) => p.markdown).join("\n\n"),

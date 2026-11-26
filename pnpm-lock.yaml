@@ -152,6 +152,9 @@ importers:
       '@preprocess/runmode':
         specifier: 'catalog:'
         version: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051
+      '@preprocess/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@preprocess/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -309,6 +312,10 @@ importers:
         version: 4.114.0(@cloudflare/workers-types@5.20261118.1)
 
   apps/builder:
+    dependencies:
+      '@preprocess/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
     devDependencies:
       '@cloudflare/vitest-plugin':
         specifier: 'catalog:'
@@ -440,6 +447,10 @@ importers:
         version: 4.114.0(@cloudflare/workers-types@5.20261118.1)
 
   apps/pdf-render:
+    dependencies:
+      '@preprocess/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -660,6 +671,15 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 4.4.3
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 'catalog:'
+        version: 5.20261118.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/sandbox:
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -6484,10 +6504,6 @@ packages:
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
 
-  tinyexec@1.2.4:
-    resolution: {integrity: sha512-SHf/r48b7vOrjve9PxJo3MN5v5yuyjHvdUcrQffT3WXMUfnGmHDVbC4k3sHJaJTgZCwpUplIaAo5ANtMyp3YHg==}
-    engines: {node: '>=18'}
-
   tinyexec@1.4.0:
     resolution: {integrity: sha512-PV6lIcJQh57aFeJDwx16JNHmgFRh5xguzallrDW1qe8nAghYgr5MKz2K5k7wEyV/ygZhdnIAP8+HZSarHPBCsg==}
     engines: {node: '>=18'}
@@ -7162,7 +7178,7 @@ snapshots:
   '@antfu/install-pkg@1.1.0':
     dependencies:
       package-manager-detector: 1.8.0
-      tinyexec: 1.2.4
+      tinyexec: 1.4.0
 
   '@anthropic-ai/sdk@0.129.0(zod@4.4.3)':
     dependencies:
@@ -12977,8 +12993,6 @@ snapshots:
 
   tinybench@2.9.0: {}
 
-  tinyexec@1.2.4: {}
-
   tinyexec@1.4.0: {}
 
   tinyglobby@0.2.17:
@@ -13233,7 +13247,7 @@ snapshots:
       picomatch: 4.0.7
       std-env: 4.3.0
       tinybench: 2.9.0
-      tinyexec: 1.2.4
+      tinyexec: 1.4.0
       tinyglobby: 0.2.17
       tinyrainbow: 3.2.0
       vite: 8.1.5(@types/node@24.19.2)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1)
@@ -13261,7 +13275,7 @@ snapshots:
       picomatch: 4.0.7
       std-env: 4.3.0
       tinybench: 2.9.0
-      tinyexec: 1.2.4
+      tinyexec: 1.4.0
       tinyglobby: 0.2.17
       tinyrainbow: 3.2.0
       vite: 8.1.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1)

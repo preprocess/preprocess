@@ -113,6 +113,10 @@ const runBuild = async (env: Env, ref: BuildRef, signal: AbortSignal) => {
               directory: job.link.directory,
               entry: job.link.entry,
               timeoutSeconds,
+              owner: {
+                organizationId: ref.organizationId,
+                agent: job.link.agentSlug,
+              },
             })
             .then(resolve, reject)
             .finally(() => clearTimeout(timer));

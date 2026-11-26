@@ -1119,6 +1119,8 @@ export class CaseRuntime extends DurableObject<Env> {
         {
           organizationId: meta.organizationId,
           fileId: file.id,
+          agentId: meta.agentId,
+          caseId: meta.caseId,
         },
       );
       this.record("ocr", {

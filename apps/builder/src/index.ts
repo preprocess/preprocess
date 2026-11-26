@@ -7,6 +7,7 @@
 // container. In `pnpm dev` the same image runs under the local Docker
 // through apps/builder/local/server.ts (LOCAL_DOCKER_BUILDER).
 
+import { SandboxMeter, type SandboxReporter } from "@preprocess/sandbox";
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 
 import { parseBuild } from "./result.ts";
@@ -15,22 +16,38 @@ import type { BuildRequest, BuildResult } from "./types.ts";
 type Env = {
   SANDBOX?: DurableObjectNamespace<BuildSandbox>;
   LOCAL_DOCKER_BUILDER?: string;
+  // The API, which times the container's awake interval (spec 16a).
+  PLATFORM?: SandboxReporter;
 };
 
 const decoder = new TextDecoder();
 
+// basic: 1/4 vCPU, 1 GiB, 4 GB disk. On lite (256 MiB) an install hits the
+// memory cap and runs four times slower for the same cost. A build lasts at
+// most its timeout (build.sh), and the API stops waiting 30 seconds after
+// that; if this Durable Object goes away first, the container stops a minute
+// later.
+const SIZE = "basic";
+const INACTIVITY_TIMEOUT_MS = 60_000;
+
 export class BuildSandbox extends DurableObject<Env> {
+  private readonly meter = new SandboxMeter(this.ctx, this.env.PLATFORM);
+
   async build(request: BuildRequest): Promise<BuildResult> {
     const container = this.ctx.container;
     if (!container) throw new Error("No container is configured");
-    if (!container.running)
+    if (!container.running) {
       container.start({
         ...(container.images.BuildImage && {
           image: container.images.BuildImage,
         }),
         // Installs reach the package registries. Nothing secret is inside.
         enableInternet: true,
+        instance: SIZE,
       });
+      await container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS);
+      await this.meter.begin(request.owner, "build", SIZE);
+    }
     try {
       const process = await this.exec(container, request);
       const output = await process.output();
@@ -39,12 +56,24 @@ export class BuildSandbox extends DurableObject<Env> {
         decoder.decode(output.stdout) + decoder.decode(output.stderr),
       );
     } finally {
-      if (container.running) await container.destroy();
+      await this.stop();
     }
   }
 
   async cancel() {
-    if (this.ctx.container?.running) await this.ctx.container.destroy();
+    await this.stop();
+  }
+
+  override async alarm() {
+    await this.meter.heartbeat(this.ctx.container?.running ?? false);
+  }
+
+  // A container already gone was not destroyed by us: it crashed.
+  private async stop() {
+    const container = this.ctx.container;
+    if (!container?.running) return this.meter.end("crash");
+    await container.destroy();
+    await this.meter.end("destroy");
   }
 
   // exec() needs the instance up, and start() returns before it is.

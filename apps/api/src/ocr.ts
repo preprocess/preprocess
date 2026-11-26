@@ -39,6 +39,8 @@ export const ocrFile = async (
   org: OrgId,
   fileId: string,
   grounding = false,
+  // Who the render's sandbox is attributed to (sandbox.ts).
+  owner: { agent?: string | undefined; case?: string | undefined } = {},
 ): Promise<OcrResult> => {
   const [file] = await withOrg(env, org, (tx) =>
     tx
@@ -60,9 +62,13 @@ export const ocrFile = async (
   if (file.contentType === PDF) {
     if (!env.PDF_RENDER)
       throw new ApiError(503, "unavailable", "PDF rendering is not running.");
-    pages = (await env.PDF_RENDER.renderPdf(bytes)).map((png) =>
-      dataUrl(png, "image/png"),
-    );
+    pages = (
+      await env.PDF_RENDER.renderPdf(bytes, {
+        organizationId: org,
+        agent: owner.agent,
+        caseId: owner.case,
+      })
+    ).map((png) => dataUrl(png, "image/png"));
   }
   const endpoint = modelEndpoint(env, "ocr");
   const results = [];

@@ -10,6 +10,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { reportDaily, reportUsage } from "./billing.ts";
+import { closeSilentSandboxes } from "./sandbox.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
@@ -191,10 +192,12 @@ export default {
   fetch: app.fetch,
   scheduled(controller, env, ctx) {
     // Every minute: re-send outbox rows a failed queue send left behind.
-    // Every minute, too: report metered usage to billing (our cloud only).
+    // Every minute, too: report metered usage to billing and close the awake
+    // intervals of sandboxes gone silent (our cloud only).
     if (controller.cron === "* * * * *") {
       ctx.waitUntil(sweepOutbox(env));
       ctx.waitUntil(reportUsage(env));
+      ctx.waitUntil(closeSilentSandboxes(env));
       return;
     }
     // 00:20 UTC: sign and store yesterday's audit chain for every

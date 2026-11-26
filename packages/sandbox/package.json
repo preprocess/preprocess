@@ -1,0 +1,20 @@
+{
+  "name": "@preprocess/sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sandbox lifecycle reporting: a container's awake intervals, timed by the platform, for metering (spec 16a).",
+  "author": "Preprocess, Inc.",
+  "license": "Elastic-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "^5.9.3"
+  }
+}
