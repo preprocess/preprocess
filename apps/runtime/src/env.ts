@@ -81,6 +81,28 @@ export type MemoryProposal = Pick<Deployment, "organizationId" | "agentId"> & {
   reason: string | null;
 };
 
+// The search_cases tool (spec 10). The agent, deployment and case come from
+// the runtime's own record; an eval case names the case it replays.
+export type CaseSearch = Pick<
+  Deployment,
+  "organizationId" | "agentId" | "deploymentId"
+> & {
+  caseId: string;
+  query: string;
+  limit: number;
+  eval?: { sourceCaseId: string; input: string };
+};
+
+export type FoundCase = {
+  id: string;
+  title: string | null;
+  completedAt: string;
+  input: string;
+  answer: string | null;
+  answers: Record<string, unknown> | null;
+  changed: string[];
+};
+
 export type ProposeResult =
   | { result: "proposed" | "duplicate"; id: string }
   | { result: "refused"; reason: string };
@@ -121,6 +143,8 @@ export type Settings = {
   model: string;
   reasoning: string;
   ocr: boolean;
+  // Absent from an API older than case search, which means off.
+  searchCases?: boolean;
   timeoutSeconds: number | null;
   toolRetries: number | null;
   sandboxImage: string | null;
@@ -156,8 +180,13 @@ export type CaseEvent = CaseKey &
         captureBytes?: number;
         // Set when the case waits on an approval, whose own event notifies.
         approvalId?: string;
-        // On completion: what an eval suite keeps of the case (doc 09).
-        completed?: { input: StartCase["input"]; captureKey: string };
+        // On completion: what an eval suite keeps of the case (doc 09), and
+        // the agent's final message for case search (spec 10).
+        completed?: {
+          input: StartCase["input"];
+          captureKey: string;
+          answer?: string;
+        };
       }
     | {
         type: "mention";
@@ -186,6 +215,7 @@ export type Platform = {
   logs(records: LogRecord[]): Promise<void>;
   // The memory_propose tool (spec 10); the answer is the tool's result.
   proposeMemory(proposal: MemoryProposal): Promise<ProposeResult>;
+  searchCases(search: CaseSearch): Promise<{ cases: FoundCase[] }>;
   // The secrets a deployment's code receives (design doc 03): the version
   // names the current set, asked on every call; the values are read only
   // when an isolate loads.

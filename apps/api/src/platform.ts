@@ -8,6 +8,7 @@ import type { LogRecord } from "@preprocess/logs";
 import type { SandboxEvent } from "@preprocess/sandbox";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
+import { searchCases, type SearchRequest } from "./case-search.ts";
 import { recordCaseEvent } from "./cases.ts";
 import { secretsVersion, secretValues, type DeploymentRef } from "./deploy.ts";
 import type { CaseEvent } from "./cases.ts";
@@ -35,6 +36,12 @@ export class Platform extends WorkerEntrypoint<Env> {
   // agent as the tool's result.
   proposeMemory(proposal: MemoryProposal) {
     return proposeMemory(this.env, proposal);
+  }
+
+  // The agent's search_cases tool (spec 10); the runtime passes the agent
+  // and deployment from its own record, never from agent code.
+  searchCases(request: SearchRequest) {
+    return searchCases(this.env, request);
   }
 
   // The runtime calls this before each metered model, OCR or decide call and

@@ -184,6 +184,8 @@ export type Manifest = ManifestV1 & {
   schedules?: Schedule[];
   // OCR every uploaded file before the run (doc 04).
   ocr?: boolean;
+  // The search_cases tool over the agent's completed cases (spec 10).
+  searchCases?: boolean;
   // Hosts the code may reach, in the outbound Worker's pattern syntax.
   network?: string[];
   timeoutSeconds?: number;
@@ -206,6 +208,7 @@ export type ProjectSettings = {
   model?: Model;
   reasoning?: Reasoning;
   ocr?: boolean;
+  searchCases?: boolean;
   network?: string[];
   timeoutSeconds?: number;
   toolRetries?: number;
