@@ -80,6 +80,10 @@ export const names = (stage: string) => ({
 export const imageRepositories = {
   build: "preprocess-buildimage",
   render: "preprocess-renderimage",
+  "sandbox-standard": "preprocess-sandbox-standard",
+  "sandbox-node": "preprocess-sandbox-node",
+  "sandbox-python": "preprocess-sandbox-python",
+  "sandbox-python-data": "preprocess-sandbox-python-data",
 } as const;
 
 // Model providers' keys (packages/models endpoints), optional on every stage:

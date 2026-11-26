@@ -597,6 +597,7 @@ export default Alchemy.Stack(
           context: at("apps/runtime/sandbox"),
           dockerfile: at("apps/runtime/sandbox/Dockerfile"),
           build: { args: { PRESET: preset } },
+          publish: { repository: imageRepositories[`sandbox-${preset}`] },
         }),
     );
     const sandboxes = Object.fromEntries(
