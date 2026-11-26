@@ -1,6 +1,8 @@
 // Browser calls to the API, which the app serves on its own origin
 // (/api/auth/* for Better Auth, /v1/* for the rest).
 
+import { announceDataChanged } from "../../lib/data-changed";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -33,6 +35,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}) {
       detail.code,
     );
   }
+  if ((init.method ?? "GET").toUpperCase() !== "GET") announceDataChanged();
   return body as T;
 }
 

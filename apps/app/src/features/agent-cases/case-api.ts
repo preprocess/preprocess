@@ -16,6 +16,7 @@ import type {
   RoomOption,
   WriteResult,
 } from "./case-room-state";
+import { staleAfterWrite } from "../../lib/data-changed";
 
 /**
  * The case list and the case room from /v1, as server functions. The data
@@ -473,6 +474,7 @@ export async function liveCaseRoom(caseId: string): Promise<CaseRoomState> {
 
 /** Changes an answer: edit it, confirm it, or accept the agent's suggestion. */
 export const liveAnswerWrite = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator(
     (input: {
       caseId: string;
@@ -512,6 +514,7 @@ export const liveAnswerWrite = createServerFn({ method: "POST" })
 
 /** Reruns or cancels the case. */
 export const liveCaseCommand = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((input: { caseId: string; command: "rerun" | "cancel" }) => input)
   .handler(async ({ data }) => {
     const response = await send(
@@ -528,6 +531,7 @@ export const liveCaseCommand = createServerFn({ method: "POST" })
  * tab shows the message beside the button.
  */
 export const liveCompleteCase = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((caseId: string) => caseId)
   .handler(async ({ data: caseId }): Promise<ApprovalDecision> => {
     const response = await send(
@@ -543,6 +547,7 @@ export const liveCompleteCase = createServerFn({ method: "POST" })
  * so the Review tab shows them beside the rule.
  */
 export const liveMemoryDecision = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator(
     (input: {
       caseId: string;
@@ -561,6 +566,7 @@ export const liveMemoryDecision = createServerFn({ method: "POST" })
 
 /** Posts to the case thread. Refusals come back as data for the composer. */
 export const livePostMessage = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((input: { caseId: string; text: string }) => input)
   .handler(async ({ data }): Promise<ApprovalDecision> => {
     const response = await send(
@@ -576,6 +582,7 @@ export const livePostMessage = createServerFn({ method: "POST" })
  * back as data so the room shows them beside the approval.
  */
 export const liveApprovalDecision = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator(
     (input: {
       caseId: string;
@@ -702,6 +709,7 @@ export const liveAssigneeCandidates = createServerFn({ method: "GET" })
 
 /** Replaces a case's assignees. Refusals come back as data. */
 export const liveSetAssignees = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((input: { caseId: string; userIds: string[] }) => input)
   .handler(async ({ data }): Promise<ApprovalDecision> => {
     const response = await send(
@@ -714,6 +722,7 @@ export const liveSetAssignees = createServerFn({ method: "POST" })
 
 /** Stores one file to start a case with; the form carries it as "file". */
 export const liveUploadFile = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((form: FormData) => {
     if (!(form instanceof FormData) || !(form.get("file") instanceof File))
       throw new Error("Send the file as a form.");
@@ -748,6 +757,7 @@ export const liveCaseFiles = createServerFn({ method: "GET" })
  * already belong to a case) come back as data for the Input tab.
  */
 export const liveAttachFiles = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((input: { caseId: string; files: string[] }) => input)
   .handler(async ({ data }): Promise<ApprovalDecision> => {
     const response = await send(
@@ -763,6 +773,7 @@ export const liveAttachFiles = createServerFn({ method: "POST" })
  * two; each submit sends a fresh one.
  */
 export const liveStartCase = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator(
     (input: {
       agent: string;
