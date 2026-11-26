@@ -1,0 +1,69 @@
+# The account's container registry holds at most 50 GB and reports no usage
+# (PRE-90). Daily, this deletes the images that neither a Worker's newest 10
+# versions nor its current deployment use (closed previews' repositories, and
+# images older than two days in the shared and the old staging and production
+# repositories), then walks the registry and warns once the estimate passes
+# 35 GB. See infra/README.md (Container registry).
+
+name: Registry
+
+on:
+  schedule:
+    - cron: "40 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: registry
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CI: "true"
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check credentials
+        id: credentials
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice title=Registry skipped::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not set."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/checkout@v4
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.credentials.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # Open pull requests keep their previews' images even between a push and
+      # its deploy.
+      - name: Delete unreferenced images
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          open=$(gh pr list -R "$GITHUB_REPOSITORY" --state open --limit 1000 --json number --jq '.[].number')
+          pnpm --filter @preprocess/infra registry sweep $open
+
+      - name: Estimate usage
+        if: always() && steps.credentials.outputs.ready == 'true'
+        run: pnpm --filter @preprocess/infra registry usage

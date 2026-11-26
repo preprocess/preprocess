@@ -202,3 +202,33 @@ secrets:
 To run a stage by hand with the same values exported:
 `pnpm --filter @preprocess/infra preview:deploy pr-<n>` and
 `pnpm --filter @preprocess/infra preview:destroy pr-<n>`.
+
+## Container registry
+
+Cloudflare's container registry holds at most 50 GB per account, counts every
+stage's images, and reports no usage. The build sandbox and PDF renderer images
+publish to one repository each, shared by every stage (`imageRepositories` in
+`src/stages.ts`), tagged by the hash of their build inputs.
+`apps/builder/Dockerfile.dockerignore` and
+`apps/pdf-render/Dockerfile.dockerignore` keep each hash to the files its image
+copies, so a stage whose image inputs are unchanged reuses the published image
+without building or pushing anything.
+
+- **Preview teardown** deletes the destroyed stage's images: its old per-PR
+  repositories, and, unless the pull request merged, the shared images only it
+  referenced.
+- **`.github/workflows/registry.yml`** runs daily: it deletes the images
+  rollback no longer needs (closed previews' repositories, and images older than
+  two days in the shared repositories and in staging's and production's
+  repositories from before they were shared), then estimates usage. It keeps
+  every image used by a Worker's newest 10 versions or by its current deployment
+  (both versions of a gradual one), whatever their age. Older versions' images
+  can go: rollback runs through Alchemy, which rebuilds a missing image.
+- **Usage**: `pnpm --filter @preprocess/infra registry usage` walks every
+  repository, tag and manifest and adds up the blobs, each counted once. In CI
+  it adds a warning annotation at 35 GB; the staging deploy runs it too.
+
+A delete removes tags and manifests at once, but Cloudflare documents no garbage
+collection of the blobs underneath, and a prepared image's `btrfs-chain`
+artifact refuses deletion (409). Treat the estimate as what the registry holds,
+not what counts against the cap.
