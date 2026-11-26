@@ -451,6 +451,7 @@ function CaseRow({
             )}
             data-case-row={index}
             params={{ agentId: item.agentId, caseId: item.id }}
+            preload={false}
             ref={ref}
             to="/agents/$agentId/cases/$caseId"
           />
