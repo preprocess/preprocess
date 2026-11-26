@@ -1,0 +1,161 @@
+---
+title: Deployments
+description:
+  Every deploy creates an immutable, pinned version of an agent. Production
+  serves live cases; previews isolate branch testing.
+---
+
+A deployment is an immutable snapshot of an agent: its bundled code, the
+manifest that code declares, and the git origin it came from. Every deploy
+creates a new deployment record, and nothing inside a deployment ever mutates
+after it is stored.
+
+## Why deployments are immutable
+
+Cases can stay open for hours or days while operators review fields or wait on
+finance approval. If pushing new code mutated the agent underneath an in-flight
+case, answers could lose their schema definitions, pending approvals could
+detach from their tools, and debugging a bad run would be impossible.
+
+Immutability eliminates that class of failure:
+
+- **The code is content-verified.** The bundle is written to R2 alongside its
+  SHA-256 digest, and the case runtime verifies the digest every time it loads
+  the Dynamic Worker.
+- **The manifest is frozen.** Instructions, model, reasoning level, tools,
+  output schema, groups, secrets, MCP servers, network hosts, and schedules are
+  captured at deploy time.
+- **Origin is recorded.** Every deployment stores its git branch, commit SHA,
+  source (`cli` or `github`), deployer, and `@preprocess/sdk` version.
+- **Cases pin to one deployment.** A case runs on the same deployment from start
+  to finish, including reruns. Promoting a new release or rolling back never
+  moves an already-started case.
+
+## Two ways to deploy
+
+**CLI (`preprocess deploy`).** Bundles your entry module (`src/index.ts` by
+default) locally and uploads it with your current git branch and commit. The
+same CLI ships as a GitHub Action (`preprocess/preprocess/packages/cli`) for
+teams that deploy from their own CI pipelines.
+
+**GitHub App.** Connect a repository and link it to an agent (optionally scoped
+to one branch). Each push starts an isolated build: Preprocess fetches the
+commit outside the build container, installs dependencies from your lockfile,
+and bundles the agent in a fresh build container. Builds serialize one at a time
+per agent and branch—a newer push replaces any queued build and cancels a
+running one so stale commits never overwrite newer ones.
+
+Both paths produce the exact same deployment artifact and run the same
+validation and guardrail checks.
+
+## Production vs. previews
+
+Every agent has a production branch (`main`). A deploy from `main` is a
+**production** deployment; a deploy from any other branch—or from outside a git
+repository—is a **preview** deployment.
+
+The agent's active production deployment is whichever production deployment was
+promoted most recently. Every new case runs on it unless the caller explicitly
+passes a deployment id.
+
+| Behavior                    | Production                                | Preview                              |
+| --------------------------- | ----------------------------------------- | ------------------------------------ |
+| Serves new cases by default | Yes, once promoted                        | No—must be targeted by `dep_...` id  |
+| Promoted                    | Automatically on deploy, unless `waiting` | Never                                |
+| Cron schedules              | Run on schedule                           | Only schedules with `previews: true` |
+
+To test a preview before merging to `main`, start a case directly against its
+deployment id:
+
+```sh
+npx preprocess cases create --deployment dep_... --text "Code this invoice."
+```
+
+Because previews share the organization's guardrails but never take default
+traffic, you can test schema changes, prompt edits, or a new model on real
+sample files without risking live cases. To ship a preview's changes, merge the
+branch into `main` and deploy.
+
+## Code is truth over overrides
+
+Operators and developers can adjust certain runtime settings (`model`,
+`reasoning`, `ocr`, `timeoutSeconds`, `toolRetries`) in the app between
+releases—for example, switching an agent to `deepseek-v4.1-flash-fast` during a
+traffic spike or raising `timeoutSeconds` when an upstream ERP slows down.
+
+Those dashboard changes are **temporary overrides**, not a permanent fork of the
+agent. The moment you deploy or promote a new production release, **Preprocess
+clears every dashboard override on that agent** and prints the exact list of
+cleared overrides in the deploy/promote output.
+
+This is deliberate: if dashboard tweaks survived deploys, nobody reading git
+could tell what model or timeout production was actually running. If an override
+worked well and should become permanent, pull it into your repo before
+deploying:
+
+```sh
+npx preprocess config pull
+git diff preprocess.config.json
+git commit -am "chore: keep fast model override"
+npx preprocess deploy
+```
+
+`config pull` writes the active dashboard overrides into
+`preprocess.config.json` beside `package.json`, where they commit to git and
+ship with the next deploy.
+
+## Waiting deployments vs. failed deploys
+
+Preprocess separates **invalid code** (hard failure) from **missing organization
+permissions** (recoverable wait).
+
+A deploy **fails outright** before storing a runnable version when the bundle
+cannot serve a valid manifest, when a schedule's cron or timezone is invalid, or
+when the code names a group slug that does not exist in the organization.
+
+A deploy succeeds into **`waiting`** status when the code is valid but asks for
+more than the organization's guardrails currently grant:
+
+- a secret the agent has not been granted;
+- an MCP server the agent has not been granted;
+- an outbound network host the organization's rules do not allow;
+- a group the code names that has no access to the agent (or an approving group
+  that lacks operator access).
+
+For each missing grant, Preprocess opens a **guardrail request** in the inbox of
+every Owner and Admin, and automatically withdraws obsolete requests if a newer
+deploy stops asking for them. A waiting deployment cannot take cases or be
+promoted.
+
+Preprocess continuously tracks **live deployments**—the current production
+deployment plus the newest deployment on every other branch. Inside the same
+database transaction where an Admin approves the final guardrail request, live
+deployments re-evaluate automatically and transition to **`ready`**. Note one
+intentional safeguard: a production deployment that waited on a guardrail does
+**not** auto-promote when it becomes `ready`; a developer or Admin promotes it
+explicitly so a delayed approval never surprises production.
+
+## Promote and roll back
+
+Promoting points an agent's production slot at a `ready` production deployment.
+You can promote from the agent's Deployments page, the API, or MCP.
+
+- **Who can deploy, promote, or roll back:** Owners, Admins, members of the
+  Developers group, and organization API keys (which carry Admin rights). Any
+  other Member is refused, and the refusal is written to the audit log.
+- **How rollback works:** Rolling back is simply promoting an earlier production
+  deployment. Because the platform runtime lives in Durable Objects and your
+  code is stateless, rollback swaps only which bundle new cases load. In-flight
+  cases continue on their original deployment.
+- **Guardrail recheck on rollback:** Older deployments are not kept in the live
+  sync set, so when you promote an older deployment during a rollback,
+  Preprocess rechecks it against the organization's _current_ guardrails first.
+  If a secret or network host was revoked since that version originally shipped,
+  the rollback stops cleanly instead of bypassing current policy.
+
+## Related
+
+- [Agents](/concepts/agents): what the code declares and how settings resolve.
+- [Groups and access](/concepts/groups-and-access): how group grants interact
+  with deployments.
+- [CLI](/cli): `deploy`, `config pull`, and `groups pull`.

@@ -1,0 +1,132 @@
+---
+title: Groups and access
+description:
+  Roles govern organization administration; groups govern who works each agent's
+  cases and which teams agent code can hand work to.
+---
+
+Preprocess separates access into two non-overlapping layers: **roles** govern
+the organization, and **groups** govern agents. Nobody receives direct per-user
+permissions on an agent; every person's access to an agent flows through the
+groups they belong to.
+
+## Why code only knows groups
+
+Operational teams change constantly—people go on vacation, switch squads, or
+leave the company. Agent code that hard-codes an individual's email or user id
+breaks the day that person moves on, and cases routed to one person stall when
+they are out of office.
+
+In Preprocess, agent code only ever names **group slugs** (`accounts-payable`,
+`finance-leads`). When a tool calls `ctx.waitOn("accounts-payable")` or names
+`finance-leads` as an approver, the entire team sees the case in their inbox and
+anyone in the group can pick it up. If a workflow genuinely routes to one
+person, create a single-member group for that role and swap members in the app
+without redeploying code.
+
+Groups also keep security auditable: knowing who can work an agent's cases means
+reading one list of group grants instead of hunting through scattered individual
+permissions.
+
+## Organization roles
+
+Every member of an organization has exactly one fixed role:
+
+| Role   | What they can do                                                                                                                                                                                                  |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Owner  | Everything an Admin can, plus organization ownership, shortening retention periods, and deleting individual cases.                                                                                                |
+| Admin  | Manage members, groups, agent grants, secrets, API keys, webhooks, settings, and guardrails; approve guardrail requests; deploy, promote, roll back, and archive agents; view every case and assign people to it. |
+| Member | Only what their groups grant. Deploying, promoting, and rolling back require membership in the Developers group.                                                                                                  |
+
+**Visibility is not operator access.** An Owner or Admin can read every case in
+the organization for oversight and can assign cases to people, but cannot edit
+answers, rerun, approve, or complete a case unless they also belong to an
+operator group for that agent (or Developers).
+
+## Groups and agent grants
+
+A group has a unique slug (such as `accounts-payable`), a display name, a
+description, and a member list managed by Owners and Admins. The slug is what
+agent code references.
+
+Each group can be granted one of two access levels on an agent:
+
+| Grant    | What members can do on that agent                                                  |
+| -------- | ---------------------------------------------------------------------------------- |
+| Operator | Work cases: start, edit and confirm answers, rerun, complete, cancel, and approve. |
+| Viewer   | Read the agent's cases and history without changing anything.                      |
+
+When a person belongs to multiple groups with access to the same agent, their
+effective permission is the highest grant across those groups.
+
+**Developers** is a built-in group present in every organization. Its members
+can deploy, promote, roll back, change agent settings, run evals, and work cases
+across _every_ agent. Developers needs no per-agent grants, accepts none, and
+cannot be deleted.
+
+## How code and guardrails stay in sync
+
+An agent declares every group slug it references in `groups`. Once declared, its
+code can:
+
+- park a case on a team with `ctx.waitOn(slug, { reason })`;
+- notify a team in the case thread with `ctx.tag(slug, message)` or the platform
+  `tag_group` tool;
+- require a team's approval on a tool call, schema field, or case completion.
+
+At runtime, the agent sees only groups (via `groups_list`), never individual
+people, and can only wait on or tag groups that have access to the agent.
+
+To prevent broken handoffs in production, Preprocess enforces a three-part
+contract across deploy and runtime:
+
+1. **Unknown group fails deploy.** Naming a slug that does not exist in the
+   organization fails the deploy immediately before anything is stored.
+2. **Missing grant holds the deployment.** Naming an existing group that has no
+   grant on the agent—or naming an approving group that only has Viewer access
+   instead of Operator access—places the deployment in `waiting` and opens a
+   guardrail request for an Admin.
+3. **Live deployments lock their groups.** While any live deployment (current
+   production or the newest deployment on another branch) references a group,
+   that group cannot be deleted and its grant on the agent cannot be removed or
+   lowered below what the code requires. Deploy code that stops referencing the
+   group first.
+
+To keep local code in sync with your organization's slugs, run
+`preprocess groups pull`. It writes the organization's groups into
+`preprocess.config.json`, and `preprocess deploy` warns if your code names a
+slug missing from that list.
+
+## API keys vs. human sessions
+
+An **organization API key** belongs to the organization rather than to an
+individual user. Owners and Admins create keys in Developers → Keys & webhooks
+(each key is shown once at creation).
+
+API keys act with Admin rights across `/v1`, the CLI, and the organization's MCP
+server—so CI pipelines can deploy and promote agents, and backend systems can
+start, read, edit, and rerun cases. However, **API keys cannot approve** tool
+calls, field values, or completions, cannot accept or dismiss proposed memories,
+and cannot decide guardrail requests. Those decisions always require a signed-in
+person.
+
+## Identity
+
+Sign-in, organizations, memberships, and API keys run on the open-source Better
+Auth library inside Preprocess's own Workers, backed directly by Postgres. No
+third-party hosted auth provider is required, on Preprocess Cloud or
+self-hosted.
+
+<Callout title="Coming soon">
+  Single sign-on (SSO), directory sync, and groups synced from an external
+  identity provider are not available yet. Today, members and groups are managed
+  directly in Preprocess.
+</Callout>
+
+## Related
+
+- [Review and approvals](/concepts/review-and-approvals): how operator access
+  and approving groups work in practice.
+- [Cases](/concepts/cases#who-can-do-what): per-action permissions on cases.
+- [Deployments](/concepts/deployments#waiting-deployments-vs-failed-deploys):
+  how missing group grants hold a deployment in `waiting`.

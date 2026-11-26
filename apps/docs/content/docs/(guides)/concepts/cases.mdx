@@ -1,0 +1,179 @@
+---
+title: Cases
+description:
+  A case is one bounded job for one agent, with one thread, one set of answers,
+  and one lifecycle status.
+---
+
+A case is one job for one agent: code this invoice, triage this claim, or
+reconcile yesterday's payouts. It holds one conversation thread, one set of
+structured answers shaped by the agent's
+[output schema](/concepts/output-schema), and one lifecycle status.
+
+## Why cases are not chats
+
+A chat session has no finish line, no structured output contract, and no clear
+owner when the model gets stuck. Operational work needs all three. A case is the
+unit of work that bridges automated execution and human operations:
+
+- it is what appears in an operator's inbox and gets routed to a team;
+- it is what schema checks, field reviews, and approvals attach to;
+- it is what downstream systems track by id and receive via webhooks;
+- once completed with human corrections, it is what eval suites replay to test
+  the next release.
+
+## Starting a case
+
+| Entry point  | How it starts                                              |
+| ------------ | ---------------------------------------------------------- |
+| Your systems | `POST /v1/orgs/{org}/cases` or `preprocess cases create`.  |
+| A schedule   | A cron schedule declared in the agent's `schedules` array. |
+| The app      | The Add button on Cases or inside an agent.                |
+| MCP          | The `create_case` tool on the organization's MCP server.   |
+
+There is no inbound email address and no separate inbound webhook endpoint—the
+cases API is the single programmatic entry point.
+
+`POST /v1/orgs/{org}/cases` returns `202 Accepted` immediately with the case id
+and a status URL; it never blocks waiting for the agent to finish. A case pins
+to the agent's active production deployment unless the caller explicitly names
+another `ready` deployment (such as a preview).
+
+### Idempotency and `402` refusals
+
+- **Safe retries.** Pass an `Idempotency-Key` header when creating cases from
+  queues or webhooks. Preprocess hashes the request body and caller and caches
+  the response for 24 hours: an identical retry returns the original `202`
+  response, reusing the key with a different payload returns `422`, and a
+  concurrent duplicate still in flight returns `409`.
+- **Plan and spend gates.** On Preprocess Cloud, case creation fails with `402`
+  if the organization has not started a plan (`plan_required`), has exhausted
+  its monthly plan cases (`credit_exhausted`), or has reached its monthly
+  spending limit.
+- **Schedules.** Cron schedules fire on the production deployment in their
+  declared IANA timezone (UTC by default), with their declared `text` as input.
+  They skip previews unless `previews: true` is set. Pausing a schedule persists
+  across deploys and promotions until someone resumes it, and each scheduled
+  fire carries its own idempotency key so retries never create duplicate cases.
+
+## Input and OCR trade-offs
+
+Case input is plain text, uploaded files, or both. There is no rigid input
+schema—your agent's `instructions` describe what it expects.
+
+- **Text:** up to 1,000,000 characters.
+- **Files:** up to 100 files per case, each up to 100 MB. Upload files first via
+  `POST /v1/orgs/{org}/files` and pass their ids when creating the case.
+
+If the agent enables `ocr: true`, Preprocess extracts Markdown from each
+attached PDF or page image (PNG, JPEG, or WebP, up to 50 MB and 1,000 pages)
+through Mistral OCR before the first model turn. Leave `ocr` off when files are
+structured text you parse in a tool or when you want to avoid per-page OCR
+latency and cost; without OCR, the agent sees only file names and content types.
+Operators can attach additional files to a case later, and the agent receives
+them on the next rerun.
+
+## Lifecycle statuses and failure modes
+
+<StateMachine label="Case statuses">
+  <State id="queued" initial />
+  <State id="running" />
+  <State id="completed" />
+  <State id="waiting" />
+  <State id="failed" />
+  <State id="halted" />
+  <State id="cancelled" final />
+
+  <Transition from="queued" to="running" />
+  <Transition from="running"
+    to={["completed", "waiting", "failed", "halted"]} />
+  <Transition from="waiting" to="completed" />
+  <Transition from={["waiting", "completed", "failed", "halted"]}
+    to="running" label="rerun" />
+  <Transition from="*" except="completed"
+    to="cancelled" label="cancel" />
+</StateMachine>
+
+| Status      | Meaning                                                                                                                          |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `queued`    | Accepted by the API and enqueued; the Durable Object run has not started yet.                                                    |
+| `running`   | The case runtime is actively executing the model loop or calling your tools.                                                     |
+| `waiting`   | The run ended, but something holds the case: a waited-on group, a failing check, an unmet success rule, or a pending approval.   |
+| `completed` | Terminal success: checks pass, the success condition is met, and no approvals or group waits remain.                             |
+| `failed`    | The run itself errored—for example, passing `timeoutSeconds` or hitting an unrecoverable model error.                            |
+| `halted`    | Stopped before a metered call (model turn, OCR, or `decide`) because the organization reached its spending limit or plan credit. |
+| `cancelled` | Permanently stopped by an operator, developer, or API key.                                                                       |
+
+A case completes only when its success condition is satisfied, whether the agent
+or a person finished the work. An agent with no output schema completes as soon
+as its run ends unless a tool called `ctx.waitOn(...)` or an approval is
+pending.
+
+### How `halted` protects spend
+
+An Admin can configure a monthly spending limit (measured per calendar month in
+UTC). On Preprocess Cloud, the runtime checks that limit—and any Free-plan
+credit—before every metered call (model turn, OCR, or `decide`). Reaching the
+limit mid-run transitions the case to `halted` instead of making the next call,
+preserving every answer and thread message produced so far. Halted cases send no
+webhooks and never auto-resume; once an Admin raises the limit or the month
+rolls over, an operator selects **Rerun** to continue.
+
+## Waiting on a team vs. assigning people
+
+Agent code routes work to **groups**, never to individual people. Inside a tool,
+calling `ctx.waitOn("accounts-payable", { reason })` parks the case in `waiting`
+on that group when the run ends. Every member of `accounts-payable` sees the
+case in their inbox, receives an immediate email (unless muted), and your
+outbound webhooks receive `case.needs_group`.
+
+A case can also enter `waiting` without a named group—when a schema check fails,
+a required review field is unconfirmed, or an open approval applies to any
+operator. The wait reason explains what is blocking completion.
+
+Inside the case thread, operators and the agent reference teams with `@slug`
+(via `ctx.tag(slug, message)` or the `tag_group` tool), which notifies every
+member of that group. To put a case in front of specific individuals rather than
+a whole team, an Owner, Admin, or API key can **assign** up to 50 people who
+already have access to the case. Agent code never assigns individuals.
+
+## Rerun, complete, cancel, and retention
+
+- **Rerun** starts a new turn on the same Durable Object and pinned deployment.
+  It works from `waiting`, `completed`, `failed`, or `halted`. The runtime
+  builds a delta prompt listing what changed since the last run: answers people
+  edited or confirmed, fields that turned stale, new thread messages, and newly
+  attached files. Confirmed human answers are never overwritten—if the agent
+  disagrees, its value appears as a suggestion.
+- **Complete** finishes a waiting case as a person. It enforces the exact same
+  checks, success condition, and approval gates as the agent; if anything is
+  still unmet, completion is refused.
+- **Cancel** stops any non-completed case permanently. Cancelled cases cannot be
+  rerun and send no webhooks.
+- **Retention and deletion.** By default, organizations keep documents, run
+  captures, run logs, and cases forever. Owners can configure per-organization
+  retention periods (at least 7 days after a case closes, with a 90-day preset
+  for run logs) or delete an individual case by hand. A daily sweep purges
+  expired data and records a retention audit event; the audit log itself is
+  locked and never deletable.
+
+## Who can do what
+
+| Action                               | Who                                                               |
+| ------------------------------------ | ----------------------------------------------------------------- |
+| See a case                           | Owners, Admins, Developers, and the agent's operators and viewers |
+| Start, edit, rerun, complete, cancel | Developers, the agent's operators, and API keys                   |
+| Assign people                        | Owners, Admins, and API keys                                      |
+| Delete a case                        | Owners                                                            |
+
+Visibility does not grant operator permissions: an Owner or Admin can see every
+case in the organization, but still needs an operator group (or Developers) to
+edit answers, approve, rerun, or complete one.
+
+## Related
+
+- [Output schema](/concepts/output-schema): the structured answers a case
+  produces.
+- [Review and approvals](/concepts/review-and-approvals): how operators edit,
+  confirm, and approve.
+- [How it works](/how-it-works): tracing one case through the runtime.

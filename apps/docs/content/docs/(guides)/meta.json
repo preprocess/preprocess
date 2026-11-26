@@ -1,5 +1,15 @@
 {
   "title": "Guides",
   "root": true,
-  "pages": ["index", "---Connect---", "mcp"]
+  "pages": [
+    "index",
+    "---Start here---",
+    "introduction",
+    "quickstart",
+    "how-it-works",
+    "---Concepts---",
+    "...concepts",
+    "---Connect---",
+    "mcp"
+  ]
 }
