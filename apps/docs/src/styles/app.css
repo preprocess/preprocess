@@ -686,3 +686,18 @@ svg.lucide * {
   content: "";
   background: var(--border);
 }
+
+/* Diagrams (<StateMachine>, <Flow>): node fills, rings and lines mixed from
+   the foreground into the well, so both themes follow the .dark class. */
+.diagram {
+  --diagram-node: var(--surface-2);
+  --diagram-node-ring: color-mix(
+    in oklab,
+    var(--foreground) 14%,
+    var(--surface-1)
+  );
+  --diagram-line: color-mix(in oklab, var(--foreground) 38%, var(--surface-1));
+  --diagram-arrow: color-mix(in oklab, var(--foreground) 55%, var(--surface-1));
+  --diagram-end: var(--muted);
+  --diagram-halo: color-mix(in oklab, var(--foreground) 12%, var(--surface-1));
+}
