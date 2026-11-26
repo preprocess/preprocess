@@ -111,7 +111,7 @@ const segments = (path: string) =>
     ];
   });
 
-const withValue = (root: unknown, path: string, value: unknown) => {
+export const withValue = (root: unknown, path: string, value: unknown) => {
   const copy = structuredClone(root ?? {}) as Record<string | number, unknown>;
   const parts = segments(path);
   let target = copy;

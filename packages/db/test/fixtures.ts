@@ -24,6 +24,7 @@ import {
   caseAssignees,
   caseApprovals,
   caseMentions,
+  caseSearch,
   cases,
   files,
   idempotencyKeys,
@@ -291,6 +292,17 @@ export const seedOrganization = async (name: string) =>
       before: null,
       after: "acme",
     });
+    await tx.insert(caseSearch).values({
+      organizationId: org,
+      caseId,
+      agentId,
+      environment: "production",
+      input: "Invoice from Acme",
+      inputHash: "00",
+      answers: { vendor: "acme" },
+      changed: ["vendor"],
+      completedAt: now,
+    });
     await tx.insert(caseMentions).values({
       id: newId("mention"),
       organizationId: org,
@@ -492,6 +504,7 @@ export const tenantTables = {
   idempotency_keys: "organization_id",
   files: "organization_id",
   review_events: "organization_id",
+  case_search: "organization_id",
   case_mentions: "organization_id",
   case_approvals: "organization_id",
   agent_memories: "organization_id",
