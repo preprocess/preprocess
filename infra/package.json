@@ -13,6 +13,7 @@
     "wrangler:generate": "tsx scripts/wrangler-config.ts",
     "lint": "eslint . && tsx scripts/wrangler-config.ts --check",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "staging:deploy": "pnpm --filter @preprocess/app build:staging && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts deploy staging",
     "smoke": "tsx scripts/smoke.ts",
     "selfhost:plan": "pnpm --filter @preprocess/app build:production && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts plan",
@@ -36,6 +37,7 @@
     "prettier": "^3.6.2",
     "tsx": "catalog:",
     "typescript": "^5.9.3",
+    "vitest": "catalog:",
     "zod": "catalog:"
   }
 }

@@ -6,5 +6,11 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["alchemy.run.ts", "src/**/*.ts", "scripts/**/*.ts"]
+  "include": [
+    "alchemy.run.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "test/**/*.ts",
+    "vitest.config.ts"
+  ]
 }
