@@ -1,0 +1,14 @@
+---
+title: Approvals
+---
+
+`approval` asks a person to approve before something happens:
+
+- on `agent()`, before a case completes;
+- on a schema field, before its value stands;
+- on `tool()`, before the tool runs.
+
+`true` means any operator can approve. `{ group, when }` names the group that
+approves (it must be listed in `groups`) and decides per case or call. `when`
+receives the answers, or the tool's input, and must not be async. If it throws,
+the approval applies.

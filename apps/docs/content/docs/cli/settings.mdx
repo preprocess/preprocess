@@ -1,0 +1,12 @@
+---
+title: Settings
+---
+
+People can change an agent's settings in the app. `config pull` writes those
+overrides into `preprocess.config.json`, so the next deploy keeps them.
+`groups pull` writes the organization's groups into the same file.
+
+```sh
+npx preprocess config pull
+npx preprocess groups pull
+```

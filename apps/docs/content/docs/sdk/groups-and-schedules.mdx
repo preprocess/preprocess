@@ -1,0 +1,13 @@
+---
+title: Groups and schedules
+---
+
+`groups` lists the slugs of the organization's groups the agent refers to. In a
+tool, `ctx.waitOn(group, { reason })` hands the case to that group and
+`ctx.tag(group, message)` notifies it.
+
+`schedules` starts cases on a cron schedule:
+
+```ts
+schedules: [{ name: "nightly", cron: "0 2 * * *", text: "Reconcile yesterday's orders" }],
+```

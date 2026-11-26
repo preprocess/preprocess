@@ -1,0 +1,21 @@
+---
+title: MCP servers
+---
+
+`mcp` lists the MCP servers the agent uses, by the name the organization
+registered them under. Calls go through Preprocess, which adds the
+organization's connection token, so your code never holds it.
+
+```ts
+export default agent({
+  instructions: "You keep CRM contacts current.",
+  mcp: ["crm"],
+  tools: {
+    find_contact: tool({
+      description: "Find a CRM contact",
+      input: z.object({ q: z.string() }),
+      run: ({ q }, ctx) => ctx.mcp("crm").call("search_contacts", { q }),
+    }),
+  },
+});
+```

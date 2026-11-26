@@ -42,7 +42,7 @@ import {
   firstPage,
   folderPages,
   PageLink,
-  splitTree,
+  sectionsOf,
   textOf,
   TreeContext,
 } from "./page-tree";
@@ -245,7 +245,7 @@ function AgentPrompt({ name }: { name: keyof typeof agentPrompts }) {
 function EndpointTags() {
   const tree = use(TreeContext);
   const root = tree
-    ? splitTree(tree).reference.find((folder) => contains(folder, "/api"))
+    ? sectionsOf(tree).find((folder) => contains(folder, "/api"))
     : undefined;
   if (!root) return null;
   return (

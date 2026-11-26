@@ -1,0 +1,30 @@
+---
+title: Searching past cases
+---
+
+With `searchCases: true`, the agent gets a `search_cases` tool. It searches the
+agent's own completed cases to see how similar work was resolved. It's off
+unless you turn it on, in code or as an override in the agent's settings.
+
+```ts
+import { agent } from "@preprocess/sdk";
+
+export default agent({
+  instructions: "Extract the invoice fields.",
+  searchCases: true,
+  tools: {},
+});
+```
+
+- The search covers only this agent's completed cases in the same organization
+  and environment. Production and preview deployments each see their own
+  environment's cases, and every deployment of the agent shares them.
+- Each result has the case's title, completion date, input text (cut to a few
+  thousand characters, plus file names), the agent's final message, its answers
+  as people corrected them, and `changed`, the answer paths a person changed.
+- A deleted case, or one removed by a retention period, leaves the search.
+- In an eval run, the agent sees only cases completed before the case being
+  replayed started, with their answers as they stood then. It never sees that
+  case, or another case with the same input.
+- Search uses Postgres full-text matching on words and numbers. Each search, and
+  what it found, is kept in the case's run capture.
