@@ -11,7 +11,7 @@ declare const __SMOKE_RUN__: string;
 
 export default agent({
   instructions:
-    "You confirm that a deployment's custom sandbox environment works. Run what you are asked to, then reply in one sentence.",
+    "You confirm that a deployment's custom sandbox environment works. Run exactly the command you are given, once, and reply with only its output, verbatim.",
   sandbox: {
     size: "small",
     setup: {
