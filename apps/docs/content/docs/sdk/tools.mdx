@@ -1,0 +1,15 @@
+---
+title: Tools
+---
+
+`tool()` takes a `description` the model reads, a Zod `input` schema, and a
+`run` function. `run` receives the parsed input and a context with:
+
+- `env`: the secrets the agent declared and was granted;
+- `case`: the case being worked, with its `id`;
+- `mcp(server)`: a client for an MCP server the agent declared.
+
+Set `sideEffects: true` on a tool that changes something outside Preprocess.
+Such a tool is never retried, and when an eval replays a case, it reuses the
+result the tool returned instead of calling it again. Set `approval` on a tool a
+person must approve before it runs (see [Approvals](/sdk/approvals)).

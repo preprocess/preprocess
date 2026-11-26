@@ -1,0 +1,54 @@
+---
+title: SDK
+description: Write an agent with @preprocess/sdk.
+---
+
+Hand this prompt to your coding agent to write an agent and deploy it.
+
+<AgentPrompt name="sdk" />
+
+Or follow the steps yourself.
+
+## Install
+
+```sh
+npm install @preprocess/sdk zod
+```
+
+The SDK is MIT licensed and uses [Zod](https://zod.dev) 4 to describe tool
+inputs.
+
+## An agent
+
+An agent is the default export of a module. Preprocess bundles that module,
+stores the bundle for each deployment, and runs it as a Worker. The model loop
+runs on the platform; your code runs only when the model calls one of its tools.
+
+```ts title="src/index.ts"
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+export default agent({
+  instructions: "You answer stock questions for Acme.",
+  model: "deepseek-v4.1-flash",
+  secrets: ["ERP_TOKEN"],
+  tools: {
+    lookup_stock: tool({
+      description: "Look up stock for a SKU",
+      input: z.object({ sku: z.string() }),
+      run: async ({ sku }, { env }) => {
+        const response = await fetch(`https://erp.example.com/stock/${sku}`, {
+          headers: { authorization: `Bearer ${env.ERP_TOKEN}` },
+        });
+        return response.json();
+      },
+    }),
+  },
+});
+```
+
+`model` is one of `kimi-k3.1-pro`, `deepseek-v4.1-flash` (the default),
+`deepseek-v4.1-flash-fast` and `qwen3.8-27b`.
+
+Deploy it with `preprocess deploy` (see [CLI](/cli)). The agent's name is your
+package.json name without its scope, unless you pass `--agent`.

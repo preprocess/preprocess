@@ -1,0 +1,14 @@
+---
+title: Logs and evals
+---
+
+```sh
+npx preprocess logs --case <case id> --level error
+npx preprocess evals list
+npx preprocess evals run regressions --model deepseek-v4.1-flash --model kimi-k3.1-pro
+```
+
+`logs` prints run logs, newest first, for a case, an agent, a deployment, or the
+whole organization. Organization-wide logs need Developers or Admins.
+`evals run` runs a suite against a deployment (production by default), once per
+`--model`, and waits for the results.

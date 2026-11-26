@@ -1,0 +1,15 @@
+{
+  "title": "SDK",
+  "root": true,
+  "pages": [
+    "index",
+    "tools",
+    "secrets",
+    "mcp-servers",
+    "output-schema",
+    "approvals",
+    "groups-and-schedules",
+    "memory",
+    "searching-past-cases"
+  ]
+}

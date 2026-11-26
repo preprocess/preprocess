@@ -7,7 +7,7 @@ import { useTOCItems } from "fumadocs-ui/components/toc";
 import type { ReactNode } from "react";
 
 import { OnThisPage } from "./docs-toc";
-import { crumbsFor, PageLink, rowLabel } from "./page-tree";
+import { crumbsFor, PageLink, pageLabel, sectionFor } from "./page-tree";
 
 // Below lg the breadcrumb is one eyebrow line over the title: the page's
 // ancestors, or the section itself on its landing page.
@@ -29,7 +29,8 @@ function Eyebrow({ tree, url }: { tree: PageTree.Root; url: string }) {
 
 function Neighbours({ tree, url }: { tree: PageTree.Root; url: string }) {
   const { previous, next } = PageTree.findNeighbour(tree, url);
-  if (!previous && !next) return null;
+  const section = sectionFor(tree, url);
+  if ((!previous && !next) || !section) return null;
   const card = (page: PageTree.Item, label: string, forward: boolean) => (
     <PageLink
       className={cn(
@@ -54,7 +55,7 @@ function Neighbours({ tree, url }: { tree: PageTree.Root; url: string }) {
           )}
           style={{ fontVariationSettings: fontWeights.medium }}
         >
-          {page.url === "/" ? "Overview" : rowLabel(page.name).label}
+          {pageLabel(section, page)}
         </span>
       </span>
       {forward ? (

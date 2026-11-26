@@ -1,0 +1,52 @@
+---
+title: Output schema
+---
+
+`schema` declares what a case produces: a tree of groups, lists and fields that
+people review in the case room. Every function in the schema receives `a`, an
+accessor over the answers. It records each path it reads, so Preprocess knows
+what to work out again when an answer changes.
+
+```ts
+import { agent, schema as s } from "@preprocess/sdk";
+
+export default agent({
+  instructions: "Code invoices.",
+  schema: s.group(
+    {
+      vendor: s.select({ options: ["Acme", "Globex"], review: "required" }),
+      lines: s.list(
+        s.group({
+          sku: s.text(),
+          amount: s.number(),
+        }),
+      ),
+      total: s.number(),
+    },
+    {
+      checks: {
+        totalsMatch: (a) =>
+          a.sum("lines[*].amount") === a.get("total") || {
+            field: "total",
+            message: "Lines do not add up",
+          },
+      },
+    },
+  ),
+  tools: {},
+});
+```
+
+- **Fields** are `text`, `number`, `boolean`, `date`, `select`, `multiselect`
+  and `fetched`, nested with `group` and `list`. Each takes `description`,
+  `visible(a)`, and `review` (`"required"`, `"none"`, or a function of the
+  answers).
+- **The accessor** has `a.get(path)`, which returns `null` for an empty or
+  hidden answer, plus `a.all("lines[*].amount")`, `a.sum(...)`,
+  `a.fetched(path)` and `a.sibling(name)` for the field beside this one in a
+  list item.
+- **Options** for a select are an array, a function of the answers, or
+  `s.source({ search, get })` for long lists that are searched and paged rather
+  than loaded whole.
+- **Fetched fields** declare their `inputs`. The fetch runs again only when
+  those inputs change.

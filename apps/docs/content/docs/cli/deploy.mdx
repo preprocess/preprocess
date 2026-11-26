@@ -1,0 +1,12 @@
+---
+title: Deploy
+---
+
+```sh
+npx preprocess deploy
+```
+
+`deploy` bundles `src/index.ts` (or the entry you name), uploads it, and prints
+the new deployment's status and any warnings. The first deploy creates the
+agent. Settings in `preprocess.config.json`, beside your package.json, ship with
+the code.
