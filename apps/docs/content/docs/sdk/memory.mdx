@@ -1,9 +1,44 @@
 ---
 title: Memory
+description:
+  Let agents propose durable operational rules from real cases, reviewed by
+  operators before entering future runs.
 ---
 
-While it works a case, an agent can propose a rule to remember, such as "Acme
-invoices are always in EUR". A person reviews the proposal from the Inbox. Once
-they accept it, the agent reads the rule on every later case. An agent holds at
-most 100 rules. You can read them in the agent's Memories section and through
-the API.
+Memory lets an agent learn recurring operational rules—such as
+`"Northwind Paper invoices are always billed in EUR"`—without anyone editing
+prompts or redeploying code. Every agent automatically receives the built-in
+`memory_propose` platform tool; there is no SDK flag required to enable it.
+
+## Why proposed memories require human acceptance
+
+Writing unreviewed model conclusions straight into future prompts causes silent
+drift: one hallucinated rule can corrupt every subsequent case. Preprocess makes
+memory an explicit propose-and-accept loop:
+
+1. **Agent proposes.** While working a case, the model calls `memory_propose`
+   with a concise rule it noticed.
+2. **Operator decides.** The proposal lands in the Inbox for an operator of the
+   agent to **accept** or **dismiss** (API keys and MCP cannot accept memory
+   proposals).
+3. **Runtime injects.** Once accepted, Preprocess includes the rule in the
+   opening context of every subsequent case for that agent, starting on the next
+   run.
+
+## Limits and governance
+
+- **Cap of 100 rules per agent.** Keep rules concrete and non-overlapping;
+  delete obsolete rules from the agent's Memories view or through the API.
+- **Privacy on deletion.** When a rule is deleted, its text is kept out of
+  subsequent reads and audit payloads and purged with retention.
+- **Distinct from past-case search.** Memory holds short, human-approved rules
+  injected into _every_ case. If you want an agent to look up specific past
+  cases on demand instead, enable
+  [Searching past cases](/sdk/searching-past-cases).
+
+## Related
+
+- [Review and approvals](/concepts/review-and-approvals#proposed-memories):
+  where proposals appear in the Inbox.
+- [Searching past cases](/sdk/searching-past-cases): on-demand retrieval over
+  completed cases.

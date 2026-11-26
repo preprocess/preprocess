@@ -1,0 +1,153 @@
+---
+title: Configuration, defaults and guardrails
+description:
+  How settings resolve across code, config files, org defaults and dashboard
+  overrides, and how guardrails restrict what agents can do.
+---
+
+Preprocess splits configuration into two kinds of settings: **defaults**, which
+code and dashboard overrides can change freely, and **guardrails**, which
+restrict what agents are allowed to access or spend and require an Owner or
+Admin to loosen.
+
+## Why defaults and guardrails are separate
+
+Engineering teams need to iterate on model choice, reasoning depth or timeouts
+without opening a ticket, while security and finance teams need hard boundaries
+on outbound hosts, secrets, MCP connections, sandbox sizes and monthly spend.
+Separating defaults from guardrails lets developers tune behavior quickly while
+keeping every boundary change explicit and audited.
+
+## Settings precedence
+
+A setting's effective value is settled in two stages: once when the agent is
+bundled and again at runtime when a case starts.
+
+At bundle time, `preprocess deploy` looks for `preprocess.config.json` beside
+the nearest `package.json` above the entry file (or beside the entry file
+itself). Any setting present in `preprocess.config.json` wins over the inline
+value passed to `agent()` and produces a build warning when the two differ. The
+merged result is stored on the deployment as its **code** value.
+
+At runtime, Preprocess resolves each setting in this order, from highest
+precedence to lowest:
+
+1. **Dashboard override** (`override`) — set per agent by an Owner, Admin or
+   member of the Developers group.
+2. **Code** (`code`) — the deployment's manifest value (`preprocess.config.json`
+   over inline `agent()`).
+3. **Organization default** (`organization`) — set for the whole organization by
+   an Owner or Admin.
+4. **Platform default** (`default`) — the built-in fallback when nothing else
+   sets a value.
+
+Every setting returned by `GET /v1/orgs/{org}/agents/{agent}/settings` reports
+its effective `value`, its `source` (`override`, `code`, `organization` or
+`default`) and the individual `code`, `organization` and `override` values.
+
+| Setting                     | Platform default         | Org default | Dashboard override         |
+| --------------------------- | ------------------------ | ----------- | -------------------------- |
+| `model`                     | `deepseek-v4.1-flash`    | Yes         | Yes                        |
+| `reasoning`                 | `medium`                 | Yes         | Yes                        |
+| `ocr`                       | `false`                  | Yes         | Yes                        |
+| `searchCases`               | `false`                  | Yes         | Yes                        |
+| `timeoutSeconds`            | `null` (runtime default) | Yes         | Yes                        |
+| `toolRetries`               | `null` (0 retries)       | Yes         | Yes                        |
+| `sandboxImage`              | `null`                   | Yes         | Yes                        |
+| `evals.onPush`              | `false`                  | Yes         | Yes                        |
+| `sandbox.size`              | None (opt-in in code)    | No          | Yes (within guardrail cap) |
+| `schedules.<name>.previews` | `false`                  | No          | Yes                        |
+
+### How deploy and promote clear overrides
+
+Code is the source of truth at promotion. While dashboard overrides let you tune
+a live agent between deploys, promoting a deployment—including an automatic
+promotion from a push to the agent's production branch—clears every dashboard
+override on that agent and records `settings.overrides.cleared` in the audit
+log.
+
+Before promoting, Preprocess surfaces warnings on the deployment when any active
+dashboard override differs from the deployment's code. To keep dashboard tweaks
+in source control before your next deploy, pull them into
+`preprocess.config.json`:
+
+```sh
+npx preprocess config pull
+```
+
+## Organization guardrails
+
+Only an Owner or Admin can loosen a guardrail directly. Making the change is the
+approval, and every change is written to the audit log (`guardrail.updated`,
+`secret.granted` or `mcp.granted`).
+
+Preprocess enforces five guardrails:
+
+- **Network rules:** An organization-wide `allow` list and `block` list (up to
+  200 host patterns each, exact hosts like `api.example.com` or wildcards like
+  `*.example.com`). New organizations start open (`allow: []`, `block: []`). A
+  host passes when no `block` pattern matches it and either `allow` is empty or
+  an `allow` pattern matches it. Per-agent network rules can also be set, but
+  they only narrow the organization's rules—an agent's allow list intersects the
+  organization's allow list and its block list unions with the organization's
+  block list.
+- **Max sandbox size:** Caps the largest case sandbox size an agent can use
+  (`small`, `medium`, `large` or `null` for no cap). Both deployments and
+  `sandbox.size` dashboard overrides are checked against this cap.
+- **Monthly spending limit:** An optional USD cap per calendar month in UTC
+  (`null` by default). It meters all hosted usage across the organization—cases,
+  eval runs, OCR calls, sandbox time and case fees. When the cap is reached, new
+  metered calls are refused and running cases transition to `halted` until a
+  person raises the limit or the month rolls over and reruns them.
+- **Secret grants:** Which agents are allowed to receive each organization
+  secret.
+- **MCP server grants:** Which agents are allowed to call each registered MCP
+  server.
+
+<Callout title="Coming soon">
+  Custom model-endpoint guardrails (restricting which model endpoints an
+  organization sends data to) are not yet configurable; `GET /v1/orgs/{org}
+  /guardrails` currently returns `modelEndpoints: "hosted"`.
+</Callout>
+
+## Guardrail loosening requests
+
+When a developer or a new deployment needs more access than current guardrails
+allow, Preprocess does not silently drop the requirement or fail the build:
+
+1. **Who requests:** Owners, Admins and members of the Developers group can
+   submit a request via `POST /v1/orgs/{org}/guardrail-requests` (or through the
+   app's Guardrails screen) for `network`, `secret`, `mcp`, `spending_limit` or
+   `sandbox_size` changes. A deployment whose code asks for an ungranted secret,
+   an ungranted MCP server, a blocked network host or a sandbox larger than the
+   cap also builds in `waiting` status and files the needed requests
+   automatically.
+2. **Who approves:** Only an **Owner** or **Admin** can approve
+   (`POST /v1/orgs/{org}/guardrail-requests/{id}/approve`) or reject
+   (`POST /v1/orgs/{org}/guardrail-requests/{id}/reject`) a pending request.
+   Approving applies the change immediately and resyncs affected live
+   deployments.
+3. **Audit trail:** Creating, withdrawing, approving and rejecting a request
+   each write an audit event (`guardrail.request.created`,
+   `guardrail.request.withdrawn`, `guardrail.request.approved`,
+   `guardrail.request.rejected`) alongside the underlying guardrail or grant
+   update.
+
+## How to use it
+
+Put project-level overrides in `preprocess.config.json` beside `package.json`:
+
+```json
+{
+  "settings": {
+    "model": "kimi-k3.1-pro",
+    "reasoning": "high",
+    "timeoutSeconds": 180
+  }
+}
+```
+
+Inspect an agent's resolved settings or manage guardrails from the app under
+**Settings → Organization → Defaults** and **Settings → Organization →
+Guardrails**, or through the [CLI settings commands](/cli/settings) and the
+[Guardrails API](/api).

@@ -1,0 +1,171 @@
+---
+title: Schedules and webhooks
+description:
+  Declare recurring cron schedules in agent code and receive signed outbound
+  webhook notifications for case events.
+---
+
+**Schedules** let an agent open cases automatically on a cron cadence declared
+in code, while **webhooks** push signed HTTPS notifications to your systems
+whenever a case completes, fails or waits on a group.
+
+## Why schedules live in code and webhooks live in the org
+
+A recurring job is part of an agent's behavior, so declaring it alongside the
+agent's tools keeps its schedule versioned with deployments. Outbound webhook
+endpoints belong to the systems consuming results across one or more agents, so
+managing them at the organization level lets Admins rotate secrets and inspect
+deliveries without redeploying agents.
+
+## Cron schedules
+
+Declare schedules in the `schedules` array of `agent()`. Each schedule requires:
+
+- `name`: slug matching `/^[a-z0-9][a-z0-9-]{0,63}$/`, unique within the agent.
+- `cron`: a standard 5-field cron expression.
+- `text`: non-empty prompt text used as the new case's input.
+- `timezone` (optional): any valid IANA timezone name (defaults to `UTC`).
+- `previews` (optional): whether the schedule also fires on preview deployments
+  (defaults to `false`; overridable per schedule via
+  `schedules.<name>.previews`).
+
+### How scheduled execution works
+
+Each agent's production deployment runs a dedicated `Scheduler` Durable Object
+(`<org>:<agent>:scheduler`), and preview deployments with schedules get their
+own (`…:scheduler:<deploymentId>`). The Durable Object sets a single alarm for
+the earliest active schedule's next fire time.
+
+When a schedule fires:
+
+- Preprocess creates a case with `source: "schedule"` and the idempotency key
+  `schedule:<name>:<fireTime>`, so a retried alarm never starts a duplicate
+  case.
+- Fires missed while the scheduler was unavailable run once rather than
+  backfilling every missed interval.
+- If creating the case is refused (for example, `spending_limit_reached`), the
+  scheduler records the error code in `lastError` and does not retry that fire.
+- **Pausing survives deploys:** Owners, Admins and operators can pause or resume
+  a schedule by name via the API
+  (`POST /v1/orgs/{org}/agents/{agent}/schedules/{name}/pause` and `/resume`) or
+  MCP (`pause_schedule`, `resume_schedule`). Promoting a new deployment
+  preserves the paused state of every schedule whose name still exists. Resuming
+  computes the next run from the current time without running missed fires.
+
+## Outbound webhooks
+
+Owners, Admins and organization API keys register webhook endpoints with
+`POST /v1/orgs/{org}/webhooks`. Endpoints must use a public `https://`
+URL—`localhost` and private, loopback, link-local or unique-local IP literals
+are refused. Each endpoint subscribes to one or more event types and can
+optionally restrict delivery to specific `agentIds` (`null` matches every agent
+in the organization).
+
+### Event types
+
+Preprocess emits three webhook event types, written atomically with the case
+status change and delivered at least once through the `WEBHOOKS` queue:
+
+| Event type         | When it fires              | Payload highlights                                                                                                |
+| ------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `case.completed`   | A case reaches `completed` | `case` ref, `answers` (inlined when under 256 KB, else `null`) and `answersUrl`                                   |
+| `case.failed`      | A case reaches `failed`    | `case` ref and `error` (`code` and `message`)                                                                     |
+| `case.needs_group` | A case reaches `waiting`   | `case` ref, `group` (`id`, `slug`, `name`), `reason` and optional `approval` (`id`, `level`, `target`, `payload`) |
+
+A case stopped by a spending limit (`halted`) does not emit a webhook.
+
+### Signing headers and verification
+
+Every delivery follows the Standard Webhooks specification. Creating an endpoint
+returns its `whsec_…` signing secret once (24 random bytes base64-encoded after
+the `whsec_` prefix), encrypted at rest with the organization's key.
+
+Each HTTP `POST` carries three signing headers:
+
+- `webhook-id`: the delivery ID (`msg_…`), stable across retries and manual
+  redeliveries.
+- `webhook-timestamp`: Unix timestamp in seconds when the attempt was signed.
+- `webhook-signature`: `v1,<base64>`, computed as
+  `HMAC-SHA256(base64_decode(secret_without_prefix), "${id}.${timestamp}.${rawBody}")`.
+
+When you rotate an endpoint's secret
+(`POST /v1/orgs/{org}/webhooks/{id}/rotate-secret`), Preprocess signs deliveries
+with both the new and previous secret—space-separated in `webhook-signature`—for
+**24 hours** so you can roll keys without downtime.
+
+Verify signatures against the raw request body using constant-time comparison
+and reject timestamps outside your replay window (for example, 5 minutes):
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verifyWebhook(
+  rawBody: string,
+  headers: { id: string; timestamp: string; signature: string },
+  secret: string,
+): boolean {
+  const key = Buffer.from(secret.replace(/^whsec_/, ""), "base64");
+  const expected = createHmac("sha256", key)
+    .update(`${headers.id}.${headers.timestamp}.${rawBody}`)
+    .digest("base64");
+  const expectedBuf = Buffer.from(`v1,${expected}`);
+
+  return headers.signature.split(" ").some((sig) => {
+    const candidate = Buffer.from(sig);
+    return (
+      candidate.length === expectedBuf.length &&
+      timingSafeEqual(candidate, expectedBuf)
+    );
+  });
+}
+```
+
+### Retries and 3-day auto-disable
+
+Each delivery attempt uses a **10-second** timeout, follows no redirects
+(`redirect: "manual"`) and requires an HTTP `2xx` status to succeed.
+
+- **Backoff schedule:** Failed attempts retry after **30 seconds**, **2
+  minutes**, **10 minutes**, **30 minutes**, **1 hour** and then every **3
+  hours** for up to **24 hours** from the delivery's creation time. After 24
+  hours, the delivery is marked `failed`.
+- **Delivery log and redelivery:** `GET /v1/orgs/{org}/webhooks/{id}/deliveries`
+  returns the newest 100 deliveries.
+  `POST /v1/orgs/{org}/webhooks/{id}/deliveries/{msgId}/redeliver` queues
+  another attempt with the same `webhook-id`.
+- **3-day auto-disable:** If every delivery attempt to an endpoint has failed
+  for **3 consecutive days**, Preprocess disables the endpoint
+  (`enabled: false`, `disabledReason: "Every delivery failed for 3 days."`) and
+  emails all organization Owners and Admins. Re-enabling the endpoint with
+  `PATCH /v1/orgs/{org}/webhooks/{id}` clears `disabledReason`.
+
+## How to use it
+
+Declare a cron schedule directly in your agent definition:
+
+```ts
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+export default agent({
+  instructions: "Reconcile open invoices from the previous business day.",
+  schedules: [
+    {
+      name: "nightly-reconcile",
+      cron: "0 2 * * *",
+      timezone: "America/Los_Angeles",
+      text: "Reconcile all invoices closed yesterday and flag mismatches.",
+    },
+  ],
+  tools: {
+    fetch_open_invoices: tool({
+      description: "List invoices awaiting reconciliation",
+      input: z.object({ date: z.string() }),
+      run: async ({ date }) => ({ date, invoices: [] }),
+    }),
+  },
+});
+```
+
+See [SDK groups and schedules](/sdk/groups-and-schedules) and the
+[Webhooks API reference](/api) for endpoint parameters and delivery schemas.

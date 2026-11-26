@@ -1,0 +1,99 @@
+---
+title: Memory
+description:
+  Supervised agent memory rules proposed during cases, reviewed by people and
+  applied to future runs.
+---
+
+Memory is a supervised list of plain-text rules that an agent proposes while
+working cases. People accept or dismiss each proposal, and Preprocess injects
+accepted rules into every later case for that agent.
+
+## Why memory is supervised
+
+Unsupervised agent memory drifts quickly: one unusual case can write a bad
+heuristic that silently corrupts hundreds of later runs. Preprocess keeps every
+rule short, visible and gated by a person with operator access so institutional
+knowledge compounds without unreviewed prompt drift.
+
+<StateMachine label="Memory rule lifecycle">
+  <State id="proposed" initial />
+  <State id="accepted" />
+  <State id="dismissed" final />
+  <State id="deleted" final />
+
+  <Transition from="proposed" to={["accepted", "dismissed"]} />
+  <Transition from="accepted" to="deleted" label="delete" />
+</StateMachine>
+
+## How it works
+
+### Proposing rules during a case
+
+Every agent automatically receives a built-in `propose_memory` platform tool—you
+don't need to declare anything in your agent code to enable it. When an agent
+notices a durable rule while working a case (for example, after a reviewer
+corrects a field or explains a vendor exception), it calls `propose_memory` with
+`text` (at most **500 characters**) and an optional `reason`.
+
+- **Deduplication:** Proposing the exact same trimmed text twice on the same
+  case returns `duplicate` and keeps one proposal.
+- **Eval isolation:** Eval runs never propose memory rules; calling
+  `propose_memory` during an eval run returns
+  `"not recorded: eval runs do not propose rules"`.
+
+### Accepting or dismissing proposals
+
+Proposals wait in the case's **Review** tab, which operators reach from the
+**Inbox**. A person with operator access to the agent—or an Owner or
+Admin—accepts or dismisses each proposal. Viewers can read rules but cannot
+decide them.
+
+### Entering later cases
+
+Every `accepted` rule is loaded oldest first (by `decidedAt`, then `id`) so
+existing rules keep a stable position in the prompt as new ones are added. The
+runtime injects them into the system prompt's `memory` section for:
+
+- Every new case of that agent
+- Every rerun of an existing case (picking up rules accepted or deleted since
+  the previous run)
+- Every eval run of that agent
+
+Deleting a case does not delete rules that were proposed on it and accepted.
+
+### Per-agent rule cap
+
+Each agent can hold at most **100** active rules (`MEMORY_CAP = 100`). Both
+`accepted` and still-`proposed` rules count toward this cap. Once an agent holds
+100 rules, further `propose_memory` calls are refused until someone deletes an
+accepted rule or dismisses a pending proposal.
+
+Deleting an accepted rule
+(`DELETE /v1/orgs/{org}/agents/{agent}/memories/{memory}`) removes it
+immediately from all future runs and reads, writes `agent.memory.deleted` to the
+audit log and keeps the row only until the organization's retention sweep purges
+it.
+
+## How to use it
+
+- **In the app:** Review pending proposals in a case's **Review** tab (linked
+  from the **Inbox**) and view or delete accepted rules on the agent's
+  **Memories** page.
+- **Via the API:**
+  - `GET /v1/orgs/{org}/agents/{agent}/memories?status=accepted` (or
+    `status=proposed`) lists rules and returns the current `cap`.
+  - `GET /v1/orgs/{org}/cases/{id}/memories` lists proposals created on one
+    case.
+  - `POST /v1/orgs/{org}/cases/{id}/memories/{memory}/accept` and `/dismiss`
+    decide a pending proposal.
+  - `DELETE /v1/orgs/{org}/agents/{agent}/memories/{memory}` deletes an accepted
+    rule.
+- **Via MCP:** Connected MCP clients can inspect rules with
+  `list_agent_memories` and `list_case_memories`, and remove stale accepted
+  rules with `delete_agent_memory`. Accepting or dismissing proposals is
+  intentionally restricted to people in the app or API and is not exposed as an
+  MCP tool.
+
+See [SDK memory](/sdk/memory) for a short summary alongside the rest of the
+agent SDK.

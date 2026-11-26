@@ -9,19 +9,14 @@ import { rememberedCasesSearch } from "../../../../features/agent-cases/case-inb
 import {
   attachCaseFiles,
   caseWorkActions,
-  getCaseFiles,
   openCaseFile,
-  getCaseRoom,
 } from "../../../../features/agent-cases/case-room-data";
 import { useAuth } from "../../../../features/auth/auth-context";
 import { FLUE_LAB_INPUT_SAMPLES } from "../../../../features/agent-cases/flue-lab-input-samples";
 import { currentScenario } from "../../../../scenarios/current-scenario";
 import {
   assigneeCandidates,
-  getCaseAccess,
-  getCaseAgent,
-  getOrgCase,
-  getOrgCaseNeighbors,
+  loadCaseRoomPage,
   orgCaseStatusSetter,
   setCaseAssignees,
 } from "../../../../features/agent-cases/list-org-cases";
@@ -40,21 +35,14 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
   validateSearch: (search: Record<string, unknown>): CaseRoomSearch =>
     search.view === "review" ? { view: "review" } : {},
   loader: async ({ params }) => {
-    const [agent, item, neighbors, room, access, files] = await Promise.all([
-      getCaseAgent(params.agentId),
-      getOrgCase(params.agentId, params.caseId),
-      // Prev/next step through the list as it was last shown.
-      getOrgCaseNeighbors(
-        rememberedCasesSearch(),
-        params.agentId,
-        params.caseId,
-      ),
-      getCaseRoom(params.agentId, params.caseId),
-      getCaseAccess(),
-      getCaseFiles(params.agentId, params.caseId),
-    ]);
-    if (!agent) throw notFound();
-    return { agent, item, neighbors, room, access, files };
+    // Prev/next step through the list as it was last shown.
+    const page = await loadCaseRoomPage(
+      rememberedCasesSearch(),
+      params.agentId,
+      params.caseId,
+    );
+    if (!page.agent) throw notFound();
+    return { ...page, agent: page.agent };
   },
   component: AgentCasePage,
   errorComponent: AgentCaseParamsError,

@@ -1,0 +1,149 @@
+---
+title: Logs and audit trail
+description:
+  Operational run logs, R2 run capture, OpenTelemetry export and the
+  tamper-evident compliance audit log.
+---
+
+Preprocess keeps operational telemetry and compliance records in completely
+separate systems: **run logs and run capture** give developers full visibility
+into how cases ran, while the **audit log** gives security and compliance teams
+a tamper-evident, hash-chained record of who did what.
+
+## Why operational logs and audit logs are separate
+
+Operational logs are high-volume, searchable and subject to retention sweeps
+when cases are deleted. Compliance audit logs must stay immutable, gap-free and
+verifiable even if a case is deleted or an attacker alters a database row.
+Separating the two pipelines lets you tune retention and ship logs to your
+observability stack without weakening compliance guarantees.
+
+<Flow caption="Run logs flow through a queue to R2, Postgres summaries and optional OTLP export; audit events chain in Postgres and anchor daily to locked R2 manifests.">
+  <Node id="rt" icon="box" at="0 0" detail="API + runtime">case execution</Node>
+  <Node id="lq" icon="server" at="1 0" narrow="0 1" detail="LOGS queue">log consumer</Node>
+  <Node id="r2l" kind="end" icon="file-text" at="2 0" narrow="1 1">R2 logs + Postgres summaries</Node>
+  <Node id="otel" kind="actor" icon="send" at="2 1" narrow="1 2">OTLP/HTTP collector</Node>
+
+<Node id="pg" icon="server" at="0 2" narrow="0 3" detail="SHA-256 chain">
+  Postgres audit log
+</Node>
+<Node id="anchor" icon="clock" at="1 2" narrow="0 4" detail="00:20 UTC cron">
+  daily anchor
+</Node>
+<Node id="r2a" kind="end" icon="file-text" at="2 2" narrow="1 4">
+  signed Ed25519 R2 manifest
+</Node>
+
+  <Edge from="rt" to="lq" label="structured logs" />
+  <Edge from="lq" to="r2l" />
+  <Edge from="lq" to="otel" label="optional" />
+  <Edge from="rt" to="pg" label="in-tx audit()" />
+  <Edge from="pg" to="anchor" />
+  <Edge from="anchor" to="r2a" label="1-year lock" />
+</Flow>
+
+## Operational run logs and run capture
+
+### Run logs
+
+Both the platform (`source: "platform"`) and your agent code (`source: "agent"`)
+emit structured log records at `debug`, `info`, `warn` or `error` levels.
+Records flow through the `LOGS` queue (`preprocess-logs-*`) into:
+
+- **R2 log storage:** Production writes through Cloudflare Pipelines into an R2
+  Data Catalog table (`logs.run_logs`) queried with R2 SQL; local development
+  and tests write NDJSON objects to R2 behind the same interface.
+- **Postgres summaries (`log_summaries`):** Per-case and per-deployment totals
+  (`events`, `errors`, `warnings`, `lastError`, `firstAt`, `lastAt`) so the UI
+  and API can show error counts without scanning R2.
+
+Queries default to the last **7 days** and span at most **31 days** per request
+(up to 500 records per page, cursor-paginated). Anyone who can view a case can
+read its logs (`GET /v1/orgs/{org}/cases/{id}/logs`); searching across an agent,
+deployment or organization (`GET /v1/orgs/{org}/logs`) requires Developers,
+Owners or Admins.
+
+### Run capture
+
+When a case ends, the runtime writes its full execution trace to R2 as a
+versioned JSON document (`format: "preprocess.run"`, `version: 1`) at
+`{org}/agents/{agent}/cases/{case}/run.v1.json`. Run capture records every
+`model.request`, `model.response`, `tool.call`, `tool.result`, `decide`, `ocr`,
+`schema.answer`, `approval.requested`, `approval.decided` and status event
+alongside tokens, cost and timing. This capture powers eval replay and is purged
+when a case is deleted or expires under retention.
+
+### OpenTelemetry export
+
+Owners and Admins can forward run logs and traces to any public HTTPS OTLP/HTTP
+collector under **Settings → Organization → OpenTelemetry** or via
+`PUT /v1/orgs/{org}/settings/otel`:
+
+- **Endpoints:** All log records post as OTLP/HTTP JSON to `{endpoint}/v1/logs`.
+  Every `model.call` and `tool.call` record with a `caseId` and `durationMs`
+  also posts as a span to `{endpoint}/v1/traces`, sharing a deterministic
+  `traceId` derived from the case ID.
+- **Headers:** Custom collector headers (such as API keys) are encrypted under
+  the organization's key and are write-only—reads return only header names.
+- **Retries:** Failed exports requeue with a delay up to **3** attempts (`10 s`
+  timeout per request, no redirects). After the final attempt fails, records are
+  dropped and a `warn` record (`kind: "otel.export"`) is written to the
+  organization's run logs.
+
+## Compliance audit log
+
+Every sensitive action taken by a `person`, `agent`, `api_key` or the `platform`
+is written to `audit_events` inside the same database transaction as the change
+itself. Audited actions cover organization and member lifecycle, API keys,
+groups and agent access, deploys and promotions, settings and guardrail changes,
+secret creation/grants/delivery, MCP connections, cases, memory deletions,
+evals, schedules, webhooks, OpenTelemetry configuration and retention purges.
+
+Audit records store IDs, names and paths—never answer values, file contents or
+secret values—and case deletion never removes audit events.
+
+### Hash chain and daily signed manifests
+
+- **Append-only SHA-256 chain:** Each organization has its own serialized
+  sequence (`seq` starting at `1`, locked via `audit_heads`). Event `n` is
+  hashed as `SHA-256(hash_{n-1} || JCS(event_n))` using RFC 8785 JSON
+  Canonicalization, starting from 32 zero bytes (`0x00…`).
+- **Daily Ed25519 manifests in R2:** Every day at **00:20 UTC**, a scheduled job
+  exports each organization's canonical events for the completed UTC day to
+  `audit/{org}/{yyyy}/{mm}/{dd}/events.ndjson` and writes a signed
+  `manifest.json` containing `firstSeq`, `lastSeq`, `count`, `prevHash`,
+  `headHash`, `eventsSha256`, `keyId` and an Ed25519 `signature`. Even days with
+  zero events receive a manifest so tail truncation is detectable. On
+  non-preview stages, the R2 audit bucket enforces a **1-year retention lock**.
+
+### Verification
+
+Owners and Admins can verify their entire audit chain at any time with
+`POST /v1/orgs/{org}/audit-events/verify`. Preprocess walks every event in
+Postgres to verify the SHA-256 chain and gap-free sequence, then verifies every
+daily manifest's Ed25519 signature, day contiguity and `headHash`
+match—reporting `ok: true` or the exact `firstBreak` (`hash_mismatch`, `gap`,
+`anchor_mismatch` or `anchor_missing`).
+
+Anyone can also verify signed manifests offline without trusting Preprocess by
+fetching the public Ed25519 keys from `GET /v1/audit/keys`.
+
+<Callout title="Coming soon">
+  Bulk audit log export (`POST /v1/orgs/{org}/audit-events/export`) is not yet
+  implemented and currently returns `501`. Reading paginated audit events (`GET
+  /v1/orgs/{org}/audit-events`), inspecting single events, fetching public keys
+  and running chain verification are all live today.
+</Callout>
+
+## How to use it
+
+Query run logs from the CLI or through MCP (`get_case_logs` and `search_logs`):
+
+```sh
+npx preprocess logs --case <case-id> --level error
+npx preprocess logs --agent invoice-coder --search "timeout" --limit 50
+```
+
+Browse and verify the compliance audit log in **Settings → Organization → Audit
+logs** or via `GET /v1/orgs/{org}/audit-events` and
+`POST /v1/orgs/{org}/audit-events/verify`.

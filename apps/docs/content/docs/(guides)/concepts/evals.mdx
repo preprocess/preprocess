@@ -1,0 +1,112 @@
+---
+title: Evals
+description:
+  Replay completed and corrected cases against candidate deployments and models
+  without repeating side effects.
+---
+
+An eval suite is a collection of completed cases whose inputs, recorded tool
+results and human-corrected answers are replayed against a deployment and model,
+then scored field by field.
+
+## Why evals start from real cases
+
+Hand-written test fixtures drift away from production edge cases almost
+immediately. Because every case in Preprocess captures its input, its recorded
+tool calls and every correction a person makes in review, your real production
+work becomes your regression suite with zero extra instrumentation.
+
+## Suites and cases
+
+Preprocess maintains two kinds of suites per agent:
+
+- **Automatic suite (`Completed cases`):** Created automatically when an agent's
+  first case completes. It holds the newest **100** completed cases by default
+  (`cap` is configurable between `1` and `1,000`). If a case is rerun and
+  completes again, its entry in the suite is updated in place.
+- **Manual suites:** Named suites created by Developers, Owners or Admins with
+  no case cap. You can add or remove any completed case of that agent.
+
+When a case joins a suite, Preprocess snapshots:
+
+- `input`: the case's text and file references.
+- `expected`: the case's final answers, including every edit a human reviewer
+  made.
+- `original`: the agent's own answers before human edits, reconstructed from the
+  case's review events.
+- `captureKey`: the R2 key of the source case's run capture, used to replay
+  side-effect and sandbox tool results.
+
+Deleting a case removes it from every eval suite automatically.
+
+## Field-by-field scoring
+
+When an eval case finishes, Preprocess compares its actual answers against
+`expected` across every leaf field in the output schema:
+
+- Object keys are flattened to dotted paths (arrays and scalars are compared
+  whole).
+- Strings and enums are normalized by trimming whitespace, collapsing repeated
+  whitespace to a single space and lowercasing.
+- Numbers and booleans must match exactly.
+- Objects ignore `null` and `undefined` properties and compare keys in sorted
+  order.
+
+Each field receives a binary match (`1` or `0`), and each eval case ends in one
+of four terminal statuses: `passed`, `failed`, `needed_person` or `error`. A run
+reports per-field `matchRate` across the suite alongside overall `passRate`,
+`passed`, `failed`, `neededPerson` and `costUsd`.
+
+## How tools behave during replay
+
+Eval runs are safe to run against production cases because they never repeat
+external mutations:
+
+- **Side-effect tools (`sideEffects: true`):** Never executed against external
+  systems. The runtime looks up the recorded result for the same tool name and
+  input in the source case's run capture and returns it (or returns an error if
+  the agent calls a side-effect tool with an unrecorded input).
+- **Case sandbox tools:** Eval cases never boot a Linux container; built-in
+  sandbox tool calls replay from the source case's capture.
+- **Read-only tools (`sideEffects: false`):** Execute normally against your
+  deployed agent code.
+- **Approvals:** Unconditional tool approvals still pause the eval case and
+  count toward `neededPerson`; conditional approvals replay from the source
+  case's recorded result.
+- **Memory and past-case search:** Eval runs receive the agent's accepted memory
+  rules, never propose new memory rules and restrict `search_cases` to cases
+  completed before the source case started (excluding the source case itself so
+  scores aren't inflated).
+
+<Callout title="Coming soon">
+  Automatic eval runs on git push (`evals.onPush` in agent code/settings and
+  `runOnPush` on suites) are accepted in the configuration schema and API, but
+  are not yet wired to start runs automatically on push. Today, start eval runs
+  manually from the app, CLI, API or MCP.
+</Callout>
+
+## How to use it
+
+Owners, Admins and members of the Developers group can manage suites and start
+runs across one or more models at once.
+
+From the CLI:
+
+```sh
+npx preprocess evals list --agent invoice-coder
+npx preprocess evals run <suite-id> --model deepseek-v4.1-flash --model kimi-k3.1-pro
+```
+
+<Callout title="Coming soon">
+  `@preprocess/cli` is not yet published to npm. Run CLI commands from a
+  workspace checkout until npm publishing ships.
+</Callout>
+
+From the API, call `POST /v1/orgs/{org}/eval-suites/{suite}/runs` with an
+optional `deployment` ID (defaults to production) and `models` array, then poll
+`GET /v1/orgs/{org}/eval-runs/{run}`. Connected MCP clients can use
+`list_eval_suites`, `create_eval_suite`, `add_eval_suite_cases`,
+`run_eval_suite` and `get_eval_run`.
+
+See the [CLI logs and evals guide](/cli/logs-and-evals) and
+[Evals API reference](/api) for full flags and response schemas.

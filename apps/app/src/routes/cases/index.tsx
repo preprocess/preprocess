@@ -7,10 +7,7 @@ import {
   patchCasesSearch,
   type CasesSearchParams,
 } from "../../features/agent-cases/case-inbox-search";
-import {
-  getCaseAccess,
-  listOrgCases,
-} from "../../features/agent-cases/list-org-cases";
+import { loadCasesPage } from "../../features/agent-cases/list-org-cases";
 
 export const Route = createFileRoute("/cases/")({
   staticData: { ownsHeader: true },
@@ -18,10 +15,7 @@ export const Route = createFileRoute("/cases/")({
     casesSearchForUrl(parseCasesSearch(search)),
   loaderDeps: ({ search }) => ({ search: parseCasesSearch(search) }),
   loader: async ({ deps }) => {
-    const [page, access] = await Promise.all([
-      listOrgCases(deps.search),
-      getCaseAccess(),
-    ]);
+    const { page, access } = await loadCasesPage(deps.search);
     return { page, access };
   },
   component: CasesIndexPage,

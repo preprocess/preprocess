@@ -1,14 +1,58 @@
 ---
 title: Logs and evals
+description:
+  Stream structured run logs and replay completed cases across models before
+  promoting a release.
 ---
+
+`preprocess logs` and `preprocess evals` give you terminal-first observability
+and regression testing against real production cases without clicking through
+the dashboard.
+
+## Streaming run logs
+
+`logs` prints structured run logs, newest first, scoped to a single case, an
+agent, a deployment, or the entire organization:
 
 ```sh
 npx preprocess logs --case <case id> --level error
+```
+
+- **Filtering.** Narrow output by `--case`, `--agent`, `--deployment`, or
+  `--level` when diagnosing a failing tool call, timeout, or schema error.
+- **Permissions.** Reading logs for a specific agent requires access to that
+  agent; organization-wide log queries require membership in Developers or an
+  Admin/Owner role (an organization API key has Admin rights).
+- **Secret redaction.** Bound secret values never enter run logs.
+
+## Running eval suites
+
+Every completed case with human corrections can join an agent's eval suite.
+`evals run` replays a suite against a deployment (production by default, or any
+preview deployment id) once per `--model` flag and waits for the full results:
+
+```sh
 npx preprocess evals list
 npx preprocess evals run regressions --model deepseek-v4.1-flash --model kimi-k3.1-pro
 ```
 
-`logs` prints run logs, newest first, for a case, an agent, a deployment, or the
-whole organization. Organization-wide logs need Developers or Admins.
-`evals run` runs a suite against a deployment (production by default), once per
-`--model`, and waits for the results.
+During an eval replay, Preprocess guarantees deterministic, side-effect-safe
+execution:
+
+- tools marked `sideEffects: true` reuse their recorded outputs instead of
+  calling external systems again;
+- sandbox calls reuse captured outputs without booting containers;
+- `search_cases` sees only cases completed _before_ the replayed case started,
+  preventing future-data leakage.
+
+<Callout title="Coming soon">
+  Automatic eval runs on push (`evals: {onPush}`) are not wired yet. Today,
+  trigger suites on demand with `preprocess evals run` from your terminal or CI.
+</Callout>
+
+## Related
+
+- [Cases](/concepts/cases): how completed cases and human corrections feed into
+  evals.
+- [Tools](/sdk/tools): why marking writes `sideEffects: true` makes evals safe.
+- [Command reference](/cli/reference): complete flags for `logs` and `evals`.
