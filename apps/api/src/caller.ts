@@ -12,7 +12,7 @@ import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 
-import { requestContext, withAuth } from "./auth.ts";
+import { readSession, requestContext, withAuth } from "./auth.ts";
 import type { RequestContext } from "./auth.ts";
 import type { Env } from "./env.ts";
 
@@ -57,9 +57,7 @@ export const orgCaller = createMiddleware<{
       });
     caller = { type: "api_key", keyId: result.key.id, role: "admin" };
   } else {
-    const session = await withAuth(c.env, request, (auth) =>
-      auth.api.getSession({ headers: c.req.raw.headers }),
-    );
+    const session = await readSession(c.env, c.req.raw);
     if (!session) throw new HTTPException(401, { message: "Sign in first." });
     // Reading the membership through withOrg on the path's organization can
     // only ever see that organization's rows.
