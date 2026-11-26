@@ -1,6 +1,6 @@
 {
-  "id": "935ebd44-ded6-4a28-90fb-c9cf4e96a0e6",
-  "prevId": "b6d8a909-13b2-44f5-a2ee-f8d908009152",
+  "id": "ce8bf69e-d8cc-4022-a3a3-538fb4ac0620",
+  "prevId": "0f6b0128-18ce-4a29-8e2e-97ed4430f06a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1419,6 +1419,147 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sandbox_intervals": {
+      "name": "sandbox_intervals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sandbox_id": {
+          "name": "sandbox_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent": {
+          "name": "agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "case_id": {
+          "name": "case_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "sandbox_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "end_reason": {
+          "name": "end_reason",
+          "type": "sandbox_end",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "sandbox_intervals_organization_id_started_at_index": {
+          "name": "sandbox_intervals_organization_id_started_at_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sandbox_intervals_open": {
+          "name": "sandbox_intervals_open",
+          "columns": [
+            {
+              "expression": "last_seen_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "ended_at is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sandbox_intervals_organization_id_organization_id_fk": {
+          "name": "sandbox_intervals_organization_id_organization_id_fk",
+          "tableFrom": "sandbox_intervals",
+          "tableTo": "organization",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "sandbox_intervals_sandboxId_seq_unique": {
+          "name": "sandbox_intervals_sandboxId_seq_unique",
+          "nullsNotDistinct": false,
+          "columns": ["sandbox_id", "seq"]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -5856,7 +5997,24 @@
     "public.metered_feature": {
       "name": "metered_feature",
       "schema": "public",
-      "values": ["cases", "model_usage", "decide", "ocr", "log_bytes"]
+      "values": [
+        "cases",
+        "model_usage",
+        "decide",
+        "ocr",
+        "log_bytes",
+        "sandbox"
+      ]
+    },
+    "public.sandbox_end": {
+      "name": "sandbox_end",
+      "schema": "public",
+      "values": ["sleep", "destroy", "crash", "lost"]
+    },
+    "public.sandbox_kind": {
+      "name": "sandbox_kind",
+      "schema": "public",
+      "values": ["build", "render", "case"]
     },
     "public.seat_role": {
       "name": "seat_role",

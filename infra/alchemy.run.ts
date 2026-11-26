@@ -554,6 +554,8 @@ export default Alchemy.Stack(
         SANDBOX: Cloudflare.DurableObject("BuildSandbox", {
           containers: [buildImage],
         }),
+        // Times each build's container for metering (spec 16a).
+        PLATFORM: Cloudflare.WorkerEntrypoint(apiRef, "Platform"),
       },
     });
 
@@ -572,6 +574,8 @@ export default Alchemy.Stack(
         RENDERER: Cloudflare.DurableObject("Renderer", {
           containers: [renderImage],
         }),
+        // Times each render's container for metering (spec 16a).
+        PLATFORM: Cloudflare.WorkerEntrypoint(apiRef, "Platform"),
       },
     });
 

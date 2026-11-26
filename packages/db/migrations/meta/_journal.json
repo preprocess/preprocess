@@ -171,9 +171,16 @@
       "breakpoints": true
     },
     {
+      "idx": 27,
+      "version": "7",
+      "when": 1795668183009,
+      "tag": "0027_sandbox_intervals",
+      "breakpoints": true
+    },
+    {
       "idx": 28,
       "version": "7",
-      "when": 1795668453089,
+      "when": 1795669708019,
       "tag": "0028_case_search",
       "breakpoints": true
     }

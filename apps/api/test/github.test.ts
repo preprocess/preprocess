@@ -229,6 +229,7 @@ describe("push builds", () => {
       entry: "src/index.ts",
       timeoutSeconds: 1,
       archive: "abc1234",
+      owner: { organizationId: org, agent: "stock" },
     });
     const everything = JSON.stringify({ calls, build: done });
     for (const t of await tokens()) expect(everything).not.toContain(t.value);

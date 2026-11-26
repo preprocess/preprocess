@@ -5,6 +5,7 @@
 
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { LogRecord } from "@preprocess/logs";
+import type { SandboxEvent } from "@preprocess/sandbox";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { searchCases, type SearchRequest } from "./case-search.ts";
@@ -17,6 +18,7 @@ import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
 import { proposeMemory, type MemoryProposal } from "./memories.ts";
 import { ocrFile } from "./ocr.ts";
+import { recordSandboxEvent } from "./sandbox.ts";
 import { entitlement } from "./billing.ts";
 import { spendGate, type SpendVerdict } from "./spend.ts";
 
@@ -54,6 +56,12 @@ export class Platform extends WorkerEntrypoint<Env> {
     return (await entitlement(this.env, org, "model_usage")) === "ok"
       ? "ok"
       : "credit_exhausted";
+  }
+
+  // A sandbox's start, wake, heartbeat, sleep, destroy or crash (spec 16a),
+  // timed here.
+  sandboxEvent(event: SandboxEvent) {
+    return recordSandboxEvent(this.env, event);
   }
 
   // Run-log records from the runtime and the Tail Worker (design doc 09).

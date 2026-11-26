@@ -48,7 +48,11 @@ import {
 } from "../src/schema/settings.ts";
 import { logSummaries } from "../src/schema/logs.ts";
 import { agentMemories } from "../src/schema/memories.ts";
-import { seatActivity, usageRecords } from "../src/schema/billing.ts";
+import {
+  sandboxIntervals,
+  seatActivity,
+  usageRecords,
+} from "../src/schema/billing.ts";
 import {
   evalResults,
   evalRuns,
@@ -468,6 +472,18 @@ export const seedOrganization = async (name: string) =>
       month: "2026-11-01",
       role: "operator",
     });
+    await tx.insert(sandboxIntervals).values({
+      id: newId("sandboxInterval"),
+      organizationId: org,
+      sandboxId: `sandbox-${org}`,
+      seq: 1,
+      agent: agentId,
+      caseId,
+      kind: "case",
+      size: "small",
+      startedAt: new Date("2026-11-26T03:00:00Z"),
+      lastSeenAt: new Date("2026-11-26T03:00:30Z"),
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -510,6 +526,7 @@ export const tenantTables = {
   agent_memories: "organization_id",
   usage_records: "organization_id",
   seat_activity: "organization_id",
+  sandbox_intervals: "organization_id",
   inbox_reads: "organization_id",
   outbox: "organization_id",
   webhook_endpoints: "organization_id",

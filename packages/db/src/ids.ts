@@ -34,6 +34,7 @@ export const prefixes = {
   evalRun: "evr",
   memory: "mry",
   usageRecord: "use",
+  sandboxInterval: "sbi",
   retentionSweep: "rsw",
 } as const;
 
