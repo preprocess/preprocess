@@ -79,7 +79,7 @@ user: { emailNotifications: boolean().notNull().default(true) }
 
 - When a mention is written, a case enters `waiting`, or an assignment adds a person, the same transaction writes an outbox row; a Queue consumer resolves the group's members at send time, skips those with the switch off, and sends one email per person through Cloudflare Email Sending.
 - For assignments the recipient is the assigned person, not a group. The Queue message id is `mention:<id>`, `waiting:<caseId>:<since>` or `assigned:<caseId>:<assignedAt>` plus the user id, and the consumer records sent keys in KV for a day, so a redelivery does not send twice.
-- The email names the group (for tags and waits), agent, case title and the message (tags) or reason (waits), with a link to the case room. An assignment email says the case was assigned to the reader. No email names other people.
+- The email names the group (for tags and waits), agent, case title and the message (tags) or reason (waits), with a link to the case room. An assignment email says the case was assigned to the reader. A tag by a person names that person by display name ("Someone" without one); otherwise no email names other people.
 - The switch is on the account settings page. Turning it off affects only email; the inbox is unchanged.
 
 ## Outbound webhooks

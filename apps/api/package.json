@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --inspector-port 9241 -c wrangler.jsonc -c ../builder/wrangler.jsonc",
+    "email:preview": "node scripts/email-preview.ts",
     "lint": "eslint .",
     "openapi": "node scripts/openapi.ts",
     "test": "vitest run",

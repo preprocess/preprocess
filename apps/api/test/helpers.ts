@@ -13,7 +13,12 @@ import worker from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import type { OtelRetry } from "../src/otel.ts";
 
-export const sent: { to: string; subject: string; text: string }[] = [];
+export const sent: {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}[] = [];
 
 // Run-log records the API queued (design doc 09), instead of the local queue.
 export const logged: LogRecord[] = [];
@@ -27,7 +32,7 @@ export const testEnv = (overrides: Partial<Env> = {}): Env => ({
   ...env,
   PREPROCESS_REGION: "us",
   EMAIL: {
-    send: vi.fn((message: { to: string; subject: string; text: string }) => {
+    send: vi.fn((message: (typeof sent)[number]) => {
       sent.push(message);
       return Promise.resolve({ messageId: `test-${sent.length}` });
     }),
