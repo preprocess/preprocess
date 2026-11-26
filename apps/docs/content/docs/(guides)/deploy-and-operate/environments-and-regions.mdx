@@ -55,12 +55,10 @@ Dynamic Worker, promotion and rollback are pointer updates rather than rebuilds.
   overrides on that agent so the promoted code is the source of truth again, and
   replaces the agent's production scheduler with that deployment's schedules.
 
-<Callout title="Coming soon">
-  Automatic eval runs on each new deployment are not available yet: a manifest
-  with `evals.onPush: true` deploys with a warning that it has no effect. Run
-  eval suites against a preview or production deployment with `preprocess evals
-  run` or the API.
-</Callout>
+With `evals.onPush` on, a production deployment that becomes ready runs the
+agent's suites marked `runOnPush` against itself; see [Evals](/concepts/evals).
+Run eval suites against a preview deployment with `preprocess evals run` or the
+API.
 
 ## Platform install stages
 

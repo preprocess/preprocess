@@ -23,7 +23,6 @@ import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
 import type { Manifest } from "../deploy.ts";
 import type { Env } from "../env.ts";
-import { refuseOnPush } from "../evals.ts";
 import {
   agentOverrideValues,
   DEFAULTS,
@@ -55,7 +54,7 @@ const Defaults = z
       .optional()
       .openapi({
         description:
-          "Not available yet: true is refused with 400 not_available; a stored value reads as it is",
+          "Run the agent's suites marked runOnPush against each new production deployment when it becomes ready",
       }),
   })
   .strict()
@@ -230,7 +229,6 @@ export const settingsRoutes = new OpenAPIHono<{
         string,
         string | number | boolean | null | undefined
       >;
-      refuseOnPush(patch["evals.onPush"]);
       const body = await withOrg(c.env, c.var.org, async (tx) => {
         if (typeof patch.model === "string")
           await assertModelAllowed(tx, patch.model);
@@ -308,7 +306,6 @@ export const settingsRoutes = new OpenAPIHono<{
           "invalid_value",
           `Not a value for ${key}: ${z.prettifyError(parsed.error)}`,
         );
-      if (key === "evals.onPush") refuseOnPush(parsed.data);
       return c.json(
         await withOrg(c.env, c.var.org, (tx) =>
           setOverride(

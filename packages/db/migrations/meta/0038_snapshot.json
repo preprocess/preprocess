@@ -1,5 +1,5 @@
 {
-  "id": "b8778611-3fff-4d1c-9485-f499fea16096",
+  "id": "1abff8c1-d2d7-4c7d-bafd-9fa9cf56270e",
   "prevId": "0c4c7fcf-c877-429f-8225-f142f7dcc33d",
   "version": "7",
   "dialect": "postgresql",
@@ -3987,6 +3987,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "eval_runs_one_push": {
+          "name": "eval_runs_one_push",
+          "columns": [
+            {
+              "expression": "suite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "deployment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "trigger = 'push'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -5352,14 +5374,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "transport": {
-          "name": "transport",
-          "type": "mcp_transport",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'streamable_http'"
-        },
         "oauth_client": {
           "name": "oauth_client",
           "type": "jsonb",
@@ -6502,11 +6516,6 @@
       "name": "mcp_connection_status",
       "schema": "public",
       "values": ["active", "needs_reauth", "revoked"]
-    },
-    "public.mcp_transport": {
-      "name": "mcp_transport",
-      "schema": "public",
-      "values": ["streamable_http", "sse"]
     }
   },
   "schemas": {},
