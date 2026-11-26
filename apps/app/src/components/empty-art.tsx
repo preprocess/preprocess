@@ -7,7 +7,7 @@ function Illustration({
   return (
     <div
       aria-hidden="true"
-      className="h-44 max-w-60 bg-foreground"
+      className="h-24 max-w-32 bg-foreground"
       style={{ aspectRatio: `${width} / ${height}`, mask, WebkitMask: mask }}
     />
   );
