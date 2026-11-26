@@ -264,10 +264,13 @@ export const usage = async (c: Credentials) => {
   };
 };
 
-// Every image a Worker version references, as "<repository>@<digest>". Every
-// version counts, not only the deployed one, so a rollback to any version
-// Cloudflare keeps still finds its images: the newest 10 of every Worker
-// always, and the older ones of every Worker whose newest 10 use containers.
+// The images rollback can still need, as "<repository>@<digest>": those of
+// each Worker's newest 10 versions, and of every version in its current
+// deployment whatever its age (a gradual deployment has two). Older versions
+// don't count: our rollback goes through Alchemy, which rebuilds a missing
+// image.
+const keptVersions = 10;
+
 const referencedImages = async (c: Credentials, scripts?: string[]) => {
   const base = `/accounts/${c.account}/workers/scripts`;
   type Version = {
@@ -289,28 +292,29 @@ const referencedImages = async (c: Credentials, scripts?: string[]) => {
     (await cloudflare<{ id: string }[]>(c, base)).map((script) => script.id);
   const referenced = new Set<string>();
   await inParallel(names, async (name) => {
-    const versions = await cloudflare<{ items: { id: string }[] }>(
-      c,
-      `${base}/${name}/versions?per_page=100`,
-    ).catch((error: Error) => {
-      if (scripts && error.message.includes(": 404 ")) return { items: [] };
+    const missing = (error: Error) => {
+      if (scripts && error.message.includes(": 404 ")) return undefined;
       throw error;
-    });
-    const read = (items: { id: string }[]) =>
-      inParallel(items, async (version) =>
-        images(
-          await cloudflare<Version>(
-            c,
-            `${base}/${name}/versions/${version.id}`,
-          ),
-        ),
-      ).then((lists) => lists.flat());
-    const newest = await read(versions.items.slice(0, 10));
-    for (const image of newest) referenced.add(image);
-    if (newest.length === 0 && !scripts) return;
-    for (const image of await read(versions.items.slice(10))) {
-      referenced.add(image);
-    }
+    };
+    const versions = await cloudflare<{
+      items: { id: string; number: number }[];
+    }>(c, `${base}/${name}/versions?per_page=100`).catch(missing);
+    const deployments = await cloudflare<{
+      deployments: { versions: { version_id: string }[] }[];
+    }>(c, `${base}/${name}/deployments`).catch(missing);
+    const ids = new Set([
+      ...(versions?.items ?? [])
+        .sort((a, b) => b.number - a.number)
+        .slice(0, keptVersions)
+        .map((version) => version.id),
+      ...(deployments?.deployments[0]?.versions ?? []).map(
+        (version) => version.version_id,
+      ),
+    ]);
+    const lists = await inParallel([...ids], async (id) =>
+      images(await cloudflare<Version>(c, `${base}/${name}/versions/${id}`)),
+    );
+    for (const image of lists.flat()) referenced.add(image);
   });
   return referenced;
 };
@@ -478,7 +482,7 @@ export const cleanStage = async (
   return cleaned;
 };
 
-// Everything no Worker version references: the per-PR repositories of pull
+// Everything rollback no longer needs (referencedImages): the per-PR repositories of pull
 // requests that are neither open nor deployed, and images older than two days
 // in the shared repositories and in staging's and production's own ones from
 // before they were shared. Never a repository this stack does not own.

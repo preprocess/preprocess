@@ -217,12 +217,13 @@ without building or pushing anything.
 - **Preview teardown** deletes the destroyed stage's images: its old per-PR
   repositories, and, unless the pull request merged, the shared images only it
   referenced.
-- **`.github/workflows/registry.yml`** runs daily: it deletes every image no
-  Worker version references (closed previews' repositories, and images older
-  than two days in the shared repositories and in staging's and production's
-  repositories from before they were shared), then estimates usage. An image any
-  Worker version references is never deleted, and every Worker's newest 10
-  versions are always read, so rollback keeps its images.
+- **`.github/workflows/registry.yml`** runs daily: it deletes the images
+  rollback no longer needs (closed previews' repositories, and images older than
+  two days in the shared repositories and in staging's and production's
+  repositories from before they were shared), then estimates usage. It keeps
+  every image used by a Worker's newest 10 versions or by its current deployment
+  (both versions of a gradual one), whatever their age. Older versions' images
+  can go: rollback runs through Alchemy, which rebuilds a missing image.
 - **Usage**: `pnpm --filter @preprocess/infra registry usage` walks every
   repository, tag and manifest and adds up the blobs, each counted once. In CI
   it adds a warning annotation at 35 GB; the staging deploy runs it too.

@@ -1,9 +1,9 @@
 # The account's container registry holds at most 50 GB and reports no usage
-# (PRE-90). Daily, this deletes the images no Worker references any more
-# (closed previews' repositories, and images older than two days in the shared
-# and the old staging and production repositories), then
-# walks the registry and warns once the estimate passes 35 GB. See
-# infra/README.md (Container registry).
+# (PRE-90). Daily, this deletes the images that neither a Worker's newest 10
+# versions nor its current deployment use (closed previews' repositories, and
+# images older than two days in the shared and the old staging and production
+# repositories), then walks the registry and warns once the estimate passes
+# 35 GB. See infra/README.md (Container registry).
 
 name: Registry
 
