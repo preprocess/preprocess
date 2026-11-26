@@ -56,9 +56,7 @@ export function PageHeader({
     );
   }
   return (
-    <SidebarInsetTopbar className={cn("border-b border-border", className)}>
-      {content}
-    </SidebarInsetTopbar>
+    <SidebarInsetTopbar className={className}>{content}</SidebarInsetTopbar>
   );
 }
 
