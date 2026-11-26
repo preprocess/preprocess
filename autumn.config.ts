@@ -129,6 +129,12 @@ export const customRoles = flag("custom_roles", "Custom roles");
 export const auditExport = flag("audit_export", "Audit log export");
 export const training = flag("training", "Training");
 export const fineTuneServing = flag("fine_tune_serving", "Fine-tune serving");
+// Agents' own sandbox images (Chip: "lets lock custom images to team").
+// Presets and the package list stay on every plan.
+export const customSandboxImages = flag(
+  "custom_sandbox_images",
+  "Custom sandbox images",
+);
 
 const usagePrice = {
   billingMethod: "usage_based",
@@ -204,6 +210,7 @@ export const team = plan({
     },
     { featureId: training.featureId },
     { featureId: fineTuneServing.featureId },
+    { featureId: customSandboxImages.featureId },
   ],
 });
 
@@ -232,6 +239,7 @@ export const enterprise = plan({
       auditExport,
       training,
       fineTuneServing,
+      customSandboxImages,
     ].map((f) => ({ featureId: f.featureId })),
   ],
 });
@@ -257,6 +265,7 @@ export const internal = plan({
       auditExport,
       training,
       fineTuneServing,
+      customSandboxImages,
     ].map((f) => ({ featureId: f.featureId })),
   ],
 });
@@ -279,6 +288,7 @@ export default atmn({
     auditExport,
     training,
     fineTuneServing,
+    customSandboxImages,
   ],
   plans: [free, team, enterprise, internal],
 });
