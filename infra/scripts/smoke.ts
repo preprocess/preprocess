@@ -398,27 +398,40 @@ async function reportLayer(
   bytes: number,
   readySeconds: number,
 ) {
-  type Log = { kind: string; data: { mountMs?: number } };
-  let mountMs: number | undefined;
+  type Log = {
+    kind: string;
+    data: { mountMs?: number; mountMode?: string; mountLog?: string };
+  };
+  let mount: Log["data"] | undefined;
   for (let attempt = 0; attempt <= 24; attempt++) {
     const read = await call<{ logs: Log[] }>(
       "GET",
       `/v1/orgs/${org}/cases/${caseId}/logs?limit=500`,
     );
-    mountMs = (read.body?.logs ?? []).find((l) => l.kind === "sandbox.mount")
-      ?.data.mountMs;
-    if (mountMs !== undefined) break;
+    mount = (read.body?.logs ?? []).find(
+      (l) => l.kind === "sandbox.mount",
+    )?.data;
+    if (mount) break;
     await sleep(5000);
   }
-  const room = await call("GET", `/v1/orgs/${org}/cases/${caseId}/room`);
+  const room = await call<{ thread: { kind: string; text: string }[] }>(
+    "GET",
+    `/v1/orgs/${org}/cases/${caseId}/room`,
+  );
   if (room.status !== 200) fail(`reading the case room: ${room.text}`);
-  const sawPackage = /tree v\d/.test(room.text);
-  const sawFile = room.text.includes("layer file present");
+  const reply = (room.body.thread ?? [])
+    .filter((m) => m.kind === "agent")
+    .map((m) => m.text)
+    .join("\n");
+  const sawPackage = /tree v\d/.test(reply);
+  const sawFile = reply.includes("layer file present");
+  const mountMs = mount?.mountMs;
   const header = [
     "Deployment",
     "Layer (KB)",
     "Deploy to ready (s)",
     "Mount (s)",
+    "Mode",
     "Package (tree)",
     "File",
   ];
@@ -427,13 +440,14 @@ async function reportLayer(
     (bytes / 1024).toFixed(1),
     readySeconds.toFixed(1),
     mountMs === undefined ? "not logged" : (mountMs / 1000).toFixed(3),
+    mount?.mountMode ?? "not logged",
     sawPackage ? "found" : "missing",
     sawFile ? "found" : "missing",
   ];
   const table = [header, header.map(() => "---"), row]
     .map((cells) => `| ${cells.join(" | ")} |`)
     .join("\n");
-  const report = `### Custom environment on ${stage}\n\nCase \`${caseId}\`. Deploy to ready is the deploy request to the layer's build finishing, polled every 2 s. Mount is R2 download plus mount, as the sandbox logged it.\n\n${table}\n`;
+  const report = `### Custom environment on ${stage}\n\nCase \`${caseId}\`. Deploy to ready is the deploy request to the layer's build finishing, polled every 2 s. Mount is R2 download plus mount, as the sandbox logged it.\n\n${table}\n\nWhat mount.sh printed:\n\n\`\`\`\n${mount?.mountLog?.trim() || "(nothing logged)"}\n\`\`\`\n\nThe agent's reply, with the command's output:\n\n\`\`\`\n${reply.trim().slice(0, 2000) || "(no reply)"}\n\`\`\`\n`;
   console.log(report);
   if (process.env.GITHUB_STEP_SUMMARY)
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
