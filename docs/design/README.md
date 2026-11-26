@@ -21,4 +21,4 @@ Not covered here: approvals and scoped access for approval groups (step 4) and t
 None. Still to verify while building:
 
 - Organization-owned API keys in Better Auth's API key plugin (doc 01).
-- LightOn OCR 3 4B's grounding output format against a real response, once the hosted model is available (doc 07).
+- Mistral OCR's block coordinates (read as pixels of the page's dimensions) against a real response (doc 07).

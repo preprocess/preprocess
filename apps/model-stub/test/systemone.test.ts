@@ -1,10 +1,10 @@
-import { models } from "@preprocess/models/contract";
+import { ROUTES } from "@preprocess/models/endpoints";
 import { describe, expect, it } from "vitest";
 
 import { post } from "./harness.ts";
 
 const request = (overrides: Record<string, unknown> = {}) => ({
-  model: models.decide,
+  model: ROUTES.decide.model,
   state: "Invoice 1042 from Northwind for freight and shipping",
   questions: {
     route: {

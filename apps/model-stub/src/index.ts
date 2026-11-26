@@ -1,9 +1,5 @@
-import {
-  models,
-  ocrRequest,
-  systemOneRequest,
-} from "@preprocess/models/contract";
-import { MODELS } from "@preprocess/sdk/protocol";
+import { ocrRequest, systemOneRequest } from "@preprocess/models/contract";
+import { ROUTES } from "@preprocess/models/endpoints";
 import { Hono } from "hono";
 import type { z } from "zod";
 
@@ -19,9 +15,14 @@ import { answer } from "./systemone.ts";
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/", (c) =>
-  c.json({ service: "model-stub", serves: Object.values(models) }),
+const serves = Object.values(ROUTES).map((route) => route.model);
+const agentModels = new Set<unknown>(
+  Object.entries(ROUTES)
+    .filter(([name]) => name !== "decide" && name !== "ocr")
+    .map(([, route]) => route.model),
 );
+
+app.get("/", (c) => c.json({ service: "model-stub", serves }));
 
 app.use("/v1/*", async (c, next) => {
   const token = /^Bearer\s+(\S+)$/i.exec(c.req.header("authorization") ?? "");
@@ -90,30 +91,28 @@ app.post("/v1/systemone", async (c) => {
   return c.json(answer(request.data));
 });
 
-// vLLM's error shape, which the OCR service returns.
-const vllmError = (message: string, status: 400 | 404) => ({
-  object: "error",
-  message,
-  type: status === 404 ? "NotFoundError" : "BadRequestError",
-  code: status,
+app.post("/v1/ocr", async (c) => {
+  const parsed = await body(c.req.raw);
+  if (!parsed.ok) return c.json({ detail: "Request body must be JSON" }, 400);
+  const request = ocrRequest.safeParse(parsed.json);
+  if (!request.success)
+    return c.json({ detail: validationError(request.error) }, 422);
+  if (request.data.model !== ROUTES.ocr.model)
+    return c.json({ detail: `Invalid model: ${request.data.model}` }, 400);
+  return c.json(await ocr(request.data));
 });
 
 app.post("/v1/chat/completions", async (c) => {
   const parsed = await body(c.req.raw);
   if (!parsed.ok)
-    return c.json(vllmError("Request body must be JSON", 400), 400);
+    return c.json({ error: { message: "Request body must be JSON" } }, 400);
   const model = (parsed.json as { model?: unknown } | null)?.model;
-  if ((MODELS as readonly unknown[]).includes(model))
-    return agentChat(c, parsed.json as ChatRequest);
-  if (typeof model === "string" && model !== models.ocr)
+  if (!agentModels.has(model))
     return c.json(
-      vllmError(`The model \`${model}\` does not exist.`, 404),
+      { error: { message: `The model \`${String(model)}\` does not exist.` } },
       404,
     );
-  const request = ocrRequest.safeParse(parsed.json);
-  if (!request.success)
-    return c.json(vllmError(validationError(request.error), 400), 400);
-  return c.json(await ocr(request.data));
+  return agentChat(c, parsed.json as ChatRequest);
 });
 
 export default app;
