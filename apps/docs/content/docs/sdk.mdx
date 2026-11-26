@@ -176,6 +176,62 @@ tool, `ctx.waitOn(group, { reason })` hands the case to that group and
 schedules: [{ name: "nightly", cron: "0 2 * * *", text: "Reconcile yesterday's orders" }],
 ```
 
+## Sandbox
+
+`sandbox` gives each case its own Linux machine. The model can run commands in
+it and read and write its files with the `sandbox_exec`, `sandbox_read_file` and
+`sandbox_write_file` tools. An agent without `sandbox` has none of them.
+
+```ts
+sandbox: {
+  size: "small",
+  preset: "python-data",
+  packages: { apt: ["poppler-utils"], pip: ["pdfplumber"] },
+},
+```
+
+`size` is required, and a deploy without it fails. Each size is billed per
+second while its sandbox is awake:
+
+| Size     | Machine                           | Price per second                  |
+| -------- | --------------------------------- | --------------------------------- |
+| `small`  | ½ vCPU, 4 GiB memory, 8 GB disk   | $0.00003084 (about $0.11 an hour) |
+| `medium` | 1 vCPU, 6 GiB memory, 12 GB disk  | $0.00005376 (about $0.19 an hour) |
+| `large`  | 4 vCPU, 12 GiB memory, 20 GB disk | $0.00016710 (about $0.60 an hour) |
+
+Sandbox time counts toward the organization's spending limit and plan credit.
+Self-hosted installs run sandboxes in their own Cloudflare account and aren't
+billed by Preprocess.
+
+`preset` picks the image:
+
+- `standard`, the default: Debian with bash, curl and git;
+- `node`: Node.js 24 and npm;
+- `python`: Python 3 and pip;
+- `python-data`: `python` with pandas, NumPy, Polars, DuckDB, PyArrow, SciPy,
+  Matplotlib and openpyxl.
+
+`packages` installs up to 50 `apt`, `pip` and `npm` packages each time the
+sandbox starts. `pip` needs a python preset and `npm` needs `node`.
+
+A sandbox starts on the case's first sandbox call. It sleeps after
+`idleTimeoutMinutes` without use (5 by default, at most 60), and it loses its
+files when it sleeps. It is destroyed when the case closes, and a single start
+lasts at most 2 hours. Its HTTP and HTTPS requests follow the agent's network
+rules, and every other connection is blocked.
+
+Owners and Admins can cap the largest size in Settings → Guardrails. A
+deployment that asks for a larger size waits until they approve it. You can
+override the size for one agent from its settings, up to that cap.
+
+Sandbox calls are captured with the case. When an eval replays a case, it reuses
+the captured results and never starts a sandbox.
+
+<Callout>
+  Custom sandbox images are coming soon. Until then, use a preset and
+  `packages`.
+</Callout>
+
 ## Memory
 
 While it works a case, an agent can propose a rule to remember, such as "Acme
