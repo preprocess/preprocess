@@ -9,7 +9,7 @@ import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { useOrganizationId } from "../auth/auth-context";
@@ -31,7 +31,7 @@ import {
   type Change,
   type GuardrailRequest,
 } from "../settings/guardrails-panel";
-import { useCanAdminister } from "../settings/use-role";
+import { useCanAdminister, useCanDeploy } from "../settings/use-role";
 import { DeploymentStatus } from "./agent-page";
 import { shortDeploymentId } from "./agent-store";
 import type { OrgAgentDetail } from "./list-org-agents";
@@ -99,6 +99,7 @@ const grants = (request: GuardrailRequest, change: Change) => {
 export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
   const organizationId = useOrganizationId();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [error, setError] = useState<unknown>(null);
   const path = `/agents/${encodeURIComponent(agent.id)}/deployments`;
   const deployments = useQuery({
@@ -108,6 +109,7 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
   const requests = useGuardrailRequests();
   const decide = useDecideRequest();
   const canDecide = useCanAdminister();
+  const canPromote = useCanDeploy();
   const pending = (requests.data ?? []).filter(
     (r) => r.status === "pending" && r.agent === agent.id,
   );
@@ -115,9 +117,12 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
   const promote = async (id: string) => {
     setError(null);
     await orgApi(organizationId, `${path}/${id}/promote`, { method: "POST" });
-    await queryClient.invalidateQueries({
-      queryKey: ["deployments", organizationId, agent.id],
-    });
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["deployments", organizationId, agent.id],
+      }),
+      router.invalidate(),
+    ]);
   };
   const request = async (deployment: Deployment, change: Change) => {
     setError(null);
@@ -139,7 +144,7 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
 
   return (
     <SettingsSection
-      description={`Every push deploys: ${agent.productionBranch} to production, other branches to previews. Promoting an earlier production deployment rolls back to it.`}
+      description={`Every push deploys: ${agent.productionBranch} to production, other branches to previews. Promoting an earlier production deployment rolls back to it.${canPromote ? "" : " Owners, Admins and the Developers group can promote."}`}
       title="Deployments"
     >
       {deployments.isError ? (
@@ -175,7 +180,7 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
                     <span className="flex min-w-0 items-center gap-2">
                       <span
                         className="text-body text-foreground"
-                        style={{ fontVariationSettings: fontWeights.semibold }}
+                        style={{ fontVariationSettings: fontWeights.medium }}
                       >
                         {shortDeploymentId(deployment.id)}
                       </span>
@@ -196,7 +201,10 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
                     </span>
                   }
                 >
-                  {production && !serving && deployment.status === "ready" ? (
+                  {canPromote &&
+                  production &&
+                  !serving &&
+                  deployment.status === "ready" ? (
                     <LoadingButton
                       onAction={() => promote(deployment.id)}
                       onError={setError}

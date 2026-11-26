@@ -5,7 +5,12 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
-import { eventBase, requireAdmin, type OrgVariables } from "../caller.ts";
+import {
+  eventBase,
+  requireAdmin,
+  requireDeployer,
+  type OrgVariables,
+} from "../caller.ts";
 import {
   deploy,
   deployInput,
@@ -136,7 +141,7 @@ agentRoutes.openapi(
     path: "/agents/{agent}/deployments",
     tags: ["Agents"],
     summary:
-      "Deploy an agent's bundled code; creates the agent on its first deploy",
+      "Deploy an agent's bundled code; creates the agent on its first deploy (Owners, Admins and Developers)",
     request: {
       params: AgentParams,
       body: {
@@ -152,6 +157,7 @@ agentRoutes.openapi(
     },
   }),
   async (c) => {
+    await requireDeployer(c.env, c.var, "deploy", c.req.valid("param").agent);
     const deployment = await deploy(
       c.env,
       c.var.org,
@@ -219,7 +225,7 @@ agentRoutes.openapi(
     path: "/agents/{agent}/deployments/{deployment}/promote",
     tags: ["Agents"],
     summary:
-      "Serve this deployment in production; promoting an earlier one is a rollback",
+      "Serve this deployment in production; promoting an earlier one is a rollback (Owners, Admins and Developers)",
     request: { params: DeploymentParams },
     responses: {
       200: {
@@ -230,6 +236,7 @@ agentRoutes.openapi(
   }),
   async (c) => {
     const { agent: slug, deployment } = c.req.valid("param");
+    await requireDeployer(c.env, c.var, "promote", slug);
     const agent = await agentBySlug(c.env, c.var.org, slug);
     const cleared = await promote(
       c.env,
