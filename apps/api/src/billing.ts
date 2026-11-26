@@ -1,0 +1,293 @@
+// Billing on our cloud (spec 16a): reporting metered usage to Autumn, and
+// reading an organization's plan and balances back. Every function here is a
+// no-op where autumn() is null: a self-hosted install, or a stage without
+// AUTUMN_SECRET_KEY.
+
+import { orgId, withOrg, withoutOrg } from "@preprocess/db/client";
+import type { OrgId, SystemTx } from "@preprocess/db/client";
+import { organization } from "@preprocess/db/schema/auth";
+import { usageRecords } from "@preprocess/db/schema/billing";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+
+import { autumn, type Autumn, type AutumnCustomer } from "./autumn.ts";
+import type { Env } from "./env.ts";
+import { monthOf } from "./metering.ts";
+
+const BATCH = 500;
+
+// Sends the ledger's unreported rows, oldest first, each under its own id as
+// the idempotency key, so a retry never counts twice. Log bytes are not sent:
+// they feed the daily storage figure.
+export const reportUsage = async (env: Env) => {
+  const billing = autumn(env);
+  if (!billing) return;
+  const rows = await withoutOrg(env, "billing: unreported usage", (tx) =>
+    tx
+      .select()
+      .from(usageRecords)
+      .where(
+        and(
+          isNull(usageRecords.reportedAt),
+          ne(usageRecords.feature, "log_bytes"),
+        ),
+      )
+      .orderBy(asc(usageRecords.at))
+      .limit(BATCH),
+  );
+  const sent: string[] = [];
+  const known = new Set<string>();
+  for (const row of rows) {
+    try {
+      if (!known.has(row.organizationId)) {
+        await billing.customer(row.organizationId);
+        known.add(row.organizationId);
+      }
+      await billing.track({
+        organizationId: row.organizationId,
+        featureId: row.feature,
+        value: row.quantity,
+        at: row.at,
+        idempotencyKey: row.id,
+      });
+      sent.push(row.id);
+    } catch (error) {
+      console.error("billing: report usage", row.organizationId, error);
+    }
+  }
+  if (sent.length)
+    await withoutOrg(env, "billing: mark usage reported", (tx) =>
+      tx
+        .update(usageRecords)
+        .set({ reportedAt: new Date() })
+        .where(inArray(usageRecords.id, sent)),
+    );
+};
+
+// People with a paid seat (spec 16a): members of the Developers group or of a
+// group with operator access to an agent. Viewers, and Owners and Admins in
+// no such group, are free.
+const paidSeat = (org: string) => sql`
+  exists (
+    select 1 from group_members gm
+    join groups g on g.id = gm.group_id
+    where gm.organization_id = ${org} and gm.user_id = sa.user_id
+      and (g.is_developers or exists (
+        select 1 from agent_grants ag
+        where ag.group_id = g.id and ag.access = 'operator'))
+  )`;
+
+// Active seats for a month (spec 16a): people who did paid-seat work in it and
+// hold a paid seat when it closes. A person counts once.
+export const activeSeats = async (tx: SystemTx, org: string, month: string) => {
+  const [row] = (
+    await tx.execute<{ seats: number }>(sql`
+      select count(distinct sa.user_id)::int as seats
+      from seat_activity sa
+      where sa.organization_id = ${org} and sa.month = ${month}
+        and ${paidSeat(org)}`)
+  ).rows;
+  return row?.seats ?? 0;
+};
+
+// Bytes each organization stores (spec 16a): documents, run capture and run
+// logs. Agent bundles are not counted.
+export const storedBytes = async (tx: SystemTx) =>
+  (
+    await tx.execute<{ org: string; bytes: string }>(sql`
+      select o.id as org,
+        coalesce((select sum(size) from files f where f.organization_id = o.id), 0)
+        + coalesce((select sum(capture_bytes) from cases c where c.organization_id = o.id), 0)
+        + coalesce((select sum(quantity) from usage_records u
+            where u.organization_id = o.id and u.feature = 'log_bytes'), 0)
+          as bytes
+      from organization o`)
+  ).rows.map((r) => ({ org: r.org, bytes: Number(r.bytes) }));
+
+const daysIn = (day: Date) =>
+  new Date(
+    Date.UTC(day.getUTCFullYear(), day.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+
+const track = async (
+  billing: Autumn,
+  usage: Parameters<Autumn["track"]>[0],
+) => {
+  try {
+    await billing.customer(usage.organizationId);
+    await billing.track(usage);
+  } catch (error) {
+    console.error("billing:", usage.idempotencyKey, error);
+  }
+};
+
+// Once a day, after midnight UTC. Storage is billed per GB-month, tracked in
+// thousandths of one: each day adds that day's share. On the first of a
+// month, the month that ended reports its active seats.
+export const reportDaily = async (env: Env, now: Date) => {
+  const billing = autumn(env);
+  if (!billing) return;
+  const yesterday = new Date(now.getTime() - 86_400_000);
+  const day = yesterday.toISOString().slice(0, 10);
+  const stored = await withoutOrg(env, "billing: storage", storedBytes);
+  for (const { org, bytes } of stored)
+    if (bytes > 0)
+      await track(billing, {
+        organizationId: org,
+        featureId: "storage",
+        value: ((bytes / 1e9) * 1000) / daysIn(yesterday),
+        at: now,
+        idempotencyKey: `storage:${org}:${day}`,
+      });
+  if (now.getUTCDate() !== 1) return;
+  const month = monthOf(yesterday);
+  const seats = await withoutOrg(env, "billing: active seats", async (tx) => {
+    const orgs = await tx.select({ id: organization.id }).from(organization);
+    const counts = [];
+    for (const { id } of orgs)
+      counts.push({ org: id, seats: await activeSeats(tx, id, month) });
+    return counts;
+  });
+  for (const { org, seats: value } of seats)
+    if (value > 0)
+      await track(billing, {
+        organizationId: org,
+        featureId: "seats",
+        value,
+        at: now,
+        idempotencyKey: `seats:${org}:${month}`,
+      });
+};
+
+export type CloudPlan = {
+  name: "free" | "team" | "enterprise" | "internal";
+  features: Set<string>;
+  seats: number | null;
+  // Whether the organization has started a plan: at checkout, which takes a
+  // card, or attached by plan() below.
+  started: boolean;
+};
+
+const PLANS = ["free", "team", "enterprise", "internal"] as const;
+
+export const readPlan = (customer: AutumnCustomer): CloudPlan => {
+  const active = customer.subscriptions.find(
+    (s) =>
+      (s.status === "active" || s.status === "trialing") &&
+      (PLANS as readonly string[]).includes(s.plan_id),
+  );
+  const name = (active?.plan_id ?? "free") as CloudPlan["name"];
+  const seats = customer.balances.seats;
+  return {
+    name,
+    features: new Set(Object.keys(customer.flags ?? {})),
+    seats: name === "free" && seats && !seats.unlimited ? seats.granted : null,
+    started: Boolean(active),
+  };
+};
+
+// A short cache per isolate: gates run on every case and model call.
+const cached = new Map<string, { until: number; value: Promise<unknown> }>();
+const remember = <T>(key: string, ms: number, load: () => Promise<T>) => {
+  const hit = cached.get(key);
+  if (hit && hit.until > Date.now()) return hit.value as Promise<T>;
+  const value = load();
+  cached.set(key, { until: Date.now() + ms, value });
+  value.catch(() => cached.delete(key));
+  return value;
+};
+
+// When cards became required (BILLING_REQUIRED_FROM), or null.
+const requiredFrom = (env: Env) => {
+  const at = env.BILLING_REQUIRED_FROM && new Date(env.BILLING_REQUIRED_FROM);
+  return at && !Number.isNaN(at.getTime()) ? at : null;
+};
+
+// The plan an organization without one is given without a card: internal for
+// our own, and Free for every organization created before cards were
+// required. Anyone else starts one at checkout.
+const planWithoutCard = async (env: Env, org: OrgId) => {
+  const internal = (env.BILLING_INTERNAL_ORGS ?? "")
+    .split(",")
+    .map((id) => id.trim());
+  if (internal.includes(org)) return "internal";
+  const from = requiredFrom(env);
+  if (!from) return null;
+  const created = await withoutOrg(env, "billing: organization age", (tx) =>
+    tx
+      .select({ createdAt: organization.createdAt })
+      .from(organization)
+      .where(eq(organization.id, org)),
+  );
+  return created[0] && created[0].createdAt < from ? "free" : null;
+};
+
+const loadPlan = async (billing: Autumn, env: Env, org: OrgId) => {
+  const current = readPlan(await billing.customer(org));
+  if (current.started) return current;
+  const given = await planWithoutCard(env, org);
+  if (!given) return current;
+  await billing.attach(org, given);
+  console.log("billing: attached without a card", org, given);
+  return readPlan(await billing.customer(org));
+};
+
+export const cloudPlan = async (env: Env, org: OrgId) => {
+  const billing = autumn(env);
+  if (!billing) return null;
+  try {
+    const plan = await remember(`plan:${org}`, 30_000, () =>
+      loadPlan(billing, env, org),
+    );
+    // A plan not started yet may start at checkout any moment: read it again.
+    if (!plan.started) cached.delete(`plan:${org}`);
+    return plan;
+  } catch (error) {
+    // Fail open: an Autumn outage never stops the product.
+    console.error("billing: plan", org, error);
+    return null;
+  }
+};
+
+// Whether an organization without a plan is refused: once cards are
+// required, and the date has passed.
+export const planRequired = (env: Env, started: boolean, now = new Date()) => {
+  const from = requiredFrom(env);
+  return !started && from !== null && now >= from;
+};
+
+// Whether the organization may use a feature: once cards are required it
+// needs a started plan (every plan, Free included, starts at checkout with a
+// card), and Free caps its monthly cases and its one-time model credit. Where
+// billing is off everything is allowed, and an Autumn outage fails open.
+export const entitlement = async (
+  env: Env,
+  org: OrgId,
+  featureId: string,
+): Promise<"ok" | "plan_required" | "used_up"> => {
+  const billing = autumn(env);
+  if (!billing) return "ok";
+  const plan = await cloudPlan(env, org);
+  if (!plan) return "ok";
+  if (!plan.started)
+    return planRequired(env, plan.started) ? "plan_required" : "ok";
+  try {
+    const allowed = await remember(
+      `check:${org}:${featureId}`,
+      15_000,
+      async () => (await billing.check(org, featureId)).allowed,
+    );
+    return allowed ? "ok" : "used_up";
+  } catch (error) {
+    console.error("billing: check", org, featureId, error);
+    return "ok";
+  }
+};
+
+// The organization's name, for its Autumn customer.
+export const organizationName = (env: Env, org: OrgId) =>
+  withOrg(env, orgId(org), async (tx) => {
+    const [row] = await tx
+      .select({ name: organization.name })
+      .from(organization);
+    return row?.name;
+  });

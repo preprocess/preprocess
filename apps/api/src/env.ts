@@ -149,6 +149,16 @@ export type Env = {
   // Set on our cloud, unset on a self-hosted install; read it through
   // @preprocess/runmode.
   PREPROCESS_REGION?: string;
+  // Autumn (spec 16a): our cloud's billing. Unset, billing is off: nothing is
+  // reported and every organization is on the free plan without limits.
+  AUTUMN_SECRET_KEY?: string;
+  // When cards became required (an ISO date; spec 16a). Unset, an
+  // organization without a plan is not limited. Set, organizations created
+  // before it are put on Free without a card, and later ones must start a
+  // plan at checkout once the date has passed.
+  BILLING_REQUIRED_FROM?: string;
+  // Preprocess's own organizations, comma-separated ids: the internal plan.
+  BILLING_INTERNAL_ORGS?: string;
   MODEL_SERVICE_URL?: string;
   MODEL_SERVICE_KEY?: string;
   // Postgres as preprocess_app (RLS enforced) and as preprocess_system (RLS

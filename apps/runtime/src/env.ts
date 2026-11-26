@@ -129,7 +129,8 @@ export type CaseKey = Pick<Deployment, "organizationId" | "agentId"> & {
 export type CaseStatus =
   "running" | "waiting" | "halted" | "completed" | "failed" | "cancelled";
 
-export type SpendVerdict = "ok" | "spending_limit_reached";
+// credit_exhausted: a plan's one-time model credit is used up (spec 16a).
+export type SpendVerdict = "ok" | "spending_limit_reached" | "credit_exhausted";
 
 export type CaseEvent = CaseKey &
   (

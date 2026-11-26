@@ -54,6 +54,8 @@ import { regionConfig } from "./src/regions.ts";
 import {
   apiCrons,
   apiSecrets,
+  billingSecrets,
+  billingVars,
   githubSecrets,
   githubVars,
   googleSecrets,
@@ -659,6 +661,26 @@ export default Alchemy.Stack(
               ] as const,
           ),
         ),
+        ...(region &&
+          Object.fromEntries(
+            billingSecrets.map(
+              (name) =>
+                [
+                  name,
+                  Config.Redacted(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
+        ...(region &&
+          Object.fromEntries(
+            billingVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
         JOBS: jobs,
         CASES: casesQueue,
         WEBHOOKS: webhooksQueue,

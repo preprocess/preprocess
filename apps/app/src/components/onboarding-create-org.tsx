@@ -7,6 +7,7 @@ import {
 import { useRef, useState, type FormEvent } from "react";
 
 import { useAuth } from "../features/auth/auth-context";
+import { freeCheckout } from "../features/organizations/billing";
 import { createOrganization } from "../features/organizations/user-organizations";
 import { validateOrganizationName } from "../server/organization-name";
 import { AuthField, AuthLayout, authLinkClass } from "./auth-layout";
@@ -32,10 +33,11 @@ function OnboardingCreateOrg({ email }: Readonly<{ email: string }>) {
     if (!checked.ok) throw new AsyncActionAbortError();
 
     try {
-      await createOrganization(name);
+      const { organizationId } = await createOrganization(name);
+      const checkout = await freeCheckout(organizationId);
       // Let LoadingButton show success, then hard-navigate for a fresh load.
       window.setTimeout(() => {
-        window.location.assign("/");
+        window.location.assign(checkout ?? "/");
       }, 1100);
     } catch (cause) {
       const message =

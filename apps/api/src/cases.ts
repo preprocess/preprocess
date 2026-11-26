@@ -26,6 +26,7 @@ import type { Manifest } from "./deploy.ts";
 import { acceptedMemories } from "./memories.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
+import { entitlement } from "./billing.ts";
 import { joinAutomaticSuite } from "./evals.ts";
 import { meter, meterCharges, type Charges } from "./metering.ts";
 import { effectiveSettings } from "./settings.ts";
@@ -110,6 +111,21 @@ export const createCase = async (
   by: Creator,
   idempotencyKey?: string,
 ): Promise<{ body: CaseAccepted; replayed: boolean }> => {
+  // A plan must be started first; Free caps its monthly cases (spec 16a), and
+  // paid plans bill past their included ones.
+  const entitled = await entitlement(env, org, "cases");
+  if (entitled === "plan_required")
+    throw new ApiError(
+      402,
+      "plan_required",
+      "This organization has no plan yet. Its Owner can start one, Free included, in Billing.",
+    );
+  if (entitled === "used_up")
+    throw new ApiError(
+      402,
+      "credit_exhausted",
+      "This organization has used this month's cases on its plan. Upgrade to start more.",
+    );
   const created = await withOrg(env, org, async (tx) => {
     const now = new Date();
     if (idempotencyKey) {
@@ -192,7 +208,6 @@ export const createCase = async (
       );
     }
 
-    // `credit_exhausted` joins this gate with Autumn credit in step 9.
     await refuseOverLimit(tx);
     const caseId = newId("case");
     if (input.files.length) {
