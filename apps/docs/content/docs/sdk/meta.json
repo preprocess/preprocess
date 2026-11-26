@@ -3,10 +3,12 @@
   "root": true,
   "pages": [
     "index",
+    "---Build---",
     "tools",
     "secrets",
     "mcp-servers",
     "output-schema",
+    "---Run---",
     "approvals",
     "groups-and-schedules",
     "sandbox",

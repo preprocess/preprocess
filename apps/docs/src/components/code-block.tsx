@@ -6,7 +6,10 @@ import {
   CodeBlock,
   Pre as FumadocsPre,
 } from "fumadocs-ui/components/codeblock";
+import { DynamicCodeBlock } from "fumadocs-ui/components/dynamic-codeblock";
 import { useState, type ComponentProps } from "react";
+
+import { monochrome } from "@/lib/shiki-theme";
 
 const languages: Record<string, string> = {
   js: "JavaScript",
@@ -18,12 +21,12 @@ const languages: Record<string, string> = {
   yaml: "YAML",
 };
 
-function CopyCode() {
+function CopyCode({ className }: { className?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <Button
       aria-label={copied ? "Copied" : "Copy code"}
-      className="size-7"
+      className={cn("size-7", className)}
       onClick={(event) => {
         const text = event.currentTarget
           .closest("figure")
@@ -64,7 +67,7 @@ export function Pre({ title, ...props }: ComponentProps<"pre">) {
             </div>
           ) : (
             <div className="absolute top-0 right-1.5 z-2 flex h-12 items-center">
-              <CopyCode />
+              <CopyCode className="bg-surface-1" />
             </div>
           )
         }
@@ -79,5 +82,20 @@ export function Pre({ title, ...props }: ComponentProps<"pre">) {
         <FumadocsPre {...props} />
       </CodeBlock>
     </div>
+  );
+}
+
+// Code highlighted at render time (generated text such as the CLI usage) in
+// the same well as the MDX code blocks.
+export function CodeSample({ code, lang }: { code: string; lang: string }) {
+  return (
+    <DynamicCodeBlock
+      code={code}
+      lang={lang}
+      options={{
+        themes: { light: monochrome, dark: monochrome },
+        components: { pre: Pre },
+      }}
+    />
   );
 }
