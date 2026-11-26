@@ -15,10 +15,16 @@ import { seatActivity, usageRecords } from "@preprocess/db/schema/billing";
 import { deployments } from "@preprocess/db/schema/deployments";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { activeSeats, readPlan, reportUsage } from "../src/billing.ts";
+import {
+  activeSeats,
+  planRequired,
+  readPlan,
+  reportUsage,
+  seatLimitApplies,
+} from "../src/billing.ts";
 import type { Env } from "../src/env.ts";
 import { monthOf } from "../src/metering.ts";
-import { getPlan } from "../src/plan.ts";
+import { customSandboxImages, getPlan } from "../src/plan.ts";
 import { Platform } from "../src/platform.ts";
 import {
   addMember,
@@ -267,6 +273,24 @@ describe("the plan", () => {
     expect(plan.limits.seats).toBeNull();
   });
 
+  it("allows custom sandbox images on Team and not on Free", async () => {
+    const team = await organizationWithAgent("Imageco");
+    const free = await organizationWithAgent("Presetco");
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "team", status: "active" }],
+      flags: { training: {}, custom_sandbox_images: {} },
+      balances: {},
+    };
+    expect(await customSandboxImages(environment, orgId(team.org))).toBe(true);
+    customer = {
+      subscriptions: [{ plan_id: "free", status: "active" }],
+      flags: {},
+      balances: {},
+    };
+    expect(await customSandboxImages(environment, orgId(free.org))).toBe(false);
+  });
+
   it("is free and unlimited where billing is off", async () => {
     const plan = await getPlan(testEnv(), orgId(org));
     expect(plan).toMatchObject({ name: "free", limits: { seats: null } });
@@ -365,6 +389,36 @@ describe("starting a plan", () => {
     const plan = await getPlan(env, orgId(existing.org));
     expect(plan.name).toBe("free");
     expect(attached()).toEqual(["free"]);
+  });
+
+  it("bills an organization named in BILLING_ENFORCED_ORGS like a customer now, and no other", async () => {
+    const enforcedEnv = (org: string) =>
+      testEnv({
+        AUTUMN_SECRET_KEY: "am_sk_test_stub",
+        BILLING_ENFORCED_ORGS: `org_other, ${org}`,
+        CASES: { send: () => Promise.resolve() } as unknown as Queue,
+      });
+    const tester = await organizationWithAgent("Tester");
+    const other = await organizationWithAgent("Other");
+    const env = enforcedEnv(tester.org);
+    const keyed = new Client(env, tester.keyed.headers);
+    stubAutumn();
+    customer = { subscriptions: [], flags: {}, balances: {} };
+
+    const refused = await keyed.call<{ error: { code: string } }>(
+      `/v1/orgs/${tester.org}/cases`,
+      { body: { agent: "invoices", text: "before a plan" } },
+    );
+    expect(refused.status).toBe(402);
+    expect(refused.body.error.code).toBe("plan_required");
+    const billing = await keyed.call<{ required: boolean }>(
+      `/v1/orgs/${tester.org}/billing`,
+    );
+    expect(billing.body).toMatchObject({ started: false, required: true });
+    expect(planRequired(env, orgId(other.org), false)).toBe(false);
+    expect(seatLimitApplies(env, orgId(tester.org))).toBe(true);
+    expect(seatLimitApplies(env, orgId(other.org))).toBe(false);
+    expect(attached()).toEqual([]);
   });
 
   it("puts our own organizations on the internal plan", async () => {

@@ -203,6 +203,7 @@ const withSettings = (manifest: Manifest, settings?: Settings): Manifest => {
     model: settings.model as Manifest["model"],
     reasoning: settings.reasoning as Manifest["reasoning"],
     ocr: settings.ocr,
+    searchCases: settings.searchCases ?? false,
     ...(settings.timeoutSeconds !== null && {
       timeoutSeconds: settings.timeoutSeconds,
     }),
@@ -876,6 +877,66 @@ export class CaseRuntime extends DurableObject<Env> {
     ];
   }
 
+  // search_cases (spec 10): the agent's own completed cases in its
+  // environment, searched on the platform side. Each search and what it found
+  // goes into run capture.
+  private searchTool() {
+    return defineTool({
+      name: "search_cases",
+      description:
+        "Search this agent's earlier completed cases to see how similar work was resolved. Returns each match's title, completion date, input, final answers as people corrected them, and `changed`: the answer paths a person changed. Treat them as precedent, not as this case's answer.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Words to find: names, numbers, terms from the input",
+          },
+          limit: { type: "integer", minimum: 1, maximum: 10 },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+      replay: "safe",
+      execute: async (input: { query: string; limit?: number }) => {
+        const current = this.meta()!;
+        const limit = Math.min(input.limit ?? 5, 10);
+        const found = this.env.PLATFORM
+          ? await this.env.PLATFORM.searchCases({
+              organizationId: current.organizationId,
+              agentId: current.agentId,
+              deploymentId: current.deploymentId,
+              caseId: current.caseId,
+              query: input.query,
+              limit,
+              ...(current.eval && {
+                eval: {
+                  sourceCaseId: current.eval.sourceCaseId,
+                  input: current.input.text,
+                },
+              }),
+            })
+          : { cases: [] };
+        this.record("case.search", {
+          query: input.query,
+          limit,
+          cases: found.cases,
+        });
+        return {
+          output: [
+            {
+              type: "text" as const,
+              text: found.cases.length
+                ? JSON.stringify(found.cases, null, 2)
+                : "No earlier completed case matches.",
+            },
+          ],
+          isError: false,
+        };
+      },
+    });
+  }
+
   private platformTools(meta: Meta) {
     const schema = this.schema(meta);
     const result = (value: unknown, isError = false) => ({
@@ -966,6 +1027,7 @@ export class CaseRuntime extends DurableObject<Env> {
           return Promise.resolve(result(problem ?? "tagged", problem !== null));
         },
       }),
+      ...(meta.manifest.searchCases ? [this.searchTool()] : []),
     ];
     const sandboxTools = this.sandboxTools(meta);
     if (!schema.enabled) return [...groupTools, ...sandboxTools];
@@ -1488,7 +1550,11 @@ export class CaseRuntime extends DurableObject<Env> {
         !next.waitingOn &&
         first && { approvalId: first.id }),
       ...(status === "completed" && {
-        completed: { input: next.input, captureKey: captureKey(next) },
+        completed: {
+          input: next.input,
+          captureKey: captureKey(next),
+          ...(next.answer && { answer: next.answer }),
+        },
       }),
     });
     await this.reportReview(next);

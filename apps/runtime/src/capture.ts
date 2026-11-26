@@ -28,7 +28,8 @@ export type CaptureEvent = {
     | "schema.answer"
     | "schema.error"
     | "decide"
-    | "ocr";
+    | "ocr"
+    | "case.search";
   data: Record<string, unknown>;
 };
 

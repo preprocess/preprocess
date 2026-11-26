@@ -27,6 +27,7 @@ import { acceptedMemories } from "./memories.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
 import { entitlement } from "./billing.ts";
+import { indexCase } from "./case-search.ts";
 import { joinAutomaticSuite } from "./evals.ts";
 import { meter, meterCharges, type Charges } from "./metering.ts";
 import { effectiveSettings } from "./settings.ts";
@@ -407,7 +408,12 @@ export type CaseEvent = {
       // Set when the case waits on an approval, whose own event sends the
       // webhook.
       approvalId?: string;
-      completed?: { input: StartCase["input"]; captureKey: string };
+      completed?: {
+        input: StartCase["input"];
+        captureKey: string;
+        // The agent's final message, for case search.
+        answer?: string;
+      };
     }
   | { type: "approval"; approval: Approval }
   | { type: "review"; fields: string[] }
@@ -597,6 +603,15 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
         completedAt: done ? now : null,
       })
       .where(own);
+    if (event.status === "completed" && event.completed)
+      await indexCase(tx, {
+        organizationId: event.organizationId,
+        caseId: event.caseId,
+        input: event.completed.input,
+        answer: event.completed.answer ?? null,
+        answers: event.answers,
+        completedAt: now,
+      });
     if (newWait)
       rows.push(
         await notifyLater(tx, event.organizationId, {

@@ -44,6 +44,7 @@ const Defaults = z
     model: DEFAULTS.model.schema.nullable().optional(),
     reasoning: DEFAULTS.reasoning.schema.nullable().optional(),
     ocr: DEFAULTS.ocr.schema.nullable().optional(),
+    searchCases: DEFAULTS.searchCases.schema.nullable().optional(),
     timeoutSeconds: DEFAULTS.timeoutSeconds.schema.nullable().optional(),
     toolRetries: DEFAULTS.toolRetries.schema.nullable().optional(),
     sandboxImage: DEFAULTS.sandboxImage.schema.nullable().optional(),

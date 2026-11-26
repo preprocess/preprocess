@@ -202,17 +202,30 @@ const requiredFrom = (env: Env) => {
   return at && !Number.isNaN(at.getTime()) ? at : null;
 };
 
-// The plan an organization without one is given without a card: internal for
-// our own, and Free for every organization created before cards were
-// required. Anyone else starts one at checkout.
-const isInternal = (env: Env, org: OrgId) =>
-  (env.BILLING_INTERNAL_ORGS ?? "")
+const listed = (list: string | undefined, org: OrgId) =>
+  (list ?? "")
     .split(",")
     .map((id) => id.trim())
     .includes(org);
 
+const isInternal = (env: Env, org: OrgId) =>
+  listed(env.BILLING_INTERNAL_ORGS, org);
+
+// Whether billing holds for an organization: for those BILLING_ENFORCED_ORGS
+// names, always; for the rest, once BILLING_REQUIRED_FROM has passed.
+const enforced = (env: Env, org: OrgId, now: Date) => {
+  if (listed(env.BILLING_ENFORCED_ORGS, org)) return true;
+  const from = requiredFrom(env);
+  return from !== null && now >= from;
+};
+
+// The plan an organization without one is given without a card: internal for
+// our own, and Free for every organization created before cards were
+// required. Anyone else, and any organization billed early, starts one at
+// checkout.
 const planWithoutCard = async (env: Env, org: OrgId) => {
   if (isInternal(env, org)) return "internal";
+  if (listed(env.BILLING_ENFORCED_ORGS, org)) return null;
   const from = requiredFrom(env);
   if (!from) return null;
   const created = await withoutOrg(env, "billing: organization age", (tx) =>
@@ -251,19 +264,19 @@ export const cloudPlan = async (env: Env, org: OrgId) => {
   }
 };
 
-// Whether an organization without a plan is refused: once cards are
-// required, and the date has passed.
-export const planRequired = (env: Env, started: boolean, now = new Date()) => {
-  const from = requiredFrom(env);
-  return !started && from !== null && now >= from;
-};
+// Whether an organization without a plan is refused: once billing holds for
+// it.
+export const planRequired = (
+  env: Env,
+  org: OrgId,
+  started: boolean,
+  now = new Date(),
+) => !started && enforced(env, org, now);
 
-// Whether the plan's seat limit holds: like the card, only once billing is
-// enforced, and never for our own organizations.
-export const seatLimitApplies = (env: Env, org: OrgId, now = new Date()) => {
-  const from = requiredFrom(env);
-  return from !== null && now >= from && !isInternal(env, org);
-};
+// Whether the plan's seat limit holds: like the card, only once billing holds
+// for the organization, and never for our own organizations.
+export const seatLimitApplies = (env: Env, org: OrgId, now = new Date()) =>
+  enforced(env, org, now) && !isInternal(env, org);
 
 // Whether the organization may use a feature: once cards are required it
 // needs a started plan (every plan, Free included, starts at checkout with a
@@ -279,7 +292,7 @@ export const entitlement = async (
   const plan = await cloudPlan(env, org);
   if (!plan) return "ok";
   if (!plan.started)
-    return planRequired(env, plan.started) ? "plan_required" : "ok";
+    return planRequired(env, org, plan.started) ? "plan_required" : "ok";
   try {
     const allowed = await remember(
       `check:${org}:${featureId}`,

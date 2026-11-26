@@ -136,6 +136,7 @@ const manifestSchema = z
       )
       .optional(),
     ocr: z.boolean().optional(),
+    searchCases: z.boolean().optional(),
     network: z.array(z.string()).optional(),
     timeoutSeconds: z.number().int().positive().optional(),
     toolRetries: z.number().int().nonnegative().optional(),

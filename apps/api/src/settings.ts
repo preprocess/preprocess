@@ -30,6 +30,7 @@ export const DEFAULTS = {
   model: { schema: z.enum(MODELS), fallback: DEFAULT_MODEL },
   reasoning: { schema: z.enum(REASONING), fallback: "medium" },
   ocr: { schema: z.boolean(), fallback: false },
+  searchCases: { schema: z.boolean(), fallback: false },
   timeoutSeconds: { schema: z.number().int().positive(), fallback: null },
   toolRetries: { schema: z.number().int().nonnegative(), fallback: null },
   sandboxImage: { schema: z.string().trim().min(1), fallback: null },
@@ -162,6 +163,7 @@ export type EffectiveSettings = {
   model: string;
   reasoning: string;
   ocr: boolean;
+  searchCases: boolean;
   timeoutSeconds: number | null;
   toolRetries: number | null;
   sandboxImage: string | null;
@@ -183,6 +185,7 @@ export const effectiveSettings = async (
     model: values.get("model") as string,
     reasoning: values.get("reasoning") as string,
     ocr: values.get("ocr") as boolean,
+    searchCases: values.get("searchCases") as boolean,
     timeoutSeconds: values.get("timeoutSeconds") as number | null,
     toolRetries: values.get("toolRetries") as number | null,
     sandboxImage: values.get("sandboxImage") as string | null,
