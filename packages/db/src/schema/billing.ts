@@ -7,24 +7,27 @@ import {
   bigint,
   date,
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
   text,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core";
 
 import { organization, user } from "./auth.ts";
 
 // cases: one per case created (a rerun is not a new case). model_usage,
 // decide and ocr: micro-USD charged at our prices. log_bytes: run-log bytes
-// stored, which storage counts.
+// stored, which storage counts. sandbox: micro-USD for case sandbox time.
 export const meteredFeature = pgEnum("metered_feature", [
   "cases",
   "model_usage",
   "decide",
   "ocr",
   "log_bytes",
+  "sandbox",
 ]);
 
 export const usageRecords = pgTable(
@@ -72,5 +75,52 @@ export const seatActivity = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.organizationId, t.month, t.userId, t.role] }),
+  ],
+);
+
+// What a sandbox is for: a GitHub build or a PDF render, which are ours and
+// never billed, or a case, which bills by size and seconds awake.
+export const sandboxKind = pgEnum("sandbox_kind", ["build", "render", "case"]);
+// How an awake interval ended: the sandbox slept or was destroyed, or it
+// crashed or went silent, in which case it ends at its last heartbeat.
+export const sandboxEnd = pgEnum("sandbox_end", [
+  "sleep",
+  "destroy",
+  "crash",
+  "lost",
+]);
+
+// One awake interval of one sandbox (apps/api/src/sandbox.ts), timed by the
+// platform: from start or wake to sleep or destroy, or to the last heartbeat
+// when no such event came. A sandbox numbers its intervals, so each is written
+// and closed once. Closing a case sandbox's interval bills it.
+export const sandboxIntervals = pgTable(
+  "sandbox_intervals",
+  {
+    id: text().primaryKey(),
+    organizationId: text()
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    sandboxId: text().notNull(),
+    seq: integer().notNull(),
+    // The agent's id, or for a build its slug: a first build can come before
+    // the agent exists.
+    agent: text(),
+    caseId: text(),
+    kind: sandboxKind().notNull(),
+    // A case sandbox's size id (small, medium, large); for a build or render,
+    // the Cloudflare instance type.
+    size: text().notNull(),
+    startedAt: timestamp({ withTimezone: true }).notNull(),
+    lastSeenAt: timestamp({ withTimezone: true }).notNull(),
+    endedAt: timestamp({ withTimezone: true }),
+    endReason: sandboxEnd(),
+  },
+  (t) => [
+    unique().on(t.sandboxId, t.seq),
+    index().on(t.organizationId, t.startedAt),
+    index("sandbox_intervals_open")
+      .on(t.lastSeenAt)
+      .where(sql`ended_at is null`),
   ],
 );

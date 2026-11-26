@@ -7,7 +7,8 @@
 //
 // Units the app tracks: model_usage, decide and ocr in micro-USD already
 // priced at our cost plus 5% (packages/models/src/prices.ts and
-// apps/runtime/src/models.ts); storage in thousandths of a GB-month, tracked
+// apps/runtime/src/models.ts); sandbox in micro-USD already priced per second
+// awake by size (apps/api/src/sandbox.ts); storage in thousandths of a GB-month, tracked
 // daily; seats as active seat-months, tracked when a month closes.
 // Credit systems count cents: one credit is $0.01.
 
@@ -59,6 +60,13 @@ export const ocr = feature({
   consumable: true,
 });
 
+export const sandbox = feature({
+  featureId: "sandbox",
+  name: "Sandbox time",
+  type: "metered",
+  consumable: true,
+});
+
 export const storage = feature({
   featureId: "storage",
   name: "Storage",
@@ -66,12 +74,13 @@ export const storage = feature({
   consumable: true,
 });
 
-// Free's one-time model credit: tokens, decide and OCR draw on it.
+// Free's one-time model credit: tokens, decide, OCR and sandbox time draw on
+// it.
 export const modelCredit = feature({
   featureId: "model_credit",
   name: "Model credit",
   type: "credit_system",
-  creditSchema: [modelUsage, decide, ocr].map((f) => ({
+  creditSchema: [modelUsage, decide, ocr, sandbox].map((f) => ({
     meteredFeatureId: f.featureId,
     creditCost: 1 / MICRO_USD_PER_CENT,
   })),
@@ -95,7 +104,7 @@ export const commit = feature({
         { to: "inf", creditCost: 0.5 },
       ],
     },
-    ...[modelUsage, decide, ocr].map((f) => ({
+    ...[modelUsage, decide, ocr, sandbox].map((f) => ({
       meteredFeatureId: f.featureId,
       creditCost: 1 / MICRO_USD_PER_CENT,
     })),
@@ -181,7 +190,7 @@ export const team = plan({
         ],
       },
     },
-    ...[modelUsage, decide, ocr].map((f) => ({
+    ...[modelUsage, decide, ocr, sandbox].map((f) => ({
       featureId: f.featureId,
       included: 0,
       reset: { interval: "month" as const },
@@ -236,7 +245,7 @@ export const internal = plan({
   name: "Internal",
   group: "main",
   items: [
-    ...[seats, cases, modelUsage, decide, ocr, storage].map((f) => ({
+    ...[seats, cases, modelUsage, decide, ocr, sandbox, storage].map((f) => ({
       featureId: f.featureId,
       unlimited: true,
     })),
@@ -259,6 +268,7 @@ export default atmn({
     modelUsage,
     decide,
     ocr,
+    sandbox,
     storage,
     modelCredit,
     commit,

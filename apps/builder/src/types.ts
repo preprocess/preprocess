@@ -5,6 +5,8 @@ export type BuildRequest = {
   directory: string;
   entry: string;
   timeoutSeconds: number;
+  // Whose build it is, for sandbox metering (spec 16a).
+  owner: { organizationId: string; agent: string };
 };
 
 export type BuildResult =

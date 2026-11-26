@@ -12,5 +12,8 @@
     "@cloudflare/workers-types": "catalog:",
     "typescript": "^5.9.3",
     "wrangler": "catalog:"
+  },
+  "dependencies": {
+    "@preprocess/sandbox": "workspace:*"
   }
 }
