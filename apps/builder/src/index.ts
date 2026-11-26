@@ -65,7 +65,7 @@ export class BuildSandbox extends DurableObject<Env> {
   }
 
   override async alarm() {
-    await this.meter.heartbeat(this.ctx.container?.running ?? false);
+    await this.meter.check(this.ctx.container?.running ?? false);
   }
 
   // A container already gone was not destroyed by us: it crashed.

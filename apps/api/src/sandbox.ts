@@ -1,9 +1,11 @@
 // Sandbox time (spec 16a), measured by our own platform, never by
 // Cloudflare's analytics. Each sandbox's Durable Object reports start, wake,
-// heartbeat, sleep, destroy and crash here, and this API stamps the time. An
-// interval runs from start or wake to sleep or destroy; one that ends any
-// other way (a crash, or its Durable Object evicted) ends at its last
-// heartbeat, so a missed event can only under-bill, by at most one heartbeat.
+// heartbeat, sleep, destroy and crash here, each timed by the Durable Object:
+// a start when it asked the container to start, a stop when it saw the
+// container stop, a crash nobody saw at the last check (every 5 seconds) that
+// found the container running. An event without a usable time is stamped on
+// arrival. An interval whose Durable Object goes silent (evicted with no stop
+// event) ends at its last heartbeat.
 // Customers pay only for case sandboxes, one price per second awake for the
 // size they chose. Builds and PDF renders are recorded the same way and never
 // billed. Only our cloud meters (spec 16).
@@ -75,6 +77,19 @@ export const sandboxPrice = (size: CaseSandboxSize, seconds: number) =>
 // open interval is closed at the last one.
 export const SILENCE_MS = 2 * 60_000;
 
+// How far an event's own time may sit from its arrival before the arrival
+// time replaces it: a bad clock or a replayed event never moves billing far.
+export const EVENT_SKEW_MS = { past: 10 * 60_000, future: 5_000 };
+
+const eventTime = (event: SandboxEvent, now: Date) => {
+  const at = event.at ? new Date(event.at) : null;
+  if (!at || Number.isNaN(at.getTime())) return null;
+  const offset = at.getTime() - now.getTime();
+  return offset < -EVENT_SKEW_MS.past || offset > EVENT_SKEW_MS.future
+    ? null
+    : at;
+};
+
 const validSize = (event: SandboxEvent) =>
   event.kind === "case"
     ? event.size in caseSandboxSizes
@@ -125,6 +140,7 @@ export const recordSandboxEvent = async (
 ) => {
   if (runMode(env).kind !== "cloud" || !validSize(event)) return;
   const where = { sandboxId: event.sandboxId, seq: event.seq };
+  const at = eventTime(event, now);
   await withOrg(env, orgId(event.organizationId), async (tx) => {
     switch (event.type) {
       case "start":
@@ -140,15 +156,15 @@ export const recordSandboxEvent = async (
             caseId: event.caseId ?? null,
             kind: event.kind,
             size: event.size,
-            startedAt: now,
-            lastSeenAt: now,
+            startedAt: at ?? now,
+            lastSeenAt: at ?? now,
           })
           .onConflictDoNothing();
         return;
       case "heartbeat":
         await tx
           .update(sandboxIntervals)
-          .set({ lastSeenAt: now })
+          .set({ lastSeenAt: at ?? now })
           .where(
             and(
               eq(sandboxIntervals.sandboxId, event.sandboxId),
@@ -159,10 +175,10 @@ export const recordSandboxEvent = async (
         return;
       case "sleep":
       case "destroy":
-        await close(tx, env, where, now, event.type);
+        await close(tx, env, where, at ?? now, event.type);
         return;
       case "crash":
-        await close(tx, env, where, "lastSeen", "crash");
+        await close(tx, env, where, at ?? "lastSeen", "crash");
     }
   });
 };

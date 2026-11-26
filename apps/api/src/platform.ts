@@ -61,7 +61,7 @@ export class Platform extends WorkerEntrypoint<Env> {
   }
 
   // A sandbox's start, wake, heartbeat, sleep, destroy or crash (spec 16a),
-  // timed here.
+  // timed by the sandbox's Durable Object.
   sandboxEvent(event: SandboxEvent) {
     return recordSandboxEvent(this.env, event);
   }

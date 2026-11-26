@@ -136,6 +136,77 @@ describe("sandbox intervals", () => {
     });
   });
 
+  it("bill from the start and stop times the sandbox reports, to the millisecond", async () => {
+    const send = sandbox("timed", "small");
+    await send("start", 1, "13:00:00.400", {
+      at: at("13:00:00.123").toISOString(),
+    });
+    await send("heartbeat", 1, "13:00:05.000", {
+      at: at("13:00:04.900").toISOString(),
+    });
+    await send("destroy", 1, "13:00:07.700", {
+      at: at("13:00:07.456").toISOString(),
+    });
+
+    expect(await recorded("timed")).toEqual({
+      intervals: [
+        {
+          seq: 1,
+          startedAt: "2026-11-26T13:00:00.123Z",
+          endedAt: "2026-11-26T13:00:07.456Z",
+          endReason: "destroy",
+        },
+      ],
+      charges: [["sandbox", sandboxPrice("small", 7.333)]],
+    });
+  });
+
+  it("end a crash at the time the sandbox saw its container stop", async () => {
+    const send = sandbox("seen-crash", "small");
+    await send("start", 1, "13:10:00", { at: at("13:10:00").toISOString() });
+    await send("heartbeat", 1, "13:10:30", {
+      at: at("13:10:30").toISOString(),
+    });
+    await send("crash", 1, "13:10:42.300", {
+      at: at("13:10:41.250").toISOString(),
+    });
+
+    expect((await recorded("seen-crash")).intervals).toEqual([
+      {
+        seq: 1,
+        startedAt: "2026-11-26T13:10:00.000Z",
+        endedAt: "2026-11-26T13:10:41.250Z",
+        endReason: "crash",
+      },
+    ]);
+  });
+
+  it("stamp an event on arrival when its own time is missing, invalid or far off", async () => {
+    const send = sandbox("skewed", "small");
+    await send("start", 1, "13:20:00", { at: "not a time" });
+    await send("destroy", 1, "13:20:10", { at: at("13:40:00").toISOString() });
+    const late = sandbox("late", "small");
+    await late("start", 1, "13:30:00", { at: at("13:15:00").toISOString() });
+    await late("destroy", 1, "13:30:05");
+
+    expect((await recorded("skewed")).intervals).toEqual([
+      {
+        seq: 1,
+        startedAt: "2026-11-26T13:20:00.000Z",
+        endedAt: "2026-11-26T13:20:10.000Z",
+        endReason: "destroy",
+      },
+    ]);
+    expect((await recorded("late")).intervals).toEqual([
+      {
+        seq: 1,
+        startedAt: "2026-11-26T13:30:00.000Z",
+        endedAt: "2026-11-26T13:30:05.000Z",
+        endReason: "destroy",
+      },
+    ]);
+  });
+
   it("end a crashed sandbox's interval at its last heartbeat", async () => {
     const send = sandbox("crasher", "small");
     await send("start", 1, "12:00:00");
@@ -218,7 +289,11 @@ describe("sandbox intervals", () => {
         sandboxPrice("medium", 10) +
         sandboxPrice("large", 120) +
         sandboxPrice("small", 60) +
-        sandboxPrice("medium", 30),
+        sandboxPrice("medium", 30) +
+        sandboxPrice("small", 7.333) +
+        sandboxPrice("small", 41.25) +
+        sandboxPrice("small", 10) +
+        sandboxPrice("small", 5),
     );
   });
 

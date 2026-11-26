@@ -60,6 +60,17 @@ const tokenFor = (minute: number) =>
 // fixture (apps/model-stub/fixtures/chat.json, sandbox-layer-smoke).
 const LAYER_COMMAND = "tree --version; cat /opt/smoke/layer.txt";
 
+// What the sandbox case runs: the container's own clock, now and when PID 1
+// started (now minus how long PID 1 has run, from /proc/uptime and
+// /proc/1/stat to the clock tick; /proc/stat's btime is whole seconds).
+// Staging serves agents real models, so the case's text names the command;
+// the stub's sandbox-smoke fixture runs the same one locally.
+const SANDBOX_COMMAND =
+  'read up _ < /proc/uptime; t=$(cut -d\' \' -f22 /proc/1/stat); hz=$(getconf CLK_TCK); now=$(date +%s%3N); s=$(awk -v n="$now" -v u="$up" -v t="$t" -v hz="$hz" \'BEGIN { printf "%d", n - (u - t / hz) * 1000 }\'); echo "sandbox ok now_ms=$now pid1_start_ms=$s"';
+
+// How far a sandbox interval's billed time may be from its container's time.
+const BILLING_TOLERANCE_MS = 50;
+
 const fail = (what: string): never => {
   throw new Error(`smoke test failed: ${what}`);
 };
@@ -266,7 +277,7 @@ const started = await call<{ id: string }>("POST", `/v1/orgs/${org}/cases`, {
   agent: slug,
   text:
     mode === "sandbox"
-      ? `Smoke test of the sandbox on ${stage}.`
+      ? `Smoke test of the sandbox on ${stage}. Run exactly this command with sandbox_exec, once, and reply with only its output, verbatim: ${SANDBOX_COMMAND}`
       : mode === "layer"
         ? `Smoke test of a custom environment on ${stage}. Run exactly this command with sandbox_exec, once, and reply with only its output, verbatim: ${LAYER_COMMAND}`
         : `Smoke test of ${stage}.`,
@@ -366,8 +377,67 @@ async function measureSandbox(org: string, caseId: string) {
       seconds(ran),
       seconds(billed),
       seconds(ran - billed),
+      Math.abs(ran - billed) <= BILLING_TOLERANCE_MS ? "PASS" : "FAIL",
     ];
   });
+  const consistent = rows.every((row) => row.at(-1) === "PASS");
+
+  // An independent reference from inside the container (SANDBOX_COMMAND):
+  // PID 1's start, and the command's own time, a lower bound for the stop.
+  // Both are the container's clock.
+  const room = await call<{ thread: { kind: string; text: string }[] }>(
+    "GET",
+    `/v1/orgs/${org}/cases/${caseId}/room`,
+  );
+  const reply = (room.body?.thread ?? [])
+    .filter((m) => m.kind === "agent")
+    .map((m) => m.text)
+    .join("\n");
+  const printed = (name: string) =>
+    Number(new RegExp(`${name}=(\\d+)`).exec(reply)?.[1] ?? NaN);
+  const pid1Start = printed("pid1_start_ms");
+  const lastCommand = printed("now_ms");
+  const first = intervals[0];
+  const startedAt = ms(first?.startedAt);
+  const endedAt = ms(first?.endedAt);
+  const startCheck = startedAt <= pid1Start;
+  const stopCheck = endedAt >= lastCommand;
+  const iso = (n: number) =>
+    Number.isNaN(n) ? "not printed" : new Date(n).toISOString();
+  const skew =
+    lastCommand < startedAt
+      ? `The container's clock is behind ours by at least ${seconds(startedAt - lastCommand)} s: its command ran before the interval started.`
+      : lastCommand > endedAt
+        ? `The container's clock is ahead of ours by at least ${seconds(lastCommand - endedAt)} s, or the interval ended early: its command ran after the interval ended.`
+        : pid1Start < startedAt
+          ? `PID 1 started ${seconds(startedAt - pid1Start)} s before the start was requested: either the container's clock is behind ours or the interval started late.`
+          : "No skew visible: the container's times fall inside the interval.";
+  const independent = [
+    [
+      "PID 1 start (container)",
+      "started_at",
+      "Billed before PID 1 (s)",
+      "Start check",
+      "Last command (container)",
+      "ended_at",
+      "Billed after last command (s)",
+      "Stop check",
+    ],
+    Array(8).fill("---"),
+    [
+      iso(pid1Start),
+      first?.startedAt ?? "n/a",
+      seconds(pid1Start - startedAt),
+      startCheck ? "PASS" : "FAIL",
+      iso(lastCommand),
+      first?.endedAt ?? "open",
+      seconds(endedAt - lastCommand),
+      stopCheck ? "PASS" : "FAIL",
+    ],
+  ]
+    .map((row) => `| ${row.join(" | ")} |`)
+    .join("\n");
+  const passed = consistent && startCheck && stopCheck;
   const header = [
     "Interval",
     "Size",
@@ -381,16 +451,25 @@ async function measureSandbox(org: string, caseId: string) {
     "Container (s)",
     "Billed (s)",
     "Under-billed (s)",
+    `Within ${BILLING_TOLERANCE_MS} ms`,
   ];
   const table = [header, header.map(() => "---"), ...rows]
     .map((row) => `| ${row.join(" | ")} |`)
     .join("\n");
-  const report = `### Sandbox time on ${stage}\n\nCase \`${caseId}\`. Under-billed is container time minus billed time; negative means the interval billed more than the container ran.\n\n${table}\n`;
+  const report = `### Sandbox time on ${stage}: ${passed ? "PASS" : "FAIL"}\n\nCase \`${caseId}\`.\n\n**Against the sandbox's start and stop log events** (${consistent ? "PASS" : "FAIL"}): every interval must bill within ${BILLING_TOLERANCE_MS} ms of the time between them. Under-billed is container time minus billed time; negative means the interval billed more than the container ran.\n\n${table}\n\n**Against the container's own clock** (${startCheck && stopCheck ? "PASS" : "FAIL"}): billing must start no later than PID 1 started, and end no earlier than the last command inside the container ran.\n\n${independent}\n\n${skew}\n`;
   console.log(report);
   if (process.env.GITHUB_STEP_SUMMARY)
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
   if (!starts.length || !stops.length)
     fail("the sandbox's start and stop never reached the run log");
+  if (!consistent)
+    fail(
+      `an interval billed more than ${BILLING_TOLERANCE_MS} ms off its container time`,
+    );
+  if (!startCheck || !stopCheck)
+    fail(
+      "the interval does not cover the container's own start and last command",
+    );
 }
 
 // The custom environment as this run saw it: its size, the deploy's wait for
