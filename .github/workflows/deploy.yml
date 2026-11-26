@@ -117,6 +117,14 @@ jobs:
           done
           pnpm --filter @preprocess/infra staging:deploy
 
+      # The account's container registry has a fixed 50 GB cap (PRE-90). A
+      # warning annotation here once the estimate passes 35 GB; it never
+      # blocks the deploy.
+      - name: Estimate container registry usage
+        if: steps.deploy.outcome == 'success'
+        continue-on-error: true
+        run: pnpm --filter @preprocess/infra registry usage
+
       # The stage's URLs contain the account's workers.dev subdomain, which
       # matches a secret's value, so GitHub drops them as a job output. They
       # reach the smoke test as an artifact instead.
