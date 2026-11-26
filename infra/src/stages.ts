@@ -73,6 +73,17 @@ export const names = (stage: string) => ({
   branch: stage,
 });
 
+// Model providers' keys (packages/models endpoints), optional on every stage:
+// the runtime calls Baseten for the agent models and decide, the API calls
+// Mistral for OCR. MODEL_ENDPOINTS is an install's own per-model endpoints,
+// with their keys, so it is a secret too. Qwen needs no key: it runs on the
+// runtime's Workers AI binding in the stage's own account.
+export const runtimeModelSecrets = [
+  "BASETEN_API_KEY",
+  "MODEL_ENDPOINTS",
+] as const;
+export const apiModelSecrets = ["MISTRAL_API_KEY", "MODEL_ENDPOINTS"] as const;
+
 // The API's secrets, read from the deploy environment and bound as
 // secret_text. Locally `pnpm dev` writes generated values to apps/api/.dev.vars.
 export const apiSecrets = ["BETTER_AUTH_SECRET", "AUDIT_SIGNING_KEY"] as const;

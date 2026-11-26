@@ -866,29 +866,21 @@ describe("files and OCR", () => {
       model: string;
     }>(`/v1/orgs/${org}/ocr`, { body: { file: image.id, grounding: true } });
     expect(read.status).toBe(200);
-    expect(read.body.model).toBe("stub-lightonocr");
+    expect(read.body.model).toBe("stub-mistral-ocr");
     expect(read.body.pages[0]?.markdown).toContain("Invoice 1042");
     expect(read.body.pages[0]?.blocks?.length).toBeGreaterThan(0);
 
     const pdf = await upload(
-      "%PDF-1.7 two pages",
+      "%PDF-1.7 /Type /Pages /Type /Page /Type /Page",
       "invoice.pdf",
       "application/pdf",
     );
-    const rendered: Uint8Array[] = [];
-    environment.PDF_RENDER = {
-      renderPdf: (bytes) => {
-        rendered.push(bytes);
-        return Promise.resolve([png, png]);
-      },
-    };
     const pages = await operator.call<{
       pages: { index: number; markdown: string }[];
     }>(`/v1/orgs/${org}/ocr`, { body: { file: pdf.id } });
     expect(pages.status).toBe(200);
-    expect(new TextDecoder().decode(rendered[0])).toBe("%PDF-1.7 two pages");
     expect(pages.body.pages.map((p) => p.index)).toEqual([0, 1]);
-    expect(pages.body.pages[1]?.markdown).toContain("Invoice 1042");
+    expect(pages.body.pages[1]?.markdown).toMatch(/^# Stub OCR/);
     vi.restoreAllMocks();
   });
 });

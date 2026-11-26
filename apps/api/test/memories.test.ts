@@ -268,6 +268,42 @@ describe("memory", () => {
       (await operator.client.call(path, { method: "DELETE" })).status,
     ).toBe(204);
     expect((await keyed.call(path, { method: "DELETE" })).status).toBe(404);
+
+    // Soft-deleted: the row keeps its text for retention, and no read
+    // returns it.
+    const after = await withOrg(environment, orgId(org), async (tx) => ({
+      row: (
+        await tx.select().from(agentMemories).where(eq(agentMemories.id, m.id))
+      )[0],
+      rules: await acceptedMemories(tx, agentId),
+      audited: await tx
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "agent.memory.deleted"))
+        .orderBy(asc(auditEvents.seq)),
+    }));
+    expect(after.row).toMatchObject({
+      status: "deleted",
+      text: "Flag notice periods under 30 days.",
+      deletedBy: operator.userId,
+    });
+    expect(after.row?.deletedAt).toBeInstanceOf(Date);
+    expect(after.rules.map((r) => r.id)).not.toContain(m.id);
+    expect(after.audited.map((a) => [a.targetId, a.data])).toEqual([
+      [agentId, { memory: m.id }],
+    ]);
+    for (const status of ["accepted", "proposed"]) {
+      const list = await operator.client.call<{ memories: Memory[] }>(
+        `/v1/orgs/${org}/agents/intake/memories?status=${status}`,
+      );
+      expect(list.body.memories.map((r) => r.id)).not.toContain(m.id);
+    }
+    const onCase = await operator.client.call<{ memories: Memory[] }>(
+      `/v1/orgs/${org}/cases/${m.caseId}/memories`,
+    );
+    expect(onCase.status).toBe(200);
+    expect(onCase.body.memories).toEqual([]);
+
     const second = await proposed("Quote the clause number.");
     await decide(operator.client, second, "accept");
     expect(

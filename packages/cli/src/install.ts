@@ -32,7 +32,6 @@ export const checkInstallEnv = (env: Env) => {
     "CLOUDFLARE_ACCOUNT_ID",
     "DATABASE_URL",
     "EMAIL_FROM",
-    "MODEL_SERVICE_URL",
   ]
     .filter((name) => !env[name])
     .map((name) => `${name} is not set`);

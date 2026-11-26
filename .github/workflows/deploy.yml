@@ -63,6 +63,10 @@ jobs:
       BILLING_REQUIRED_FROM: ${{ vars.BILLING_REQUIRED_FROM }}
       BILLING_INTERNAL_ORGS: ${{ vars.BILLING_INTERNAL_ORGS }}
       BILLING_ENFORCED_ORGS: ${{ vars.BILLING_ENFORCED_ORGS }}
+      # Model providers (packages/models endpoints). Optional; a model whose
+      # provider has no key is served by the stub on staging.
+      BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       NO_COLOR: "1"
     steps:
       - name: Check credentials
@@ -109,7 +113,7 @@ jobs:
         run: |
           # An unset optional value must stay unset, not bind an empty string.
           for name in AUTUMN_SECRET_KEY BILLING_REQUIRED_FROM BILLING_INTERNAL_ORGS \
-            BILLING_ENFORCED_ORGS; do
+            BILLING_ENFORCED_ORGS BASETEN_API_KEY MISTRAL_API_KEY; do
             [ -n "${!name}" ] || unset "$name"
           done
           pnpm --filter @preprocess/infra staging:deploy

@@ -26,7 +26,7 @@ type Memory = {
   readonly caseId: string;
   readonly text: string;
   readonly reason: string | null;
-  readonly status: "proposed" | "accepted" | "dismissed" | "deleted";
+  readonly status: "proposed" | "accepted" | "dismissed";
   readonly proposedAt: string;
   readonly decidedAt: string | null;
 };

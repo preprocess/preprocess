@@ -1,8 +1,11 @@
 import { ModelError } from "@preprocess/models/client";
-import { models } from "@preprocess/models/contract";
 import { decide } from "@preprocess/models/decide";
-import { modelEndpoint } from "@preprocess/models/endpoints";
-import { ocrPage, parseGrounding } from "@preprocess/models/ocr";
+import {
+  modelEndpoint,
+  modelRoute,
+  ROUTES,
+} from "@preprocess/models/endpoints";
+import { ocrDocument } from "@preprocess/models/ocr";
 import { describe, expect, it } from "vitest";
 
 import acmeInvoice from "../fixtures/ocr/2d95a627992d4708970bc90604baef4d1c95de4f3ab61d9769a350d0a51f0a7a.json";
@@ -25,31 +28,78 @@ const rejection = async (promise: Promise<unknown>) => {
   return error as ModelError;
 };
 
-describe("modelEndpoint", () => {
-  it("uses MODEL_SERVICE_URL and MODEL_SERVICE_KEY with the purpose's model", () => {
+describe("modelRoute", () => {
+  const stubService = {
+    MODEL_SERVICE_URL: "https://m.test",
+    MODEL_SERVICE_KEY: "k",
+  };
+
+  it("routes each model to its provider when its key or binding is set", () => {
+    const env = { BASETEN_API_KEY: "b", MISTRAL_API_KEY: "m", AI: {} };
+    expect(modelRoute(env, "kimi-k3.1-pro")).toEqual({
+      url: "https://inference.baseten.co",
+      key: "b",
+      model: "moonshotai/Kimi-K3.1-Pro",
+    });
+    expect(modelEndpoint(env, "decide")).toEqual({
+      url: "https://inference.baseten.co",
+      key: "b",
+      model: "decision-models/baseten-groundhog-latest",
+    });
+    expect(modelEndpoint(env, "ocr")).toEqual({
+      url: "https://api.mistral.ai",
+      key: "m",
+      model: "mistral-ocr-4-1",
+    });
+    expect(modelRoute(env, "qwen3.8-27b")).toEqual({
+      binding: "AI",
+      model: "@cf/qwen/qwen3.8-27b",
+    });
+  });
+
+  it("sends models without a provider to MODEL_SERVICE_URL", () => {
     expect(
-      modelEndpoint(
-        { MODEL_SERVICE_URL: "https://m.test", MODEL_SERVICE_KEY: "k" },
-        "ocr",
-      ),
-    ).toEqual({ url: "https://m.test", key: "k", model: models.ocr });
+      modelRoute({ ...stubService, AI: {} }, "deepseek-v4.1-flash"),
+    ).toEqual({
+      url: "https://m.test",
+      key: "k",
+      model: ROUTES["deepseek-v4.1-flash"].model,
+    });
+    expect(modelEndpoint(stubService, "ocr")).toEqual({
+      url: "https://m.test",
+      key: "k",
+      model: ROUTES.ocr.model,
+    });
+    expect(modelRoute(stubService, "qwen3.8-27b")).toMatchObject({
+      url: "https://m.test",
+    });
+  });
+
+  it("prefers the install's MODEL_ENDPOINTS entry over the provider", () => {
+    const env = {
+      MISTRAL_API_KEY: "m",
+      MODEL_ENDPOINTS: JSON.stringify({
+        ocr: { url: "https://ocr.own.test", key: "own" },
+      }),
+    };
+    expect(modelEndpoint(env, "ocr")).toEqual({
+      url: "https://ocr.own.test",
+      key: "own",
+      model: ROUTES.ocr.model,
+    });
   });
 
   it("prefers the organization's registered endpoint", () => {
     const own = { url: "https://own.test", key: "own", model: "custom" };
     expect(
-      modelEndpoint(
-        { MODEL_SERVICE_URL: "https://m.test", MODEL_SERVICE_KEY: "k" },
-        "decide",
-        own,
-      ),
+      modelEndpoint({ ...stubService, BASETEN_API_KEY: "b" }, "decide", own),
     ).toBe(own);
   });
 
   it("is model_unavailable (503) with nothing configured, never a fallback", () => {
     let error: unknown;
     try {
-      modelEndpoint({}, "decide");
+      modelEndpoint({ BASETEN_API_KEY: "b" }, "ocr");
     } catch (e) {
       error = e;
     }
@@ -59,7 +109,7 @@ describe("modelEndpoint", () => {
 });
 
 describe("decide against the stub", () => {
-  const groundhog = endpoint(models.decide);
+  const groundhog = endpoint(ROUTES.decide.model);
 
   it("returns the top pick and its probability", async () => {
     const result = await decide(
@@ -147,75 +197,76 @@ describe("decide against the stub", () => {
 });
 
 describe("OCR against the stub", () => {
-  const lighton = endpoint(models.ocr);
+  const mistral = endpoint(ROUTES.ocr.model);
+  const blank =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==";
 
   it("reads a sample page as Markdown", async () => {
-    const page = await ocrPage(lighton, { image: sample }, { fetcher: stub() });
-    expect(page.markdown).toBe(acmeInvoice.markdown);
-    expect(page.blocks).toBeUndefined();
-    expect(page.usage.model).toBe("stub-lightonocr");
+    const read = await ocrDocument(
+      mistral,
+      { document: sample },
+      { fetcher: stub() },
+    );
+    expect(read.pages).toEqual([{ index: 0, markdown: acmeInvoice.markdown }]);
+    expect(read.usage).toEqual({ model: "stub-mistral-ocr", pages: 1 });
   });
 
   it("reads labelled blocks in grounding mode", async () => {
-    const page = await ocrPage(
-      lighton,
-      { image: sample, grounding: true },
+    const read = await ocrDocument(
+      mistral,
+      { document: sample, grounding: true },
       { fetcher: stub() },
     );
-    expect(page.blocks).toEqual(acmeInvoice.blocks);
-    expect(page.markdown).toContain("# Acme Corporation");
+    expect(read.pages[0]?.blocks).toEqual(acmeInvoice.blocks);
+    expect(read.pages[0]?.markdown).toContain("# Acme Corporation");
+  });
+
+  it("sends a PDF as a document and reads every page", async () => {
+    const pdf = `data:application/pdf;base64,${btoa(
+      "%PDF-1.7 /Type /Pages /Type /Page /Type /Page",
+    )}`;
+    const read = await ocrDocument(
+      mistral,
+      { document: pdf },
+      { fetcher: stub() },
+    );
+    expect(read.pages.map((page) => page.index)).toEqual([0, 1]);
+    expect(read.usage.pages).toBe(2);
   });
 
   it("returns a placeholder for an unknown page", async () => {
-    const page = await ocrPage(
-      lighton,
-      {
-        image:
-          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==",
-        grounding: true,
-      },
+    const read = await ocrDocument(
+      mistral,
+      { document: blank, grounding: true },
       { fetcher: stub() },
     );
-    expect(page.markdown).toMatch(/^# Stub OCR/);
-    expect(page.blocks).toHaveLength(1);
-    expect(page.blocks?.[0]?.bbox).toEqual([0, 0, 1000, 1000]);
+    expect(read.pages[0]?.markdown).toMatch(/^# Stub OCR/);
+    expect(read.pages[0]?.blocks).toHaveLength(1);
+    expect(read.pages[0]?.blocks?.[0]?.bbox).toEqual([0, 0, 1000, 1000]);
   });
 
-  it("answers vLLM's 404 for another model and 400 for a remote image", async () => {
+  it("refuses another model and a remote document", async () => {
     expect(
       (
         await rejection(
-          ocrPage(endpoint("other"), { image: sample }, { fetcher: stub() }),
+          ocrDocument(
+            endpoint("other"),
+            { document: sample },
+            { fetcher: stub() },
+          ),
         )
-      ).message,
-    ).toContain("404");
-    const response = await post("/v1/chat/completions", {
-      model: models.ocr,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: "https://x.test/p.png" } },
-            { type: "text", text: "" },
-          ],
-        },
-      ],
+      ).code,
+    ).toBe("invalid_request");
+    const response = await post("/v1/ocr", {
+      model: ROUTES.ocr.model,
+      document: { type: "document_url", document_url: "https://x.test/p.pdf" },
     });
-    expect(response.status).toBe(400);
-  });
-
-  it("keeps text outside a malformed grounding marker out of the blocks", () => {
-    const parsed = parseGrounding(
-      '<|block|>{"label":"text","bbox":[1,2,3,4]}\nHello\n\n<|block|>not json\nLost',
-    );
-    expect(parsed.blocks).toEqual([
-      { label: "text", bbox: [1, 2, 3, 4], text: "Hello" },
-    ]);
+    expect(response.status).toBe(422);
   });
 });
 
 describe("model service failures", () => {
-  const groundhog = endpoint(models.decide);
+  const groundhog = endpoint(ROUTES.decide.model);
   const ask = (headers: Record<string, string>, timeoutMs?: number) =>
     rejection(
       decide(
