@@ -238,7 +238,7 @@ export const activeSeats = async (tx: SystemTx, org: string, month: string) => {
 
 // Bytes each organization stores (spec 16a): documents, run capture and run
 // logs. Agent bundles are not counted.
-export const storedBytes = async (tx: SystemTx) =>
+export const storedBytes = async (tx: SystemTx, org?: string) =>
   (
     await tx.execute<{ org: string; bytes: string }>(sql`
       select o.id as org,
@@ -249,7 +249,8 @@ export const storedBytes = async (tx: SystemTx) =>
         + coalesce((select sum(bytes) from sandbox_layers l
             where l.organization_id = o.id), 0)
           as bytes
-      from organization o`)
+      from organization o
+      ${org ? sql`where o.id = ${org}` : sql``}`)
   ).rows.map((r) => ({ org: r.org, bytes: Number(r.bytes) }));
 
 const daysIn = (day: Date) =>

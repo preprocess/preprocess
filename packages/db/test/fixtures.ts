@@ -51,6 +51,8 @@ import { logSummaries } from "../src/schema/logs.ts";
 import { agentMemories } from "../src/schema/memories.ts";
 import {
   sandboxIntervals,
+  demotedSeats,
+  planChanges,
   seatActivity,
   usageRecords,
   usageReports,
@@ -482,6 +484,16 @@ export const seedOrganization = async (name: string) =>
       month: "2026-11-01",
       role: "operator",
     });
+    await tx.insert(planChanges).values({
+      organizationId: org,
+      plan: "free",
+      requestedBy: userId,
+    });
+    await tx.insert(demotedSeats).values({
+      organizationId: org,
+      userId,
+      groupId: `group-${org}`,
+    });
     await tx.insert(sandboxIntervals).values({
       id: newId("sandboxInterval"),
       organizationId: org,
@@ -544,6 +556,8 @@ export const tenantTables = {
   usage_records: "organization_id",
   usage_reports: "organization_id",
   seat_activity: "organization_id",
+  plan_changes: "organization_id",
+  demoted_seats: "organization_id",
   sandbox_intervals: "organization_id",
   sandbox_layers: "organization_id",
   inbox_reads: "organization_id",

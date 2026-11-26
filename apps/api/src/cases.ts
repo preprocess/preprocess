@@ -27,6 +27,7 @@ import { acceptedMemories } from "./memories.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
 import { creditStop, entitlement } from "./billing.ts";
+import { customImagesAllowed } from "./plan.ts";
 import { indexCase } from "./case-search.ts";
 import { joinAutomaticSuite } from "./evals.ts";
 import { meter, meterCaseFee, meterCharges, type Charges } from "./metering.ts";
@@ -133,6 +134,9 @@ export const createCase = async (
       "credit_exhausted",
       "Credit balance is empty. An Owner can add credits in Billing.",
     );
+  // Free pauses agents that run in a custom environment (PRE-96); they
+  // resume when the plan allows custom environments again.
+  const customEnvironments = await customImagesAllowed(env, org);
   const created = await withOrg(env, org, async (tx) => {
     const now = new Date();
     if (idempotencyKey) {
@@ -192,7 +196,7 @@ export const createCase = async (
     if (!agent) throw new ApiError(404, "not_found", "No such agent.");
 
     const [deployment] = await tx
-      .select({ id: deployments.id })
+      .select({ id: deployments.id, layer: deployments.sandboxLayer })
       .from(deployments)
       .where(
         and(
@@ -214,6 +218,12 @@ export const createCase = async (
         "This agent has no production deployment. Promote one, or name a deployment.",
       );
     }
+    if (deployment.layer && !customEnvironments)
+      throw new ApiError(
+        409,
+        "agent_paused",
+        `${agent.slug} is paused because it uses a custom environment, which requires the Team plan. Upgrade to Team to resume automatically, or remove the custom setup in code.`,
+      );
 
     await refuseOverLimit(tx);
     const caseId = newId("case");

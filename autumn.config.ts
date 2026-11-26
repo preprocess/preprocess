@@ -178,10 +178,14 @@ export const free = plan({
       included: 1_000,
       reset: { interval: "month" },
     },
+    // Storage past 5 GB is billed to the card as on Team (PRE-96), never
+    // drawn from credits; a hard cap would stop an organization that left
+    // Team with more.
     {
       featureId: storage.featureId,
       included: 5,
       reset: { interval: "month" },
+      price: { ...usagePrice, amount: 0.1, billingUnits: 1 },
     },
     {
       featureId: credits.featureId,

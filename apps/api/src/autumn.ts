@@ -21,7 +21,12 @@ export class AutumnError extends Error {
 
 export type AutumnCustomer = {
   id: string;
-  subscriptions: { plan_id: string; status: string; started_at?: number }[];
+  subscriptions: {
+    plan_id: string;
+    status: string;
+    started_at?: number;
+    current_period_end?: number | null;
+  }[];
   flags: Record<string, unknown>;
   balances: Record<
     string,
