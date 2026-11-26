@@ -44,11 +44,43 @@ export const usageRecords = pgTable(
     at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     // When the billing service accepted it.
     reportedAt: timestamp({ withTimezone: true }),
+    // The usage report that carried it to the billing service.
+    reportId: text(),
   },
   (t) => [
     index().on(t.organizationId, t.feature, t.at),
     index().on(t.organizationId, t.caseId),
     index("usage_records_unreported")
+      .on(t.at)
+      .where(sql`reported_at is null`),
+  ],
+);
+
+// What reached the billing service: whole billed units (cases, credits of
+// $0.01, GB-months), with what was left under one unit carried into the next
+// report of the same feature, so nothing is ever rounded up.
+export const usageReports = pgTable(
+  "usage_reports",
+  {
+    id: text().primaryKey(),
+    organizationId: text()
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    // The billing service's feature id.
+    feature: text().notNull(),
+    // Reports of a feature in order; each carries on from the one before.
+    seq: integer().notNull(),
+    // Whole billed units sent.
+    quantity: bigint({ mode: "number" }).notNull(),
+    // Ledger units under one billed unit, carried into the next report.
+    remainder: bigint({ mode: "number" }).notNull(),
+    at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    // When the billing service accepted it.
+    reportedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [
+    unique().on(t.organizationId, t.feature, t.seq),
+    index("usage_reports_unreported")
       .on(t.at)
       .where(sql`reported_at is null`),
   ],

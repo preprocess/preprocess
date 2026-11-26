@@ -52,6 +52,7 @@ import {
   sandboxIntervals,
   seatActivity,
   usageRecords,
+  usageReports,
 } from "../src/schema/billing.ts";
 import {
   evalResults,
@@ -466,6 +467,14 @@ export const seedOrganization = async (name: string) =>
       quantity: 1,
       caseId,
     });
+    await tx.insert(usageReports).values({
+      id: newId("usageReport"),
+      organizationId: org,
+      feature: "cases",
+      seq: 1,
+      quantity: 1,
+      remainder: 0,
+    });
     await tx.insert(seatActivity).values({
       organizationId: org,
       userId,
@@ -525,6 +534,7 @@ export const tenantTables = {
   case_approvals: "organization_id",
   agent_memories: "organization_id",
   usage_records: "organization_id",
+  usage_reports: "organization_id",
   seat_activity: "organization_id",
   sandbox_intervals: "organization_id",
   inbox_reads: "organization_id",

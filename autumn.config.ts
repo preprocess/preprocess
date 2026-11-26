@@ -5,12 +5,13 @@
 // environment and stops for an explicit go if existing customers' plans
 // would change. A self-hosted install never reads it.
 //
-// Units the app tracks: model_usage, decide and ocr in micro-USD already
-// priced at our cost plus 5% (packages/models/src/prices.ts and
-// apps/runtime/src/models.ts); sandbox in micro-USD already priced per second
-// awake by size (apps/api/src/sandbox.ts); storage in thousandths of a GB-month, tracked
-// daily; seats as active seat-months, tracked when a month closes.
-// Credit systems count cents: one credit is $0.01.
+// Units the app tracks (apps/api/src/billing.ts): model, decide, OCR and
+// sandbox usage in credits of $0.01, converted from the micro-USD our prices
+// give (packages/models/src/prices.ts, apps/runtime/src/models.ts,
+// apps/api/src/sandbox.ts); storage in GB-months, tracked daily; seats as
+// active seat-months, tracked when a month closes. Only whole credits and
+// GB-months are sent; the rest carries into the next report, so nothing
+// rounds up. Credit systems count credits too.
 
 import { atmn, feature, plan } from "atmn";
 
@@ -22,8 +23,7 @@ const FREE_MODEL_CREDIT_USD = 5;
 // Coming soon and its provider is undecided (spec 12a), so nothing bills it.
 export const TRAINING_MULTIPLIER = 2.5;
 
-const CENTS = 100;
-const MICRO_USD_PER_CENT = 10_000;
+const CREDITS_PER_USD = 100;
 
 export const seats = feature({
   featureId: "seats",
@@ -40,36 +40,36 @@ export const cases = feature({
 });
 
 export const modelUsage = feature({
-  featureId: "model_usage",
-  name: "Model tokens",
+  featureId: "model_usage_credits",
+  name: "Model usage credit",
   type: "metered",
   consumable: true,
 });
 
 export const decide = feature({
-  featureId: "decide",
-  name: "decide",
+  featureId: "decide_credits",
+  name: "decide usage credit",
   type: "metered",
   consumable: true,
 });
 
 export const ocr = feature({
-  featureId: "ocr",
-  name: "OCR",
+  featureId: "ocr_credits",
+  name: "OCR usage credit",
   type: "metered",
   consumable: true,
 });
 
 export const sandbox = feature({
-  featureId: "sandbox",
-  name: "Sandbox time",
+  featureId: "sandbox_credits",
+  name: "Sandbox usage credit",
   type: "metered",
   consumable: true,
 });
 
 export const storage = feature({
-  featureId: "storage",
-  name: "Storage",
+  featureId: "storage_gb_months",
+  name: "GB-month",
   type: "metered",
   consumable: true,
 });
@@ -82,7 +82,7 @@ export const modelCredit = feature({
   type: "credit_system",
   creditSchema: [modelUsage, decide, ocr, sandbox].map((f) => ({
     meteredFeatureId: f.featureId,
-    creditCost: 1 / MICRO_USD_PER_CENT,
+    creditCost: 1,
   })),
 });
 
@@ -93,7 +93,7 @@ export const commit = feature({
   name: "Committed spend",
   type: "credit_system",
   creditSchema: [
-    { meteredFeatureId: seats.featureId, creditCost: 16 * CENTS },
+    { meteredFeatureId: seats.featureId, creditCost: 16 * CREDITS_PER_USD },
     {
       meteredFeatureId: cases.featureId,
       tierBehavior: "graduated",
@@ -106,14 +106,14 @@ export const commit = feature({
     },
     ...[modelUsage, decide, ocr, sandbox].map((f) => ({
       meteredFeatureId: f.featureId,
-      creditCost: 1 / MICRO_USD_PER_CENT,
+      creditCost: 1,
     })),
     {
       meteredFeatureId: storage.featureId,
       tierBehavior: "graduated",
       tiers: [
-        { to: 50_000, creditCost: 0 },
-        { to: "inf", creditCost: 0.01 },
+        { to: 50, creditCost: 0 },
+        { to: "inf", creditCost: 10 },
       ],
     },
   ],
@@ -158,12 +158,12 @@ export const free = plan({
     },
     {
       featureId: storage.featureId,
-      included: 5_000,
+      included: 5,
       reset: { interval: "month" },
     },
     {
       featureId: modelCredit.featureId,
-      included: FREE_MODEL_CREDIT_USD * CENTS,
+      included: FREE_MODEL_CREDIT_USD * CREDITS_PER_USD,
     },
   ],
 });
@@ -200,13 +200,13 @@ export const team = plan({
       featureId: f.featureId,
       included: 0,
       reset: { interval: "month" as const },
-      price: { ...usagePrice, amount: 0.01, billingUnits: MICRO_USD_PER_CENT },
+      price: { ...usagePrice, amount: 0.01, billingUnits: 1 },
     })),
     {
       featureId: storage.featureId,
-      included: 50_000,
+      included: 50,
       reset: { interval: "month" },
-      price: { ...usagePrice, amount: 0.1, billingUnits: 1_000 },
+      price: { ...usagePrice, amount: 0.1, billingUnits: 1 },
     },
     { featureId: training.featureId },
     { featureId: fineTuneServing.featureId },
@@ -227,7 +227,7 @@ export const enterprise = plan({
   items: [
     {
       featureId: commit.featureId,
-      included: 50_000 * CENTS,
+      included: 50_000 * CREDITS_PER_USD,
       reset: { interval: "year" },
       price: { ...usagePrice, amount: 0.01, billingUnits: 1 },
     },
