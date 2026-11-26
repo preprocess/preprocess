@@ -9,7 +9,7 @@ import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { useOrganizationId } from "../auth/auth-context";
@@ -99,6 +99,7 @@ const grants = (request: GuardrailRequest, change: Change) => {
 export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
   const organizationId = useOrganizationId();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [error, setError] = useState<unknown>(null);
   const path = `/agents/${encodeURIComponent(agent.id)}/deployments`;
   const deployments = useQuery({
@@ -116,9 +117,12 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
   const promote = async (id: string) => {
     setError(null);
     await orgApi(organizationId, `${path}/${id}/promote`, { method: "POST" });
-    await queryClient.invalidateQueries({
-      queryKey: ["deployments", organizationId, agent.id],
-    });
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["deployments", organizationId, agent.id],
+      }),
+      router.invalidate(),
+    ]);
   };
   const request = async (deployment: Deployment, change: Change) => {
     setError(null);
@@ -176,7 +180,7 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
                     <span className="flex min-w-0 items-center gap-2">
                       <span
                         className="text-body text-foreground"
-                        style={{ fontVariationSettings: fontWeights.semibold }}
+                        style={{ fontVariationSettings: fontWeights.medium }}
                       >
                         {shortDeploymentId(deployment.id)}
                       </span>
