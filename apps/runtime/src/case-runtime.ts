@@ -331,26 +331,44 @@ export class CaseRuntime extends DurableObject<Env> {
   private usage(events: CaptureEvent[]): Usage {
     return events.reduce<Usage>(
       (total, e) => {
-        if (e.kind === "decide" || e.kind === "ocr")
+        if (e.kind === "decide" || e.kind === "ocr") {
+          const cost = (e.data.costMicroUsd as number | undefined) ?? 0;
           return {
             ...total,
-            costMicroUsd:
-              total.costMicroUsd + ((e.data.costMicroUsd as number) ?? 0),
+            costMicroUsd: total.costMicroUsd + cost,
+            charges: {
+              ...total.charges,
+              [e.kind]: total.charges[e.kind] + cost,
+            },
           };
+        }
         if (e.kind !== "model.response") return total;
         const usage = (e.data.usage ?? {}) as {
           input?: number;
           output?: number;
           cost?: { total?: number };
         };
+        const cost = microUsd(usage.cost?.total ?? 0);
         return {
           input: total.input + (usage.input ?? 0),
           output: total.output + (usage.output ?? 0),
-          costMicroUsd: total.costMicroUsd + microUsd(usage.cost?.total ?? 0),
+          costMicroUsd: total.costMicroUsd + cost,
+          charges: { ...total.charges, model: total.charges.model + cost },
         };
       },
-      { input: 0, output: 0, costMicroUsd: 0 },
+      {
+        input: 0,
+        output: 0,
+        costMicroUsd: 0,
+        charges: { model: 0, decide: 0, ocr: 0 },
+      },
     );
+  }
+
+  // What a status event reports of the case's charges so far.
+  private charged() {
+    const { costMicroUsd, charges } = this.usage(this.events());
+    return { costMicroUsd, charges };
   }
 
   private expectName(start: {
@@ -392,7 +410,10 @@ export class CaseRuntime extends DurableObject<Env> {
     const full = {
       ...event,
       ...(event.type === "status" && {
-        costMicroUsd: this.usage(this.events()).costMicroUsd,
+        ...this.charged(),
+        ...(this.captureBytes !== undefined && {
+          captureBytes: this.captureBytes,
+        }),
       }),
       organizationId: meta.organizationId,
       agentId: meta.agentId,
@@ -429,7 +450,7 @@ export class CaseRuntime extends DurableObject<Env> {
       waitingOn: event.waitingOn,
       reason: event.error?.message ?? event.haltReason ?? event.reason,
       answers: event.answers,
-      costMicroUsd: this.usage(this.events()).costMicroUsd,
+      ...this.charged(),
       captureKey: captureKey(meta),
     };
   }
@@ -1423,10 +1444,15 @@ export class CaseRuntime extends DurableObject<Env> {
       usage: this.usage(events),
       events,
     };
-    await this.env.RUNS.put(captureKey(meta), JSON.stringify(capture), {
+    const body = new TextEncoder().encode(JSON.stringify(capture));
+    await this.env.RUNS.put(captureKey(meta), body, {
       httpMetadata: { contentType: "application/json" },
     });
+    this.captureBytes = body.byteLength;
   }
+
+  // The size of the capture this object last stored, which storage counts.
+  private captureBytes: number | undefined;
 
   // Rerun: re-evaluate everything and resume the agent with what changed
   // since its last run (design doc 05). A person's answers stay theirs; the

@@ -27,6 +27,7 @@ import { acceptedMemories } from "./memories.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
 import { joinAutomaticSuite } from "./evals.ts";
+import { meter, meterCharges, type Charges } from "./metering.ts";
 import { effectiveSettings } from "./settings.ts";
 import { refuseOverLimit } from "./spend.ts";
 import { notifyLater } from "./notify.ts";
@@ -214,6 +215,12 @@ export const createCase = async (
         createdBy: by.createdBy,
       })
       .returning({ createdAt: cases.createdAt });
+    await meter(tx, env, {
+      organizationId: org,
+      feature: "cases",
+      quantity: 1,
+      caseId,
+    });
     if (input.files.length)
       await tx
         .update(files)
@@ -376,9 +383,12 @@ export type CaseEvent = {
       answers: Record<string, unknown> | null;
       error: { code: string; message: string } | null;
       haltReason?: "credit_exhausted" | "spending_limit_reached";
-      // Everything the case has been charged so far (spec 16a); a runtime
-      // older than metering sends none, which keeps the stored cost.
+      // Everything the case has been charged so far (spec 16a), its parts,
+      // and the size of its stored run capture. A runtime older than
+      // metering sends none, which keeps what is stored.
       costMicroUsd?: number;
+      charges?: Charges;
+      captureBytes?: number;
       // Set when the case waits on an approval, whose own event sends the
       // webhook.
       approvalId?: string;
@@ -527,6 +537,14 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
       .from(cases)
       .where(own);
     if (!before) return;
+    if (event.charges)
+      await meterCharges(
+        tx,
+        env,
+        event.organizationId,
+        event.caseId,
+        event.charges,
+      );
     const now = new Date();
     const done = event.status === "completed" || event.status === "failed";
     // Every completed case joins its agent's automatic eval suite (doc 09).
@@ -556,6 +574,9 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
           event.status === "halted" ? (event.haltReason ?? null) : null,
         ...(event.costMicroUsd !== undefined && {
           costMicroUsd: event.costMicroUsd,
+        }),
+        ...(event.captureBytes !== undefined && {
+          captureBytes: event.captureBytes,
         }),
         updatedAt: now,
         completedAt: done ? now : null,

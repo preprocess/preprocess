@@ -32,7 +32,15 @@ export type CaptureEvent = {
   data: Record<string, unknown>;
 };
 
-export type Usage = { input: number; output: number; costMicroUsd: number };
+// Micro-USD charged by kind (spec 16a); costMicroUsd is their sum.
+export type Charges = { model: number; decide: number; ocr: number };
+
+export type Usage = {
+  input: number;
+  output: number;
+  costMicroUsd: number;
+  charges: Charges;
+};
 
 export type RunCapture = {
   format: typeof CAPTURE_FORMAT;

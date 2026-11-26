@@ -21,6 +21,7 @@ import { and, asc, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
 import { agentGroups } from "./cases.ts";
 import type { Manifest } from "./deploy.ts";
 import { acceptedMemories } from "./memories.ts";
+import { meterCharges, type Charges } from "./metering.ts";
 import type { Env, StartCase } from "./env.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
@@ -371,6 +372,8 @@ export type EvalEvent = {
   reason: string | null;
   answers: Record<string, unknown> | null;
   costMicroUsd: number;
+  // Its parts, which are metered (spec 16a); absent from an older runtime.
+  charges?: Charges;
   captureKey: string;
 };
 
@@ -426,6 +429,14 @@ const settle = async (
 export const recordEvalEvent = (env: Env, event: EvalEvent) =>
   withOrg(env, orgId(event.organizationId), async (tx) => {
     if (event.caseId !== evalCaseId(event.runId, event.sourceCaseId)) return;
+    if (event.charges)
+      await meterCharges(
+        tx,
+        env,
+        event.organizationId,
+        event.caseId,
+        event.charges,
+      );
     if (event.status === "running") return;
     const common = {
       answers: event.answers,

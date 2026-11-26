@@ -19,6 +19,8 @@ import {
   guardrailRequests,
   type GuardrailChange,
 } from "@preprocess/db/schema/guardrails";
+import { auditEvents } from "@preprocess/db/schema/audit";
+import { githubBuilds, githubLinks } from "@preprocess/db/schema/github";
 import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { secrets } from "@preprocess/db/schema/secrets";
 import {
@@ -43,6 +45,7 @@ import { z } from "zod";
 import type { AuditInput } from "@preprocess/db/audit";
 import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
+import { markSeat } from "./metering.ts";
 import { effectiveNetwork, permits } from "./network.ts";
 import { nextFire, schedulerName } from "./scheduler.ts";
 import {
@@ -53,6 +56,44 @@ import {
 import type { NetworkRules } from "./network.ts";
 
 type Actor = Pick<AuditInput, "actorType" | "actorId" | "ip" | "requestId">;
+
+// Whose developer seat a deploy or promotion uses (spec 16a): the person who
+// did it, the creator of the API key that did it, or, for a GitHub App
+// build, the member who linked the repository. Null when there is none.
+export const deploySeatHolder = async (
+  tx: Tx,
+  actor: Actor,
+): Promise<string | null> => {
+  if (actor.actorType === "person") return actor.actorId;
+  if (actor.actorType === "api_key") {
+    const [created] = await tx
+      .select({ by: auditEvents.actorId })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.action, "api_key.created"),
+          eq(auditEvents.targetId, actor.actorId),
+          eq(auditEvents.actorType, "person"),
+        ),
+      )
+      .limit(1);
+    return created?.by ?? null;
+  }
+  const build = actor.actorId.match(/^github:(.+)$/)?.[1];
+  if (actor.actorType !== "platform" || !build) return null;
+  const [linked] = await tx
+    .select({ by: githubLinks.createdBy })
+    .from(githubBuilds)
+    .innerJoin(githubLinks, eq(githubLinks.id, githubBuilds.linkId))
+    .where(eq(githubBuilds.id, build));
+  return linked?.by ?? null;
+};
+
+const markDeveloper = async (tx: Tx, env: Env, org: string, actor: Actor) => {
+  const userId = await deploySeatHolder(tx, actor);
+  if (userId)
+    await markSeat(tx, env, { organizationId: org, userId, role: "developer" });
+};
 
 const approvalRule = z.object({
   group: z.string().nullable(),
@@ -670,6 +711,7 @@ export const deploy = async (
         source: input.source,
       },
     });
+    await markDeveloper(tx, env, org, actor);
   });
   const waiting = await withOrg(env, org, (tx) => syncDeployment(tx, org, id));
   const production = input.git.branch === agent.productionBranch;
@@ -743,6 +785,7 @@ export const promote = async (
       targetId: deploymentId,
       data: { agent: agentId },
     });
+    await markDeveloper(tx, env, org, actor);
     const cleared = await clearOverrides(
       tx,
       agentId,

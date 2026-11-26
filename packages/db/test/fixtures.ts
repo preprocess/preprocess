@@ -47,6 +47,7 @@ import {
 } from "../src/schema/settings.ts";
 import { logSummaries } from "../src/schema/logs.ts";
 import { agentMemories } from "../src/schema/memories.ts";
+import { seatActivity, usageRecords } from "../src/schema/billing.ts";
 import {
   evalResults,
   evalRuns,
@@ -425,6 +426,19 @@ export const seedOrganization = async (name: string) =>
       text: "Order forms put the term dates on page one.",
       status: "accepted",
     });
+    await tx.insert(usageRecords).values({
+      id: newId("usageRecord"),
+      organizationId: org,
+      feature: "cases",
+      quantity: 1,
+      caseId,
+    });
+    await tx.insert(seatActivity).values({
+      organizationId: org,
+      userId,
+      month: "2026-11-01",
+      role: "operator",
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -464,6 +478,8 @@ export const tenantTables = {
   case_mentions: "organization_id",
   case_approvals: "organization_id",
   agent_memories: "organization_id",
+  usage_records: "organization_id",
+  seat_activity: "organization_id",
   inbox_reads: "organization_id",
   outbox: "organization_id",
   webhook_endpoints: "organization_id",
