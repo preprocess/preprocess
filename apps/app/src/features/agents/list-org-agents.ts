@@ -50,41 +50,45 @@ const toOrgAgent = (agent: ApiAgent): OrgAgent => ({
 });
 
 /** The organization's agents that aren't archived, by name. */
-export const listOrgAgents = createServerFn({ method: "GET" }).handler(
-  async (): Promise<OrgAgent[]> => {
-    const { activeOrgJson } = await import("../../server/api.server");
-    const agents = await activeOrgJson<ApiAgent[]>("/agents");
-    return agents.filter((agent) => !agent.archived).map(toOrgAgent);
-  },
+export async function orgAgents(): Promise<OrgAgent[]> {
+  const { activeOrgJson } = await import("../../server/api.server");
+  const agents = await activeOrgJson<ApiAgent[]>("/agents");
+  return agents.filter((agent) => !agent.archived).map(toOrgAgent);
+}
+
+export const listOrgAgents = createServerFn({ method: "GET" }).handler(() =>
+  orgAgents(),
 );
 
 /** One agent by slug with its production deployment, or null. */
+export async function orgAgent(slug: string): Promise<OrgAgentDetail | null> {
+  const { activeOrgJson } = await import("../../server/api.server");
+  const path = `/agents/${encodeURIComponent(slug)}`;
+  const agent = await activeOrgJson<ApiAgent | null>(path, {
+    notFound: null,
+  });
+  if (!agent) return null;
+  const deployment = agent.productionDeploymentId
+    ? await activeOrgJson<ApiDeployment | null>(
+        `${path}/deployments/${encodeURIComponent(agent.productionDeploymentId)}`,
+        { notFound: null },
+      )
+    : null;
+  return {
+    ...toOrgAgent(agent),
+    production: deployment && {
+      id: deployment.id,
+      status: deployment.status,
+      model: deployment.model,
+      reasoning: deployment.reasoning,
+      branch: deployment.git.branch,
+      commit: deployment.git.commit,
+      source: deployment.source,
+      createdAt: deployment.createdAt,
+    },
+  };
+}
+
 export const getOrgAgent = createServerFn({ method: "GET" })
   .validator((slug: string) => slug)
-  .handler(async ({ data: slug }): Promise<OrgAgentDetail | null> => {
-    const { activeOrgJson } = await import("../../server/api.server");
-    const path = `/agents/${encodeURIComponent(slug)}`;
-    const agent = await activeOrgJson<ApiAgent | null>(path, {
-      notFound: null,
-    });
-    if (!agent) return null;
-    const deployment = agent.productionDeploymentId
-      ? await activeOrgJson<ApiDeployment | null>(
-          `${path}/deployments/${encodeURIComponent(agent.productionDeploymentId)}`,
-          { notFound: null },
-        )
-      : null;
-    return {
-      ...toOrgAgent(agent),
-      production: deployment && {
-        id: deployment.id,
-        status: deployment.status,
-        model: deployment.model,
-        reasoning: deployment.reasoning,
-        branch: deployment.git.branch,
-        commit: deployment.git.commit,
-        source: deployment.source,
-        createdAt: deployment.createdAt,
-      },
-    };
-  });
+  .handler(({ data: slug }) => orgAgent(slug));

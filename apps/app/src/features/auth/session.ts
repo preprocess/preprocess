@@ -33,8 +33,8 @@ type BetterAuthSession = {
 /** The signed-in person and their active organization, or null. */
 export const loadSession = createServerFn({ method: "GET" }).handler(
   async (): Promise<Session | null> => {
-    const { apiJson } = await import("../../server/api.server");
-    const body = await apiJson<BetterAuthSession>("/api/auth/get-session");
+    const { authSession } = await import("../../server/api.server");
+    const body = await authSession<BetterAuthSession>();
     if (!body) return null;
     const {
       id,

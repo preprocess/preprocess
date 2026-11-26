@@ -6,16 +6,22 @@ import {
   type Case,
 } from "./case";
 import {
+  liveAgentsPage,
   liveAssigneeCandidates,
   liveCase,
   liveCaseAccess,
   liveCaseList,
+  liveCaseRoomPage,
+  liveCasesPage,
   liveSetAssignees,
   liveStartCase,
   liveUploadFile,
   type AssigneeCandidate,
   type CaseAccess,
+  type LiveCaseListPage,
+  type LiveCaseRoomPage,
 } from "./case-api";
+import { getCaseFiles, getCaseRoom } from "./case-room-data";
 import {
   AWAITING_NONE,
   UNASSIGNED_ANY,
@@ -29,7 +35,11 @@ import {
   type CaseId,
 } from "./agent-case-ref";
 import { SEED_AGENTS, SEED_PEOPLE, createCaseSeed } from "./case-seed";
-import { getOrgAgent, type OrgAgentDetail } from "../agents/list-org-agents";
+import {
+  getOrgAgent,
+  listOrgAgents,
+  type OrgAgentDetail,
+} from "../agents/list-org-agents";
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { ScenarioState } from "../../scenarios/scenarios";
 
@@ -249,34 +259,33 @@ export async function listOrgCases(
   collapsed: ReadonlySet<string> = new Set(),
 ): Promise<CaseListPage> {
   if (!live()) return seededCaseList(search, cursor, collapsed);
-  try {
-    const page = await liveCaseList({
+  return liveListPage(
+    await liveCaseList({
       data: {
         search,
         cursor: cursor ?? null,
         collapsed: [...collapsed],
         limit: CASE_BATCH_SIZE,
       },
-    });
-    return {
-      ...page,
-      assignmentOptions: [],
-      loadError: false,
-    };
-  } catch {
-    return {
-      rows: [],
-      groups: [],
-      total: 0,
-      nextCursor: null,
-      agents: [],
-      counts: { status: {}, agent: {}, awaiting: {}, unassigned: {} },
-      awaitingOptions: [],
-      assignmentOptions: [],
-      hasCases: false,
-      loadError: true,
-    };
-  }
+    }).catch(() => null),
+  );
+}
+
+/** A live batch as the list shows it; null is a batch that didn't load. */
+function liveListPage(page: LiveCaseListPage | null): CaseListPage {
+  if (page) return { ...page, assignmentOptions: [], loadError: false };
+  return {
+    rows: [],
+    groups: [],
+    total: 0,
+    nextCursor: null,
+    agents: [],
+    counts: { status: {}, agent: {}, awaiting: {}, unassigned: {} },
+    awaitingOptions: [],
+    assignmentOptions: [],
+    hasCases: false,
+    loadError: true,
+  };
 }
 
 function seededCaseList(
@@ -322,7 +331,13 @@ function seededCaseList(
 export async function getCaseAgent(
   slug: string,
 ): Promise<OrgAgentDetail | null> {
-  const agent = await getOrgAgent({ data: slug });
+  return caseAgent(slug, await getOrgAgent({ data: slug }));
+}
+
+function caseAgent(
+  slug: string,
+  agent: OrgAgentDetail | null,
+): OrgAgentDetail | null {
   if (agent || (live() && currentScenario()["case-work"] === "live"))
     return agent;
   return {
@@ -385,8 +400,21 @@ export async function getOrgCaseNeighbors(
   agentId: string,
   caseId: string,
 ): Promise<CaseNeighbors> {
+  return neighborsIn(
+    live() ? await listOrgCases(search) : null,
+    search,
+    agentId,
+    caseId,
+  );
+}
+
+function neighborsIn(
+  page: CaseListPage | null,
+  search: CasesInboxSearch,
+  agentId: string,
+  caseId: string,
+): CaseNeighbors {
   // Live case links may name the agent by id or slug; the case id is unique.
-  const page = live() ? await listOrgCases(search) : null;
   const ordered = page ? page.rows : orderedCases(search);
   const index = ordered.findIndex(
     (item) => item.id === caseId && (page !== null || item.agentId === agentId),
@@ -406,6 +434,84 @@ export async function getOrgCaseNeighbors(
 export function getCaseAccess(): Promise<CaseAccess> {
   if (live()) return liveCaseAccess();
   return Promise.resolve({ canAssign: true, startAgents: [...SEED_AGENTS] });
+}
+
+/*
+ * Page loaders. Live, each page loads through one server function, so a
+ * navigation reads the session and the organization's agents, groups and
+ * members once; seeded scenarios compose the functions above.
+ */
+
+/**
+ * The case list's first batch and the person's case access; with
+ * `agentSlug`, that agent's list and the agent itself.
+ */
+export async function loadCasesPage(
+  search: CasesInboxSearch,
+  agentSlug: string | null = null,
+) {
+  const scoped = agentSlug ? { ...search, agent: [agentSlug] } : search;
+  if (live()) {
+    const { agent, page, access } = await liveCasesPage({
+      data: { search: scoped, agent: agentSlug, limit: CASE_BATCH_SIZE },
+    });
+    return {
+      agent: agentSlug ? caseAgent(agentSlug, agent) : null,
+      page: liveListPage(page),
+      access,
+    };
+  }
+  const [agent, page, access] = await Promise.all([
+    agentSlug ? getCaseAgent(agentSlug) : null,
+    listOrgCases(scoped),
+    getCaseAccess(),
+  ]);
+  return { agent, page, access };
+}
+
+/** The organization's agents and the person's case access. */
+export async function loadAgentsPage() {
+  if (live()) return liveAgentsPage();
+  const [agents, access] = await Promise.all([
+    listOrgAgents(),
+    getCaseAccess(),
+  ]);
+  return { agents, access };
+}
+
+/**
+ * The case room: its agent, the case, its neighbors in `search`'s list, the
+ * room's work, the person's case access and the case's files.
+ */
+export async function loadCaseRoomPage(
+  search: CasesInboxSearch,
+  agentId: string,
+  caseId: string,
+) {
+  if (live() && currentScenario()["case-work"] === "live") {
+    const page = JSON.parse(
+      await liveCaseRoomPage({
+        data: { agent: agentId, caseId, search, limit: CASE_BATCH_SIZE },
+      }),
+    ) as LiveCaseRoomPage;
+    return {
+      agent: page.agent,
+      item: page.item,
+      neighbors: neighborsIn(liveListPage(page.page), search, agentId, caseId),
+      room: page.room,
+      access: page.access,
+      files: page.files,
+    };
+  }
+  const [agent, item, neighbors, room, access, files] = await Promise.all([
+    getCaseAgent(agentId),
+    getOrgCase(agentId, caseId),
+    getOrgCaseNeighbors(search, agentId, caseId),
+    getCaseRoom(agentId, caseId),
+    getCaseAccess(),
+    getCaseFiles(agentId, caseId),
+  ]);
+  return { agent, item, neighbors, room, access, files };
 }
 
 /**
