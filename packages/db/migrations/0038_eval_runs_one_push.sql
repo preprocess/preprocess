@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "eval_runs_one_push" ON "eval_runs" USING btree ("suite_id","deployment_id") WHERE trigger = 'push';

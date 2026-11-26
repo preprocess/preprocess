@@ -101,14 +101,8 @@ required.
 | `timeoutSeconds` | Positive integer wall-clock limit per run. Passing it marks the case `failed`.                                                         |
 | `toolRetries`    | Whole-number retry count when a non-`sideEffects` tool throws. Defaults to `0`.                                                        |
 
-<Callout title="Coming soon">
-  Automatic evals on each new deployment (`evals: {onPush}`) are not available
-  yet. A deploy whose code sets `onPush: true` still succeeds but carries a
-  warning that the setting has no effect, and the API refuses turning it on as a
-  default or override. Today, run eval suites manually with `preprocess evals
-  run`. (Case sandboxes and custom environments built with `sandbox.setup` are
-  live; see [Sandbox](/sdk/sandbox).)
-</Callout>
+With `evals: {onPush: true}`, each new production deployment runs the agent's
+eval suites marked to run on each new deployment; see [Evals](/concepts/evals).
 
 ### Validation and setting precedence
 
