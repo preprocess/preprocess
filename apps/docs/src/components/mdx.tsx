@@ -26,7 +26,7 @@ import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
 import { createContext, use, useId, useState, type ReactNode } from "react";
 
-import { Pre } from "./code-block";
+import { CodeSample, Pre } from "./code-block";
 import { Configured } from "./configured";
 import { Edge, Flow, Node } from "./diagram/flow";
 import { State, StateMachine, Transition } from "./diagram/state-machine";
@@ -343,6 +343,7 @@ export const getMDXComponents = (components?: MDXComponents) =>
     Callout,
     Card,
     Cards,
+    CodeSample,
     Tab,
     Tabs,
     Configured,

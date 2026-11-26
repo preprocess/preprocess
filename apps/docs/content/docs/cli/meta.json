@@ -1,5 +1,13 @@
 {
   "title": "CLI",
   "root": true,
-  "pages": ["index", "deploy", "settings", "logs-and-evals", "reference"]
+  "pages": [
+    "index",
+    "---Commands---",
+    "deploy",
+    "settings",
+    "logs-and-evals",
+    "---Reference---",
+    "reference"
+  ]
 }
