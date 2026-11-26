@@ -155,6 +155,27 @@
       "when": 1795650786752,
       "tag": "0024_retired_models",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1795660405057,
+      "tag": "0025_metering",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795663453810,
+      "tag": "0026_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1795668183009,
+      "tag": "0027_sandbox_intervals",
+      "breakpoints": true
     }
   ]
 }

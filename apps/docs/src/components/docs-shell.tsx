@@ -12,13 +12,14 @@ import {
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetTitle,
 } from "@preprocess/ui/components/sheet";
 import {
   Sidebar,
-  SidebarFooter,
   SidebarGroup,
+  SidebarFooter,
   SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
@@ -33,7 +34,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@preprocess/ui/components/sidebar-menu";
-import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
+import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { useTouchPrimary } from "@preprocess/ui/hooks/use-touch-primary";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
@@ -48,14 +49,15 @@ import {
   Hash,
   Home,
   Menu,
-  Monitor,
   Moon,
   Plug,
   Search,
   Sun,
   Terminal,
+  X,
 } from "@preprocess/ui/lib/icons";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
+import { spring } from "@preprocess/ui/lib/springs";
 import { SurfaceProvider } from "@preprocess/ui/lib/surface-context";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
 import { cn } from "@preprocess/ui/lib/utils";
@@ -64,6 +66,7 @@ import type { TOCItemType } from "fumadocs-core/toc";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { useDocsSearch } from "fumadocs-core/search/client";
 import { TOCProvider } from "fumadocs-ui/components/toc";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTheme } from "next-themes";
 import {
   Fragment,
@@ -305,7 +308,7 @@ function SearchTrigger({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-// Guides or Reference: a segmented switch whose segments are links.
+// Guides or Reference: tabs whose items are links.
 function SectionSwitch({
   inReference,
   referenceUrl,
@@ -316,71 +319,104 @@ function SectionSwitch({
   const router = useRouter();
   return (
     <Tabs
-      className="w-full"
-      onValueChange={(value) => {
-        const url = value === "reference" ? referenceUrl : "/";
+      aria-label="Section"
+      onSelect={(index) => {
+        const url = index === 1 ? referenceUrl : "/";
         if (url) void router.navigate({ href: url });
       }}
+      selectedIndex={inReference ? 1 : 0}
       size="compact"
-      value={inReference ? "reference" : "guides"}
     >
-      <TabsList className="w-full *:flex-1">
-        <TabItem icon={BookOpen} label="Guides" value="guides" />
-        {referenceUrl ? (
-          <TabItem icon={Code} label="Reference" value="reference" />
-        ) : null}
-      </TabsList>
+      <TabsItem icon={BookOpen} index={0} label="Guides" />
+      {referenceUrl ? (
+        <TabsItem icon={Code} index={1} label="Reference" />
+      ) : null}
     </Tabs>
   );
 }
 
-// System, light or dark, as an icon-only segmented switch.
-function ThemeSwitch() {
-  const { theme, setTheme } = useTheme();
+// Light or dark, one icon button as www.preprocess.com has it. The system
+// theme applies until the person picks one. Both icons render and the
+// .dark class picks one, so the icon is right before hydration; the label
+// follows the theme once it is known.
+function ThemeToggle({
+  className,
+  variant = "ghost",
+}: {
+  className?: string;
+  variant?: "ghost" | "tertiary";
+}) {
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const isDark = mounted && resolvedTheme === "dark";
+  const nextTheme = isDark ? "light" : "dark";
   return (
-    <Tabs
-      onValueChange={setTheme}
-      size="compact"
-      value={mounted ? (theme ?? "system") : "system"}
+    <Button
+      aria-label={`Switch to ${nextTheme} mode`}
+      aria-pressed={isDark}
+      className={cn("text-muted-foreground hover:text-foreground", className)}
+      onClick={() => setTheme(nextTheme)}
+      size="icon-sm"
+      title={`Switch to ${nextTheme} mode`}
+      type="button"
+      variant={variant}
     >
-      <TabsList aria-label="Theme">
-        <TabItem
-          aria-label="System theme"
-          icon={Monitor}
-          label=""
-          value="system"
-        />
-        <TabItem aria-label="Light theme" icon={Sun} label="" value="light" />
-        <TabItem aria-label="Dark theme" icon={Moon} label="" value="dark" />
-      </TabsList>
-    </Tabs>
+      <Moon aria-hidden className="dark:hidden" />
+      <Sun aria-hidden className="hidden dark:block" />
+    </Button>
   );
 }
 
-function OpenApp({ appUrl, compact }: { appUrl: string; compact?: boolean }) {
+// The GitHub mark (Octicons mark-github, MIT). Lucide dropped its brand
+// icons, so the kit has none to offer.
+function GitHubLink({
+  className,
+  variant = "ghost",
+}: {
+  className?: string;
+  variant?: "ghost" | "tertiary";
+}) {
   return (
     <Button
-      render={<a href={appUrl} />}
-      size={compact ? "compact" : undefined}
-      trailingIcon={ArrowUpRight}
+      aria-label="GitHub"
+      className={cn("text-muted-foreground hover:text-foreground", className)}
+      render={
+        <a
+          href="https://github.com/preprocess"
+          rel="noopener"
+          target="_blank"
+        />
+      }
+      size="icon-sm"
+      title="GitHub"
+      variant={variant}
     >
+      <svg
+        aria-hidden
+        className="size-4"
+        fill="currentColor"
+        viewBox="0 0 16 16"
+      >
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+      </svg>
+    </Button>
+  );
+}
+
+function OpenApp({ appUrl }: { appUrl: string }) {
+  return (
+    <Button render={<a href={appUrl} />} trailingIcon={ArrowUpRight}>
       Open the app
     </Button>
   );
 }
 
-// The sidebar's contents: beside the page on wide screens, in a sheet below
-// lg.
+// The sidebar's contents beside the page on wide screens.
 function SidebarBody({
-  appUrl,
-  mobile = false,
   onSearch,
   tree,
 }: {
-  appUrl: string;
-  mobile?: boolean;
   onSearch: () => void;
   tree: PageTree.Root;
 }) {
@@ -417,14 +453,9 @@ function SidebarBody({
           )}
         </nav>
       </ScrollArea>
-      <SidebarFooter
-        className={cn(
-          "flex-row items-center px-4 pt-3 pb-4",
-          mobile ? "justify-between" : "justify-start",
-        )}
-      >
-        {mobile ? <OpenApp appUrl={appUrl} compact /> : null}
-        <ThemeSwitch />
+      <SidebarFooter className="flex-row items-center gap-1 px-4 pt-3 pb-4">
+        <GitHubLink />
+        <ThemeToggle />
       </SidebarFooter>
     </>
   );
@@ -626,8 +657,197 @@ function TopBar({
   );
 }
 
-// Below lg: one compact bar. The lockup sits left until the title scrolls
-// away, then folds to the mark and the section in view.
+// The lockup never truncates: when the bar is too narrow for "Docs" too,
+// "Docs" wraps onto a second line the bar's height hides.
+function Lockup({ onClick }: { onClick?: () => void }) {
+  return (
+    <PageLink
+      className="flex h-[27px] min-w-0 flex-wrap items-center gap-x-1.5 overflow-hidden"
+      onClick={onClick}
+      url="/"
+    >
+      <Wordmark className="shrink-0" />
+      <span
+        className="lockup shrink-0 text-muted-foreground"
+        style={{ fontVariationSettings: fontWeights.normal }}
+      >
+        Docs
+      </span>
+    </PageLink>
+  );
+}
+
+// The bar below lg: the lockup at the left, then search and the menu control
+// at the right edge. The open menu repeats it in place, with the close control
+// where the menu button was.
+function MobileBar({
+  children,
+  className,
+  onSearch,
+  trigger,
+}: {
+  children: ReactNode;
+  className?: string;
+  onSearch: () => void;
+  trigger: ReactNode;
+}) {
+  return (
+    <header
+      className={cn(
+        "relative z-20 flex h-13 shrink-0 items-center gap-1 bg-surface-2 pr-[11px] pl-5 lg:hidden",
+        className,
+      )}
+    >
+      <div className="min-w-0 flex-1">{children}</div>
+      <Button
+        aria-label="Search documentation"
+        className="shrink-0 text-muted-foreground"
+        onClick={onSearch}
+        size="icon"
+        variant="ghost"
+      >
+        <Search size={18} />
+      </Button>
+      <div className="shrink-0">{trigger}</div>
+    </header>
+  );
+}
+
+// Guides or Reference in the menu: a row that swaps the list below it.
+function SectionRow({
+  active,
+  icon,
+  label,
+  onSelect,
+}: {
+  active: boolean;
+  icon: typeof Home;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        aria-pressed={active}
+        icon={icon}
+        isActive={active}
+        onClick={onSelect}
+      >
+        {label}
+      </SidebarMenuButton>
+      {active ? null : (
+        <SidebarMenuBadge>
+          <ChevronRight size={14} />
+        </SidebarMenuBadge>
+      )}
+    </SidebarMenuItem>
+  );
+}
+
+// Below lg the menu fills the screen under the same bar: the two halves of
+// the docs as rows, the section's pages below a divider, then one row at the
+// end of the list: the way into the app, the theme and GitHub.
+function MobileMenu({
+  appUrl,
+  onClose,
+  onSearch,
+  tree,
+}: {
+  appUrl: string;
+  onClose: () => void;
+  onSearch: () => void;
+  tree: PageTree.Root;
+}) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { guides, reference } = splitTree(tree);
+  const root = reference[0];
+  const [inReference, setInReference] = useState(() =>
+    reference.some((folder) => contains(folder, pathname)),
+  );
+
+  return (
+    <>
+      <MobileBar
+        className="shadow-[inset_0_-1px_0_var(--border)]"
+        onSearch={onSearch}
+        trigger={
+          <SheetClose
+            render={
+              <Button
+                aria-label="Close navigation"
+                className="text-muted-foreground"
+                size="icon"
+                variant="ghost"
+              />
+            }
+          >
+            <X size={18} />
+          </SheetClose>
+        }
+      >
+        <Lockup onClick={onClose} />
+      </MobileBar>
+      <ShapeProvider defaultShape="rounded">
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
+          <nav
+            aria-label="Documentation"
+            className="flex flex-col px-3 pt-2 pb-8 [&_[data-sidebar=menu-badge]]:top-3 [&_[data-sidebar=menu-button]]:h-11 [&_[data-sidebar=menu-sub-button]]:h-11"
+            onClickCapture={(event) => {
+              if (event.target instanceof Element && event.target.closest("a"))
+                onClose();
+            }}
+          >
+            <SidebarMenu aria-label="Sections" className="gap-0.5">
+              <SectionRow
+                active={!inReference}
+                icon={BookOpen}
+                label="Guides"
+                onSelect={() => setInReference(false)}
+              />
+              {root ? (
+                <SectionRow
+                  active={inReference}
+                  icon={Code}
+                  label="Reference"
+                  onSelect={() => setInReference(true)}
+                />
+              ) : null}
+            </SidebarMenu>
+            <hr className="mx-2 my-3 h-px border-0 bg-border" />
+            {inReference && root ? (
+              <ReferenceRows folder={root} pathname={pathname} />
+            ) : (
+              <GuideRows nodes={guides} pathname={pathname} />
+            )}
+            <hr className="mx-2 my-3 h-px border-0 bg-border" />
+            <ShapeProvider defaultShape="pill">
+              <div className="flex items-center gap-2 px-2 pt-3">
+                <Button
+                  className="h-11 min-w-0 flex-1 rounded-full"
+                  render={<a href={appUrl} />}
+                  trailingIcon={ArrowUpRight}
+                >
+                  Open the app
+                </Button>
+                <ThemeToggle
+                  className="size-11 rounded-full"
+                  variant="tertiary"
+                />
+                <GitHubLink
+                  className="size-11 rounded-full"
+                  variant="tertiary"
+                />
+              </div>
+            </ShapeProvider>
+          </nav>
+        </ScrollArea>
+      </ShapeProvider>
+    </>
+  );
+}
+
+// Below lg: one bar that never changes on scroll, and a contents bar that
+// slides in under it once the title has scrolled away.
 function MobileHeader({
   appUrl,
   hasToc,
@@ -646,23 +866,24 @@ function MobileHeader({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [folded, setFolded] = useState(false);
+  const [pastTitle, setPastTitle] = useState(false);
+  const reduceMotion = useReducedMotion();
   useEffect(() => setMenuOpen(false), [pathname]);
 
-  // The header hairline appears once the page scrolls, and the lockup folds
-  // into the contents once the title has scrolled under the header.
+  // The header hairline appears once the page scrolls, and the contents bar
+  // slides in under the header once the title has scrolled beneath it.
   useEffect(() => {
     const element = panel.current;
     if (!element) return;
     setScrolled(false);
-    setFolded(false);
+    setPastTitle(false);
     const onScroll = (event: Event) => {
       if (!(event.target instanceof HTMLElement)) return;
       setScrolled(event.target.scrollTop > 0);
       const title = element.querySelector("[data-page-title]");
       if (!hasToc || !title) return;
       const header = element.getBoundingClientRect().top + 52;
-      setFolded(title.getBoundingClientRect().bottom < header);
+      setPastTitle(title.getBoundingClientRect().bottom < header);
     };
     element.addEventListener("scroll", onScroll, { capture: true });
     return () =>
@@ -670,69 +891,61 @@ function MobileHeader({
   }, [hasToc, panel, pathname]);
 
   return (
-    <header
-      className={cn(
-        "relative z-20 flex h-13 shrink-0 items-center gap-2 bg-surface-2 pr-1.5 pl-4 transition-shadow lg:hidden",
-        scrolled && "shadow-[inset_0_-1px_0_var(--border)]",
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        {folded ? (
-          <MobileContents title={title} />
-        ) : (
-          <PageLink className="flex min-w-0 items-center gap-1.5" url="/">
-            <Wordmark compact />
-            <span
-              className="lockup-compact shrink-0 text-muted-foreground"
-              style={{ fontVariationSettings: fontWeights.normal }}
-            >
-              Docs
-            </span>
-          </PageLink>
+    <>
+      <MobileBar
+        className={cn(
+          "transition-shadow",
+          scrolled && "shadow-[inset_0_-1px_0_var(--border)]",
         )}
-      </div>
-      <div className="flex shrink-0 items-center">
-        <Button
-          aria-label="Search documentation"
-          className="text-muted-foreground"
-          onClick={onSearch}
-          size="icon"
-          variant="ghost"
-        >
-          <Search size={18} />
-        </Button>
-        <Button
-          aria-label="Open navigation"
-          className="text-muted-foreground"
-          onClick={() => setMenuOpen(true)}
-          size="icon"
-          variant="ghost"
-        >
-          <Menu size={18} />
-        </Button>
-      </div>
+        onSearch={onSearch}
+        trigger={
+          <Button
+            aria-label="Open navigation"
+            className="text-muted-foreground"
+            onClick={() => setMenuOpen(true)}
+            size="icon"
+            variant="ghost"
+          >
+            <Menu size={18} />
+          </Button>
+        }
+      >
+        <Lockup />
+      </MobileBar>
+      <AnimatePresence>
+        {hasToc && pastTitle ? (
+          <motion.div
+            animate={{ y: 0, opacity: 1 }}
+            className="absolute inset-x-0 top-13 z-10 bg-surface-2 shadow-[inset_0_-1px_0_var(--border)] lg:hidden"
+            exit={reduceMotion ? { opacity: 0 } : { y: "-100%" }}
+            initial={reduceMotion ? { opacity: 0 } : { y: "-100%" }}
+            transition={reduceMotion ? { duration: 0 } : spring.moderate}
+          >
+            <MobileContents title={title} />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       <Sheet onOpenChange={setMenuOpen} open={menuOpen}>
         <SheetContent
-          className="w-[300px] max-w-[calc(100vw-3rem)] gap-0 rounded-l-3xl bg-background p-0 shadow-surface-5"
-          side="right"
+          className="inset-0 h-svh w-full max-w-none gap-0 rounded-none border-0! bg-surface-2 p-0 text-foreground shadow-none! transition-none lg:hidden"
+          showCloseButton={false}
+          side="top"
         >
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <ShapeProvider defaultShape="rounded">
-            <div className="flex h-full min-h-0 flex-col">
-              <SidebarBody
-                appUrl={appUrl}
-                mobile
-                onSearch={() => {
-                  setMenuOpen(false);
-                  onSearch();
-                }}
-                tree={tree}
-              />
-            </div>
-          </ShapeProvider>
+          <SurfaceProvider value={2}>
+            <MobileMenu
+              appUrl={appUrl}
+              onClose={() => setMenuOpen(false)}
+              onSearch={() => {
+                setMenuOpen(false);
+                onSearch();
+              }}
+              tree={tree}
+            />
+          </SurfaceProvider>
         </SheetContent>
       </Sheet>
-    </header>
+    </>
   );
 }
 
@@ -776,7 +989,7 @@ export function DocsShell({
     >
       <ShapeProvider defaultShape="rounded">
         <Sidebar rail={false} variant="inset">
-          <SidebarBody appUrl={appUrl} onSearch={openSearch} tree={tree} />
+          <SidebarBody onSearch={openSearch} tree={tree} />
         </Sidebar>
       </ShapeProvider>
       <SidebarInset

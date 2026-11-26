@@ -59,6 +59,8 @@ export const cases = pgTable(
     source: caseSource().notNull(),
     title: text(),
     costMicroUsd: bigint({ mode: "number" }).notNull().default(0),
+    // The size of the case's run capture in R2, which storage counts.
+    captureBytes: bigint({ mode: "number" }),
     createdBy: text(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -70,6 +72,10 @@ export const cases = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     reviewSince: timestamp({ withTimezone: true }),
+    // When retention last deleted the case's run capture and run logs; a
+    // close after it (a rerun) makes them due again.
+    capturePurgedAt: timestamp({ withTimezone: true }),
+    logsPurgedAt: timestamp({ withTimezone: true }),
   },
   (t) => [
     unique("cases_org_id_unique").on(t.organizationId, t.id),

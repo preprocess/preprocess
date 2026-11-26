@@ -11,6 +11,7 @@ import { asc, eq } from "drizzle-orm";
 import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
 import { getPlan, paidFeatures } from "../plan.ts";
+import { countSeats, seatCeiling } from "../seats.ts";
 
 const OrgParam = z.object({ org: z.string() });
 
@@ -29,8 +30,31 @@ const Member = z
 
 const PlanSchema = z
   .object({
-    name: z.literal("free"),
+    name: z.enum(["free", "team", "enterprise", "internal", "licensed"]),
     features: z.record(z.enum(paidFeatures), z.boolean()),
+    limits: z.object({ seats: z.number().nullable() }),
+    // Owners and Admins only. warning is set at or over the limit; changes
+    // that would pass ceiling are refused with seat_limit_reached.
+    seats: z
+      .object({
+        used: z.number(),
+        limit: z.number().nullable(),
+        ceiling: z.number().nullable(),
+        warning: z.boolean(),
+      })
+      .optional(),
+    // Owners and Admins of a self-hosted install with a license key set.
+    // grace: expired, paid features on until graceEndsAt; expired: past
+    // grace, paid features off; invalid: the key does not verify.
+    license: z
+      .object({
+        status: z.enum(["active", "grace", "expired", "invalid"]),
+        customer: z.string().nullable(),
+        expiresAt: z.string().nullable(),
+        graceEndsAt: z.string().nullable(),
+      })
+      .nullable()
+      .optional(),
   })
   .openapi("Plan");
 
@@ -105,14 +129,44 @@ export const organizationRoutes = new OpenAPIHono<{
         },
       },
     }),
-    (c) => {
-      const plan = getPlan(c.var.org);
+    async (c) => {
+      const plan = await getPlan(c.env, c.var.org);
+      const shown = {
+        name: plan.name,
+        features: Object.fromEntries(
+          paidFeatures.map((f) => [f, plan.has(f)]),
+        ) as Record<(typeof paidFeatures)[number], boolean>,
+        limits: plan.limits,
+      };
+      if (c.var.caller.role === "member") return c.json(shown, 200);
+      const used = await withOrg(c.env, c.var.org, countSeats);
+      const limit = plan.limits.seats;
+      const license = plan.license;
       return c.json(
         {
-          name: plan.name,
-          features: Object.fromEntries(
-            paidFeatures.map((f) => [f, plan.has(f)]),
-          ) as Record<(typeof paidFeatures)[number], boolean>,
+          ...shown,
+          seats: {
+            used,
+            limit,
+            ceiling: limit === null ? null : seatCeiling(limit),
+            warning: limit !== null && used >= limit,
+          },
+          license:
+            !license || license.status === "none"
+              ? null
+              : license.status === "invalid"
+                ? {
+                    status: license.status,
+                    customer: null,
+                    expiresAt: null,
+                    graceEndsAt: null,
+                  }
+                : {
+                    status: license.status,
+                    customer: license.license.customer,
+                    expiresAt: license.license.expiresAt.toISOString(),
+                    graceEndsAt: license.license.graceEndsAt.toISOString(),
+                  },
         },
         200,
       );

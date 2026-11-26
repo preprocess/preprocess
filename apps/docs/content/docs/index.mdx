@@ -3,37 +3,112 @@ title: Preprocess
 description: Build, deploy and supervise agents that work cases.
 ---
 
-An agent on Preprocess is a TypeScript module. It declares its instructions, its
-model, the tools it may call, and the shape of the answers it produces for each
-case. You deploy it with the CLI. Preprocess runs it on Cloudflare Workers, and
-your team supervises its cases in the app: they review answers, approve what
-needs approval, and teach it rules it will follow next time.
+<Hero
+  title={
+    <>
+      Build, deploy and supervise agents <br className="max-sm:hidden" />
+      <Highlight>that work cases.</Highlight>
+    </>
+  }
+>
+  An agent on Preprocess is a TypeScript module. It declares its instructions,
+  its model, the tools it may call, and the shape of the answers it produces for
+  each case. You deploy it with the CLI. Preprocess runs it on Cloudflare
+  Workers, and your team supervises its cases in the app: they review answers,
+  approve what needs approval, and teach it rules it will follow next time.
+</Hero>
 
-<Cards>
-  <Card
+<ArtCards>
+  <ArtCard
     title="SDK"
     href="/sdk"
-    icon="code"
+    art="sdk"
     hint="npm install @preprocess/sdk zod"
     description="Write an agent: tools, secrets, MCP servers and an output schema."
   />
-  <Card
+  <ArtCard
     title="CLI"
     href="/cli"
-    icon="terminal"
+    art="cli"
     hint="preprocess deploy"
     description="Deploy agents, pull their settings, read logs and run evals."
   />
-  <Card
+  <ArtCard
     title="MCP"
     href="/mcp"
-    icon="plug"
+    art="mcp"
     description="Let an MCP client manage your organization's agents and cases."
   />
-  <Card
+  <ArtCard
     title="API reference"
     href="/api"
-    icon="braces"
+    art="api"
     description="Every endpoint, generated from the API itself."
   />
-</Cards>
+</ArtCards>
+
+<Steps
+  title="Deploy your first agent"
+  description="Four steps from an empty project to an agent working cases."
+>
+  <Step title="Install" description="The SDK and the CLI.">
+
+```sh
+npm install @preprocess/sdk zod
+npm install --save-dev @preprocess/cli
+```
+
+  </Step>
+  <Step
+    title="Sign in"
+    description="An Owner or Admin creates an organization API key in Developers → Keys & webhooks. The CLI reads it from the environment."
+  >
+    <Configured
+      lang="sh"
+      code={`export PREPROCESS_API_URL={origin}
+export PREPROCESS_ORG=org_...
+export PREPROCESS_API_KEY=...`}
+    />
+  </Step>
+  <Step
+    title="Write an agent"
+    description="An agent is the default export of a module. Your code runs only when the model calls one of its tools."
+  >
+
+```ts title="src/index.ts"
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+export default agent({
+  instructions: "You answer stock questions for Acme.",
+  model: "deepseek-v4.1-flash",
+  tools: {
+    lookup_stock: tool({
+      description: "Look up stock for a SKU",
+      input: z.object({ sku: z.string() }),
+      run: async ({ sku }) => {
+        const response = await fetch(`https://erp.example.com/stock/${sku}`);
+        return response.json();
+      },
+    }),
+  },
+});
+```
+
+  </Step>
+  <Step
+    title="Deploy"
+    description="Preprocess bundles the module and runs it as a Worker."
+  >
+
+```sh
+npx preprocess deploy
+```
+
+  </Step>
+</Steps>
+
+<PromptBlock
+  title="Start with your coding agent"
+  description="Or hand the same steps to your coding agent as one prompt."
+/>

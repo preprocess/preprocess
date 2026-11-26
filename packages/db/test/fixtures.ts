@@ -48,12 +48,21 @@ import {
 import { logSummaries } from "../src/schema/logs.ts";
 import { agentMemories } from "../src/schema/memories.ts";
 import {
+  sandboxIntervals,
+  seatActivity,
+  usageRecords,
+} from "../src/schema/billing.ts";
+import {
   evalResults,
   evalRuns,
   evalSuiteCases,
   evalSuites,
 } from "../src/schema/evals.ts";
 import { otelExports } from "../src/schema/otel.ts";
+import {
+  organizationRetention,
+  retentionSweeps,
+} from "../src/schema/retention.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
   mcpAuthorizations,
@@ -376,6 +385,19 @@ export const seedOrganization = async (name: string) =>
       firstAt: new Date(),
       lastAt: new Date(),
     });
+    await tx.insert(organizationRetention).values({
+      organizationId: org,
+      runCaptureDays: 30,
+      updatedBy: userId,
+    });
+    await tx.insert(retentionSweeps).values({
+      id: newId("retentionSweep"),
+      organizationId: org,
+      kind: "runCapture",
+      days: 30,
+      cutoff: new Date(),
+      counts: { cases: 1 },
+    });
     await tx.insert(otelExports).values({
       organizationId: org,
       endpoint: "https://otel.example.com",
@@ -425,6 +447,31 @@ export const seedOrganization = async (name: string) =>
       text: "Order forms put the term dates on page one.",
       status: "accepted",
     });
+    await tx.insert(usageRecords).values({
+      id: newId("usageRecord"),
+      organizationId: org,
+      feature: "cases",
+      quantity: 1,
+      caseId,
+    });
+    await tx.insert(seatActivity).values({
+      organizationId: org,
+      userId,
+      month: "2026-11-01",
+      role: "operator",
+    });
+    await tx.insert(sandboxIntervals).values({
+      id: newId("sandboxInterval"),
+      organizationId: org,
+      sandboxId: `sandbox-${org}`,
+      seq: 1,
+      agent: agentId,
+      caseId,
+      kind: "case",
+      size: "small",
+      startedAt: new Date("2026-11-26T03:00:00Z"),
+      lastSeenAt: new Date("2026-11-26T03:00:30Z"),
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -464,6 +511,9 @@ export const tenantTables = {
   case_mentions: "organization_id",
   case_approvals: "organization_id",
   agent_memories: "organization_id",
+  usage_records: "organization_id",
+  seat_activity: "organization_id",
+  sandbox_intervals: "organization_id",
   inbox_reads: "organization_id",
   outbox: "organization_id",
   webhook_endpoints: "organization_id",
@@ -487,6 +537,8 @@ export const tenantTables = {
   organization_defaults: "organization_id",
   agent_overrides: "organization_id",
   log_summaries: "organization_id",
+  organization_retention: "organization_id",
+  retention_sweeps: "organization_id",
   otel_exports: "organization_id",
   eval_suites: "organization_id",
   eval_suite_cases: "organization_id",

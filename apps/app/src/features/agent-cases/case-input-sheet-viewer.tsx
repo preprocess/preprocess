@@ -1,10 +1,7 @@
 "use client";
 
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
-import {
-  TabsSubtle,
-  TabsSubtleItem,
-} from "@preprocess/ui/components/tabs-subtle";
+import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 
@@ -94,7 +91,7 @@ export default function CaseInputSheetViewer({
     <div className="flex min-h-0 flex-1 flex-col">
       {sheets.length > 1 ? (
         <div className="flex h-9 shrink-0 items-center border-b border-border px-1">
-          <TabsSubtle
+          <Tabs
             aria-label="Sheets"
             className="min-w-0"
             onSelect={setActive}
@@ -102,13 +99,9 @@ export default function CaseInputSheetViewer({
             size="compact"
           >
             {sheets.map((entry, index) => (
-              <TabsSubtleItem
-                index={index}
-                key={entry.name}
-                label={entry.name}
-              />
+              <TabsItem index={index} key={entry.name} label={entry.name} />
             ))}
-          </TabsSubtle>
+          </Tabs>
         </div>
       ) : null}
       <ScrollArea className="min-h-0 flex-1" orientation="both">

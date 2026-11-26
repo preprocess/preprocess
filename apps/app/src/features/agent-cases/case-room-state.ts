@@ -116,7 +116,7 @@ export type RoomMemory = {
   readonly text: string;
   /** Why the agent proposed it. */
   readonly reason: string | null;
-  readonly status: "proposed" | "accepted" | "dismissed" | "deleted";
+  readonly status: "proposed" | "accepted" | "dismissed";
   readonly proposedAt: string;
   readonly decidedAt: string | null;
   readonly decidedByName: string | null;

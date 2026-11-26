@@ -43,6 +43,7 @@ import type { OrgRole, OrgVariables } from "../caller.ts";
 import { ApiError, createCase, type Approval } from "../cases.ts";
 import type { Env, WriteResult } from "../env.ts";
 import { acceptedMemories } from "../memories.ts";
+import { markSeat, meter } from "../metering.ts";
 import { notifyLater } from "../notify.ts";
 import { ocrFile } from "../ocr.ts";
 import { drainOutbox } from "../outbox.ts";
@@ -230,7 +231,17 @@ const runtime = (c: Ctx) => {
 const personId = (c: Ctx) =>
   c.var.caller.type === "person" ? c.var.caller.userId : c.var.caller.keyId;
 
-const recordReview = (
+// A person working a case is an active operator this month (spec 16a).
+const markOperator = (tx: Tx, c: Ctx) =>
+  c.var.caller.type === "person"
+    ? markSeat(tx, c.env, {
+        organizationId: c.var.org,
+        userId: c.var.caller.userId,
+        role: "operator",
+      })
+    : Promise.resolve();
+
+const recordReview = async (
   tx: Tx,
   c: Ctx,
   caseId: string,
@@ -241,8 +252,8 @@ const recordReview = (
     after?: unknown;
     checks?: unknown;
   },
-) =>
-  tx.insert(reviewEvents).values({
+) => {
+  await tx.insert(reviewEvents).values({
     id: newId("reviewEvent"),
     organizationId: c.var.org,
     caseId,
@@ -253,6 +264,8 @@ const recordReview = (
     after: e.after ?? null,
     checks: e.checks ?? null,
   });
+  await markOperator(tx, c);
+};
 
 // Answers the runtime refused or found changed since the person loaded them.
 const answerChange = async (
@@ -348,7 +361,6 @@ const decideApproval = async (
         level: found.level,
         target: found.target,
         group: found.group,
-        note: note ?? null,
       },
     });
   });
@@ -877,6 +889,7 @@ export const caseRoutes = new OpenAPIHono<{
         userId: personId(c),
         text: c.req.valid("json").text,
       });
+      await withOrg(c.env, c.var.org, (tx) => markOperator(tx, c));
       return c.json(posted, 201);
     },
   )
@@ -1348,15 +1361,27 @@ export const caseRoutes = new OpenAPIHono<{
         ),
         402: error("The organization has reached its spending limit"),
         404: error("No such file"),
+        413: error("Over 50 MB or 1,000 pages"),
         415: error("Not a PDF or page image"),
       },
     }),
     async (c) => {
       const input = c.req.valid("json");
       await withOrg(c.env, c.var.org, refuseOverLimit);
-      return c.json(
-        await ocrFile(c.env, c.var.org, input.file, input.grounding),
-        200,
+      const { pages, model, costMicroUsd } = await ocrFile(
+        c.env,
+        c.var.org,
+        input.file,
+        input.grounding,
       );
+      // No case to charge: the OCR API meters on its own.
+      await withOrg(c.env, c.var.org, (tx) =>
+        meter(tx, c.env, {
+          organizationId: c.var.org,
+          feature: "ocr",
+          quantity: costMicroUsd,
+        }),
+      );
+      return c.json({ pages, model }, 200);
     },
   );

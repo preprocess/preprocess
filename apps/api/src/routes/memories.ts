@@ -10,7 +10,7 @@ import { newId } from "@preprocess/db/ids";
 import { agents } from "@preprocess/db/schema/access";
 import { cases, reviewEvents } from "@preprocess/db/schema/cases";
 import { agentMemories, MEMORY_CAP } from "@preprocess/db/schema/memories";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, ne } from "drizzle-orm";
 import type { Context } from "hono";
 
 import { agentRole, canSeeCase, canWorkCase, mayApprove } from "../access.ts";
@@ -158,7 +158,7 @@ export const memoryRoutes = new OpenAPIHono<{
       tags: ["Memory"],
       summary: "Delete an accepted memory rule",
       description:
-        "New cases and reruns stop receiving it. Developers, Owners, Admins, API keys and the agent's operators may delete.",
+        "New cases and reruns stop receiving it, and no read returns it again. Its text is kept until the organization's case retention period purges it. Developers, Owners, Admins, API keys and the agent's operators may delete.",
       request: { params: AgentMemoryParam },
       responses: {
         204: { description: "Deleted" },
@@ -204,7 +204,7 @@ export const memoryRoutes = new OpenAPIHono<{
           action: "agent.memory.deleted",
           targetType: "agent",
           targetId: agent.id,
-          data: { memory, text: deleted.text },
+          data: { memory },
         });
       });
       return c.body(null, 204);
@@ -217,7 +217,7 @@ export const memoryRoutes = new OpenAPIHono<{
       tags: ["Memory"],
       summary: "The memory rules the agent proposed on a case",
       description:
-        "Every proposal from this case with its decision, oldest first. The Review tab shows the proposed ones.",
+        "Every proposal from this case with its decision, oldest first, except deleted rules. The Review tab shows the proposed ones.",
       request: { params: CaseParam },
       responses: {
         200: json(z.object({ memories: z.array(Memory) }), "The proposals"),
@@ -242,7 +242,12 @@ export const memoryRoutes = new OpenAPIHono<{
         return tx
           .select()
           .from(agentMemories)
-          .where(eq(agentMemories.caseId, id))
+          .where(
+            and(
+              eq(agentMemories.caseId, id),
+              ne(agentMemories.status, "deleted"),
+            ),
+          )
           .orderBy(asc(agentMemories.proposedAt), asc(agentMemories.id));
       });
       return c.json({ memories: memories.map(view) }, 200);
@@ -333,7 +338,7 @@ const decide = async (
       targetType: "case",
       targetId: caseId,
       caseId,
-      data: { memory: memoryId, agent: found.agentId, text: found.text },
+      data: { memory: memoryId, agent: found.agentId },
     });
     return row!;
   });

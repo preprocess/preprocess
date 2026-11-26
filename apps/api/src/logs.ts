@@ -10,6 +10,7 @@ import type { LogLevel, LogRecord } from "@preprocess/logs";
 import { sql } from "drizzle-orm";
 
 import type { Env } from "./env.ts";
+import { meter } from "./metering.ts";
 
 export type LogQuery = {
   organizationId: string;
@@ -26,9 +27,22 @@ export type LogQuery = {
 
 export type LogPage = { records: LogRecord[]; cursor: string | null };
 
+// A closed case's records, for retention: its organization, agent and id,
+// and the days it ran.
+export type CaseLogs = {
+  organizationId: string;
+  agentId: string;
+  caseId: string;
+  from: Date;
+  to: Date;
+};
+
 export interface LogStore {
   write(records: LogRecord[]): Promise<void>;
   query(q: LogQuery): Promise<LogPage>;
+  // Deletes a case's records and returns how many objects held them, or
+  // null when the store cannot delete records.
+  purgeCase(c: CaseLogs): Promise<number | null>;
 }
 
 const DAY = 86_400_000;
@@ -133,6 +147,33 @@ export const r2Store = (bucket: R2Bucket): LogStore => ({
       cursor: found.length > q.limit ? records.at(-1)!.id : null,
     };
   },
+
+  // Records that arrive late land the day after the case closed at most.
+  async purgeCase(c) {
+    let deleted = 0;
+    const last = c.to.getTime() + DAY;
+    for (
+      let day = Date.UTC(
+        c.from.getUTCFullYear(),
+        c.from.getUTCMonth(),
+        c.from.getUTCDate(),
+      );
+      day <= last;
+      day += DAY
+    ) {
+      const prefix = `${[c.organizationId, new Date(day).toISOString().slice(0, 10), c.agentId, c.caseId].join("/")}/`;
+      let cursor: string | undefined;
+      do {
+        const page = await bucket.list({ prefix, ...(cursor && { cursor }) });
+        if (page.objects.length) {
+          await bucket.delete(page.objects.map((o) => o.key));
+          deleted += page.objects.length;
+        }
+        cursor = page.truncated ? page.cursor : undefined;
+      } while (cursor);
+    }
+    return deleted;
+  },
 });
 
 const literal = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -227,6 +268,10 @@ export const sqlStore = (env: Env): LogStore => ({
       cursor: rows.length > q.limit ? records.at(-1)!.id : null,
     };
   },
+
+  // R2 SQL only reads. Deleting rows from the Iceberg table takes an Iceberg
+  // engine writing through the Data Catalog, which no Worker binding offers.
+  purgeCase: () => Promise.resolve(null),
 });
 
 export const logStore = (env: Env): LogStore =>
@@ -292,9 +337,21 @@ const tallies = (records: LogRecord[]) => {
   return [...byKey.values()];
 };
 
-const summarize = async (env: Env, organizationId: string, rows: Tally[]) =>
-  withOrg(env, orgId(organizationId), (tx) =>
-    tx
+// Storage counts run logs by the bytes ingested (spec 16a): the stored
+// Parquet is smaller, and the log store cannot be sized per organization.
+const summarize = async (
+  env: Env,
+  organizationId: string,
+  rows: Tally[],
+  bytes: number,
+) =>
+  withOrg(env, orgId(organizationId), async (tx) => {
+    await meter(tx, env, {
+      organizationId,
+      feature: "log_bytes",
+      quantity: bytes,
+    });
+    await tx
       .insert(logSummaries)
       .values(
         rows.map((t) => ({
@@ -317,8 +374,8 @@ const summarize = async (env: Env, organizationId: string, rows: Tally[]) =>
           firstAt: sql`least(${logSummaries.firstAt}, excluded.first_at)`,
           lastAt: sql`greatest(${logSummaries.lastAt}, excluded.last_at)`,
         },
-      }),
-  );
+      });
+  });
 
 // The LOGS queue's consumer. A failed store write retries the batch; an
 // organization whose summaries cannot be written (deleted since) is skipped.
@@ -327,9 +384,21 @@ export const ingestLogs = async (env: Env, records: LogRecord[]) => {
   const byOrg = new Map<string, Tally[]>();
   for (const t of tallies(records))
     byOrg.set(t.organizationId, [...(byOrg.get(t.organizationId) ?? []), t]);
+  const bytes = new Map<string, number>();
+  for (const r of records)
+    bytes.set(
+      r.organizationId,
+      (bytes.get(r.organizationId) ?? 0) +
+        new TextEncoder().encode(JSON.stringify(r)).byteLength,
+    );
   for (const [organizationId, rows] of byOrg) {
     try {
-      await summarize(env, organizationId, rows);
+      await summarize(
+        env,
+        organizationId,
+        rows,
+        bytes.get(organizationId) ?? 0,
+      );
     } catch (error) {
       console.error("log summaries", organizationId, error);
     }

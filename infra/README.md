@@ -39,9 +39,12 @@ Every stage deploys the whole product, the same way:
   and bundles buckets, and the Worker Loader that runs each deployment's bundle
   as a Dynamic Worker;
 - the Tail Worker on agent code, the GitHub build sandbox (`apps/builder`, a
-  Container), the PDF renderer behind OCR (`apps/pdf-render`, a Container), and
-  the stub model service (`apps/model-stub`) unless `MODEL_SERVICE_URL` and
-  `MODEL_SERVICE_KEY` name a real one;
+  Container) and the PDF renderer (`apps/pdf-render`, a Container);
+- models: the runtime's Workers AI binding (`AI`, for Qwen 3.8 27B), the
+  provider keys `BASETEN_API_KEY` (runtime: Kimi, DeepSeek, decide) and
+  `MISTRAL_API_KEY` (API: OCR), and the stub model service (`apps/model-stub`)
+  for every model whose provider has no key. Production never gets the stub, and
+  `MODEL_SERVICE_URL` replaces it with a real service;
 - Postgres through two Hyperdrive configs (caching off), with every file in
   `packages/db/migrations` applied before any Worker is updated.
 
@@ -111,23 +114,30 @@ stack, as a `selfhost` or `selfhost-<name>` stage (spec 16).
 `preprocess install` and its GitHub Action run it for them; underneath they run
 `pnpm --filter @preprocess/infra selfhost:deploy <stage>` with these inputs:
 
-| Input                                           | Value                                                                                              |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | The customer's account, on Workers Paid                                                            |
-| `DATABASE_URL`                                  | Any Postgres Hyperdrive can reach, as a role that can create roles and owns the database           |
-| `EMAIL_FROM`                                    | Invitation sender, on a domain onboarded to Cloudflare Email Service in that account               |
-| `MODEL_SERVICE_URL`, `MODEL_SERVICE_KEY`        | Our hosted model service or the customer's own. `stub` deploys fixture answers, for trying it only |
-| `APP_DOMAIN` (optional)                         | The app's hostname on a zone in that account; workers.dev without it                               |
-| `R2_LOCATION_HINT` (optional)                   | Where R2 places the buckets                                                                        |
-| `GITHUB_*` (optional)                           | The install's own GitHub App (docs/design/08-github-app.md)                                        |
+| Input                                           | Value                                                                                             |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | The customer's account, on Workers Paid                                                           |
+| `DATABASE_URL`                                  | Any Postgres Hyperdrive can reach, as a role that can create roles and owns the database          |
+| `EMAIL_FROM`                                    | Invitation sender, on a domain onboarded to Cloudflare Email Service in that account              |
+| `BASETEN_API_KEY` (optional)                    | Your Baseten key: Kimi K3.1 Pro, DeepSeek V4.1 Flash and `decide`                                 |
+| `MISTRAL_API_KEY` (optional)                    | Your Mistral key: OCR. Without it (or an endpoint below) OCR is off                               |
+| `MODEL_ENDPOINTS` (optional)                    | Your own serving URLs per model, JSON: `{"<model>": {"url", "key", "model"}}`                     |
+| `MODEL_SERVICE_URL`, `MODEL_SERVICE_KEY` (opt.) | One service for every model nothing above serves. `stub` deploys fixture answers, for trying only |
+| `APP_DOMAIN` (optional)                         | The app's hostname on a zone in that account; workers.dev without it                              |
+| `R2_LOCATION_HINT` (optional)                   | Where R2 places the buckets                                                                       |
+| `GITHUB_*` (optional)                           | The install's own GitHub App (docs/design/08-github-app.md)                                       |
+| `PREPROCESS_LICENSE_KEY` (optional)             | The signed license key; without a valid one the install runs the free plan                        |
 
 Each deploy runs `packages/db/bootstrap.sql` with passwords the stack generates
 and keeps in its state, then every pending migration as `preprocess_migrator`,
 before any Worker is updated. Hyperdrive logs in as `preprocess_app` and
 `preprocess_system`, so row-level security applies. `BETTER_AUTH_SECRET`,
 `AUDIT_SIGNING_KEY` and its id, and the secrets master key are generated once.
-The account's state store is created or upgraded as part of the install.
-`selfhost:plan <stage>` prints the plan without applying it.
+Qwen 3.8 27B runs on Workers AI in the install's own account, billed by
+Cloudflare to that account; every other model needs its provider key or an
+endpoint, or it is unavailable. The account's state store is created or upgraded
+as part of the install. `selfhost:plan <stage>` prints the plan without applying
+it.
 
 ## Continuous deployment
 

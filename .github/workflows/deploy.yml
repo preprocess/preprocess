@@ -57,6 +57,16 @@ jobs:
       # not secret, so it may be stored as either.
       GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID || secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      # Autumn's sandbox (spec 16a): staging bills against it. Optional; without
+      # it staging runs with billing off and no plans are pushed.
+      AUTUMN_SECRET_KEY: ${{ secrets.AUTUMN_SECRET_KEY }}
+      BILLING_REQUIRED_FROM: ${{ vars.BILLING_REQUIRED_FROM }}
+      BILLING_INTERNAL_ORGS: ${{ vars.BILLING_INTERNAL_ORGS }}
+      # Model providers (packages/models endpoints). Optional; a model whose
+      # provider has no key is served by the stub on staging.
+      BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      NO_COLOR: "1"
     steps:
       - name: Check credentials
         id: credentials
@@ -89,10 +99,23 @@ jobs:
       - if: steps.credentials.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile
 
+      # Plans before the code that depends on them (PRE-39).
+      - name: Push plans to Autumn's sandbox
+        if:
+          steps.credentials.outputs.ready == 'true' && env.AUTUMN_SECRET_KEY !=
+          ''
+        run: pnpm exec atmn push --yes --headless
+
       - name: Deploy staging
         id: deploy
         if: steps.credentials.outputs.ready == 'true'
-        run: pnpm --filter @preprocess/infra staging:deploy
+        run: |
+          # An unset optional value must stay unset, not bind an empty string.
+          for name in AUTUMN_SECRET_KEY BILLING_REQUIRED_FROM BILLING_INTERNAL_ORGS \
+            BASETEN_API_KEY MISTRAL_API_KEY; do
+            [ -n "${!name}" ] || unset "$name"
+          done
+          pnpm --filter @preprocess/infra staging:deploy
 
       # The stage's URLs contain the account's workers.dev subdomain, which
       # matches a secret's value, so GitHub drops them as a job output. They

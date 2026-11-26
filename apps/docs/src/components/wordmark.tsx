@@ -2,13 +2,12 @@ import { cn } from "@preprocess/ui/lib/utils";
 
 // The Preprocess lockup: the mark drawn in currentColor, then the name set
 // as www.preprocess.com sets it. The mark alone stands in where the name
-// would repeat (the home hero, the folded mobile header).
+// would repeat (the home hero, the folded mobile header). The lockup is one
+// size everywhere: a 20px mark, a 10px gap and the name at 18px.
 export function Wordmark({
-  compact = false,
   markOnly = false,
   className,
 }: {
-  compact?: boolean;
   markOnly?: boolean;
   className?: string;
 }) {
@@ -17,7 +16,7 @@ export function Wordmark({
       aria-hidden
       className={cn(
         "shrink-0 text-foreground",
-        markOnly ? className : compact ? "size-4.5" : "size-5",
+        markOnly ? className : "size-5",
       )}
       fill="none"
       viewBox="0 0 256 256"
@@ -37,15 +36,12 @@ export function Wordmark({
   return (
     <span
       className={cn(
-        "flex min-w-0 items-center text-foreground",
-        compact ? "gap-2" : "gap-2.5",
+        "flex min-w-0 items-center gap-2.5 text-foreground",
         className,
       )}
     >
       {mark}
-      <span className={cn("truncate", compact ? "lockup-compact" : "lockup")}>
-        Preprocess
-      </span>
+      <span className="lockup truncate">Preprocess</span>
     </span>
   );
 }

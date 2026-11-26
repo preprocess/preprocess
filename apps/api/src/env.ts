@@ -1,4 +1,5 @@
 import type { LogRecord } from "@preprocess/logs";
+import type { SandboxOwner } from "@preprocess/sandbox";
 import type { Pipeline } from "cloudflare:pipelines";
 
 import type { BuildQueue } from "./builds.ts";
@@ -98,6 +99,9 @@ export type Runtime = {
     c: CaseKey & { userId: string; text: string },
   ): Promise<{ id: string; mentioned: string[] }>;
   cancelCase(c: CaseKey): Promise<CaseRoomState>;
+  // Retention (spec 16a): a closed case's run capture, or all of its state.
+  deleteCapture(c: CaseKey): Promise<void>;
+  deleteCase(c: CaseKey): Promise<void>;
   completeCase(
     c: CaseKey,
   ): Promise<
@@ -129,6 +133,8 @@ export type BuildRequest = {
   directory: string;
   entry: string;
   timeoutSeconds: number;
+  // Whose build it is, for sandbox metering (sandbox.ts).
+  owner: SandboxOwner;
 };
 
 export type BuildResult =
@@ -149,6 +155,23 @@ export type Env = {
   // Set on our cloud, unset on a self-hosted install; read it through
   // @preprocess/runmode.
   PREPROCESS_REGION?: string;
+  // Autumn (spec 16a): our cloud's billing. Unset, billing is off: nothing is
+  // reported and every organization is on the free plan without limits.
+  AUTUMN_SECRET_KEY?: string;
+  // When cards became required (an ISO date; spec 16a). Unset, an
+  // organization without a plan is not limited. Set, organizations created
+  // before it are put on Free without a card, and later ones must start a
+  // plan at checkout once the date has passed.
+  BILLING_REQUIRED_FROM?: string;
+  // Preprocess's own organizations, comma-separated ids: the internal plan.
+  BILLING_INTERNAL_ORGS?: string;
+  // Self-hosted only: the signed license key (license.ts). Without a valid
+  // one the install runs the free plan.
+  PREPROCESS_LICENSE_KEY?: string;
+  // Where OCR is served (@preprocess/models endpoints): Mistral, an
+  // install's own MODEL_ENDPOINTS entry, or MODEL_SERVICE_URL (the stub).
+  MISTRAL_API_KEY?: string;
+  MODEL_ENDPOINTS?: string;
   MODEL_SERVICE_URL?: string;
   MODEL_SERVICE_KEY?: string;
   // Postgres as preprocess_app (RLS enforced) and as preprocess_system (RLS
@@ -183,7 +206,9 @@ export type Env = {
   FILES: R2Bucket;
   RUNTIME: Runtime;
   // apps/pdf-render: PDF pages to PNGs in a sandbox container.
-  PDF_RENDER?: { renderPdf(pdf: Uint8Array): Promise<Uint8Array[]> };
+  PDF_RENDER?: {
+    renderPdf(pdf: Uint8Array, owner: SandboxOwner): Promise<Uint8Array[]>;
+  };
   // 32 random bytes, base64: Secrets Store on our cloud, a local variable in
   // development and tests. Only this Worker binds it (design doc 01).
   SECRETS_MASTER_KEY: string | SecretsStoreSecret;

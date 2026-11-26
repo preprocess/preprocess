@@ -12,10 +12,11 @@ import {
   groupMembers,
   groups,
 } from "@preprocess/db/schema/access";
-import { cases } from "@preprocess/db/schema/cases";
+import { auditEvents } from "@preprocess/db/schema/audit";
+import { cases, reviewEvents } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
 import { MEMORY_CAP, agentMemories } from "@preprocess/db/schema/memories";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, like } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { acceptedMemories, proposeMemory } from "../src/memories.ts";
@@ -198,6 +199,37 @@ describe("memory", () => {
     expect(onCase.body.memories).toMatchObject([
       { id: m.id, status: "accepted" },
     ]);
+
+    const recorded = await withOrg(environment, orgId(org), async (tx) => ({
+      events: await tx
+        .select()
+        .from(reviewEvents)
+        .where(eq(reviewEvents.caseId, dismissed.caseId))
+        .orderBy(asc(reviewEvents.at)),
+      audited: await tx
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.caseId, dismissed.caseId),
+            like(auditEvents.action, "case.memory.%"),
+          ),
+        )
+        .orderBy(asc(auditEvents.seq)),
+    }));
+    expect(recorded.events.map((e) => [e.kind, e.after])).toEqual([
+      [
+        "memory.dismissed",
+        { memory: dismissed.id, text: "Ignore the fax header." },
+      ],
+    ]);
+    expect(recorded.audited.map((a) => [a.action, a.actorId, a.data])).toEqual([
+      [
+        "case.memory.dismissed",
+        operator.userId,
+        { memory: dismissed.id, agent: agentId },
+      ],
+    ]);
   });
 
   it("hands new cases and reruns the accepted rules only", async () => {
@@ -236,6 +268,42 @@ describe("memory", () => {
       (await operator.client.call(path, { method: "DELETE" })).status,
     ).toBe(204);
     expect((await keyed.call(path, { method: "DELETE" })).status).toBe(404);
+
+    // Soft-deleted: the row keeps its text for retention, and no read
+    // returns it.
+    const after = await withOrg(environment, orgId(org), async (tx) => ({
+      row: (
+        await tx.select().from(agentMemories).where(eq(agentMemories.id, m.id))
+      )[0],
+      rules: await acceptedMemories(tx, agentId),
+      audited: await tx
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "agent.memory.deleted"))
+        .orderBy(asc(auditEvents.seq)),
+    }));
+    expect(after.row).toMatchObject({
+      status: "deleted",
+      text: "Flag notice periods under 30 days.",
+      deletedBy: operator.userId,
+    });
+    expect(after.row?.deletedAt).toBeInstanceOf(Date);
+    expect(after.rules.map((r) => r.id)).not.toContain(m.id);
+    expect(after.audited.map((a) => [a.targetId, a.data])).toEqual([
+      [agentId, { memory: m.id }],
+    ]);
+    for (const status of ["accepted", "proposed"]) {
+      const list = await operator.client.call<{ memories: Memory[] }>(
+        `/v1/orgs/${org}/agents/intake/memories?status=${status}`,
+      );
+      expect(list.body.memories.map((r) => r.id)).not.toContain(m.id);
+    }
+    const onCase = await operator.client.call<{ memories: Memory[] }>(
+      `/v1/orgs/${org}/cases/${m.caseId}/memories`,
+    );
+    expect(onCase.status).toBe(200);
+    expect(onCase.body.memories).toEqual([]);
+
     const second = await proposed("Quote the clause number.");
     await decide(operator.client, second, "accept");
     expect(

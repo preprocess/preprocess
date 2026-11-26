@@ -286,9 +286,9 @@ export const auditRoutes = new OpenAPIHono<{
       request: { params: OrgParam },
       responses: { 403: { description: "Export is a paid feature" } },
     }),
-    (c) => {
+    async (c) => {
       requireAdmin(c.var.caller);
-      getPlan(c.var.org).assert("audit_export");
+      (await getPlan(c.env, c.var.org)).assert("audit_export");
       throw new HTTPException(501);
     },
   );

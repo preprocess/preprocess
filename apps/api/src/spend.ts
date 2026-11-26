@@ -5,13 +5,14 @@
 
 import type { Tx } from "@preprocess/db/client";
 import { cases } from "@preprocess/db/schema/cases";
+import { usageRecords } from "@preprocess/db/schema/billing";
 import { evalRuns } from "@preprocess/db/schema/evals";
 import { organizationGuardrails } from "@preprocess/db/schema/guardrails";
-import { gte, sum } from "drizzle-orm";
+import { and, eq, gte, isNull, sum } from "drizzle-orm";
 
 import { ApiError } from "./cases.ts";
 
-export type SpendVerdict = "ok" | "spending_limit_reached";
+export type SpendVerdict = "ok" | "spending_limit_reached" | "credit_exhausted";
 
 // The start of the calendar month in UTC that `now` falls in.
 export const monthStart = (now: Date) =>
@@ -19,7 +20,8 @@ export const monthStart = (now: Date) =>
 
 // Metered use of our hosted service this month, in micro-USD: the cost of the
 // organization's cases and eval runs created this month, every deployment
-// included. A self-hosted install's own serving URLs never add cost.
+// included, the OCR API's calls, which have no case, and case sandbox time. A self-hosted
+// install's own serving URLs never add cost.
 export const monthSpendParts = async (tx: Tx, now = new Date()) => {
   const [caseRow] = await tx
     .select({ total: sum(cases.costMicroUsd) })
@@ -29,15 +31,36 @@ export const monthSpendParts = async (tx: Tx, now = new Date()) => {
     .select({ total: sum(evalRuns.costMicroUsd) })
     .from(evalRuns)
     .where(gte(evalRuns.createdAt, monthStart(now)));
+  const [ocrRow] = await tx
+    .select({ total: sum(usageRecords.quantity) })
+    .from(usageRecords)
+    .where(
+      and(
+        eq(usageRecords.feature, "ocr"),
+        isNull(usageRecords.caseId),
+        gte(usageRecords.at, monthStart(now)),
+      ),
+    );
+  const [sandboxRow] = await tx
+    .select({ total: sum(usageRecords.quantity) })
+    .from(usageRecords)
+    .where(
+      and(
+        eq(usageRecords.feature, "sandbox"),
+        gte(usageRecords.at, monthStart(now)),
+      ),
+    );
   return {
     cases: Number(caseRow?.total ?? 0),
     evals: Number(evalRow?.total ?? 0),
+    ocr: Number(ocrRow?.total ?? 0),
+    sandbox: Number(sandboxRow?.total ?? 0),
   };
 };
 
 export const monthSpend = async (tx: Tx, now = new Date()) => {
   const parts = await monthSpendParts(tx, now);
-  return parts.cases + parts.evals;
+  return parts.cases + parts.evals + parts.ocr + parts.sandbox;
 };
 
 export const spendingLimit = async (tx: Tx) => {

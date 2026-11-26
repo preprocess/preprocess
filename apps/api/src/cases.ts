@@ -26,7 +26,9 @@ import type { Manifest } from "./deploy.ts";
 import { acceptedMemories } from "./memories.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
+import { entitlement } from "./billing.ts";
 import { joinAutomaticSuite } from "./evals.ts";
+import { meter, meterCharges, type Charges } from "./metering.ts";
 import { effectiveSettings } from "./settings.ts";
 import { refuseOverLimit } from "./spend.ts";
 import { notifyLater } from "./notify.ts";
@@ -109,6 +111,21 @@ export const createCase = async (
   by: Creator,
   idempotencyKey?: string,
 ): Promise<{ body: CaseAccepted; replayed: boolean }> => {
+  // A plan must be started first; Free caps its monthly cases (spec 16a), and
+  // paid plans bill past their included ones.
+  const entitled = await entitlement(env, org, "cases");
+  if (entitled === "plan_required")
+    throw new ApiError(
+      402,
+      "plan_required",
+      "This organization has no plan yet. Its Owner can start one, Free included, in Billing.",
+    );
+  if (entitled === "used_up")
+    throw new ApiError(
+      402,
+      "credit_exhausted",
+      "This organization has used this month's cases on its plan. Upgrade to start more.",
+    );
   const created = await withOrg(env, org, async (tx) => {
     const now = new Date();
     if (idempotencyKey) {
@@ -191,7 +208,6 @@ export const createCase = async (
       );
     }
 
-    // `credit_exhausted` joins this gate with Autumn credit in step 9.
     await refuseOverLimit(tx);
     const caseId = newId("case");
     if (input.files.length) {
@@ -214,6 +230,12 @@ export const createCase = async (
         createdBy: by.createdBy,
       })
       .returning({ createdAt: cases.createdAt });
+    await meter(tx, env, {
+      organizationId: org,
+      feature: "cases",
+      quantity: 1,
+      caseId,
+    });
     if (input.files.length)
       await tx
         .update(files)
@@ -376,6 +398,12 @@ export type CaseEvent = {
       answers: Record<string, unknown> | null;
       error: { code: string; message: string } | null;
       haltReason?: "credit_exhausted" | "spending_limit_reached";
+      // Everything the case has been charged so far (spec 16a), its parts,
+      // and the size of its stored run capture. A runtime older than
+      // metering sends none, which keeps what is stored.
+      costMicroUsd?: number;
+      charges?: Charges;
+      captureBytes?: number;
       // Set when the case waits on an approval, whose own event sends the
       // webhook.
       approvalId?: string;
@@ -524,6 +552,14 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
       .from(cases)
       .where(own);
     if (!before) return;
+    if (event.charges)
+      await meterCharges(
+        tx,
+        env,
+        event.organizationId,
+        event.caseId,
+        event.charges,
+      );
     const now = new Date();
     const done = event.status === "completed" || event.status === "failed";
     // Every completed case joins its agent's automatic eval suite (doc 09).
@@ -551,6 +587,12 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
             : null,
         haltReason:
           event.status === "halted" ? (event.haltReason ?? null) : null,
+        ...(event.costMicroUsd !== undefined && {
+          costMicroUsd: event.costMicroUsd,
+        }),
+        ...(event.captureBytes !== undefined && {
+          captureBytes: event.captureBytes,
+        }),
         updatedAt: now,
         completedAt: done ? now : null,
       })

@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
+import { captureKey } from "./capture.ts";
 import type { CaseState, CaseView, ReviewNote } from "./case-runtime.ts";
 import { agentWorker, storeBundle, type Bundle } from "./dispatch.ts";
 import type {
@@ -41,6 +42,8 @@ type CaseObject = {
     mentioned: string[];
   }>;
   cancel(): Promise<CaseState>;
+  dropCapture(): Promise<void>;
+  wipe(): Promise<void>;
   complete(): Promise<
     | { result: "ok"; state: CaseState }
     | { result: "refused"; code: string; message: string }
@@ -111,6 +114,19 @@ export default class Runtime extends WorkerEntrypoint<Env> {
 
   completeCase(c: CaseKey) {
     return runtimeFor(this.env, c).complete();
+  }
+
+  // Retention (spec 16a), for closed cases only: the case's run capture in
+  // RUNS and in its object, or the whole object and its capture. Both are
+  // safe to repeat.
+  async deleteCapture(c: CaseKey) {
+    await this.env.RUNS.delete(captureKey(c));
+    await runtimeFor(this.env, c).dropCapture();
+  }
+
+  async deleteCase(c: CaseKey) {
+    await this.env.RUNS.delete(captureKey(c));
+    await runtimeFor(this.env, c).wipe();
   }
 
   decideApproval(

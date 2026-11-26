@@ -1,10 +1,20 @@
 import type { LogRecord } from "@preprocess/logs";
 
 import type { Approval } from "./approvals.ts";
+import type { Charges } from "./capture.ts";
 import type { CaseRuntime } from "./case-runtime.ts";
 
 export type Env = {
   STAGE: string;
+  // Set on our cloud, unset on a self-hosted install; read it through
+  // @preprocess/runmode. Only our cloud prices model, decide and OCR calls.
+  PREPROCESS_REGION?: string;
+  // Where each model is served (@preprocess/models endpoints): Baseten for
+  // Kimi, DeepSeek and decide, the Workers AI binding for Qwen, an install's
+  // own MODEL_ENDPOINTS, and MODEL_SERVICE_URL (the stub) for the rest.
+  BASETEN_API_KEY?: string;
+  AI?: Ai;
+  MODEL_ENDPOINTS?: string;
   MODEL_SERVICE_URL?: string;
   MODEL_SERVICE_KEY?: string;
   CASE_RUNTIME: DurableObjectNamespace<CaseRuntime>;
@@ -103,6 +113,7 @@ export type EvalEvent = CaseKey & {
   reason: string | null;
   answers: Record<string, unknown> | null;
   costMicroUsd: number;
+  charges?: Charges;
   captureKey: string;
 };
 
@@ -124,7 +135,8 @@ export type CaseKey = Pick<Deployment, "organizationId" | "agentId"> & {
 export type CaseStatus =
   "running" | "waiting" | "halted" | "completed" | "failed" | "cancelled";
 
-export type SpendVerdict = "ok" | "spending_limit_reached";
+// credit_exhausted: a plan's one-time model credit is used up (spec 16a).
+export type SpendVerdict = "ok" | "spending_limit_reached" | "credit_exhausted";
 
 export type CaseEvent = CaseKey &
   (
@@ -136,6 +148,12 @@ export type CaseEvent = CaseKey &
         answers: Record<string, unknown> | null;
         error: { code: string; message: string } | null;
         haltReason?: Exclude<SpendVerdict, "ok">;
+        // Everything the case has been charged so far (spec 16a), which the
+        // spending limit reads from the case index, and its parts, which are
+        // metered. The size of the run capture last stored, for storage.
+        costMicroUsd?: number;
+        charges?: Charges;
+        captureBytes?: number;
         // Set when the case waits on an approval, whose own event notifies.
         approvalId?: string;
         // On completion: what an eval suite keeps of the case (doc 09).
@@ -163,7 +181,7 @@ export type Platform = {
   ocrFile(file: {
     organizationId: string;
     fileId: string;
-  }): Promise<{ markdown: string }>;
+  }): Promise<{ markdown: string; pages: number; costMicroUsd: number }>;
   // Run-log records (design doc 09), queued for the API's consumer.
   logs(records: LogRecord[]): Promise<void>;
   // The memory_propose tool (spec 10); the answer is the tool's result.

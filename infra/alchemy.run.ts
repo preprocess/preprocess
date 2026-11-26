@@ -21,8 +21,10 @@
 //   Their own Postgres from DATABASE_URL, bootstrapped and migrated, never
 //   seeded, never dropped. No PREPROCESS_REGION is bound, so it runs in
 //   self-hosted mode; R2_LOCATION_HINT places its buckets. The API's signing
-//   and auth secrets are generated once into the stack's state. It refuses to
-//   deploy without a real MODEL_SERVICE_URL unless that is "stub".
+//   and auth secrets are generated once into the stack's state. Its models
+//   come from its own provider keys, MODEL_ENDPOINTS or MODEL_SERVICE_URL,
+//   and Qwen from Workers AI in its own account; MODEL_SERVICE_URL=stub
+//   deploys the stub for trying it.
 
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
@@ -43,6 +45,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
 import { GrantAppRole } from "./src/app-role.ts";
+import { originConnectionLimits } from "./src/connections.ts";
 import {
   roleOrigin,
   schemaDigest,
@@ -52,11 +55,15 @@ import {
 import { regionConfig } from "./src/regions.ts";
 import {
   apiCrons,
+  apiModelSecrets,
   apiSecrets,
+  billingSecrets,
+  billingVars,
   githubSecrets,
   githubVars,
   googleSecrets,
   googleVars,
+  licenseSecrets,
   compatibility,
   durableObjects,
   isPreviewStage,
@@ -64,6 +71,7 @@ import {
   isStage,
   names,
   runtimeDurableObjects,
+  runtimeModelSecrets,
   type SelfHostStage,
   type Stage,
 } from "./src/stages.ts";
@@ -362,11 +370,16 @@ export default Alchemy.Stack(
             branch,
             inheritedRoles: [],
           });
-          const app = yield* GrantAppRole("GrantAppRole", {
+          const granted = yield* GrantAppRole("GrantAppRole", {
             admin: role.origin,
             app: appRole.origin,
+            connectionLimits: originConnectionLimits,
+            output: 2,
           });
-          return { app, system: role.origin };
+          return {
+            app: Output.map(granted, ({ app }) => app),
+            system: Output.map(granted, ({ system }) => system),
+          };
         });
     // On our stages DB logs in as its own PlanetScale role, made a member of
     // preprocess_app (migration 0001) without BYPASSRLS by GrantAppRole, and
@@ -377,10 +390,12 @@ export default Alchemy.Stack(
     const db = yield* Cloudflare.Hyperdrive.Connection("Db", {
       origin: roles.app,
       caching: { disabled: true },
+      originConnectionLimit: originConnectionLimits.app,
     });
     const dbSystem = yield* Cloudflare.Hyperdrive.Connection("DbSystem", {
       origin: roles.system,
       caching: { disabled: true },
+      originConnectionLimit: originConnectionLimits.system,
     });
 
     const files = yield* Cloudflare.R2.Bucket("Files", {
@@ -480,27 +495,25 @@ export default Alchemy.Stack(
           ],
     }).pipe(keep);
 
-    // Unless MODEL_SERVICE_URL and MODEL_SERVICE_KEY name a real model
-    // service, the API and the runtime call the stub (design doc 07) by URL,
-    // exactly as they would call a real one. The stub accepts any token.
+    // Each model is served by its provider when the provider's key is set
+    // (packages/models endpoints), and Qwen by the runtime's Workers AI
+    // binding. Every other model goes to MODEL_SERVICE_URL: on our stages
+    // other than production that is the stub (design doc 07) unless it names
+    // a real service, and a self-hosted install gets the stub only with
+    // MODEL_SERVICE_URL=stub. The stub accepts any token.
     const modelServiceUrl = yield* Config.String("MODEL_SERVICE_URL").pipe(
       Config.withDefault(""),
     );
-    if (selfHost && !modelServiceUrl)
-      return yield* Effect.die(
-        new Error(
-          'A self-hosted install needs MODEL_SERVICE_URL and MODEL_SERVICE_KEY: our hosted model service or your own. Set MODEL_SERVICE_URL to "stub" only to try Preprocess with fixture answers.',
-        ),
-      );
     const modelStub =
-      modelServiceUrl && modelServiceUrl !== "stub"
-        ? undefined
-        : yield* Cloudflare.Worker("ModelStub", {
+      modelServiceUrl === "stub" ||
+      (!modelServiceUrl && !selfHost && stage !== "production")
+        ? yield* Cloudflare.Worker("ModelStub", {
             ...worker,
             name: n.modelStub,
             main: at("apps/model-stub/src/index.ts"),
             workersDev: true,
-          });
+          })
+        : undefined;
     const modelService = modelStub
       ? {
           MODEL_SERVICE_URL: Output.map(modelStub.url, (url) => {
@@ -509,10 +522,22 @@ export default Alchemy.Stack(
           }),
           MODEL_SERVICE_KEY: "stub",
         }
-      : {
-          MODEL_SERVICE_URL: modelServiceUrl,
-          MODEL_SERVICE_KEY: Config.Redacted("MODEL_SERVICE_KEY"),
-        };
+      : modelServiceUrl
+        ? {
+            MODEL_SERVICE_URL: modelServiceUrl,
+            MODEL_SERVICE_KEY: Config.Redacted("MODEL_SERVICE_KEY"),
+          }
+        : {};
+    const optionalSecrets = (secrets: readonly string[]) =>
+      Object.fromEntries(
+        secrets.map(
+          (name) =>
+            [
+              name,
+              Config.Redacted(name).pipe(Config.withDefault(undefined)),
+            ] as const,
+        ),
+      );
 
     // The GitHub build sandbox: one container per build, started by the
     // BuildSandbox Durable Object from this image (docs/design/08).
@@ -529,6 +554,8 @@ export default Alchemy.Stack(
         SANDBOX: Cloudflare.DurableObject("BuildSandbox", {
           containers: [buildImage],
         }),
+        // Times each build's container for metering (spec 16a).
+        PLATFORM: Cloudflare.WorkerEntrypoint(apiRef, "Platform"),
       },
     });
 
@@ -547,6 +574,8 @@ export default Alchemy.Stack(
         RENDERER: Cloudflare.DurableObject("Renderer", {
           containers: [renderImage],
         }),
+        // Times each render's container for metering (spec 16a).
+        PLATFORM: Cloudflare.WorkerEntrypoint(apiRef, "Platform"),
       },
     });
 
@@ -576,7 +605,10 @@ export default Alchemy.Stack(
       main: at("apps/runtime/src/index.ts"),
       env: {
         STAGE: stage,
+        ...runMode,
         ...modelService,
+        ...optionalSecrets(runtimeModelSecrets),
+        AI: Cloudflare.Workers.AI(),
         CASE_RUNTIME: Cloudflare.DurableObject(
           runtimeDurableObjects.CASE_RUNTIME,
         ),
@@ -599,6 +631,7 @@ export default Alchemy.Stack(
         STAGE: stage,
         ...runMode,
         ...modelService,
+        ...optionalSecrets(apiModelSecrets),
         DB: db,
         DB_SYSTEM: dbSystem,
         APP_URL: appUrl,
@@ -644,6 +677,35 @@ export default Alchemy.Stack(
         ),
         ...Object.fromEntries(
           githubSecrets.map(
+            (name) =>
+              [
+                name,
+                Config.Redacted(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
+        ...(region &&
+          Object.fromEntries(
+            billingSecrets.map(
+              (name) =>
+                [
+                  name,
+                  Config.Redacted(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
+        ...(region &&
+          Object.fromEntries(
+            billingVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
+        ...Object.fromEntries(
+          (selfHost ? licenseSecrets : []).map(
             (name) =>
               [
                 name,

@@ -5,6 +5,7 @@
 
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { LogRecord } from "@preprocess/logs";
+import type { SandboxEvent } from "@preprocess/sandbox";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { recordCaseEvent } from "./cases.ts";
@@ -16,7 +17,9 @@ import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
 import { proposeMemory, type MemoryProposal } from "./memories.ts";
 import { ocrFile } from "./ocr.ts";
-import { spendGate } from "./spend.ts";
+import { recordSandboxEvent } from "./sandbox.ts";
+import { entitlement } from "./billing.ts";
+import { spendGate, type SpendVerdict } from "./spend.ts";
 
 export class Platform extends WorkerEntrypoint<Env> {
   caseEvent(event: CaseEvent) {
@@ -36,8 +39,22 @@ export class Platform extends WorkerEntrypoint<Env> {
 
   // The runtime calls this before each metered model, OCR or decide call and
   // halts the case with the returned reason when it is not "ok".
-  spendGate(organizationId: string) {
-    return withOrg(this.env, orgId(organizationId), (tx) => spendGate(tx));
+  async spendGate(organizationId: string): Promise<SpendVerdict> {
+    const org = orgId(organizationId);
+    const verdict = await withOrg(this.env, org, (tx) => spendGate(tx));
+    if (verdict !== "ok") return verdict;
+    // Free's one-time model credit (spec 16a): model usage stops when it is
+    // used up, until the organization upgrades. Without a started plan there
+    // is no credit at all.
+    return (await entitlement(this.env, org, "model_usage")) === "ok"
+      ? "ok"
+      : "credit_exhausted";
+  }
+
+  // A sandbox's start, wake, heartbeat, sleep, destroy or crash (spec 16a),
+  // timed here.
+  sandboxEvent(event: SandboxEvent) {
+    return recordSandboxEvent(this.env, event);
   }
 
   // Run-log records from the runtime and the Tail Worker (design doc 09).
@@ -51,7 +68,11 @@ export class Platform extends WorkerEntrypoint<Env> {
       orgId(file.organizationId),
       file.fileId,
     );
-    return { markdown: result.pages.map((p) => p.markdown).join("\n\n") };
+    return {
+      markdown: result.pages.map((p) => p.markdown).join("\n\n"),
+      pages: result.pages.length,
+      costMicroUsd: result.costMicroUsd,
+    };
   }
 
   // Asked on every call into agent code: a new version loads a fresh isolate,

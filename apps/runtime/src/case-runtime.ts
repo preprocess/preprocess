@@ -11,6 +11,8 @@ import { initLogs, wideEvent } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { decide } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
+import { decideCostMicroUsd, microUsd } from "@preprocess/models/prices";
+import { runMode } from "@preprocess/runmode";
 import type { Effect, Manifest, ToolResult } from "@preprocess/sdk/protocol";
 import { PROTOCOL } from "@preprocess/sdk/protocol";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
@@ -324,23 +326,49 @@ export class CaseRuntime extends DurableObject<Env> {
       .map(({ grp, ...row }) => ({ ...row, group: grp }));
   }
 
+  // Tokens are the agent model's; cost is everything the case was charged:
+  // each model response as pi-ai priced it, and each decide and OCR call.
   private usage(events: CaptureEvent[]): Usage {
-    return events
-      .filter((e) => e.kind === "model.response")
-      .reduce<Usage>(
-        (total, e) => {
-          const usage = (e.data.usage ?? {}) as {
-            input?: number;
-            output?: number;
-          };
+    return events.reduce<Usage>(
+      (total, e) => {
+        if (e.kind === "decide" || e.kind === "ocr") {
+          const cost = (e.data.costMicroUsd as number | undefined) ?? 0;
           return {
-            input: total.input + (usage.input ?? 0),
-            output: total.output + (usage.output ?? 0),
-            costMicroUsd: total.costMicroUsd,
+            ...total,
+            costMicroUsd: total.costMicroUsd + cost,
+            charges: {
+              ...total.charges,
+              [e.kind]: total.charges[e.kind] + cost,
+            },
           };
-        },
-        { input: 0, output: 0, costMicroUsd: 0 },
-      );
+        }
+        if (e.kind !== "model.response") return total;
+        const usage = (e.data.usage ?? {}) as {
+          input?: number;
+          output?: number;
+          cost?: { total?: number };
+        };
+        const cost = microUsd(usage.cost?.total ?? 0);
+        return {
+          input: total.input + (usage.input ?? 0),
+          output: total.output + (usage.output ?? 0),
+          costMicroUsd: total.costMicroUsd + cost,
+          charges: { ...total.charges, model: total.charges.model + cost },
+        };
+      },
+      {
+        input: 0,
+        output: 0,
+        costMicroUsd: 0,
+        charges: { model: 0, decide: 0, ocr: 0 },
+      },
+    );
+  }
+
+  // What a status event reports of the case's charges so far.
+  private charged() {
+    const { costMicroUsd, charges } = this.usage(this.events());
+    return { costMicroUsd, charges };
   }
 
   private expectName(start: {
@@ -381,6 +409,12 @@ export class CaseRuntime extends DurableObject<Env> {
   ) {
     const full = {
       ...event,
+      ...(event.type === "status" && {
+        ...this.charged(),
+        ...(this.captureBytes !== undefined && {
+          captureBytes: this.captureBytes,
+        }),
+      }),
       organizationId: meta.organizationId,
       agentId: meta.agentId,
       caseId: meta.caseId,
@@ -416,7 +450,7 @@ export class CaseRuntime extends DurableObject<Env> {
       waitingOn: event.waitingOn,
       reason: event.error?.message ?? event.haltReason ?? event.reason,
       answers: event.answers,
-      costMicroUsd: this.usage(this.events()).costMicroUsd,
+      ...this.charged(),
       captureKey: captureKey(meta),
     };
   }
@@ -442,7 +476,9 @@ export class CaseRuntime extends DurableObject<Env> {
       next,
       "platform",
       "event",
-      "Halted: the organization reached its monthly spending limit",
+      verdict === "credit_exhausted"
+        ? "Halted: the organization used up its plan's model credit"
+        : "Halted: the organization reached its monthly spending limit",
     );
     await this.report(next, {
       type: "status",
@@ -876,7 +912,7 @@ export class CaseRuntime extends DurableObject<Env> {
           const labels = new Map(options.map((o) => [o.id, o.label]));
           if (await this.overLimit())
             return result(
-              "decide refused: the organization reached its monthly spending limit",
+              "decide refused: the case halted on its organization's spending limit or plan credit",
               true,
             );
           try {
@@ -895,6 +931,10 @@ export class CaseRuntime extends DurableObject<Env> {
               options: options.length,
               picks: decided.picks,
               usage: decided.usage,
+              costMicroUsd:
+                runMode(this.env).kind === "cloud"
+                  ? decideCostMicroUsd(decided.usage.inputTokens)
+                  : 0,
             });
             return result({
               picks: decided.picks.map((p) => ({
@@ -1075,11 +1115,18 @@ export class CaseRuntime extends DurableObject<Env> {
     if (!meta.manifest.ocr || !this.env.PLATFORM)
       return `- ${file.name} (${file.contentType})`;
     try {
-      const { markdown } = await this.env.PLATFORM.ocrFile({
-        organizationId: meta.organizationId,
+      const { markdown, pages, costMicroUsd } = await this.env.PLATFORM.ocrFile(
+        {
+          organizationId: meta.organizationId,
+          fileId: file.id,
+        },
+      );
+      this.record("ocr", {
         fileId: file.id,
+        chars: markdown.length,
+        pages,
+        costMicroUsd,
       });
-      this.record("ocr", { fileId: file.id, chars: markdown.length });
       return `<file name="${file.name}">\n${markdown}\n</file>`;
     } catch (error) {
       this.record("ocr", { fileId: file.id, error: String(error) });
@@ -1399,10 +1446,15 @@ export class CaseRuntime extends DurableObject<Env> {
       usage: this.usage(events),
       events,
     };
-    await this.env.RUNS.put(captureKey(meta), JSON.stringify(capture), {
+    const body = new TextEncoder().encode(JSON.stringify(capture));
+    await this.env.RUNS.put(captureKey(meta), body, {
       httpMetadata: { contentType: "application/json" },
     });
+    this.captureBytes = body.byteLength;
   }
+
+  // The size of the capture this object last stored, which storage counts.
+  private captureBytes: number | undefined;
 
   // Rerun: re-evaluate everything and resume the agent with what changed
   // since its last run (design doc 05). A person's answers stay theirs; the
@@ -1717,6 +1769,17 @@ export class CaseRuntime extends DurableObject<Env> {
       error: null,
     });
     return this.state();
+  }
+
+  // Retention (spec 16a): the run capture this object keeps beside the copy
+  // in RUNS, or everything it holds when the case is deleted.
+  dropCapture() {
+    this.ctx.storage.sql.exec("DELETE FROM capture");
+  }
+
+  async wipe() {
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
   }
 
   state(): CaseState {

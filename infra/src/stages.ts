@@ -73,6 +73,17 @@ export const names = (stage: string) => ({
   branch: stage,
 });
 
+// Model providers' keys (packages/models endpoints), optional on every stage:
+// the runtime calls Baseten for the agent models and decide, the API calls
+// Mistral for OCR. MODEL_ENDPOINTS is an install's own per-model endpoints,
+// with their keys, so it is a secret too. Qwen needs no key: it runs on the
+// runtime's Workers AI binding in the stage's own account.
+export const runtimeModelSecrets = [
+  "BASETEN_API_KEY",
+  "MODEL_ENDPOINTS",
+] as const;
+export const apiModelSecrets = ["MISTRAL_API_KEY", "MODEL_ENDPOINTS"] as const;
+
 // The API's secrets, read from the deploy environment and bound as
 // secret_text. Locally `pnpm dev` writes generated values to apps/api/.dev.vars.
 export const apiSecrets = ["BETTER_AUTH_SECRET", "AUDIT_SIGNING_KEY"] as const;
@@ -96,6 +107,19 @@ export const githubSecrets = [
 // the button.
 export const googleVars = ["GOOGLE_CLIENT_ID"] as const;
 export const googleSecrets = ["GOOGLE_CLIENT_SECRET"] as const;
+
+// Autumn, our cloud's billing (spec 16a), optional: without it billing is off.
+// Never bound on a self-hosted install, which bills nothing.
+export const billingSecrets = ["AUTUMN_SECRET_KEY"] as const;
+// When cards became required, and our own organizations (apps/api/src/env.ts).
+// Both unset, an organization without a plan is not limited.
+export const billingVars = [
+  "BILLING_REQUIRED_FROM",
+  "BILLING_INTERNAL_ORGS",
+] as const;
+// The license key (spec 16), optional and on selfhost stages only: without a
+// valid one the install runs the free plan. Our cloud never binds it.
+export const licenseSecrets = ["PREPROCESS_LICENSE_KEY"] as const;
 
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).

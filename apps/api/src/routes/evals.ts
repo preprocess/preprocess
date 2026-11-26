@@ -29,6 +29,7 @@ import {
   trimSuite,
   type SuiteCaseSource,
 } from "../evals.ts";
+import { markSeat } from "../metering.ts";
 import { effectiveSettings } from "../settings.ts";
 import { refuseOverLimit } from "../spend.ts";
 
@@ -615,6 +616,12 @@ export const evalRoutes = new OpenAPIHono<{
           targetId: id,
           data: { deployment: deployment.id, models, runs: created.runs },
         });
+        if (c.var.caller.type === "person")
+          await markSeat(tx, c.env, {
+            organizationId: org,
+            userId: c.var.caller.userId,
+            role: "developer",
+          });
         const rows = await tx
           .select()
           .from(evalRuns)

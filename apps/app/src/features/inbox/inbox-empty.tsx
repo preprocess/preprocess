@@ -6,7 +6,11 @@ import {
   EmptyTitle,
 } from "@preprocess/ui/components/empty";
 
-import { EspressoArt, MailboxArt } from "../../components/empty-art";
+import {
+  InboxCaughtUpArt,
+  InboxEmptyArt,
+  InboxPickArt,
+} from "../../components/empty-art";
 
 export type InboxEmptyKind = "list" | "caught-up" | "pick";
 
@@ -26,7 +30,7 @@ export function InboxEmpty({
       break;
     case "caught-up":
       title = "You're all caught up";
-      description = "Open a notification to read the full note.";
+      description = "New mentions and case updates will show up here.";
       break;
     case "pick":
       title =
@@ -51,7 +55,13 @@ export function InboxEmpty({
     >
       <EmptyHeader className="pointer-events-auto group">
         <EmptyMedia variant="graphic">
-          {kind === "list" ? <MailboxArt /> : <EspressoArt />}
+          {kind === "list" ? (
+            <InboxEmptyArt />
+          ) : kind === "caught-up" ? (
+            <InboxCaughtUpArt />
+          ) : (
+            <InboxPickArt />
+          )}
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
