@@ -5,7 +5,9 @@
 // It also fails when the server can't take both Hyperdrive pools at their
 // limits (connections.ts). Both Hyperdrive origins come from its output, so
 // neither config changes before it passes. The limits are part of the input,
-// so changing them runs the check again.
+// so changing them runs the check again. So is `output`: a stage's stored
+// result from before the output named both origins is a bare origin, so
+// bumping it runs the action once more and stores the current shape.
 
 import type { PostgresOrigin } from "@alchemy.run/planetscale";
 import { Action } from "alchemy";
@@ -92,6 +94,7 @@ export const GrantAppRole = Action(
     admin: PostgresOrigin;
     app: PostgresOrigin;
     connectionLimits: ConnectionLimits;
+    output: 2;
   }) =>
     Effect.tryPromise({
       try: () => grant(input.admin, input.app, input.connectionLimits),
