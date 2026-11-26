@@ -162,5 +162,24 @@
         "content": "The sandbox said: {{results}}"
       }
     ]
+  },
+  {
+    "name": "sandbox-smoke",
+    "match": "Smoke test of the sandbox",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "sandbox_exec",
+            "arguments": {
+              "command": "echo sandbox ok"
+            }
+          }
+        ]
+      },
+      {
+        "content": "The sandbox said: {{results}}"
+      }
+    ]
   }
 ]

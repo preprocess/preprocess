@@ -11,7 +11,13 @@ import { organizationGuardrails } from "@preprocess/db/schema/guardrails";
 import { actor, eventBase, requireAdmin } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
-import { monthSpendParts, monthStart, spendingLimit } from "../spend.ts";
+import {
+  limitReached,
+  monthSpendParts,
+  monthStart,
+  spendingLimit,
+  totalSpend,
+} from "../spend.ts";
 
 const OrgParam = z.object({ org: z.string() });
 
@@ -23,7 +29,7 @@ const Spending = z
     month: z.string().openapi({ example: "2026-11" }),
     spentUsd: z.number().openapi({
       description:
-        "Metered use of the hosted service this calendar month (UTC), every deployment included",
+        "Metered use of the hosted service this calendar month (UTC), every deployment included: cases, eval runs, OCR calls and sandbox time. The spending limit enforces this total",
     }),
     casesUsd: z.number().openapi({ description: "Of which cases" }),
     evalsUsd: z.number().openapi({ description: "Of which eval runs" }),
@@ -39,14 +45,14 @@ const read = async (tx: Tx) => {
   const now = new Date();
   const limit = await spendingLimit(tx);
   const parts = await monthSpendParts(tx, now);
-  const spent = parts.cases + parts.evals + parts.ocr;
+  const spent = totalSpend(parts);
   return {
     month: monthStart(now).toISOString().slice(0, 7),
     spentUsd: toUsd(spent),
     casesUsd: toUsd(parts.cases),
     evalsUsd: toUsd(parts.evals),
     limitUsd: limit === null ? null : toUsd(limit),
-    reached: limit !== null && spent >= limit,
+    reached: limitReached(spent, limit),
   };
 };
 

@@ -125,6 +125,7 @@ const movedAnchors: Record<string, Record<string, string>> = {
     "output-schema": "/sdk/output-schema",
     approvals: "/sdk/approvals",
     "groups-and-schedules": "/sdk/groups-and-schedules",
+    sandbox: "/sdk/sandbox",
     memory: "/sdk/memory",
     "searching-past-cases": "/sdk/searching-past-cases",
   },

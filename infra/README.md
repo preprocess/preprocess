@@ -228,8 +228,10 @@ argument to tell their tags apart.
   (both versions of a gradual one), whatever their age. Older versions' images
   can go: rollback runs through Alchemy, which rebuilds a missing image.
 - **Usage**: `pnpm --filter @preprocess/infra registry usage` walks every
-  repository, tag and manifest and adds up the blobs, each counted once. In CI
-  it adds a warning annotation at 35 GB; the staging deploy runs it too.
+  repository, tag and manifest and adds up the blobs, each counted once. Its
+  first summary line is always `REGISTRY_USAGE_GB=<n>`. It adds a warning
+  annotation at 35 GB and fails at 42 GB, so the daily Registry run fails there;
+  the staging deploy runs it too, without blocking the deploy.
 
 A delete removes tags and manifests at once, but Cloudflare documents no garbage
 collection of the blobs underneath, and a prepared image's `btrfs-chain`

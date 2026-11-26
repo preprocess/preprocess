@@ -119,8 +119,8 @@ jobs:
           pnpm --filter @preprocess/infra staging:deploy
 
       # The account's container registry has a fixed 50 GB cap (PRE-90). A
-      # warning annotation here once the estimate passes 35 GB; it never
-      # blocks the deploy.
+      # warning annotation here from 35 GB and a failed step from 42 GB; it
+      # never blocks the deploy.
       - name: Estimate container registry usage
         if: steps.deploy.outcome == 'success'
         continue-on-error: true
@@ -148,7 +148,7 @@ jobs:
     needs: staging
     if: needs.staging.outputs.deployed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -169,6 +169,20 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra smoke
+
+      # One case runs a command in a small sandbox, and the job summary shows
+      # the container's start and stop beside the interval the API billed.
+      # It does not gate production until it has passed reliably (PRE-87).
+      - name: Smoke test a case sandbox
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          STAGE: staging
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run:
+          OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra
+          smoke:sandbox
 
   production:
     name: Promote to production

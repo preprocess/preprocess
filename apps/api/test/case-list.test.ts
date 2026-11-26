@@ -32,6 +32,10 @@ type List = {
   items: Summary[];
   nextCursor: string | null;
   counts: Record<string, number>;
+  facets?: {
+    agent?: Record<string, Record<string, number>>;
+    waitingOn?: Record<string, Record<string, number>>;
+  };
 };
 
 let org: string;
@@ -195,6 +199,31 @@ describe("the case list", () => {
       [[previewCase, "feature-x"]],
     );
     expect((await list(owner, "?status=nope")).status).toBe(400);
+  });
+
+  it("counts per agent and waiting group under the same filters, when asked", async () => {
+    expect((await list(owner)).body.facets).toBeUndefined();
+    const all = await list(owner, "?facets=agent,waitingOn&limit=1");
+    expect(Object.keys(all.body.facets?.agent ?? {}).sort()).toEqual([
+      "invoices",
+      "payroll",
+    ]);
+    expect(all.body.facets?.agent).toMatchObject({
+      invoices: { waiting: 2, completed: 3, running: 0 },
+      payroll: { running: 2, waiting: 0 },
+    });
+    expect(Object.keys(all.body.facets?.waitingOn ?? {})).toEqual(["finance"]);
+    expect(all.body.facets?.waitingOn).toMatchObject({
+      finance: { waiting: 2, completed: 0 },
+    });
+    const payroll = await list(owner, "?agent=payroll&facets=agent");
+    expect(Object.keys(payroll.body.facets?.agent ?? {})).toEqual(["payroll"]);
+    expect(payroll.body.facets?.waitingOn).toBeUndefined();
+    const mine = await list(operator, "?facets=agent");
+    expect(Object.keys(mine.body.facets?.agent ?? {})).toEqual(["invoices"]);
+    const none = await list(outsider, "?facets=agent,waitingOn");
+    expect(none.body.facets).toEqual({ agent: {}, waitingOn: {} });
+    expect((await list(owner, "?facets=nope")).status).toBe(400);
   });
 
   it("pages with a cursor in either direction", async () => {

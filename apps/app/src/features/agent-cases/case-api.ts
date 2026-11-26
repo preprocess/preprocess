@@ -16,6 +16,7 @@ import type {
   RoomOption,
   WriteResult,
 } from "./case-room-state";
+import { staleAfterWrite } from "../../lib/data-changed";
 
 /**
  * The case list and the case room from /v1, as server functions. The data
@@ -69,6 +70,10 @@ type ApiCaseList = {
   items: ApiCaseSummary[];
   nextCursor: string | null;
   counts: Record<ApiStatus, number>;
+  facets?: {
+    agent?: Record<string, Record<ApiStatus, number>>;
+    waitingOn?: Record<string, Record<ApiStatus, number>>;
+  };
 };
 
 type ApiMember = {
@@ -229,6 +234,7 @@ export const liveCaseList = createServerFn({ method: "GET" })
       query: ListQuery & { q?: string },
       size: number,
       cursor?: string | null,
+      facets: ("agent" | "waitingOn")[] = [],
     ) => {
       const params = new URLSearchParams({
         environment,
@@ -242,11 +248,10 @@ export const liveCaseList = createServerFn({ method: "GET" })
       if (query.waitingOn?.length)
         params.set("waitingOn", query.waitingOn.join(","));
       if (cursor) params.set("cursor", cursor);
+      if (facets.length) params.set("facets", facets.join(","));
       return getJson<ApiCaseList>(`/cases?${params}`);
     };
     const q = search.q.trim() || undefined;
-    const counts = async (query: ListQuery & { q?: string }) =>
-      (await list(query, 1)).counts;
 
     const view = apiStatuses(viewStatuses(search));
     const shown = shownStatuses(search);
@@ -260,28 +265,35 @@ export const liveCaseList = createServerFn({ method: "GET" })
     };
     const slugs = agents.map((agent) => agent.slug);
 
-    const [unfiltered, byAgent, byGroup, filtered, agentTotals] =
-      await Promise.all([
-        counts({}),
-        Promise.all(slugs.map((slug) => counts({ q, agent: [slug] }))),
-        Promise.all(
-          orgGroups.map((group) => counts({ q, waitingOn: [group.slug] })),
-        ),
-        counts(filters),
-        search.group === "agent"
-          ? Promise.all(
-              (search.agent.length ? search.agent : slugs).map(
-                async (slug) => ({
-                  slug,
-                  total: sum(
-                    await counts({ ...filters, agent: [slug] }),
-                    statuses,
-                  ),
-                }),
-              ),
-            )
-          : Promise.resolve([]),
-      ]);
+    // Counts come from at most three requests, each with per-agent and
+    // per-group facets: everything, the search alone, and every filter.
+    const anyFilter = Boolean(
+      q || filters.agent.length || filters.waitingOn.length,
+    );
+    const everything = list({}, 1, null, q ? [] : ["agent", "waitingOn"]);
+    const [unfilteredPage, searched, filteredPage] = await Promise.all([
+      everything,
+      q ? list({ q }, 1, null, ["agent", "waitingOn"]) : everything,
+      anyFilter
+        ? list(filters, 1, null, search.group === "agent" ? ["agent"] : [])
+        : everything,
+    ]);
+    const unfiltered = unfilteredPage.counts;
+    const filtered = filteredPage.counts;
+    const none = Object.fromEntries(
+      Object.keys(unfiltered).map((status) => [status, 0]),
+    ) as ApiCaseList["counts"];
+    const byAgent = slugs.map((slug) => searched.facets?.agent?.[slug] ?? none);
+    const byGroup = orgGroups.map(
+      (group) => searched.facets?.waitingOn?.[group.slug] ?? none,
+    );
+    const agentTotals =
+      search.group === "agent"
+        ? (search.agent.length ? search.agent : slugs).map((slug) => ({
+            slug,
+            total: sum(filteredPage.facets?.agent?.[slug] ?? none, statuses),
+          }))
+        : [];
 
     const groups: { key: string; total: number; query: ListQuery }[] =
       search.group === "status"
@@ -473,6 +485,7 @@ export async function liveCaseRoom(caseId: string): Promise<CaseRoomState> {
 
 /** Changes an answer: edit it, confirm it, or accept the agent's suggestion. */
 export const liveAnswerWrite = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator(
     (input: {
       caseId: string;
@@ -512,6 +525,7 @@ export const liveAnswerWrite = createServerFn({ method: "POST" })
 
 /** Reruns or cancels the case. */
 export const liveCaseCommand = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((input: { caseId: string; command: "rerun" | "cancel" }) => input)
   .handler(async ({ data }) => {
     const response = await send(
@@ -528,6 +542,7 @@ export const liveCaseCommand = createServerFn({ method: "POST" })
  * tab shows the message beside the button.
  */
 export const liveCompleteCase = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((caseId: string) => caseId)
   .handler(async ({ data: caseId }): Promise<ApprovalDecision> => {
     const response = await send(
@@ -543,6 +558,7 @@ export const liveCompleteCase = createServerFn({ method: "POST" })
  * so the Review tab shows them beside the rule.
  */
 export const liveMemoryDecision = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator(
     (input: {
       caseId: string;
@@ -561,6 +577,7 @@ export const liveMemoryDecision = createServerFn({ method: "POST" })
 
 /** Posts to the case thread. Refusals come back as data for the composer. */
 export const livePostMessage = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((input: { caseId: string; text: string }) => input)
   .handler(async ({ data }): Promise<ApprovalDecision> => {
     const response = await send(
@@ -576,6 +593,7 @@ export const livePostMessage = createServerFn({ method: "POST" })
  * back as data so the room shows them beside the approval.
  */
 export const liveApprovalDecision = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator(
     (input: {
       caseId: string;
@@ -702,6 +720,7 @@ export const liveAssigneeCandidates = createServerFn({ method: "GET" })
 
 /** Replaces a case's assignees. Refusals come back as data. */
 export const liveSetAssignees = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((input: { caseId: string; userIds: string[] }) => input)
   .handler(async ({ data }): Promise<ApprovalDecision> => {
     const response = await send(
@@ -714,6 +733,7 @@ export const liveSetAssignees = createServerFn({ method: "POST" })
 
 /** Stores one file to start a case with; the form carries it as "file". */
 export const liveUploadFile = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((form: FormData) => {
     if (!(form instanceof FormData) || !(form.get("file") instanceof File))
       throw new Error("Send the file as a form.");
@@ -748,6 +768,7 @@ export const liveCaseFiles = createServerFn({ method: "GET" })
  * already belong to a case) come back as data for the Input tab.
  */
 export const liveAttachFiles = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((input: { caseId: string; files: string[] }) => input)
   .handler(async ({ data }): Promise<ApprovalDecision> => {
     const response = await send(
@@ -763,6 +784,7 @@ export const liveAttachFiles = createServerFn({ method: "POST" })
  * two; each submit sends a fresh one.
  */
 export const liveStartCase = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator(
     (input: {
       agent: string;

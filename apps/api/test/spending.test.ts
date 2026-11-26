@@ -5,13 +5,14 @@
 import { orgId, withOrg } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { agents } from "@preprocess/db/schema/access";
+import { usageRecords } from "@preprocess/db/schema/billing";
 import { cases } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import type { Env, Runtime } from "../src/env.ts";
 import { Platform } from "../src/platform.ts";
-import { monthStart } from "../src/spend.ts";
+import { monthSpend, monthStart, spendGate } from "../src/spend.ts";
 import {
   addMember,
   Client,
@@ -235,5 +236,48 @@ describe("spending limit", () => {
       "Elsewhere",
     );
     expect((await owner.call(`/v1/orgs/${other}/spending`)).status).toBe(403);
+  });
+});
+
+// The page and the limit check read one total, so the page never shows less
+// than the limit enforces. Sandbox time is the part the page used to leave out.
+describe("the spending page", () => {
+  it("shows the same total the spending limit enforces, sandbox time included", async () => {
+    const spender = await signUp("Sandbox spender", environment);
+    const spendOrg = await createOrganization(spender.client, "Sandboxspend");
+    const sandboxMicroUsd = 2_500_000;
+    await withOrg(environment, orgId(spendOrg), (tx) =>
+      tx.insert(usageRecords).values({
+        id: newId("usageRecord"),
+        organizationId: spendOrg,
+        feature: "sandbox",
+        quantity: sandboxMicroUsd,
+      }),
+    );
+
+    const enforced = () =>
+      withOrg(environment, orgId(spendOrg), async (tx) => ({
+        spent: await monthSpend(tx),
+        gate: await spendGate(tx),
+      }));
+    const page = async () =>
+      (await spender.client.call<Spending>(`/v1/orgs/${spendOrg}/spending`))
+        .body;
+
+    const before = await enforced();
+    expect(before.spent).toBe(sandboxMicroUsd);
+    expect((await page()).spentUsd * 1_000_000).toBe(before.spent);
+
+    // A limit below the sandbox spend: the check refuses, and the page says so.
+    const set = await spender.client.call<Spending>(
+      `/v1/orgs/${spendOrg}/spending/limit`,
+      { method: "PUT", body: { limitUsd: 2 } },
+    );
+    expect(set.status).toBe(200);
+    const after = await enforced();
+    expect(after.gate).toBe("spending_limit_reached");
+    const shown = await page();
+    expect(shown.spentUsd * 1_000_000).toBe(after.spent);
+    expect(shown.reached).toBe(true);
   });
 });

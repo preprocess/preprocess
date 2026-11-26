@@ -8,6 +8,12 @@
 // 3. In the smoke-test organization, deploy a stub agent (smoke-agent/agent.ts) and
 //    run one case on it to completion.
 //
+// With SMOKE=sandbox, step 3 deploys smoke-agent/sandbox.ts instead, whose case
+// runs one command in a small sandbox. Once the sandbox's interval closes, it
+// prints the container's start and stop from the case's run log next to the
+// interval the API timed and billed, and writes that table to the GitHub job
+// summary when there is one.
+//
 // The user is reused across runs. Sign-in is by emailed link, and the smoke
 // test has no mailbox: for its address only, the API derives the link's token
 // from the stage's BETTER_AUTH_SECRET and the current minute, so the token is
@@ -15,6 +21,7 @@
 // mails nothing for that address, so each run sends no email.
 
 import { createHmac } from "node:crypto";
+import { appendFileSync } from "node:fs";
 import path from "node:path";
 
 import { buildSync } from "esbuild";
@@ -25,6 +32,8 @@ const { app, api } = JSON.parse(process.env.OUTPUTS ?? "{}") as {
 };
 if (!app || !api) throw new Error("OUTPUTS must carry app and api URLs");
 const stage = process.env.STAGE ?? "staging";
+const sandboxed = process.env.SMOKE === "sandbox";
+const slug = sandboxed ? "smoke-sandbox" : "smoke";
 const authSecret = process.env.BETTER_AUTH_SECRET;
 const emailFrom = process.env.EMAIL_FROM;
 if (!authSecret || !emailFrom) {
@@ -139,7 +148,12 @@ if (!org) {
 }
 
 const built = buildSync({
-  entryPoints: [path.join(import.meta.dirname, "../smoke-agent/agent.ts")],
+  entryPoints: [
+    path.join(
+      import.meta.dirname,
+      `../smoke-agent/${sandboxed ? "sandbox" : "agent"}.ts`,
+    ),
+  ],
   bundle: true,
   write: false,
   format: "esm",
@@ -152,7 +166,7 @@ const built = buildSync({
 });
 const deployed = await call<{ id: string; production: boolean }>(
   "POST",
-  `/v1/orgs/${org}/agents/smoke/deployments`,
+  `/v1/orgs/${org}/agents/${slug}/deployments`,
   {
     bundle: {
       mainModule: "agent.js",
@@ -168,14 +182,17 @@ if (deployed.status !== 201) fail(`deploying the agent: ${deployed.text}`);
 if (!deployed.body.production) {
   const promoted = await call(
     "POST",
-    `/v1/orgs/${org}/agents/smoke/deployments/${deployed.body.id}/promote`,
+    `/v1/orgs/${org}/agents/${slug}/deployments/${deployed.body.id}/promote`,
   );
   if (promoted.status !== 200) fail(`promoting the agent: ${promoted.text}`);
 }
 
 // Starting a case needs operator access, granted to a group the smoke-test
 // user is in. Each call is idempotent, so later runs repeat it harmlessly.
-const agent = await call<{ id: string }>("GET", `/v1/orgs/${org}/agents/smoke`);
+const agent = await call<{ id: string }>(
+  "GET",
+  `/v1/orgs/${org}/agents/${slug}`,
+);
 if (agent.status !== 200) fail(`reading the agent: ${agent.text}`);
 const groups = await call<{ id: string; slug: string }[]>(
   "GET",
@@ -202,8 +219,10 @@ const grant = await call(
 if (grant.status !== 200) fail(`granting operator access: ${grant.text}`);
 
 const started = await call<{ id: string }>("POST", `/v1/orgs/${org}/cases`, {
-  agent: "smoke",
-  text: `Smoke test of ${stage}.`,
+  agent: slug,
+  text: sandboxed
+    ? `Smoke test of the sandbox on ${stage}.`
+    : `Smoke test of ${stage}.`,
 });
 if (started.status !== 202) fail(`starting the case: ${started.text}`);
 for (let attempt = 0; ; attempt++) {
@@ -220,4 +239,101 @@ for (let attempt = 0; ; attempt++) {
   await sleep(2000);
 }
 
+if (sandboxed) await measureSandbox(org, started.body.id);
 console.log("smoke test passed");
+
+// The case's sandbox intervals as the API timed and billed them, beside the
+// container's start and stop as its Durable Object logged them. A positive
+// difference is container time the interval did not bill.
+async function measureSandbox(org: string, caseId: string) {
+  type Interval = {
+    seq: number;
+    size: string;
+    startedAt: string;
+    endedAt: string | null;
+    endReason: string | null;
+  };
+  type Log = { kind: string; at: string; data: { containerAt?: string } };
+  // The case's close destroys the sandbox; a lost interval closes within
+  // about three minutes, at its last heartbeat.
+  let intervals: Interval[] = [];
+  for (let attempt = 0; ; attempt++) {
+    const read = await call<{ intervals: Interval[] }>(
+      "GET",
+      `/v1/orgs/${org}/cases/${caseId}/sandbox`,
+    );
+    if (read.status !== 200) fail(`reading the sandbox time: ${read.text}`);
+    intervals = read.body.intervals;
+    if (intervals.length && intervals.every((i) => i.endedAt)) break;
+    if (attempt > 120)
+      fail(`the sandbox interval never closed (last: ${read.text})`);
+    await sleep(2000);
+  }
+  // Run logs reach the store through a queue.
+  let logs: Log[] = [];
+  for (let attempt = 0; ; attempt++) {
+    const read = await call<{ logs: Log[] }>(
+      "GET",
+      `/v1/orgs/${org}/cases/${caseId}/logs?limit=500`,
+    );
+    logs = (read.body?.logs ?? []).filter((l) => l.kind.startsWith("sandbox."));
+    const stops = logs.filter((l) => l.kind === "sandbox.stop").length;
+    if (stops >= intervals.length) break;
+    if (attempt > 60) break;
+    await sleep(5000);
+  }
+  const containerAt = (kind: string) =>
+    logs
+      .filter((l) => l.kind === kind)
+      .map((l) => l.data.containerAt)
+      .filter((at): at is string => !!at)
+      .sort();
+  const starts = containerAt("sandbox.start");
+  const stops = containerAt("sandbox.stop");
+  const ms = (at: string | null | undefined) => (at ? Date.parse(at) : NaN);
+  const seconds = (n: number) =>
+    Number.isNaN(n) ? "n/a" : (n / 1000).toFixed(3);
+  const rows = intervals.map((interval, i) => {
+    const start = starts[i];
+    const stop = stops[i];
+    const billed = ms(interval.endedAt) - ms(interval.startedAt);
+    const ran = ms(stop) - ms(start);
+    return [
+      String(interval.seq),
+      interval.size,
+      start ?? "not logged",
+      interval.startedAt,
+      seconds(ms(interval.startedAt) - ms(start)),
+      stop ?? "not logged",
+      interval.endedAt ?? "open",
+      seconds(ms(stop) - ms(interval.endedAt)),
+      interval.endReason ?? "",
+      seconds(ran),
+      seconds(billed),
+      seconds(ran - billed),
+    ];
+  });
+  const header = [
+    "Interval",
+    "Size",
+    "Container start (log)",
+    "started_at",
+    "Start lag (s)",
+    "Container stop (log)",
+    "ended_at",
+    "Stop gap (s)",
+    "End",
+    "Container (s)",
+    "Billed (s)",
+    "Under-billed (s)",
+  ];
+  const table = [header, header.map(() => "---"), ...rows]
+    .map((row) => `| ${row.join(" | ")} |`)
+    .join("\n");
+  const report = `### Sandbox time on ${stage}\n\nCase \`${caseId}\`. Under-billed is container time minus billed time; negative means the interval billed more than the container ran.\n\n${table}\n`;
+  console.log(report);
+  if (process.env.GITHUB_STEP_SUMMARY)
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
+  if (!starts.length || !stops.length)
+    fail("the sandbox's start and stop never reached the run log");
+}

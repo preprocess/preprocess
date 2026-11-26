@@ -34,6 +34,7 @@ import {
   SettingsSkeletonRows,
   SettingsTextField,
 } from "../settings/kit";
+import { SANDBOX_SIZE_OPTIONS } from "../settings/sandbox-sizes";
 import { SettingsStacked } from "../settings/settings-widgets";
 import { useCanAdminister } from "../settings/use-role";
 import type { SectionAnchor } from "./agent-shell";
@@ -70,7 +71,20 @@ const SOURCE = {
 
 const text = (value: Scalar | null) => value?.toString() ?? "";
 
-const parse = (field: Field | undefined, value: string): Scalar => {
+// Listed only for an agent whose code asks for a sandbox; never an
+// organization default.
+const AGENT_FIELDS: readonly Field<string>[] = [
+  ...FIELDS,
+  {
+    key: "sandbox.size",
+    label: "Sandbox size",
+    description: "The machine each case's sandbox runs on",
+    kind: "choice",
+    options: SANDBOX_SIZE_OPTIONS,
+  },
+];
+
+const parse = (field: Field<string> | undefined, value: string): Scalar => {
   if (field?.kind === "number") return Number(value);
   if (value === "true" || value === "false") return value === "true";
   return value;
@@ -204,7 +218,7 @@ function SettingRow({
   onClear: () => Promise<void>;
   onError: (error: unknown) => void;
 }) {
-  const field = FIELDS.find((f) => f.key === setting.key);
+  const field = AGENT_FIELDS.find((f) => f.key === setting.key);
   const [draft, setDraft] = useState(text(setting.value));
   useEffect(() => setDraft(text(setting.value)), [setting.value]);
   const label = field?.label ?? setting.key;

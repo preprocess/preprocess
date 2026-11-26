@@ -12,7 +12,8 @@
 // (@preprocess/sandbox) to the API, which times and bills it.
 
 import { Files } from "@cloudflare/sandbox";
-import { SandboxMeter } from "@preprocess/sandbox";
+import { initLogs, wideEvent } from "@preprocess/logs";
+import { SandboxMeter, type SandboxOwner } from "@preprocess/sandbox";
 import type {
   SandboxManifest,
   SandboxPreset,
@@ -135,9 +136,51 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     );
   }
 
+  // Set while destroy() runs: destroying the container also settles
+  // monitor(), and that stop is the destroy, not a crash. A crash closes the
+  // interval at its last heartbeat, so on staging it billed a 7 s sandbox 0 s.
+  private destroying = false;
+
   private async stopped(type: "sleep" | "crash") {
+    if (this.destroying) return;
     await this.ctx.storage.delete("sandbox:startedAt");
+    const at = new Date();
+    const owner = await this.ctx.storage.get<SandboxOwner>("sandbox:open");
     await this.meter.end(type);
+    if (owner) this.log(owner, "sandbox.stop", at, type);
+  }
+
+  // The container's start and stop as this object saw them, in the case's run
+  // log beside the interval the API timed; the staging smoke test compares
+  // the two.
+  private log(
+    owner: SandboxOwner,
+    kind: "sandbox.start" | "sandbox.stop",
+    at: Date,
+    reason: string,
+  ) {
+    initLogs("runtime", (records) =>
+      this.env.PLATFORM ? this.env.PLATFORM.logs(records) : Promise.resolve(),
+    );
+    const log = wideEvent(
+      kind,
+      {
+        organizationId: owner.organizationId,
+        ...(owner.agent && { agentId: owner.agent }),
+        ...(owner.caseId && { caseId: owner.caseId }),
+      },
+      (promise) => this.ctx.waitUntil(promise),
+    );
+    log.set({
+      message:
+        kind === "sandbox.start"
+          ? `Sandbox ${reason === "wake" ? "woke" : "started"} (${this.size})`
+          : `Sandbox stopped (${reason})`,
+      size: this.size,
+      reason,
+      containerAt: at.toISOString(),
+    });
+    log.emit();
   }
 
   // Starts or wakes the container when it is not running, and returns what
@@ -155,9 +198,13 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     const outbound = (this.ctx.exports as unknown as Exports).Outbound({
       props: { organizationId: config.organizationId, network: config.network },
     });
+    const woken =
+      (await this.ctx.storage.get<number>("sandbox:seq")) !== undefined;
+    let startedAt = new Date();
     try {
       await container.interceptAllOutboundHttp(outbound);
       await container.interceptOutboundHttps("*", outbound);
+      startedAt = new Date();
       container.start({
         image,
         instance: SANDBOX_INSTANCE[this.size],
@@ -171,27 +218,29 @@ export abstract class CaseSandbox extends DurableObject<Env> {
           size: this.size,
         },
       });
-      await container.setInactivityTimeout(
-        config.sandbox.idleTimeoutMinutes * 60_000,
-      );
     } catch (error) {
       if (container.running) await container.destroy();
       throw error;
     }
-    const woken =
-      (await this.ctx.storage.get<number>("sandbox:seq")) !== undefined;
+    // The interval opens as soon as the container is asked to start: setting
+    // its timeout waits for it to boot, which staging measured at 3.7 s.
+    const owner = {
+      organizationId: config.organizationId,
+      agent: config.agentId,
+      caseId: config.caseId,
+    };
+    await this.meter.begin(owner, "case", this.size, woken ? "wake" : "start");
     await this.ctx.storage.put("sandbox:startedAt", Date.now());
-    await this.meter.begin(
-      {
-        organizationId: config.organizationId,
-        agent: config.agentId,
-        caseId: config.caseId,
-      },
-      "case",
-      this.size,
-      woken ? "wake" : "start",
-    );
+    this.log(owner, "sandbox.start", startedAt, woken ? "wake" : "start");
     this.watch();
+    try {
+      await container.setInactivityTimeout(
+        config.sandbox.idleTimeoutMinutes * 60_000,
+      );
+    } catch (error) {
+      await this.destroy();
+      throw error;
+    }
     return this.install(container, config.sandbox);
   }
 
@@ -306,8 +355,16 @@ export abstract class CaseSandbox extends DurableObject<Env> {
   async destroy() {
     await this.ctx.storage.delete("sandbox:startedAt");
     if (!this.ctx.container?.running) return this.meter.end("crash");
-    await this.ctx.container.destroy();
-    await this.meter.end("destroy");
+    const owner = await this.ctx.storage.get<SandboxOwner>("sandbox:open");
+    this.destroying = true;
+    try {
+      await this.ctx.container.destroy();
+      const at = new Date();
+      await this.meter.end("destroy");
+      if (owner) this.log(owner, "sandbox.stop", at, "destroy");
+    } finally {
+      this.destroying = false;
+    }
   }
 
   // Every heartbeat: a container past its lifetime is destroyed; otherwise
