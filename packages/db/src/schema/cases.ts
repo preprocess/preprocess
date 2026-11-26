@@ -59,6 +59,8 @@ export const cases = pgTable(
     source: caseSource().notNull(),
     title: text(),
     costMicroUsd: bigint({ mode: "number" }).notNull().default(0),
+    // The size of the case's run capture in R2, which storage counts.
+    captureBytes: bigint({ mode: "number" }),
     createdBy: text(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

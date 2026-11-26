@@ -39,7 +39,7 @@ const read = async (tx: Tx) => {
   const now = new Date();
   const limit = await spendingLimit(tx);
   const parts = await monthSpendParts(tx, now);
-  const spent = parts.cases + parts.evals;
+  const spent = parts.cases + parts.evals + parts.ocr;
   return {
     month: monthStart(now).toISOString().slice(0, 7),
     spentUsd: toUsd(spent),

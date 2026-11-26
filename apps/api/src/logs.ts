@@ -10,6 +10,7 @@ import type { LogLevel, LogRecord } from "@preprocess/logs";
 import { sql } from "drizzle-orm";
 
 import type { Env } from "./env.ts";
+import { meter } from "./metering.ts";
 
 export type LogQuery = {
   organizationId: string;
@@ -292,9 +293,21 @@ const tallies = (records: LogRecord[]) => {
   return [...byKey.values()];
 };
 
-const summarize = async (env: Env, organizationId: string, rows: Tally[]) =>
-  withOrg(env, orgId(organizationId), (tx) =>
-    tx
+// Storage counts run logs by the bytes ingested (spec 16a): the stored
+// Parquet is smaller, and the log store cannot be sized per organization.
+const summarize = async (
+  env: Env,
+  organizationId: string,
+  rows: Tally[],
+  bytes: number,
+) =>
+  withOrg(env, orgId(organizationId), async (tx) => {
+    await meter(tx, env, {
+      organizationId,
+      feature: "log_bytes",
+      quantity: bytes,
+    });
+    await tx
       .insert(logSummaries)
       .values(
         rows.map((t) => ({
@@ -317,8 +330,8 @@ const summarize = async (env: Env, organizationId: string, rows: Tally[]) =>
           firstAt: sql`least(${logSummaries.firstAt}, excluded.first_at)`,
           lastAt: sql`greatest(${logSummaries.lastAt}, excluded.last_at)`,
         },
-      }),
-  );
+      });
+  });
 
 // The LOGS queue's consumer. A failed store write retries the batch; an
 // organization whose summaries cannot be written (deleted since) is skipped.
@@ -327,9 +340,21 @@ export const ingestLogs = async (env: Env, records: LogRecord[]) => {
   const byOrg = new Map<string, Tally[]>();
   for (const t of tallies(records))
     byOrg.set(t.organizationId, [...(byOrg.get(t.organizationId) ?? []), t]);
+  const bytes = new Map<string, number>();
+  for (const r of records)
+    bytes.set(
+      r.organizationId,
+      (bytes.get(r.organizationId) ?? 0) +
+        new TextEncoder().encode(JSON.stringify(r)).byteLength,
+    );
   for (const [organizationId, rows] of byOrg) {
     try {
-      await summarize(env, organizationId, rows);
+      await summarize(
+        env,
+        organizationId,
+        rows,
+        bytes.get(organizationId) ?? 0,
+      );
     } catch (error) {
       console.error("log summaries", organizationId, error);
     }

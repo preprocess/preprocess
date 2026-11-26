@@ -1,6 +1,7 @@
 import type { LogRecord } from "@preprocess/logs";
 
 import type { Approval } from "./approvals.ts";
+import type { Charges } from "./capture.ts";
 import type { CaseRuntime } from "./case-runtime.ts";
 
 export type Env = {
@@ -106,6 +107,7 @@ export type EvalEvent = CaseKey & {
   reason: string | null;
   answers: Record<string, unknown> | null;
   costMicroUsd: number;
+  charges?: Charges;
   captureKey: string;
 };
 
@@ -140,8 +142,11 @@ export type CaseEvent = CaseKey &
         error: { code: string; message: string } | null;
         haltReason?: Exclude<SpendVerdict, "ok">;
         // Everything the case has been charged so far (spec 16a), which the
-        // spending limit reads from the case index.
+        // spending limit reads from the case index, and its parts, which are
+        // metered. The size of the run capture last stored, for storage.
         costMicroUsd?: number;
+        charges?: Charges;
+        captureBytes?: number;
         // Set when the case waits on an approval, whose own event notifies.
         approvalId?: string;
         // On completion: what an eval suite keeps of the case (doc 09).
