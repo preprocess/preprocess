@@ -2,6 +2,7 @@
 // organization (spec 15: the organization comes from the path, checked against
 // the caller's membership or key, never from a "current organization").
 
+import { audit } from "@preprocess/db/audit";
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { OrgId } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
@@ -117,6 +118,31 @@ export const requireDeveloper = async (tx: Tx, caller: Caller) => {
     throw new HTTPException(403, {
       message: "Only Owners, Admins and the Developers group can do this.",
     });
+};
+
+// Deploying and promoting (rollback is promoting an earlier deployment) need
+// a Developer (spec 2). A refusal is audited on its own, since the action's
+// transaction never commits.
+export const requireDeployer = async (
+  env: Env,
+  vars: OrgVariables,
+  operation: "deploy" | "promote",
+  agent: string,
+) => {
+  try {
+    await withOrg(env, vars.org, (tx) => requireDeveloper(tx, vars.caller));
+  } catch (error) {
+    if (error instanceof HTTPException && error.status === 403)
+      await withOrg(env, vars.org, (tx) =>
+        audit(tx, {
+          ...eventBase(vars),
+          action: "deployment.denied",
+          targetType: "agent",
+          data: { agent, operation },
+        }),
+      );
+    throw error;
+  }
 };
 
 // Who, where and from which request, for an audit event in this organization.

@@ -31,7 +31,7 @@ import {
   type Change,
   type GuardrailRequest,
 } from "../settings/guardrails-panel";
-import { useCanAdminister } from "../settings/use-role";
+import { useCanAdminister, useCanDeploy } from "../settings/use-role";
 import { DeploymentStatus } from "./agent-page";
 import { shortDeploymentId } from "./agent-store";
 import type { OrgAgentDetail } from "./list-org-agents";
@@ -108,6 +108,7 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
   const requests = useGuardrailRequests();
   const decide = useDecideRequest();
   const canDecide = useCanAdminister();
+  const canPromote = useCanDeploy();
   const pending = (requests.data ?? []).filter(
     (r) => r.status === "pending" && r.agent === agent.id,
   );
@@ -139,7 +140,7 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
 
   return (
     <SettingsSection
-      description={`Every push deploys: ${agent.productionBranch} to production, other branches to previews. Promoting an earlier production deployment rolls back to it.`}
+      description={`Every push deploys: ${agent.productionBranch} to production, other branches to previews. Promoting an earlier production deployment rolls back to it.${canPromote ? "" : " Owners, Admins and the Developers group can promote."}`}
       title="Deployments"
     >
       {deployments.isError ? (
@@ -196,7 +197,10 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
                     </span>
                   }
                 >
-                  {production && !serving && deployment.status === "ready" ? (
+                  {canPromote &&
+                  production &&
+                  !serving &&
+                  deployment.status === "ready" ? (
                     <LoadingButton
                       onAction={() => promote(deployment.id)}
                       onError={setError}
