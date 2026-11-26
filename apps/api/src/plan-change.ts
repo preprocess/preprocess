@@ -2,8 +2,9 @@
 // blocked and nothing is deleted. Each thing over Free's limits gets its own
 // reversible consequence, shown before the Owner confirms:
 // - seats past Free's: the Owner picks who keeps one (else Owners first, then
-//   the most recently active); the rest leave their seat groups and become
-//   viewers, and their groups are kept so a return to Team restores them;
+//   the most recently active); the rest leave their seat groups for the
+//   Viewers group, which can view every agent they could see before, and
+//   their groups are kept so a return to Team restores them;
 // - agents with a custom environment pause (cases.ts refuses their new cases
 //   while the plan lacks custom environments) and resume on Team;
 // - storage past Free's 5 GB is billed to the card, as on Team;
@@ -12,7 +13,13 @@
 
 import { audit } from "@preprocess/db/audit";
 import { orgId, withOrg, withoutOrg, type Tx } from "@preprocess/db/client";
-import { agents, groupMembers, groups } from "@preprocess/db/schema/access";
+import {
+  agentGrants,
+  agents,
+  groupMembers,
+  groups,
+} from "@preprocess/db/schema/access";
+import { newId } from "@preprocess/db/ids";
 import { member, organization, user } from "@preprocess/db/schema/auth";
 import {
   demotedSeats,
@@ -196,9 +203,9 @@ export const checkPicks = async (env: Env, org: string, keep: string[]) =>
   withOrg(env, orgId(org), async (tx) => {
     const holders = new Set((await seatMemberships(tx)).map((m) => m.userId));
     if (new Set(keep).size !== keep.length || keep.length > FREE_SEATS)
-      return `Pick at most ${FREE_SEATS} different people to keep a seat.`;
+      return `Pick at most ${FREE_SEATS} people to keep a developer or operator seat.`;
     if (keep.some((id) => !holders.has(id)))
-      return "Pick only people who have a developer or operator seat now.";
+      return "Pick only people who currently have a developer or operator seat.";
     return null;
   });
 
@@ -264,24 +271,93 @@ const warn = async (env: Env, change: Change, at: Date) => {
     ),
     name: await orgName(tx, org),
   }));
-  const email = seatEndingEmail(emailBrand(env), {
-    url: new URL("/", env.APP_URL).href,
-    orgName: name,
-    at,
-  });
-  for (const person of losing)
+  for (const person of losing) {
+    const email = seatEndingEmail(emailBrand(env), {
+      url: new URL("/", env.APP_URL).href,
+      orgName: name,
+      at,
+      email: person.email,
+    });
     await sendOnce(
       env,
       `seat-ending:${org}:${person.userId}`,
       person.email,
       email,
     );
+  }
   await withOrg(env, orgId(org), (tx) =>
     tx
       .update(planChanges)
       .set({ warnedAt: new Date() })
       .where(eq(planChanges.organizationId, org)),
   );
+};
+
+// The group demoted people join so they keep viewer access (Chip: they
+// become free viewers): viewer grants on every agent the groups they left
+// could see, all agents when they left Developers.
+const VIEWERS = { slug: "free-viewers", name: "Viewers" };
+
+const viewersGroup = async (tx: Tx, org: string) => {
+  const [found] = await tx
+    .select({ id: groups.id })
+    .from(groups)
+    .where(and(eq(groups.organizationId, org), eq(groups.slug, VIEWERS.slug)));
+  if (found) return found.id;
+  const id = newId("group");
+  await tx.insert(groups).values({
+    id,
+    organizationId: org,
+    ...VIEWERS,
+    description:
+      "People who lost a developer or operator seat when the organization moved to Free. They can view the agents they could see before.",
+  });
+  return id;
+};
+
+const keepViewing = async (
+  tx: Tx,
+  org: string,
+  leaving: { userId: string; groupId: string }[],
+) => {
+  const left = [...new Set(leaving.map((m) => m.groupId))];
+  const developers = await tx
+    .select({ id: groups.id })
+    .from(groups)
+    .where(and(inArray(groups.id, left), eq(groups.isDevelopers, true)));
+  const seen = developers.length
+    ? await tx
+        .select({ agentId: agents.id })
+        .from(agents)
+        .where(isNull(agents.archivedAt))
+    : await tx
+        .selectDistinct({ agentId: agentGrants.agentId })
+        .from(agentGrants)
+        .where(inArray(agentGrants.groupId, left));
+  const viewers = await viewersGroup(tx, org);
+  if (seen.length)
+    await tx
+      .insert(agentGrants)
+      .values(
+        seen.map((a) => ({
+          organizationId: org,
+          agentId: a.agentId,
+          groupId: viewers,
+          access: "viewer" as const,
+          grantedBy: "billing",
+        })),
+      )
+      .onConflictDoNothing();
+  await tx
+    .insert(groupMembers)
+    .values(
+      [...new Set(leaving.map((m) => m.userId))].map((userId) => ({
+        organizationId: org,
+        groupId: viewers,
+        userId,
+      })),
+    )
+    .onConflictDoNothing();
 };
 
 // Once Free has started: leaves seats past Free's limit, keeping each
@@ -317,6 +393,7 @@ export const switchToFree = async (
               eq(groupMembers.userId, m.userId),
             ),
           );
+      await keepViewing(tx, org, leaving);
     }
     const paused = await customEnvironmentAgents(tx);
     await audit(tx, {
@@ -427,6 +504,23 @@ export const restoreRoles = (
           })),
         )
         .onConflictDoNothing();
+    const [viewers] = await tx
+      .select({ id: groups.id })
+      .from(groups)
+      .where(
+        and(eq(groups.organizationId, org), eq(groups.slug, VIEWERS.slug)),
+      );
+    if (viewers && rows.length)
+      await tx
+        .delete(groupMembers)
+        .where(
+          and(
+            eq(groupMembers.groupId, viewers.id),
+            inArray(groupMembers.userId, [
+              ...new Set(rows.map((r) => r.userId)),
+            ]),
+          ),
+        );
     await tx.delete(demotedSeats).where(eq(demotedSeats.organizationId, org));
     const people = new Set(rows.map((r) => r.userId)).size;
     await audit(tx, {

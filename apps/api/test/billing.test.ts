@@ -1205,7 +1205,7 @@ describe("moving from Team down to Free", () => {
     });
     expect(badPick.status).toBe(422);
     expect(badPick.body.error).toBe(
-      "Pick only people who have a developer or operator seat now.",
+      "Pick only people who currently have a developer or operator seat.",
     );
     const cancelled = await shop.owner.call(planPath, {
       body: {
@@ -1236,7 +1236,9 @@ describe("moving from Team down to Free", () => {
     };
     const mailTo = (address: string) =>
       sent
-        .filter((m) => m.to === address && m.subject.startsWith("Your access"))
+        .filter(
+          (m) => m.to === address && m.subject.startsWith("Your access to"),
+        )
         .map((m) => m.subject);
     const diEmail = (
       await withoutOrg(env, "test", (tx) =>
@@ -1250,7 +1252,7 @@ describe("moving from Team down to Free", () => {
     await runPlanChanges(env, new Date(end - 2 * DAY));
     await runPlanChanges(env, new Date(end - DAY));
     expect(mailTo(diEmail)).toEqual([
-      "Your access in Shrinkco changes on December 26, 2026",
+      "Your access to Shrinkco changes on December 26, 2026",
     ]);
     expect((await waiting())[0]!.warnedAt).not.toBeNull();
 
@@ -1283,10 +1285,46 @@ describe("moving from Team down to Free", () => {
           .from(demotedSeats),
       ),
     ).toEqual([{ userId: di.userId, groupId: developers }]);
-    const ownerEmail = sent.find(
-      (m) => m.subject === "Shrinkco is now on the Free plan",
+    // Di keeps viewer access to every agent Developers could see.
+    const viewing = () =>
+      withOrg(env, orgId(shop.org), async (tx) => {
+        const [viewers] = await tx
+          .select({ id: groups.id })
+          .from(groups)
+          .where(eq(groups.slug, "free-viewers"));
+        return {
+          members: (
+            await tx
+              .select({ userId: groupMembers.userId })
+              .from(groupMembers)
+              .where(eq(groupMembers.groupId, viewers!.id))
+          ).map((m) => m.userId),
+          grants: (
+            await tx
+              .select({
+                agentId: agentGrants.agentId,
+                access: agentGrants.access,
+              })
+              .from(agentGrants)
+              .where(eq(agentGrants.groupId, viewers!.id))
+          ).sort((x, y) => x.agentId.localeCompare(y.agentId)),
+        };
+      });
+    const agentIds = (
+      await withOrg(env, orgId(shop.org), (tx) =>
+        tx.select({ id: agents.id }).from(agents),
+      )
+    )
+      .map((x) => x.id)
+      .sort();
+    expect(await viewing()).toEqual({
+      members: [di.userId],
+      grants: agentIds.map((agentId) => ({ agentId, access: "viewer" })),
+    });
+    const ownerEmail = sent.find((m) => m.subject === "Shrinkco moved to Free");
+    expect(ownerEmail?.text).toContain(
+      "1 person moved to viewer: Di Seat. Upgrade to Team any time to restore their previous role in one click.",
     );
-    expect(ownerEmail?.text).toContain("1 person is now a viewer: Di Seat.");
     expect(ownerEmail?.text).toContain(
       "Paused because they use a custom environment: styled.",
     );
@@ -1308,7 +1346,7 @@ describe("moving from Team down to Free", () => {
     expect(paused.body.error).toEqual({
       code: "agent_paused",
       message:
-        "styled is paused because it uses a custom environment, which needs the Team plan. It resumes when the organization is on Team again.",
+        "styled is paused because it uses a custom environment, which requires the Team plan. Upgrade to Team to resume automatically, or remove the custom setup in code.",
     });
     expect(
       (
@@ -1338,6 +1376,7 @@ describe("moving from Team down to Free", () => {
         .where(eq(groupMembers.groupId, developers)),
     );
     expect(back.map((m) => m.userId)).toContain(di.userId);
+    expect((await viewing()).members).toEqual([]);
     expect(
       (
         await shop.keyed.call(`/v1/orgs/${shop.org}/cases`, {

@@ -592,7 +592,7 @@ export const billingRoutes = new OpenAPIHono<{
       const current = readPlan(customer);
       if (current.name !== "team")
         throw new HTTPException(409, {
-          message: "Only Team moves down to Free.",
+          message: "Only organizations on Team can switch to Free.",
         });
       const end =
         current.change?.at ??
@@ -640,7 +640,7 @@ export const billingRoutes = new OpenAPIHono<{
       if (!plan) throw off();
       if (!plan.started || plan.seats !== null)
         throw new HTTPException(409, {
-          message: "Previous roles can be restored on the Team plan.",
+          message: "Previous roles can only be restored on the Team plan.",
         });
       const people = await restoreRoles(c.env, c.var.org, {
         actorType: "person",

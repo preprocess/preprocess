@@ -222,7 +222,7 @@ export const createCase = async (
       throw new ApiError(
         409,
         "agent_paused",
-        `${agent.slug} is paused because it uses a custom environment, which needs the Team plan. It resumes when the organization is on Team again.`,
+        `${agent.slug} is paused because it uses a custom environment, which requires the Team plan. Upgrade to Team to resume automatically, or remove the custom setup in code.`,
       );
 
     await refuseOverLimit(tx);
