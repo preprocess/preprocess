@@ -114,7 +114,11 @@ describe("MCP servers and the organization's connection", () => {
     const registered = await call(a, "PUT", "/v1/orgs/{org}/mcp-servers/crm", {
       url: "https://crm.test/mcp",
     });
-    expect(registered.body).toEqual({ slug: "crm", auth: "oauth" });
+    expect(registered.body).toEqual({
+      slug: "crm",
+      auth: "oauth",
+      transport: "streamable_http",
+    });
   });
 
   it("holds a deployment that uses an ungranted server until it is granted", async () => {

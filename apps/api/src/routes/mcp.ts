@@ -26,6 +26,7 @@ import {
 import type { Env } from "../env.ts";
 import {
   listTools,
+  detectServer,
   McpError,
   mcpSession,
   pkce,
@@ -38,13 +39,34 @@ import {
 import { AGENT_SLUG, syncAgents } from "../deploy.ts";
 
 type Ctx = { Bindings: Env; Variables: OrgVariables };
-export const mcpRoutes = new OpenAPIHono<Ctx>();
+export const mcpRoutes = new OpenAPIHono<Ctx>({
+  defaultHook: (result, c) => {
+    if (!result.success)
+      return c.json(
+        {
+          error: {
+            code: "invalid_request",
+            message: result.error.issues
+              .map((i) => `${i.path.join(".") || "body"}: ${i.message}`)
+              .join("; "),
+          },
+        },
+        400,
+      );
+  },
+});
+
+const Transport = z.enum(["streamable_http", "sse"]).openapi({
+  description:
+    "How Preprocess reaches the server, detected at registration: streamable HTTP, or the deprecated HTTP+SSE transport when the server only speaks that. Read-only.",
+});
 
 const McpServer = z
   .object({
     slug: z.string(),
     url: z.string(),
     auth: z.enum(["none", "oauth"]),
+    transport: Transport,
     agents: z
       .array(z.string())
       .openapi({ description: "Slugs of the agents granted this server" }),
@@ -117,6 +139,7 @@ mcpRoutes.openapi(
           slug: s.slug,
           url: s.url,
           auth: s.auth,
+          transport: s.transport,
           agents: grants.filter((g) => g.serverId === s.id).map((g) => g.slug),
           connection: connection
             ? {
@@ -144,7 +167,12 @@ mcpRoutes.openapi(
       body: {
         content: {
           "application/json": {
-            schema: z.object({ url: z.url({ protocol: /^https?$/ }) }),
+            schema: z.object({
+              url: z.url({
+                protocol: /^https$/,
+                error: "MCP server URLs must be full https:// URLs",
+              }),
+            }),
           },
         },
       },
@@ -157,6 +185,7 @@ mcpRoutes.openapi(
             schema: z.object({
               slug: z.string(),
               auth: z.enum(["none", "oauth"]),
+              transport: Transport,
             }),
           },
         },
@@ -173,22 +202,23 @@ mcpRoutes.openapi(
       });
     // A server that refuses an unauthenticated session wants an OAuth
     // sign-in; one that accepts it needs no connection.
-    const auth = await mcpSession(url).then(
-      () => "none" as const,
-      (error: unknown) =>
-        error instanceof Unauthorized ? ("oauth" as const) : mcpFailure(error),
-    );
+    const { auth, transport } = await detectServer(url).catch(mcpFailure);
     await withOrg(c.env, c.var.org, async (tx) => {
       const [existing] = await tx
         .select()
         .from(mcpServers)
         .where(eq(mcpServers.slug, slug));
-      if (existing?.url === url && existing.auth === auth) return;
+      if (
+        existing?.url === url &&
+        existing.auth === auth &&
+        existing.transport === transport
+      )
+        return;
       const id = existing?.id ?? newId("mcpServer");
       if (existing) {
         await tx
           .update(mcpServers)
-          .set({ url, auth, oauthClient: null })
+          .set({ url, auth, transport, oauthClient: null })
           .where(eq(mcpServers.id, id));
         await tx.delete(mcpConnections).where(eq(mcpConnections.serverId, id));
       } else
@@ -198,6 +228,7 @@ mcpRoutes.openapi(
           slug,
           url,
           auth,
+          transport,
           createdBy: actor(c.var.caller).actorId,
         });
       await audit(tx, {
@@ -205,10 +236,10 @@ mcpRoutes.openapi(
         action: existing ? "mcp_server.updated" : "mcp_server.created",
         targetType: "mcp_server",
         targetId: id,
-        data: { server: slug, url, auth },
+        data: { server: slug, url, auth, transport },
       });
     });
-    return c.json({ slug, auth }, 200);
+    return c.json({ slug, auth, transport }, 200);
   },
 );
 
@@ -362,12 +393,15 @@ mcpRoutes.openapi(
     const redirectUri = callbackUrl(c.env);
     let client = server.oauthClient;
     if (!client) {
-      const resourceMetadata = await mcpSession(server.url).then(
-        () => undefined,
-        (error: unknown) =>
-          error instanceof Unauthorized
-            ? error.resourceMetadata
-            : mcpFailure(error),
+      const resourceMetadata = await mcpSession(
+        server.url,
+        server.transport,
+        undefined,
+        () => Promise.resolve(undefined),
+      ).catch((error: unknown) =>
+        error instanceof Unauthorized
+          ? error.resourceMetadata
+          : mcpFailure(error),
       );
       client = await registerClient(
         server.url,

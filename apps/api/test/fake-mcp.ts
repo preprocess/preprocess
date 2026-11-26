@@ -11,7 +11,62 @@ type Code = { challenge: string; redirectUri: string; clientId: string };
 const codes = new Map<string, Code>();
 const access = new Set<string>();
 const refresh = new Set<string>();
-export const seen: { authorization: string[] } = { authorization: [] };
+export const seen: { authorization: string[]; foreign: number } = {
+  authorization: [],
+  foreign: 0,
+};
+
+// A legacy HTTP+SSE server (no auth): GET opens the stream, whose first
+// event names where to POST, and replies arrive on the stream. `/sse` is
+// well behaved, `/sse-foreign` points its endpoint at another origin, and
+// `/sse-silent` never answers.
+const FOREIGN = "https://elsewhere.test";
+const streams = new Map<string, WritableStreamDefaultWriter<Uint8Array>>();
+const encoder = new TextEncoder();
+
+const openStream = (endpoint: (session: string) => string) => {
+  const session = randomUUID();
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  streams.set(session, writer);
+  void writer.write(
+    encoder.encode(`event: endpoint\ndata: ${endpoint(session)}\n\n`),
+  );
+  return new Response(readable, {
+    headers: { "content-type": "text/event-stream" },
+  });
+};
+
+const sseMessage = async (request: Request, url: URL) => {
+  const writer = streams.get(url.searchParams.get("session") ?? "");
+  if (!writer) return new Response("no such session", { status: 404 });
+  const body = await request.json<{ id?: number; method: string }>();
+  const result =
+    body.method === "initialize"
+      ? {
+          protocolVersion: "2024-11-05",
+          capabilities: { tools: {} },
+          serverInfo: { name: "legacy", version: "1" },
+        }
+      : body.method === "tools/list"
+        ? {
+            tools: [
+              {
+                name: "lookup_order",
+                description: "Find an order",
+                inputSchema: { type: "object" },
+              },
+            ],
+          }
+        : null;
+  if (body.id !== undefined && url.searchParams.get("silent") === null)
+    void writer.write(
+      encoder.encode(
+        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: body.id, result })}\n\n`,
+      ),
+    );
+  return new Response("Accepted", { status: 202 });
+};
 
 const json = (body: unknown, init: ResponseInit = {}) =>
   new Response(JSON.stringify(body), {
@@ -98,8 +153,15 @@ const rpc = async (request: Request) => {
 
 export const fakeMcp = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
+  if (url.origin === FOREIGN) {
+    seen.foreign++;
+    return new Response(null, { status: 202 });
+  }
   if (url.origin !== ORIGIN)
     return new Response("no such host", { status: 502 });
+  // The legacy endpoints answer only GET with a stream, as such servers do.
+  if (url.pathname.startsWith("/sse") && request.method !== "GET")
+    return new Response("method not allowed", { status: 405 });
   switch (url.pathname) {
     case "/.well-known/oauth-protected-resource":
       return json({
@@ -160,6 +222,17 @@ export const fakeMcp = async (request: Request): Promise<Response> => {
       return new Response(null, { status: 204 });
     case "/mcp":
       return rpc(request);
+    // Test hook: what the legacy endpoints saw, read from the Worker.
+    case "/test/seen":
+      return json({ foreign: seen.foreign });
+    case "/sse":
+      return openStream((session) => `/messages?session=${session}`);
+    case "/sse-foreign":
+      return openStream((session) => `${FOREIGN}/messages?session=${session}`);
+    case "/sse-silent":
+      return openStream((session) => `/messages?session=${session}&silent`);
+    case "/messages":
+      return sseMessage(request, url);
     default:
       return new Response("not found", { status: 404 });
   }
