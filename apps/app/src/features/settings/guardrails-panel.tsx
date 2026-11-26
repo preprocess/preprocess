@@ -7,6 +7,7 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
+import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { XIcon } from "@preprocess/ui/lib/icons";
 import { MODEL_CATALOG, MODELS } from "@preprocess/sdk/protocol";
@@ -277,29 +278,40 @@ function Requests({ highlight }: { highlight?: string }) {
   const count = (s: Status) => rows.filter((r) => r.status === s).length;
   const shown = rows.filter((r) => r.status === status);
 
+  const statusTabs = (
+    <Tabs
+      aria-label="Request status"
+      onSelect={(index) => setStatus(STATUSES[index]?.value ?? "pending")}
+      selectedIndex={Math.max(
+        0,
+        STATUSES.findIndex((option) => option.value === status),
+      )}
+    >
+      {STATUSES.map((option, index) => (
+        <TabsItem
+          index={index}
+          key={option.value}
+          label={`${option.label} ${count(option.value)}`}
+        />
+      ))}
+    </Tabs>
+  );
+
   return (
     <SettingsSection
-      actions={
-        <Tabs
-          aria-label="Request status"
-          onSelect={(index) => setStatus(STATUSES[index]?.value ?? "pending")}
-          selectedIndex={Math.max(
-            0,
-            STATUSES.findIndex((option) => option.value === status),
-          )}
-        >
-          {STATUSES.map((option, index) => (
-            <TabsItem
-              index={index}
-              key={option.value}
-              label={`${option.label} ${count(option.value)}`}
-            />
-          ))}
-        </Tabs>
-      }
+      actions={<div className="hidden md:block">{statusTabs}</div>}
       description="Asks to loosen a guardrail, from Developers and from deployments that need more than the guardrails allow."
       title={sectionTitle("requests")}
     >
+      {/* Narrow screens: the tabs take their own row under the title,
+          scrolling sideways when they don't fit. */}
+      <ScrollArea
+        className="md:hidden"
+        orientation="horizontal"
+        viewportClassName="scroll-fade-x"
+      >
+        <div className="w-max">{statusTabs}</div>
+      </ScrollArea>
       {requests.isError ? (
         <SettingsError error={requests.error} />
       ) : requests.isPending ? (
