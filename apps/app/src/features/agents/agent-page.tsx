@@ -206,6 +206,8 @@ export function DeploymentStatus({
       return <SettingsStatus state="warning">Waiting</SettingsStatus>;
     case "failed":
       return <SettingsStatus state="error">Failed</SettingsStatus>;
+    case "building":
+      return <SettingsStatus state="waiting">Building</SettingsStatus>;
   }
 }
 

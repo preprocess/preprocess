@@ -11,6 +11,7 @@ import type {
   MemoryRule,
   StartCase,
 } from "./env.ts";
+import { layerBuilderName, ownsLayer, type LayerJob } from "./layers.ts";
 import type { WriteResult } from "./schema-state.ts";
 
 export { CaseRuntime } from "./case-runtime.ts";
@@ -145,6 +146,22 @@ export default class Runtime extends WorkerEntrypoint<Env> {
   // it, returning the SHA-256 every load is checked against.
   putBundle(deployment: DeploymentRef, bundle: Bundle): Promise<string> {
     return storeBundle(this.env, deployment, bundle);
+  }
+
+  // A deploy's custom environment (spec 3), built on the largest sandbox
+  // class; the result comes back through the platform's sandboxLayerBuilt.
+  async queueSandboxLayer(job: LayerJob, deployment: DeploymentRef) {
+    await this.env.SANDBOX_LARGE.getByName(
+      await layerBuilderName(job),
+    ).queueLayer({ job, waiting: [deployment] });
+  }
+
+  // Garbage collection of a layer no live deployment names. Only keys under
+  // the organization's own prefix are deleted; it answers whether it was.
+  async deleteSandboxLayer(organizationId: string, key: string) {
+    if (!ownsLayer(organizationId, key)) return false;
+    await this.env.BUNDLES.delete(key);
+    return true;
   }
 
   // The deployed Worker's manifest, read through the same dispatch path a

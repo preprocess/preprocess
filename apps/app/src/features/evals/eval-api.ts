@@ -71,7 +71,7 @@ export type EvalRunDetail = EvalRun & {
 
 export type AgentDeploymentSummary = {
   readonly id: string;
-  readonly status: "ready" | "waiting" | "failed";
+  readonly status: "ready" | "waiting" | "failed" | "building";
   readonly production: boolean;
   readonly model: string;
   readonly git: { branch: string | null; commit: string | null };

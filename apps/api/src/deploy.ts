@@ -50,7 +50,9 @@ import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
 import { markSeat } from "./metering.ts";
 import { effectiveNetwork, permits } from "./network.ts";
+import { customImagesAllowed } from "./plan.ts";
 import { sandboxMaxSize, sizeAllowed } from "./sandbox.ts";
+import { layerBuilt } from "./sandbox-layers.ts";
 import { nextFire, schedulerName } from "./scheduler.ts";
 import {
   agentOverrideValues,
@@ -415,16 +417,19 @@ export const syncDeployment = async (
         approves: g.approves,
       })),
     );
+  const layer = deployment.sandboxLayer?.status;
   const status =
-    deployment.status === "failed"
+    deployment.status === "failed" || layer === "failed"
       ? "failed"
-      : waiting.length ||
-          waitingMcp.length ||
-          waitingNetwork.length ||
-          waitingGroups.length ||
-          waitingSandbox
-        ? "waiting"
-        : "ready";
+      : layer === "building"
+        ? "building"
+        : waiting.length ||
+            waitingMcp.length ||
+            waitingNetwork.length ||
+            waitingGroups.length ||
+            waitingSandbox
+          ? "waiting"
+          : "ready";
   const waitingFor: WaitingFor = {
     ...(waiting.length && { secrets: waiting }),
     ...(waitingMcp.length && { mcp: waitingMcp }),
@@ -706,6 +711,13 @@ export const deploy = async (
     }
   }
 
+  const setup = manifest.sandbox?.setup;
+  if (setup && !(await customImagesAllowed(env, org)))
+    throw new HTTPException(403, {
+      message:
+        "custom sandbox environments (sandbox.setup) need the Team plan or above; presets and sandbox.packages work on every plan",
+    });
+
   await withOrg(env, org, async (tx) => {
     const slugs = manifest.groups ?? [];
     const known = slugs.length
@@ -726,6 +738,10 @@ export const deploy = async (
       status: "ready",
       bundleSha256,
       sdkVersion: manifest.sdk.version,
+      ...(setup && {
+        status: "building" as const,
+        sandboxLayer: { status: "building" as const },
+      }),
       environment:
         input.git.branch === agent.productionBranch ? "production" : "preview",
       manifest,
@@ -752,6 +768,30 @@ export const deploy = async (
   });
   const waiting = await withOrg(env, org, (tx) => syncDeployment(tx, org, id));
   const production = input.git.branch === agent.productionBranch;
+  // The build reports back through Platform.sandboxLayerBuilt, which
+  // promotes a production deployment once nothing else holds it.
+  if (setup)
+    await env.RUNTIME.queueSandboxLayer(
+      {
+        organizationId: org,
+        agentId: agent.id,
+        preset: manifest.sandbox!.preset,
+        setup,
+        network: await withOrg(env, org, (tx) =>
+          effectiveNetwork(tx, agent.id),
+        ),
+      },
+      { organizationId: org, agentId: agent.id, deploymentId: id },
+    ).catch((error: unknown) =>
+      layerBuilt(env, {
+        deployment: {
+          organizationId: org,
+          agentId: agent.id,
+          deploymentId: id,
+        },
+        result: { error: `the build could not start: ${String(error)}` },
+      }),
+    );
   // A preview runs its own scheduler; each fire checks the deployment is
   // still live and the schedule may run on previews.
   if (!production && manifest.schedules?.length)
@@ -762,7 +802,7 @@ export const deploy = async (
       schedules: manifest.schedules,
     });
   const cleared =
-    waiting.length === 0 && production
+    waiting.length === 0 && production && !setup
       ? await promote(env, org, agent.id, id, actor)
       : [];
   const deployed = await getDeployment(env, org, agent.id, id);
@@ -784,6 +824,7 @@ export const promote = async (
       .select({
         environment: deployments.environment,
         manifest: deployments.manifest,
+        sandboxLayer: deployments.sandboxLayer,
       })
       .from(deployments)
       .where(
@@ -795,6 +836,13 @@ export const promote = async (
   if (target.environment !== "production")
     throw new HTTPException(409, {
       message: "only a deployment from the production branch can be promoted",
+    });
+  if (target.sandboxLayer && target.sandboxLayer.status !== "ready")
+    throw new HTTPException(409, {
+      message:
+        target.sandboxLayer.status === "building"
+          ? "the deployment's custom sandbox environment is still building"
+          : "the deployment's custom sandbox environment failed to build",
     });
   // An older deployment never brings back a revoked grant or an old value.
   const waiting = await withOrg(env, org, (tx) =>
@@ -860,7 +908,23 @@ const view = (
   source: d.source,
   tools: (d.manifest as Manifest).tools.map((t) => t.name),
   secrets: (d.manifest as Manifest).secrets,
-  warnings: (d.manifest as Manifest).warnings ?? [],
+  warnings: [
+    ...((d.manifest as Manifest).warnings ?? []),
+    ...(d.sandboxLayer?.status === "ready" && d.sandboxLayer.warning
+      ? [d.sandboxLayer.warning]
+      : []),
+  ],
+  sandboxEnvironment: d.sandboxLayer
+    ? d.sandboxLayer.status === "ready"
+      ? { status: "ready" as const, bytes: d.sandboxLayer.bytes }
+      : d.sandboxLayer.status === "failed"
+        ? {
+            status: "failed" as const,
+            error: d.sandboxLayer.error,
+            log: d.sandboxLayer.log ?? null,
+          }
+        : { status: "building" as const }
+    : null,
   createdAt: d.createdAt.toISOString(),
   promotedAt: d.promotedAt?.toISOString() ?? null,
 });
