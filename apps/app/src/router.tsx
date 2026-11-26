@@ -11,10 +11,11 @@ export function getRouter() {
     // Revisiting a page within 15 s reuses its loader data; any write the
     // browser makes marks it stale first (lib/data-changed.ts).
     defaultStaleTime: 15_000,
-    // Hovering or focusing a link for 100 ms loads its page; that data
-    // serves the click for 30 s.
+    // Resting on or focusing a link for 200 ms loads its page; that data
+    // serves the click for 30 s. A pointer crossing the sidebar on its way
+    // elsewhere passes each item faster, so it preloads none of them.
     defaultPreload: "intent",
-    defaultPreloadDelay: 100,
+    defaultPreloadDelay: 200,
     defaultPreloadStaleTime: 30_000,
   });
 }

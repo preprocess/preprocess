@@ -9,6 +9,8 @@ import {
   type MarkReadSelector,
 } from "./notification";
 import { staleAfterWrite } from "../../lib/data-changed";
+import type { Case } from "../agent-cases/case";
+import { caseById } from "../agent-cases/case-api";
 
 /**
  * The inbox from the API (GET /v1/orgs/{org}/inbox), mapped onto the items
@@ -218,29 +220,48 @@ function toItem(item: ApiInboxItem): InboxItem {
   }
 }
 
-export const loadApiInbox = createServerFn({ method: "GET" }).handler(
-  async (): Promise<InboxLoad> => {
-    const asOf = new Date().toISOString();
-    try {
-      const { activeOrgJson } = await import("../../server/api.server");
-      const inbox = await activeOrgJson<ApiInbox>("/inbox");
-      const items = inbox.items.map(toItem);
-      return {
-        items,
-        unreadCount: unreadCount(items),
-        nextCursor: null,
-        asOf,
-        loadError: false,
-      };
-    } catch {
-      return {
-        items: [],
-        unreadCount: 0,
-        nextCursor: null,
-        asOf,
-        loadError: true,
-      };
-    }
+async function inboxLoad(): Promise<InboxLoad> {
+  const asOf = new Date().toISOString();
+  try {
+    const { activeOrgJson } = await import("../../server/api.server");
+    const inbox = await activeOrgJson<ApiInbox>("/inbox");
+    const items = inbox.items.map(toItem);
+    return {
+      items,
+      unreadCount: unreadCount(items),
+      nextCursor: null,
+      asOf,
+      loadError: false,
+    };
+  } catch {
+    return {
+      items: [],
+      unreadCount: 0,
+      nextCursor: null,
+      asOf,
+      loadError: true,
+    };
+  }
+}
+
+export const loadApiInbox = createServerFn({ method: "GET" }).handler(() =>
+  inboxLoad(),
+);
+
+/**
+ * The inbox page: the inbox and the cases its items link to, in one server
+ * function so the session and the organization's members are read once.
+ */
+export const liveInboxPage = createServerFn({ method: "GET" }).handler(
+  async (): Promise<InboxLoad & { cases: Case[] }> => {
+    const page = await inboxLoad();
+    const linked = new Set(
+      page.items.flatMap((item) =>
+        item.link?.kind === "case" ? [item.link.caseId] : [],
+      ),
+    );
+    const cases = await Promise.all([...linked].map(caseById));
+    return { ...page, cases: cases.filter((item) => item !== null) };
   },
 );
 
