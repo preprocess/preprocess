@@ -1,11 +1,4 @@
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyPresence,
-  EmptyTitle,
-} from "@preprocess/ui/components/empty";
+import { EmptyPresence } from "@preprocess/ui/components/empty";
 import { Button } from "@preprocess/ui/components/button";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { Spinner } from "@preprocess/ui/components/spinner";
@@ -23,7 +16,7 @@ import React, {
   useMemo,
 } from "react";
 
-import { TinCansArt } from "../empty-art";
+import { ChatEmpty } from "../chat-empty";
 import { ErrorMessage } from "./error-message";
 import { Markdown } from "./markdown";
 import { ThinkingTool } from "./tools/thinking-tool";
@@ -640,22 +633,7 @@ export const MessageList = memo(function MessageList({
   return (
     <div className={cn("relative min-h-0 flex-1", className)}>
       <EmptyPresence>
-        {normalizedMessages.length === 0 ? (
-          <Empty
-            key="chat-empty"
-            className="pointer-events-none absolute inset-0 z-[1] border-0 p-0"
-          >
-            <EmptyHeader className="pointer-events-auto group">
-              <EmptyMedia variant="graphic">
-                <TinCansArt />
-              </EmptyMedia>
-              <EmptyTitle>No messages yet</EmptyTitle>
-              <EmptyDescription>
-                Send a message to start this case.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : null}
+        {normalizedMessages.length === 0 ? <ChatEmpty /> : null}
       </EmptyPresence>
       <ScrollArea
         ref={containerRefCallback}
