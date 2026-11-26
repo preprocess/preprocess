@@ -26,22 +26,22 @@ An agent exists from its first deploy. There is no "new agent" button: the first
 
 `agent()` takes one object. Only `instructions` and `tools` are required.
 
-| Option           | What it declares                                                                                                                                     |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `instructions`   | What the agent does, in plain language. The model reads it at the start of every case.                                                               |
-| `model`          | One of the three supported agent models: Kimi K3.1 Pro, DeepSeek V4.1 Flash or Qwen 3.8 27B. The SDK's `Model` type lists their ids and the default. |
-| `reasoning`      | `low`, `medium` (the default) or `high`.                                                                                                             |
-| `tools`          | The tools the model may call, each with a description, a Zod input schema and a `run` function.                                                      |
-| `schema`         | The [output schema](/concepts/output-schema): the answer a case produces, its checks and its success condition.                                      |
-| `groups`         | The groups the code may wait on, tag or name as approvers. See [Groups and access](/concepts/groups-and-access).                                     |
-| `approval`       | Whether a person approves the case before it completes. Tools and fields take their own `approval`.                                                  |
-| `secrets`        | Organization secrets the code needs. Only the ones an Admin grants reach it.                                                                         |
-| `mcp`            | MCP servers the code calls, by the name the organization registered them under.                                                                      |
-| `network`        | Hosts the code may reach.                                                                                                                            |
-| `schedules`      | Cron schedules that start cases.                                                                                                                     |
-| `ocr`            | Whether files are turned into text before the first model call.                                                                                      |
-| `timeoutSeconds` | The wall clock for each run. A run that passes it fails.                                                                                             |
-| `toolRetries`    | How many times a tool that throws runs again. Tools marked `sideEffects` never do.                                                                   |
+| Option           | What it declares                                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `instructions`   | What the agent does, in plain language. The model reads it at the start of every case.                           |
+| `model`          | `deepseek-v4.1-flash` (the default), `deepseek-v4.1-flash-fast`, `kimi-k3.1-pro` or `qwen3.8-27b`.               |
+| `reasoning`      | `low`, `medium` (the default) or `high`.                                                                         |
+| `tools`          | The tools the model may call, each with a description, a Zod input schema and a `run` function.                  |
+| `schema`         | The [output schema](/concepts/output-schema): the answer a case produces, its checks and its success condition.  |
+| `groups`         | The groups the code may wait on, tag or name as approvers. See [Groups and access](/concepts/groups-and-access). |
+| `approval`       | Whether a person approves the case before it completes. Tools and fields take their own `approval`.              |
+| `secrets`        | Organization secrets the code needs. Only the ones an Admin grants reach it.                                     |
+| `mcp`            | MCP servers the code calls, by the name the organization registered them under.                                  |
+| `network`        | Hosts the code may reach.                                                                                        |
+| `schedules`      | Cron schedules that start cases.                                                                                 |
+| `ocr`            | Whether files are turned into text before the first model call.                                                  |
+| `timeoutSeconds` | The wall clock for each run. A run that passes it fails.                                                         |
+| `toolRetries`    | How many times a tool that throws runs again. Tools marked `sideEffects` never do.                               |
 
 <Callout title="Coming">
   The SDK also accepts `sandboxImage` and `evals: {onPush}`, and stores them as
@@ -52,7 +52,8 @@ An agent exists from its first deploy. There is no "new agent" button: the first
 
 All three are open-weight models, served through Baseten; there are no
 Anthropic, OpenAI or Gemini models and no bring-your-own provider keys. DeepSeek
-V4.1 Flash also comes in a fast variant.
+V4.1 Flash also comes in a fast variant. A deployment built with an older SDK
+that names a retired model runs on DeepSeek V4.1 Flash.
 
 <Callout title="Coming">
   Fine-tuning DeepSeek V4.1 Flash and Qwen 3.8 27B on your corrected cases, and

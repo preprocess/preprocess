@@ -26,11 +26,11 @@ grants, not a scatter of individual permissions.
 
 Everyone in an organization has exactly one fixed role.
 
-| Role   | Can                                                                                                                                                                          |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Owner  | Everything an Admin can, and owns the organization.                                                                                                                          |
-| Admin  | Manage members, groups and grants, secrets, API keys, webhooks, settings and guardrails; approve guardrail requests; archive agents; see every case and assign people to it. |
-| Member | Whatever their groups grant.                                                                                                                                                 |
+| Role   | Can                                                                                                                                                                                                                |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Owner  | Everything an Admin can, and owns the organization.                                                                                                                                                                |
+| Admin  | Manage members, groups and grants, secrets, API keys, webhooks, settings and guardrails; approve guardrail requests; deploy, promote and roll back agents; archive agents; see every case and assign people to it. |
+| Member | Whatever their groups grant. Deploying, promoting and rolling back need the Developers group.                                                                                                                      |
 
 Seeing every case doesn't let an Owner or Admin work one. To edit, rerun or
 complete a case, they need an operator group like anyone else.
@@ -82,8 +82,9 @@ isn't in it.
 ## API keys
 
 An organization API key belongs to the organization, not a person. It acts with
-an Admin's rights across the API and works every agent's cases. It can't
-approve: approving is a person's act. Owners and Admins create keys in
+an Admin's rights across the API, including deploying and promoting, which is
+what the deploy GitHub Action relies on, and it works every agent's cases. It
+can't approve: approving is a person's act. Owners and Admins create keys in
 Developers → Keys & webhooks, and each key is shown once.
 
 ## Identity

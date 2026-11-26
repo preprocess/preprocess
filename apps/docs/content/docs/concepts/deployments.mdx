@@ -79,7 +79,10 @@ organization doesn't have.
 ## Promote and roll back
 
 Promoting makes a production deployment the one that serves. Do it from the
-agent's Deployments page in the app, the API or MCP. Only deployments from the
+agent's Deployments page in the app, the API or MCP. Only Owners, Admins and
+members of the Developers group can promote or roll back, and the same goes for
+deploying; an organization API key can too, because it carries Admin rights. Any
+other Member is refused, and the refusal is audited. Only deployments from the
 production branch can be promoted; to ship a preview's change, merge it into
 `main` and deploy.
 
