@@ -1,0 +1,203 @@
+---
+title: Security and data handling
+description:
+  Tenant isolation, secret encryption, outbound network allowlists, sandbox
+  isolation, retention and the signed audit log.
+---
+
+Preprocess isolates every organization's data at the database, compute and
+storage layers, keeps secrets and MCP tokens out of model context, enforces
+outbound network allowlists outside agent code, and records security-relevant
+actions in a tamper-evident audit log.
+
+## Tenant isolation
+
+Every tenant-owned table in Postgres includes an `organization_id` column and
+enforces **row-level security** (`ENABLE ROW LEVEL SECURITY` and
+`FORCE ROW LEVEL SECURITY`). Policies match each row against the
+transaction-local setting `current_setting('app.org_id', true)`—if that setting
+is absent, the query returns zero rows.
+
+The API Worker connects to Postgres through two separate Hyperdrive bindings,
+both with query caching disabled so auth, API key revocation and role changes
+take effect immediately:
+
+- **`DB` (`preprocess_app` role, `NOBYPASSRLS`):** Used by all tenant-scoped
+  product queries through `withOrg`, which sets `app.org_id` for the
+  transaction.
+- **`DB_SYSTEM` (`preprocess_system` role, `BYPASSRLS`):** Used only by Better
+  Auth and explicit platform-wide background jobs (such as the daily audit
+  anchor and retention sweeps).
+
+Compute and storage are scoped by organization as well:
+
+- **Case runtime:** Each case runs in its own `CaseRuntime` Durable Object keyed
+  by organization, agent and case.
+- **Agent code:** Each deployment bundle is loaded into its own Dynamic Worker
+  isolate keyed by organization, agent, deployment, secrets version and network
+  rules hash.
+- **R2 objects:** Files, agent bundles, run captures and daily audit manifests
+  are stored under organization-prefixed keys.
+
+## Encrypted secrets and MCP OAuth tokens
+
+Organization secrets and MCP connection credentials are stored in Postgres using
+**AES-256-GCM envelope encryption** (`apps/api/src/crypto.ts`):
+
+1. Each organization gets a random 32-byte data encryption key (`org_keys`),
+   wrapped by the stage's `SECRETS_MASTER_KEY` stored in Cloudflare Secrets
+   Store.
+2. Each secret version is encrypted with the organization's data key, a fresh
+   12-byte random IV and authenticated additional data
+   (`organizationId|secretId|version`) binding the ciphertext to its exact row
+   and version.
+3. The case runtime Worker has no `SECRETS_MASTER_KEY` binding and cannot
+   decrypt secrets itself.
+
+### How secrets reach agent code
+
+When a case invokes an agent's tool, the API decrypts only the intersection of
+secrets the deployment declared and secrets explicitly granted to that agent,
+injects them into the Dynamic Worker's `env`, and writes a `secret.delivered`
+event to the audit log.
+
+Because each Dynamic Worker isolate ID includes a hash of the granted secret IDs
+and versions (`secretsVersion`), rotating a secret or revoking a grant
+immediately produces a new isolate ID on the next call. An isolate never
+outlives the grants it was loaded with.
+
+### How MCP tokens stay hidden
+
+MCP connections are exposed to agent code through an `McpBroker` capability
+(`apps/runtime/src/mcp.ts`) whose bound props fix the organization, agent and
+deployment—agent code cannot read or modify those props. When a tool calls an
+MCP server, the API Worker looks up and attaches the organization's OAuth or
+bearer token server-side.
+
+Neither secret values nor MCP tokens are placed in model prompts, case threads,
+run captures or logs.
+
+## Outbound network allowlists
+
+Every `fetch()` and `connect()` call made by an agent's Dynamic Worker—and every
+HTTP or HTTPS request made inside a case sandbox container—passes through the
+platform's `Outbound` gateway (`globalOutbound`), outside customer code's
+control.
+
+- **Patterns:** Rules match either an exact hostname (`api.example.com`) or a
+  wildcard subdomain (`*.example.com`, which matches both `example.com` and its
+  subdomains).
+- **Organization and agent layers:** Owners and Admins configure
+  organization-wide `allow` and `block` lists in **Settings → Organization →
+  Guardrails**. Per-agent network rules can only narrow the organization's
+  rules: block lists combine, and allow lists intersect. If an agent's allow
+  list shares no host with the organization's allow list, no outbound host is
+  permitted.
+- **Enforcement:** Any disallowed request is rejected with HTTP `403` and
+  `{ "error": "blocked_by_network_rules" }`. Trusted platform bindings (such as
+  the `McpBroker`) do not pass through `globalOutbound`.
+- **Loosening guardrails:** When a deployment declares a `network` host (or a
+  secret, MCP server or sandbox size) not yet permitted, the deployment stays in
+  `waiting` and automatically files a guardrail request for an Owner or Admin to
+  approve or reject.
+
+## Case sandbox isolation
+
+Agents that declare a `sandbox` get a dedicated Linux container per case
+(`apps/runtime/src/sandbox.ts`), named `<org>:<agent>:<case>` in the Durable
+Object class for its size (`small`, `medium` or `large`):
+
+- Containers start on the agent's first sandbox call, run as an unprivileged
+  `sandbox` user (`1000:1000`) inside `/workspace`, have a maximum single-start
+  lifetime of 2 hours, and are destroyed when the case closes.
+- Images come only from platform presets (`standard`, `node`, `python` and
+  `python-data`) plus optional packages or Team+ custom setup layers built from
+  those presets—never an arbitrary user-supplied container image.
+- Outbound HTTP and HTTPS traffic from the container goes through the same
+  `Outbound` network guardrail as the agent's Dynamic Worker.
+
+## Retention controls
+
+Organizations can configure automatic deletion periods for closed cases and
+their artifacts via the retention API (`GET /v1/orgs/{org}/retention` and
+`PUT /v1/orgs/{org}/retention`). Each category defaults to `null` (keep forever)
+or can be set to a whole number of days from **7 to 36,500** after a case closes
+(`completed`, `failed` or `cancelled`):
+
+| Field            | What is purged after N days                                                                              |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `documentsDays`  | Uploaded case files in R2 and file metadata                                                              |
+| `runCaptureDays` | Stored run capture artifacts                                                                             |
+| `runLogsDays`    | Stored run logs and summaries                                                                            |
+| `casesDays`      | The entire closed case, its files, run capture, review events, approvals and unaccepted memory proposals |
+
+Key rules:
+
+- **Open cases are never touched** by retention sweeps.
+- **Role boundaries:** Only **Owners** can shorten a retention period, end
+  keep-forever or delete an individual closed case by hand
+  (`DELETE /v1/orgs/{org}/cases/{id}`). **Admins** can lengthen a period.
+- **Daily sweep:** Runs at `00:20 UTC` in bounded batches, recording one
+  `retention.purged` audit event per organization and category with counts
+  (never object contents).
+- **Audit events are never deleted** by retention policies. Accepted memory
+  rules and exports already taken are also not altered when a case is deleted.
+
+<Callout title="Coming soon">
+  The Organization Settings UI for configuring retention periods is not built
+  yet. Use `GET /v1/orgs/{org}/retention`, `PUT /v1/orgs/{org}/retention` and
+  `DELETE /v1/orgs/{org}/cases/{id}` through the API today.
+</Callout>
+
+## Audit log and verification
+
+Every security-relevant action—authentication, role and group changes, secret
+creation and delivery, deployments, promotions, guardrail updates, retention
+changes, billing changes and case deletions—writes an append-only row to
+`audit_events` inside the same Postgres transaction as the change itself.
+
+### Append-only hash chain
+
+- **Database immutability:** A Postgres trigger (`audit_events_immutable`)
+  rejects `UPDATE`, `DELETE` and `TRUNCATE` on `audit_events`. The only
+  exception is the dedicated `preprocess_audit_purge` role deleting events older
+  than one year for a deleted organization.
+- **Per-organization hash chain:** Events receive a gap-free sequence number
+  (`seq`) serialized by the organization's `audit_heads` row. Each event's hash
+  is `SHA-256(prev_hash || JCS(event))`, where `JCS` is RFC 8785 JSON
+  Canonicalization. Audit event `data` records IDs, names and paths—never answer
+  values, file contents or secrets.
+
+### Signed daily R2 manifests
+
+Every day at `00:20 UTC`, the API anchors each organization's previous UTC day
+into the `Audit` R2 bucket (`preprocess-audit-<stage>`):
+
+- `audit/{org}/{yyyy}/{mm}/{dd}/events.ndjson`: Canonical events for that day in
+  `seq` order.
+- `audit/{org}/{yyyy}/{mm}/{dd}/manifest.json`: The day's `firstSeq`, `lastSeq`,
+  `count`, `prevHash`, `headHash`, `eventsSha256` and an **Ed25519 signature**.
+  Even a day with zero events receives a signed manifest so tail truncation
+  cannot go unnoticed.
+
+The `Audit` bucket enforces a **1-year R2 object retention lock** on the
+`audit/` prefix on production, staging and self-hosted stages.
+
+### Reading and verifying
+
+- **List events:** Owners and Admins can inspect events in **Settings →
+  Organization → Audit logs** or via `GET /v1/orgs/{org}/audit-events` (included
+  on all plans).
+- **Verify chain and manifests:** Owners and Admins can call
+  `POST /v1/orgs/{org}/audit-events/verify`, which recomputes every hash in
+  Postgres from sequence 1 and checks every signed daily R2 manifest against the
+  chain.
+- **Independent verification:** `GET /v1/audit/keys` publishes the Ed25519
+  public key (`keyId`, `alg`, `x`) so you can verify exported manifests
+  independently.
+- **Audit log export:** Included on Enterprise and licensed self-hosted plans.
+
+<Callout title="Coming soon">
+  Enterprise identity controls—SSO, directory sync (SCIM), synced groups and
+  custom roles—are gated in plan entitlements but not yet wired in the app.
+</Callout>

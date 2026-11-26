@@ -1,0 +1,123 @@
+---
+title: Environments and regions
+description:
+  How agent deployment environments (production vs. preview) and platform
+  install stages and regions work.
+---
+
+Preprocess separates two layers of environment management: **agent deployment
+environments** (how your team ships and tests individual agents inside an
+organization) and **platform install stages and regions** (where the Preprocess
+platform itself runs on Cloudflare). Keeping them separate lets you iterate on
+agents across branches without touching infrastructure, and place your platform
+data without changing agent code.
+
+## Agent deployment environments
+
+Every deployment of an agent is immutable and belongs to either `production` or
+`preview`, determined by the Git branch it was deployed from.
+
+### Production vs. preview branches
+
+Each agent stores a `productionBranch` (defaulting to `main`). When you deploy
+via `preprocess deploy` or the GitHub App:
+
+- **Production deployments** come from the agent's `productionBranch`. If the
+  deployment has no unmet grants or guardrail requests and no custom sandbox
+  environment still building, Preprocess promotes it automatically to serve
+  production traffic. If it declares a custom sandbox environment
+  (`sandbox.setup`), it starts in `building` and promotes automatically once the
+  build finishes and all grants are in place.
+- **Preview deployments** come from any other branch. Previews never replace the
+  live production deployment. You test them by passing `--deployment <id>` to
+  `preprocess cases create` or `preprocess evals run`, or `deploymentId` in the
+  API.
+- **Preview schedules:** Schedules declared in agent code run on production by
+  default. A schedule only fires on a preview deployment when that schedule sets
+  `previews: true` and the deployment is still the newest live deployment for
+  its branch.
+
+### Promoting and rolling back
+
+Because every deployment's bundle is stored in R2 and loaded on demand as a
+Dynamic Worker, promotion and rollback are pointer updates rather than rebuilds.
+
+- **Promote:** Call
+  `POST /v1/orgs/{org}/agents/{agent}/deployments/{id}/promote` (or promote from
+  the agent's Deployments view) to make any ready deployment from the production
+  branch live. Preview-branch deployments cannot be promoted directly—merge to
+  the production branch first.
+- **Rollback:** Promote an earlier deployment from the production branch.
+  Preprocess rechecks every secret grant, MCP server grant, network rule, group
+  grant and sandbox size cap before promotion succeeds, so rolling back never
+  restores a revoked secret or loosened guardrail.
+- **Dashboard overrides:** Promoting a deployment clears any dashboard setting
+  overrides on that agent so the promoted code is the source of truth again, and
+  replaces the agent's production scheduler with that deployment's schedules.
+
+<Callout title="Coming soon">
+  `evals.onPush` is accepted in the agent manifest schema, but automatic eval
+  runs on Git push are not wired yet. Run eval suites against a preview or
+  production deployment with `preprocess evals run` or the API.
+</Callout>
+
+## Platform install stages
+
+At the infrastructure layer, the Alchemy stack (`infra/src/stages.ts` and
+`infra/alchemy.run.ts`) deploys the entire Preprocess platform as a named
+**stage**:
+
+| Stage                           | Purpose                                                                                       | Database                                                                | On destroy                             |
+| ------------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------- |
+| `production`                    | Preprocess Cloud production (`APP_DOMAIN`, `DOCS_DOMAIN`)                                     | Dedicated managed Postgres, migrated, never seeded                      | Data protected                         |
+| `staging`                       | Preprocess Cloud staging, deployed on every push to `main` and smoke-tested before production | Long-lived `staging` branch, migrated, never seeded                     | Data protected                         |
+| `pr-<number>`                   | Isolated pull-request preview                                                                 | Per-PR database branch, migrated and seeded                             | Everything removed                     |
+| `selfhost` or `selfhost-<name>` | Customer self-hosted install in your Cloudflare account                                       | Your Postgres (`DATABASE_URL`), bootstrapped and migrated, never seeded | Data protected; database never dropped |
+| `development`                   | Local `pnpm dev` only (never deployed)                                                        | Local Postgres                                                          | Local only                             |
+
+On Preprocess Cloud, every merge to `main` deploys `staging`, runs the
+end-to-end smoke test (`infra/scripts/smoke.ts`), and promotes the verified
+commit to `production`. Self-hosted releases are cut as `v*` tags and never
+trigger a Preprocess Cloud deploy.
+
+## Regions and `PREPROCESS_REGION`
+
+Region is configuration, never hard-coded in product code. On Preprocess Cloud,
+every deployed stage sets `PREPROCESS_REGION` to a key in
+`infra/src/regions.ts`, and Workers read it exclusively through
+`@preprocess/runmode`.
+
+At launch, Preprocess Cloud runs in a single region:
+
+| `PREPROCESS_REGION` | R2 location hint               | Postgres region |
+| ------------------- | ------------------------------ | --------------- |
+| `us`                | `wnam` (Western North America) | `aws:us-west-2` |
+
+The API Worker uses Cloudflare placement pinned to the database region so
+sequential Postgres queries stay local.
+
+<Callout title="OCR processing region on Preprocess Cloud">
+  On Preprocess Cloud, Postgres, R2 buckets and Baseten model calls stay in the
+  US region. One exception: OCR requests go to Mistral's global API endpoint
+  (`https://api.mistral.ai`) with no region pinning, so documents sent for OCR
+  may be processed outside the US. If you require strict regional OCR
+  processing, self-host Preprocess and point `MODEL_ENDPOINTS.ocr` at a regional
+  or private OCR endpoint.
+</Callout>
+
+### Why self-hosted installs never set `PREPROCESS_REGION`
+
+`PREPROCESS_REGION` also acts as the **run-mode switch**
+(`@preprocess/runmode`):
+
+- When `PREPROCESS_REGION` is set, Preprocess runs in **cloud mode** (enabling
+  cloud billing, metering and hosted defaults).
+- When `PREPROCESS_REGION` is unset, Preprocess runs in **self-hosted mode**
+  (billing and metering are off, and `PREPROCESS_LICENSE_KEY` controls paid
+  entitlements).
+
+Both `infra/alchemy.run.ts` and `preprocess install` refuse to deploy a
+`selfhost` stage if `PREPROCESS_REGION` is set. To control where your
+self-hosted R2 buckets live, set the optional `R2_LOCATION_HINT` environment
+variable instead (for example `wnam`, `enam` or `weur`), and place your Postgres
+database in the matching region.

@@ -1,0 +1,264 @@
+---
+title: Self-hosting on Cloudflare
+description:
+  Install, configure and upgrade Preprocess in your own Cloudflare account with
+  Alchemy.
+---
+
+Self-hosting deploys the complete Preprocess platform—web app, API, case
+runtime, queues, R2 buckets, Durable Objects, sandboxes and Postgres schema—into
+your own Cloudflare account using the same Alchemy stack that powers Preprocess
+Cloud.
+
+## Architecture overview
+
+Every compute, storage and orchestration component runs inside your Cloudflare
+account. Only your Postgres database, your GitHub App (if connected) and any
+external model or OCR endpoints sit outside it.
+
+<Flow caption="Resources created in your Cloudflare account vs. external infrastructure.">
+  <Node id="app" icon="globe" at="0 0" detail="Cloudflare Worker">
+    App & docs
+  </Node>
+  <Node id="api" icon="server" at="1 0" detail="Queues, R2, Secrets Store">
+    API Worker
+  </Node>
+  <Node id="pg" kind="actor" icon="lock" at="2 0" narrow="1 1">
+    Your Postgres
+  </Node>
+  <Node id="ai" icon="cpu" at="0 1" narrow="0 3" detail="Workers AI binding">
+    Qwen 3.8 27B
+  </Node>
+  <Node id="rt" icon="box" at="1 1" narrow="0 2" detail="DOs, Dynamic Workers, Sandboxes">
+    Case runtime
+  </Node>
+  <Node id="models" kind="actor" icon="plug" at="2 1" narrow="1 2">
+    Model & OCR APIs
+  </Node>
+
+  <Edge from="app" to="api" label="service binding" />
+  <Edge from="api" to="pg" label="Hyperdrive" />
+  <Edge from="api" to="rt" label="queues" />
+  <Edge from="rt" to="ai" label="in-account" />
+  <Edge from="rt" to="models" label="HTTPS" />
+</Flow>
+
+## Prerequisites
+
+Before installing, make sure you have:
+
+1. **A Cloudflare account on Workers Paid** with an API token
+   (`CLOUDFLARE_API_TOKEN`) that can manage Workers, Durable Objects, R2,
+   Queues, KV, Hyperdrive, Containers, Email Sending and Secrets Store, plus
+   your `CLOUDFLARE_ACCOUNT_ID`.
+2. **A Postgres database** reachable by Cloudflare Hyperdrive (`DATABASE_URL`),
+   using an admin role that owns the database and can create roles. Standard
+   Postgres works with no vendor-specific extensions.
+3. **A sender domain on Cloudflare Email Service** in the same account for
+   `EMAIL_FROM` (used for invitations and notification emails).
+4. **Node.js and `npx`** on the machine or CI runner executing the install.
+
+<Callout title="Coming soon">
+  `@preprocess/cli` is not published to npm yet. Until npm publishing ships, run the CLI from a checkout of `preprocess/preprocess` (or pass `--source <dir>` to `preprocess install`).
+</Callout>
+
+## What the Alchemy stack creates
+
+Running a `selfhost` (or `selfhost-<name>`) stage creates or reconciles the
+following resources in your Cloudflare account:
+
+- **Workers:** `preprocess-app-<stage>` (web app), `preprocess-docs-<stage>`
+  (docs site), `preprocess-api-<stage>` (API and queue consumers),
+  `preprocess-runtime-<stage>` (case runtime), `preprocess-tail-<stage>` (agent
+  Tail Worker), `preprocess-builder-<stage>` (GitHub build sandbox) and
+  `preprocess-pdf-render-<stage>` (PDF page renderer).
+- **Durable Objects:** `Counter`, `BuildQueue` and `Scheduler` on the API
+  Worker; `CaseRuntime`, `SandboxSmall`, `SandboxMedium` and `SandboxLarge` on
+  the runtime Worker; `BuildSandbox` on the builder Worker; `Renderer` on the
+  PDF renderer Worker.
+- **Containers:** Shared container images for the GitHub builder, PDF renderer
+  and the four case sandbox presets (`standard`, `node`, `python` and
+  `python-data`).
+- **R2 buckets:** `preprocess-files-<stage>`, `preprocess-logs-<stage>`,
+  `preprocess-audit-<stage>` (with a 1-year object retention lock on the
+  `audit/` prefix), `preprocess-runs-<stage>` and `preprocess-bundles-<stage>`.
+- **Queues and KV:** Five queues (`preprocess-jobs-<stage>`,
+  `preprocess-cases-<stage>`, `preprocess-webhooks-<stage>`,
+  `preprocess-emails-<stage>`, `preprocess-logs-<stage>`) with consumers on the
+  API Worker, plus the `preprocess-emails-sent-<stage>` KV namespace.
+- **Hyperdrive and Postgres:** Two Hyperdrive connections (`Db` as
+  `preprocess_app` with row-level security enforced, and `DbSystem` as
+  `preprocess_system` for Better Auth and system jobs), both with query caching
+  disabled. Before any Worker updates, the stack runs
+  `packages/db/bootstrap.sql` with generated role passwords and applies all
+  pending Drizzle migrations.
+- **Generated secrets:** `BETTER_AUTH_SECRET`, `AUDIT_SIGNING_KEY` (an Ed25519
+  key pair) and `SECRETS_MASTER_KEY` (stored in Cloudflare Secrets Store) are
+  generated once and protected in Alchemy's Cloudflare state store.
+
+Data resources—your R2 buckets, `SECRETS_MASTER_KEY` and generated secrets—carry
+deletion protection. Destroying a self-hosted stage never drops your Postgres
+database.
+
+## Environment variables
+
+Pass these via your shell environment or one or more `--env-file` files (later
+files override earlier files and the shell environment).
+
+### Required
+
+| Variable                | Description                                                                                                           |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | Cloudflare API token with permissions for the resources above                                                         |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID                                                                                            |
+| `DATABASE_URL`          | Admin Postgres connection string reachable by Hyperdrive                                                              |
+| `EMAIL_FROM`            | Sender address on a domain onboarded to Cloudflare Email Service (for example `Preprocess <invitations@example.com>`) |
+
+### Forbidden on self-hosted stages
+
+Do not set `PREPROCESS_REGION`, `PLANETSCALE_DATABASE`, `BETTER_AUTH_SECRET` or
+`AUDIT_SIGNING_KEY`. `PREPROCESS_REGION` marks a deploy as Preprocess Cloud, and
+the stack generates and stores `BETTER_AUTH_SECRET` and `AUDIT_SIGNING_KEY`
+automatically. `preprocess install` refuses to run if any of these four
+variables are set.
+
+### Optional
+
+| Variable                                                                                                                          | Description                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_DOMAIN`                                                                                                                      | Custom hostname on a zone in your Cloudflare account; uses `workers.dev` if omitted                                                                                                            |
+| `DOCS_DOMAIN`                                                                                                                     | Custom hostname for the docs Worker; uses `workers.dev` if omitted                                                                                                                             |
+| `R2_LOCATION_HINT`                                                                                                                | Cloudflare R2 location hint for your buckets (for example `wnam`, `enam` or `weur`)                                                                                                            |
+| `BASETEN_API_KEY`                                                                                                                 | Enables Kimi K3.1 Pro, DeepSeek V4.1 Flash (normal and fast) and `decide` via Baseten                                                                                                          |
+| `MISTRAL_API_KEY`                                                                                                                 | Enables OCR via Mistral (`mistral-ocr-4-1`); without this or an `ocr` entry in `MODEL_ENDPOINTS`, OCR is unavailable                                                                           |
+| `MODEL_ENDPOINTS`                                                                                                                 | JSON map of custom per-model serving endpoints: `{"<model>": {"url": "...", "key": "...", "model": "..."}}`                                                                                    |
+| `MODEL_SERVICE_URL`                                                                                                               | Single OpenAI-compatible fallback endpoint for models not covered above; set to `stub` to deploy fixture answers for testing                                                                   |
+| `MODEL_SERVICE_KEY`                                                                                                               | Bearer token for `MODEL_SERVICE_URL` (required whenever `MODEL_SERVICE_URL` is set to anything other than `stub`)                                                                              |
+| `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_APP_PRIVATE_KEY` | Credentials for your install's GitHub App (generated by `preprocess github-app`)                                                                                                               |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                                                                                        | Enables Google sign-in; without both, users sign in via emailed link                                                                                                                           |
+| `LOG_CATALOG_TOKEN`                                                                                                               | Token with R2 Data Catalog, R2 storage and R2 SQL access to route run logs through Cloudflare Pipelines into an Iceberg table; without it, run logs are stored as NDJSON in the logs R2 bucket |
+| `PREPROCESS_LICENSE_KEY`                                                                                                          | Signed offline Ed25519 license key; without a valid key, the install runs the free feature set                                                                                                 |
+
+## Installing with `preprocess install`
+
+First preview what Alchemy will create using `--plan`, which prints the
+infrastructure plan without modifying your account:
+
+```sh
+preprocess install --env-file .env.selfhost --plan
+```
+
+Once the plan looks right, apply it:
+
+```sh
+preprocess install --env-file .env.selfhost
+```
+
+Useful flags:
+
+- `--stage <name>`: Stage name, defaulting to `selfhost`. Must match `selfhost`
+  or `selfhost-<name>` (lowercase letters, digits and dashes), so you can run
+  separate staging and production installs in one account (for example
+  `selfhost-staging` and `selfhost-prod`).
+- `--version <tag>`: Specific release tag from `preprocess/preprocess` (defaults
+  to the latest GitHub release).
+- `--source <dir>`: Path to a local checkout of `preprocess/preprocess` instead
+  of downloading a release tarball.
+- `--env-file <path>`: Load variables from one or more env files. Repeatable;
+  later files win.
+- `--plan`: Preview changes without applying them.
+
+When the deploy finishes, the CLI prints the `app`, `docs` and `api` URLs.
+
+## Registering your own GitHub App
+
+To deploy agents automatically from GitHub repositories, register a GitHub App
+tied to your self-hosted origin using `preprocess github-app`. It runs GitHub's
+App Manifest flow locally so you don't copy webhook URLs or permissions by hand:
+
+```sh
+preprocess github-app --app-url https://preprocess.example.com --name "Acme Preprocess" --owner acme
+```
+
+Flags:
+
+- `--app-url <url>` (required): Your self-hosted app origin.
+- `--name <name>`: Display name of the GitHub App (default: `Preprocess`).
+- `--owner <org>`: GitHub organization slug to own the App (omit to create it
+  under your personal account).
+- `--out <path>`: Output file path (default: `.env.github-app`, written with
+  mode `0600`).
+
+The command starts a one-shot local server on `127.0.0.1` and prints a URL to
+open in your browser. After you confirm on GitHub, it exchanges the callback
+code, converts the private key to PKCS #8 PEM (required by Cloudflare Workers
+WebCrypto) and writes all six `GITHUB_*` variables to `--out`.
+
+Apply those credentials to your install and remove the local file once stored in
+your CI secrets:
+
+```sh
+preprocess install --env-file .env.selfhost --env-file .env.github-app
+```
+
+## Pointing at model and OCR endpoints
+
+The runtime resolves each model in a fixed priority order
+(`packages/models/src/endpoints.ts`):
+
+1. **Organization-registered endpoint** (if configured for that organization).
+2. **`MODEL_ENDPOINTS`** entry matching the model ID (`kimi-k3.1-pro`,
+   `deepseek-v4.1-flash`, `deepseek-v4.1-flash-fast`, `qwen3.8-27b`, `decide` or
+   `ocr`).
+3. **Built-in provider binding or key:** `qwen3.8-27b` uses the Cloudflare
+   Workers AI binding (`AI`) in your own account automatically; Kimi, DeepSeek
+   and `decide` use `BASETEN_API_KEY`; `ocr` uses `MISTRAL_API_KEY`.
+4. **`MODEL_SERVICE_URL`** (with `MODEL_SERVICE_KEY`) as a catch-all endpoint.
+
+If none of these match a requested model, the runtime returns a
+`model_unavailable` error rather than falling back silently.
+
+Example `MODEL_ENDPOINTS` value pointing `deepseek-v4.1-flash` and `ocr` at
+private endpoints:
+
+```json
+{
+  "deepseek-v4.1-flash": {
+    "url": "https://llm.internal.example.com",
+    "key": "sk-internal-...",
+    "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+  },
+  "ocr": {
+    "url": "https://ocr.internal.example.com",
+    "key": "ocr-internal-..."
+  }
+}
+```
+
+Calls to your own provider keys, Workers AI binding or custom `MODEL_ENDPOINTS`
+are never metered or billed by Preprocess.
+
+## Upgrading a self-hosted install
+
+Self-hosted releases are published as `v*` git tags on `preprocess/preprocess`
+with upgrade notes. To upgrade:
+
+1. Read the release's upgrade notes for any new optional environment variables
+   or breaking changes.
+2. Run a plan against the target version:
+
+```sh
+preprocess install --version v1.2.0 --env-file .env.selfhost --plan
+```
+
+3. Apply the upgrade:
+
+```sh
+preprocess install --version v1.2.0 --env-file .env.selfhost
+```
+
+All database migrations follow an expand-and-contract pattern, so pending
+migrations run safely against your Postgres database while the previous Workers
+are still serving traffic. If you need to roll back Workers to an earlier
+release tag, rerun `preprocess install --version <previous-tag>`; migrations are
+forward-only and remain compatible with the previous release.
