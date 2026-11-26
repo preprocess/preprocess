@@ -45,4 +45,15 @@ describe("Hyperdrive connection budget", () => {
       "originConnectionLimit: originConnectionLimits.system",
     );
   });
+
+  it("updates neither config before the guard passes", () => {
+    const stack = readFileSync(
+      new URL("../alchemy.run.ts", import.meta.url),
+      "utf8",
+    );
+    expect(stack).toContain("app: Output.map(granted, ({ app }) => app)");
+    expect(stack).toContain(
+      "system: Output.map(granted, ({ system }) => system)",
+    );
+  });
 });
