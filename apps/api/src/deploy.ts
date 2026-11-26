@@ -50,6 +50,7 @@ import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
 import { markSeat } from "./metering.ts";
 import { effectiveNetwork, permits } from "./network.ts";
+import { grantViewersNewAgent } from "./plan-change.ts";
 import { customImagesAllowed } from "./plan.ts";
 import { sandboxMaxSize, sizeAllowed } from "./sandbox.ts";
 import { layerBuilt } from "./sandbox-layers.ts";
@@ -661,7 +662,7 @@ export const deploy = async (
       .values({ id: newId("agent"), organizationId: org, slug })
       .onConflictDoNothing()
       .returning();
-    if (created)
+    if (created) {
       await audit(tx, {
         organizationId: org,
         ...actor,
@@ -670,6 +671,8 @@ export const deploy = async (
         targetId: created.id,
         data: { slug },
       });
+      await grantViewersNewAgent(tx, org, created.id);
+    }
     const [agent] = await tx.select().from(agents).where(eq(agents.slug, slug));
     return agent!;
   });
