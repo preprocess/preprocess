@@ -425,6 +425,9 @@ export const entitlement = async (
   if (!plan) return "ok";
   if (!plan.started)
     return planRequired(env, org, plan.started) ? "plan_required" : "ok";
+  // Internal has no limits, and its customers keep the features they were
+  // attached with, which a renamed feature leaves out.
+  if (plan.name === "internal") return "ok";
   try {
     const allowed = await remember(
       `check:${org}:${featureId}`,
