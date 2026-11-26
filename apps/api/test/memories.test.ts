@@ -12,10 +12,11 @@ import {
   groupMembers,
   groups,
 } from "@preprocess/db/schema/access";
-import { cases } from "@preprocess/db/schema/cases";
+import { auditEvents } from "@preprocess/db/schema/audit";
+import { cases, reviewEvents } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
 import { MEMORY_CAP, agentMemories } from "@preprocess/db/schema/memories";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, like } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { acceptedMemories, proposeMemory } from "../src/memories.ts";
@@ -197,6 +198,37 @@ describe("memory", () => {
     );
     expect(onCase.body.memories).toMatchObject([
       { id: m.id, status: "accepted" },
+    ]);
+
+    const recorded = await withOrg(environment, orgId(org), async (tx) => ({
+      events: await tx
+        .select()
+        .from(reviewEvents)
+        .where(eq(reviewEvents.caseId, dismissed.caseId))
+        .orderBy(asc(reviewEvents.at)),
+      audited: await tx
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.caseId, dismissed.caseId),
+            like(auditEvents.action, "case.memory.%"),
+          ),
+        )
+        .orderBy(asc(auditEvents.seq)),
+    }));
+    expect(recorded.events.map((e) => [e.kind, e.after])).toEqual([
+      [
+        "memory.dismissed",
+        { memory: dismissed.id, text: "Ignore the fax header." },
+      ],
+    ]);
+    expect(recorded.audited.map((a) => [a.action, a.actorId, a.data])).toEqual([
+      [
+        "case.memory.dismissed",
+        operator.userId,
+        { memory: dismissed.id, agent: agentId },
+      ],
     ]);
   });
 
