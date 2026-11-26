@@ -9,6 +9,7 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
+import { reportDaily, reportUsage } from "./billing.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
@@ -34,6 +35,7 @@ import { guardrailRoutes } from "./routes/guardrails.ts";
 import { scheduleRoutes } from "./routes/schedules.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { spendingRoutes } from "./routes/spending.ts";
+import { billingRoutes } from "./routes/billing.ts";
 import { ingestLogs, sendLogs } from "./logs.ts";
 import { startQueuedEval } from "./evals.ts";
 import { exportLogs, type OtelRetry } from "./otel.ts";
@@ -122,6 +124,7 @@ orgApi.route("/", mcpRoutes);
 orgApi.route("/", caseRoutes);
 orgApi.route("/", githubRoutes);
 orgApi.route("/", spendingRoutes);
+orgApi.route("/", billingRoutes);
 orgApi.route("/", guardrailRoutes);
 orgApi.route("/", settingsRoutes);
 orgApi.route("/", scheduleRoutes);
@@ -185,14 +188,19 @@ export default {
   fetch: app.fetch,
   scheduled(controller, env, ctx) {
     // Every minute: re-send outbox rows a failed queue send left behind.
+    // Every minute, too: report metered usage to billing (our cloud only).
     if (controller.cron === "* * * * *") {
       ctx.waitUntil(sweepOutbox(env));
+      ctx.waitUntil(reportUsage(env));
       return;
     }
     // 00:20 UTC: sign and store yesterday's audit chain for every
-    // organization, and forget expired idempotency keys.
-    ctx.waitUntil(anchorAll(env, new Date(controller.scheduledTime)));
+    // organization, forget expired idempotency keys, and report yesterday's
+    // storage and, on the first, last month's active seats.
+    const now = new Date(controller.scheduledTime);
+    ctx.waitUntil(anchorAll(env, now));
     ctx.waitUntil(deleteExpiredIdempotencyKeys(env));
+    ctx.waitUntil(reportDaily(env, now));
   },
   async queue(
     batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,

@@ -29,7 +29,7 @@ const Member = z
 
 const PlanSchema = z
   .object({
-    name: z.literal("free"),
+    name: z.enum(["free", "team", "enterprise"]),
     features: z.record(z.enum(paidFeatures), z.boolean()),
   })
   .openapi("Plan");
@@ -105,8 +105,8 @@ export const organizationRoutes = new OpenAPIHono<{
         },
       },
     }),
-    (c) => {
-      const plan = getPlan(c.var.org);
+    async (c) => {
+      const plan = await getPlan(c.env, c.var.org);
       return c.json(
         {
           name: plan.name,

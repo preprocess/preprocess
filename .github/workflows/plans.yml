@@ -1,0 +1,89 @@
+# Plans as code (spec 16a, PRE-39): a pull request that changes
+# autumn.config.ts gets a preview of what it would change in Autumn, run
+# against the sandbox and posted on the pull request. Nothing is applied here;
+# the staging deploy applies it to the sandbox, and preprocess/internal's
+# production deploy to the live environment. Only the sandbox key is used
+# here; the live key never reaches pull request code.
+
+name: Plans
+
+on:
+  pull_request:
+    paths:
+      - autumn.config.ts
+      - package.json
+      - pnpm-lock.yaml
+      - .github/workflows/plans.yml
+
+concurrency:
+  group: plans-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    name: Autumn plans preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AUTUMN_SECRET_KEY: ${{ secrets.AUTUMN_SECRET_KEY }}
+      NO_COLOR: "1"
+    steps:
+      - name: Check credentials
+        id: credentials
+        run: |
+          if [ -z "$AUTUMN_SECRET_KEY" ]; then
+            echo "::notice title=Plans preview skipped::AUTUMN_SECRET_KEY is not set for this repository (pull requests from forks never get it)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/checkout@v4
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.credentials.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # A preview only: without --yes, atmn applies nothing.
+      - name: Preview against the sandbox
+        if: steps.credentials.outputs.ready == 'true'
+        run: |
+          set -o pipefail
+          pnpm exec atmn push --headless 2>&1 | tee plans.txt
+
+      - name: Post the preview
+        if:
+          always() && steps.credentials.outputs.ready == 'true' &&
+          hashFiles('plans.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          marker="<!-- autumn-plans-preview -->"
+          {
+            echo "$marker"
+            echo "**Autumn plans preview** against the sandbox ($OUTCOME, ${GITHUB_SHA::7}). Staging applies it to the sandbox on merge; production applies it to the live environment before promoting, and stops for an explicit go if existing customers' plans would change."
+            echo
+            echo '```'
+            tail -c 60000 plans.txt
+            echo '```'
+          } > comment.md
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq "[.[] | select(.body | startswith(\"$marker\"))][0].id // empty")
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@comment.md >/dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@comment.md >/dev/null
+          fi

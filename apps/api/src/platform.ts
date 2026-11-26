@@ -16,7 +16,8 @@ import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
 import { proposeMemory, type MemoryProposal } from "./memories.ts";
 import { ocrFile } from "./ocr.ts";
-import { spendGate } from "./spend.ts";
+import { entitlement } from "./billing.ts";
+import { spendGate, type SpendVerdict } from "./spend.ts";
 
 export class Platform extends WorkerEntrypoint<Env> {
   caseEvent(event: CaseEvent) {
@@ -36,8 +37,16 @@ export class Platform extends WorkerEntrypoint<Env> {
 
   // The runtime calls this before each metered model, OCR or decide call and
   // halts the case with the returned reason when it is not "ok".
-  spendGate(organizationId: string) {
-    return withOrg(this.env, orgId(organizationId), (tx) => spendGate(tx));
+  async spendGate(organizationId: string): Promise<SpendVerdict> {
+    const org = orgId(organizationId);
+    const verdict = await withOrg(this.env, org, (tx) => spendGate(tx));
+    if (verdict !== "ok") return verdict;
+    // Free's one-time model credit (spec 16a): model usage stops when it is
+    // used up, until the organization upgrades. Without a started plan there
+    // is no credit at all.
+    return (await entitlement(this.env, org, "model_usage")) === "ok"
+      ? "ok"
+      : "credit_exhausted";
   }
 
   // Run-log records from the runtime and the Tail Worker (design doc 09).

@@ -97,6 +97,10 @@ export const githubSecrets = [
 export const googleVars = ["GOOGLE_CLIENT_ID"] as const;
 export const googleSecrets = ["GOOGLE_CLIENT_SECRET"] as const;
 
+// Autumn, our cloud's billing (spec 16a), optional: without it billing is off.
+// Never bound on a self-hosted install, which bills nothing.
+export const billingSecrets = ["AUTUMN_SECRET_KEY"] as const;
+
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).
 export const apiCrons = ["20 0 * * *", "* * * * *"];
