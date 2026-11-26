@@ -131,7 +131,7 @@ export const createCase = async (
     throw new ApiError(
       402,
       "credit_exhausted",
-      "This organization has run out of credits. Its Owner can buy more in Billing.",
+      "Credit balance is empty. An Owner can add credits in Billing.",
     );
   const created = await withOrg(env, org, async (tx) => {
     const now = new Date();

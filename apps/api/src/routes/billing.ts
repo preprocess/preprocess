@@ -188,7 +188,7 @@ export const billingRoutes = new OpenAPIHono<{
       path: "/billing/checkout",
       tags: ["Billing"],
       summary:
-        "Start Free or Team at checkout (Owner). Every plan needs a card; Enterprise is arranged with us.",
+        "Start Free or Team at checkout (Owner). Every plan needs a card, and Team starts with its first credits; Enterprise is arranged with us.",
       request: {
         params: OrgParam,
         body: {
@@ -196,6 +196,13 @@ export const billingRoutes = new OpenAPIHono<{
             "application/json": {
               schema: z.object({
                 plan: z.enum(["free", "team"]),
+                credits: credits
+                  .min(MIN_TOP_UP_CREDITS)
+                  .max(10_000_000)
+                  .default(MIN_TOP_UP_CREDITS)
+                  .openapi({
+                    description: `Team's first credits, bought at checkout so it never starts at zero; at least and by default ${MIN_TOP_UP_CREDITS} ($10)`,
+                  }),
                 returnTo: returnTo.openapi({
                   description: "Where checkout returns to",
                 }),
@@ -222,7 +229,7 @@ export const billingRoutes = new OpenAPIHono<{
       requireOwner(c.var, "Only the organization's Owner can change its plan.");
       const billing = autumn(c.env);
       if (!billing) throw off();
-      const { plan, returnTo } = c.req.valid("json");
+      const { plan, credits: first, returnTo } = c.req.valid("json");
       const back = backTo(c.env, returnTo);
       const current = readPlan(
         await billing.customer(
@@ -234,8 +241,20 @@ export const billingRoutes = new OpenAPIHono<{
         throw new HTTPException(409, {
           message: "The organization is already on this plan.",
         });
-      const { url } = await billing.checkout(c.var.org, plan, back);
-      return c.json({ url }, 200);
+      if (plan === "free") {
+        const { url } = await billing.checkout(c.var.org, plan, back);
+        return c.json({ url }, 200);
+      }
+      // A card on file is charged at once, and the Owner goes straight back.
+      const attached = await billing.attachTogether(
+        c.var.org,
+        [
+          { planId: "team" },
+          { planId: CREDITS_PLAN, quantities: { [CREDITS]: first } },
+        ],
+        back,
+      );
+      return c.json({ url: attached.payment_url ?? back }, 200);
     },
   )
   .openapi(
