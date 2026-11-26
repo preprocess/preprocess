@@ -5,6 +5,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   date,
   index,
   integer,
@@ -158,3 +159,14 @@ export const sandboxIntervals = pgTable(
       .where(sql`ended_at is null`),
   ],
 );
+
+// Free's one-time $5 of credits (PRE-96): at most once per organization and
+// once per card. Not tenant-scoped, and kept when an organization is deleted,
+// so a new organization on the same card gets none. granted is false when the
+// card had already had it elsewhere.
+export const freeCreditGrants = pgTable("free_credit_grants", {
+  organizationId: text().primaryKey(),
+  cardFingerprint: text().unique(),
+  granted: boolean().notNull(),
+  at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});

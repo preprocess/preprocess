@@ -55,6 +55,16 @@ const Billing = z
       .number()
       .nullable()
       .openapi({ description: "The plan's seat limit; null is no limit" }),
+    change: z
+      .object({
+        plan: z.enum(["free", "team", "enterprise", "internal"]),
+        at: z.string().nullable(),
+      })
+      .nullable()
+      .openapi({
+        description:
+          "A plan change waiting for the end of the billing period, and when it takes effect",
+      }),
     credits: z
       .object({
         remaining: credits.openapi({ description: "Credits left" }),
@@ -133,6 +143,14 @@ const readAutoReload = (
 
 const paymentUrl = (attached: AutumnAttached) => attached.payment_url ?? null;
 
+// Enterprise is arranged with us, and so is any change to it (Chip).
+const refuseFixedPlan = (plan: string) => {
+  if (plan === "enterprise")
+    throw new HTTPException(409, {
+      message: "Contact us to change an Enterprise plan.",
+    });
+};
+
 export const billingRoutes = new OpenAPIHono<{
   Bindings: Env;
   Variables: OrgVariables;
@@ -172,6 +190,10 @@ export const billingRoutes = new OpenAPIHono<{
           started: plan.started,
           required: planRequired(c.env, c.var.org, plan.started),
           seats: plan.seats,
+          change: plan.change && {
+            plan: plan.change.plan,
+            at: plan.change.at?.toISOString() ?? null,
+          },
           credits: customer ? readCredits(customer) : null,
           autoReload: customer
             ? readAutoReload(customer.billing_controls?.auto_topups)
@@ -237,6 +259,7 @@ export const billingRoutes = new OpenAPIHono<{
           await organizationName(c.env, c.var.org),
         ),
       );
+      if (current.started) refuseFixedPlan(current.name);
       if (current.started && current.name === plan)
         throw new HTTPException(409, {
           message: "The organization is already on this plan.",
@@ -326,7 +349,7 @@ export const billingRoutes = new OpenAPIHono<{
       path: "/billing/plan",
       tags: ["Billing"],
       summary:
-        "Change between Free and Team (Owner), once a plan is started at checkout",
+        "Change between Free and Team (Owner), once a plan is started at checkout. Moving up to Team is immediate. Moving down to Free cancels Team at the end of its billing period, and the organization keeps its credits; until then the Owner can keep Team. Enterprise changes go through us.",
       request: {
         params: OrgParam,
         body: {
@@ -343,7 +366,10 @@ export const billingRoutes = new OpenAPIHono<{
           description: "The change, or the payment page to finish it on",
         },
         403: { description: "Not the Owner" },
-        409: { description: "No plan started yet, or already on this plan" },
+        409: {
+          description:
+            "No plan started yet, already on this plan, or on Enterprise",
+        },
         404: { description: "Billing is off" },
       },
     }),
@@ -358,13 +384,16 @@ export const billingRoutes = new OpenAPIHono<{
         throw new HTTPException(409, {
           message: "Start a plan at checkout first.",
         });
+      refuseFixedPlan(current.name);
       if (current.name === plan)
         throw new HTTPException(409, {
           message: "The organization is already on this plan.",
         });
+      const down = plan === "free";
       const attached = await billing.attach(c.var.org, {
         planId: plan,
         successUrl: back,
+        atPeriodEnd: down,
       });
       await withOrg(c.env, c.var.org, (tx) =>
         audit(tx, {
@@ -376,6 +405,44 @@ export const billingRoutes = new OpenAPIHono<{
         }),
       );
       return c.json({ url: paymentUrl(attached) }, 200);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "delete",
+      path: "/billing/plan/change",
+      tags: ["Billing"],
+      summary:
+        "Keep the current plan: cancel a plan change waiting for the end of the billing period (Owner)",
+      request: { params: OrgParam },
+      responses: {
+        204: { description: "The plan stays as it is" },
+        403: { description: "Not the Owner" },
+        409: { description: "No plan change is waiting" },
+        404: { description: "Billing is off" },
+      },
+    }),
+    async (c) => {
+      requireOwner(c.var, "Only the organization's Owner can change its plan.");
+      const billing = autumn(c.env);
+      if (!billing) throw off();
+      const current = readPlan(await billing.customer(c.var.org));
+      const change = current.change;
+      if (!change)
+        throw new HTTPException(409, {
+          message: "No plan change is waiting.",
+        });
+      await billing.keep(c.var.org, current.name);
+      await withOrg(c.env, c.var.org, (tx) =>
+        audit(tx, {
+          ...eventBase(c.var),
+          action: "billing.plan_change_cancelled",
+          targetType: "organization",
+          targetId: c.var.org,
+          data: { plan: current.name, instead: change.plan },
+        }),
+      );
+      return c.body(null, 204);
     },
   )
   .openapi(

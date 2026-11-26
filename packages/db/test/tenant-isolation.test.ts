@@ -129,7 +129,7 @@ describe("row-level security coverage", () => {
           where col.table_name = c.relname and col.column_name = 'organization_id')
       `),
     );
-    const exempt = new Set(["deleted_organizations"]);
+    const exempt = new Set(["deleted_organizations", "free_credit_grants"]);
     const missing = tables.rows.filter(
       (t) => !exempt.has(t.table) && !(t.rls && t.forced && t.policies > 0),
     );
