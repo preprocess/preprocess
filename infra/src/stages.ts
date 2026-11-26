@@ -102,10 +102,29 @@ export const googleSecrets = ["GOOGLE_CLIENT_SECRET"] as const;
 export const billingSecrets = ["AUTUMN_SECRET_KEY"] as const;
 // When cards became required, and our own organizations (apps/api/src/env.ts).
 // Both unset, an organization without a plan is not limited.
+// BILLING_ENFORCED_ORGS: organizations billed like customers before the date,
+// such as a test organization in production.
 export const billingVars = [
   "BILLING_REQUIRED_FROM",
   "BILLING_INTERNAL_ORGS",
+  "BILLING_ENFORCED_ORGS",
 ] as const;
+
+// Per stage, the organizations that are ours and the ones billed early, in
+// code rather than the deploy environment. Neither is secret. Each list
+// replaces its variable on that stage.
+export const billingOrgs: Partial<
+  Record<Stage, { internal: string[]; enforced: string[] }>
+> = {
+  // Both of our production organizations (Chip, 2026-11-26).
+  production: {
+    internal: [
+      "org_01m8ar0hemfahb99w1a60fp0a7",
+      "org_01m8aqtaf5eh1b069gww7vp2cf",
+    ],
+    enforced: [],
+  },
+};
 // The license key (spec 16), optional and on selfhost stages only: without a
 // valid one the install runs the free plan. Our cloud never binds it.
 export const licenseSecrets = ["PREPROCESS_LICENSE_KEY"] as const;

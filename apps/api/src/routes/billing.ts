@@ -63,7 +63,7 @@ export const billingRoutes = new OpenAPIHono<{
         {
           plan: plan.name,
           started: plan.started,
-          required: planRequired(c.env, plan.started),
+          required: planRequired(c.env, c.var.org, plan.started),
           seats: plan.seats,
         },
         200,
