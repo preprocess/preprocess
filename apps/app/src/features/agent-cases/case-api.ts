@@ -69,6 +69,10 @@ type ApiCaseList = {
   items: ApiCaseSummary[];
   nextCursor: string | null;
   counts: Record<ApiStatus, number>;
+  facets?: {
+    agent?: Record<string, Record<ApiStatus, number>>;
+    waitingOn?: Record<string, Record<ApiStatus, number>>;
+  };
 };
 
 type ApiMember = {
@@ -229,6 +233,7 @@ export const liveCaseList = createServerFn({ method: "GET" })
       query: ListQuery & { q?: string },
       size: number,
       cursor?: string | null,
+      facets: ("agent" | "waitingOn")[] = [],
     ) => {
       const params = new URLSearchParams({
         environment,
@@ -242,11 +247,10 @@ export const liveCaseList = createServerFn({ method: "GET" })
       if (query.waitingOn?.length)
         params.set("waitingOn", query.waitingOn.join(","));
       if (cursor) params.set("cursor", cursor);
+      if (facets.length) params.set("facets", facets.join(","));
       return getJson<ApiCaseList>(`/cases?${params}`);
     };
     const q = search.q.trim() || undefined;
-    const counts = async (query: ListQuery & { q?: string }) =>
-      (await list(query, 1)).counts;
 
     const view = apiStatuses(viewStatuses(search));
     const shown = shownStatuses(search);
@@ -260,28 +264,35 @@ export const liveCaseList = createServerFn({ method: "GET" })
     };
     const slugs = agents.map((agent) => agent.slug);
 
-    const [unfiltered, byAgent, byGroup, filtered, agentTotals] =
-      await Promise.all([
-        counts({}),
-        Promise.all(slugs.map((slug) => counts({ q, agent: [slug] }))),
-        Promise.all(
-          orgGroups.map((group) => counts({ q, waitingOn: [group.slug] })),
-        ),
-        counts(filters),
-        search.group === "agent"
-          ? Promise.all(
-              (search.agent.length ? search.agent : slugs).map(
-                async (slug) => ({
-                  slug,
-                  total: sum(
-                    await counts({ ...filters, agent: [slug] }),
-                    statuses,
-                  ),
-                }),
-              ),
-            )
-          : Promise.resolve([]),
-      ]);
+    // Counts come from at most three requests, each with per-agent and
+    // per-group facets: everything, the search alone, and every filter.
+    const anyFilter = Boolean(
+      q || filters.agent.length || filters.waitingOn.length,
+    );
+    const everything = list({}, 1, null, q ? [] : ["agent", "waitingOn"]);
+    const [unfilteredPage, searched, filteredPage] = await Promise.all([
+      everything,
+      q ? list({ q }, 1, null, ["agent", "waitingOn"]) : everything,
+      anyFilter
+        ? list(filters, 1, null, search.group === "agent" ? ["agent"] : [])
+        : everything,
+    ]);
+    const unfiltered = unfilteredPage.counts;
+    const filtered = filteredPage.counts;
+    const none = Object.fromEntries(
+      Object.keys(unfiltered).map((status) => [status, 0]),
+    ) as ApiCaseList["counts"];
+    const byAgent = slugs.map((slug) => searched.facets?.agent?.[slug] ?? none);
+    const byGroup = orgGroups.map(
+      (group) => searched.facets?.waitingOn?.[group.slug] ?? none,
+    );
+    const agentTotals =
+      search.group === "agent"
+        ? (search.agent.length ? search.agent : slugs).map((slug) => ({
+            slug,
+            total: sum(filteredPage.facets?.agent?.[slug] ?? none, statuses),
+          }))
+        : [];
 
     const groups: { key: string; total: number; query: ListQuery }[] =
       search.group === "status"

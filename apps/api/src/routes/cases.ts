@@ -164,6 +164,10 @@ const ListQuery = z.object({
   dir: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   cursor: z.string().optional(),
+  facets: csv.pipe(z.array(z.enum(["agent", "waitingOn"]))).openapi({
+    description:
+      "Also count cases per status for each agent (`agent`) or each group a case waits on (`waitingOn`), comma-separated",
+  }),
 });
 
 const CaseSummary = Case.omit({ answers: true, error: true, url: true })
@@ -180,6 +184,17 @@ const CaseList = z
     counts: z.record(CaseStatus, z.number()).openapi({
       description: "Cases per status under every filter but status",
     }),
+    facets: z
+      .object({
+        agent: z.record(z.string(), z.record(CaseStatus, z.number())),
+        waitingOn: z.record(z.string(), z.record(CaseStatus, z.number())),
+      })
+      .partial()
+      .optional()
+      .openapi({
+        description:
+          "With `facets`: `counts` per agent slug or waiting group slug, under the same filters. Agents and groups without cases are left out.",
+      }),
   })
   .openapi("CaseList");
 
@@ -543,7 +558,8 @@ export const caseRoutes = new OpenAPIHono<{
       );
       const page = await withOrg(c.env, c.var.org, async (tx) => {
         const visible = await visibleAgents(tx, c.var.caller);
-        if (visible?.length === 0) return { rows: [], counts: [] };
+        if (visible?.length === 0)
+          return { rows: [], counts: [], byAgent: [], byWaitingOn: [] };
         const column =
           query.sort === "updatedAt" ? cases.updatedAt : cases.createdAt;
         const filters = and(
@@ -617,6 +633,21 @@ export const caseRoutes = new OpenAPIHono<{
             .where(filters)
             .groupBy(cases.status),
         ]);
+        const facet = (key: typeof agents.slug | typeof groups.slug) =>
+          tx
+            .select({ key, status: cases.status, n: count() })
+            .from(cases)
+            .innerJoin(agents, eq(agents.id, cases.agentId))
+            .innerJoin(deployments, eq(deployments.id, cases.deploymentId))
+            .leftJoin(groups, eq(groups.id, cases.waitingOnGroupId))
+            .where(filters)
+            .groupBy(key, cases.status);
+        const byAgent = query.facets.includes("agent")
+          ? await facet(agents.slug)
+          : [];
+        const byWaitingOn = query.facets.includes("waitingOn")
+          ? await facet(groups.slug)
+          : [];
         const ids = rows.map((r) => r.case.id);
         const assignees = ids.length
           ? await tx
@@ -637,8 +668,30 @@ export const caseRoutes = new OpenAPIHono<{
               .map(({ id, name }) => ({ id, name })),
           })),
           counts,
+          byAgent,
+          byWaitingOn,
         };
       });
+      const perStatus = (counted: { status: string; n: number }[]) =>
+        Object.fromEntries(
+          CaseStatus.options.map((status) => [
+            status,
+            counted.find((r) => r.status === status)?.n ?? 0,
+          ]),
+        ) as Record<z.infer<typeof CaseStatus>, number>;
+      const perKey = (
+        counted: { key: string | null; status: string; n: number }[],
+      ) => {
+        const keys = [
+          ...new Set(counted.flatMap((r) => (r.key ? [r.key] : []))),
+        ];
+        return Object.fromEntries(
+          keys.map((key) => [
+            key,
+            perStatus(counted.filter((r) => r.key === key)),
+          ]),
+        );
+      };
       const more = page.rows.length > query.limit;
       const rows = page.rows.slice(0, query.limit);
       const last = rows.at(-1)?.case;
@@ -667,12 +720,17 @@ export const caseRoutes = new OpenAPIHono<{
             more && last
               ? btoa(JSON.stringify([last[query.sort].toISOString(), last.id]))
               : null,
-          counts: Object.fromEntries(
-            CaseStatus.options.map((status) => [
-              status,
-              page.counts.find((r) => r.status === status)?.n ?? 0,
-            ]),
-          ) as Record<z.infer<typeof CaseStatus>, number>,
+          counts: perStatus(page.counts),
+          ...(query.facets.length && {
+            facets: {
+              ...(query.facets.includes("agent") && {
+                agent: perKey(page.byAgent),
+              }),
+              ...(query.facets.includes("waitingOn") && {
+                waitingOn: perKey(page.byWaitingOn),
+              }),
+            },
+          }),
         },
         200,
       );
