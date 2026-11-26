@@ -58,10 +58,17 @@ export const monthSpendParts = async (tx: Tx, now = new Date()) => {
   };
 };
 
-export const monthSpend = async (tx: Tx, now = new Date()) => {
-  const parts = await monthSpendParts(tx, now);
-  return parts.cases + parts.evals + parts.ocr + parts.sandbox;
-};
+export type SpendParts = Awaited<ReturnType<typeof monthSpendParts>>;
+
+// The one total the limit enforces and the spending page shows.
+export const totalSpend = (parts: SpendParts) =>
+  parts.cases + parts.evals + parts.ocr + parts.sandbox;
+
+export const limitReached = (spent: number, limit: number | null) =>
+  limit !== null && spent >= limit;
+
+export const monthSpend = async (tx: Tx, now = new Date()) =>
+  totalSpend(await monthSpendParts(tx, now));
 
 export const spendingLimit = async (tx: Tx) => {
   const [row] = await tx
@@ -77,7 +84,9 @@ export const spendGate = async (
 ): Promise<SpendVerdict> => {
   const limit = await spendingLimit(tx);
   if (limit === null) return "ok";
-  return (await monthSpend(tx, now)) >= limit ? "spending_limit_reached" : "ok";
+  return limitReached(await monthSpend(tx, now), limit)
+    ? "spending_limit_reached"
+    : "ok";
 };
 
 export const refuseOverLimit = async (tx: Tx) => {
