@@ -9,10 +9,13 @@ import type * as Cloudflare from "@alchemy.run/cloudflare";
 type RegionConfig = {
   // Where Cloudflare places the stage's R2 bucket.
   r2LocationHint: Cloudflare.R2.Bucket.Location;
+  // The cloud region of the region's PlanetScale databases. The API runs
+  // beside them, so its many sequential queries per request stay local.
+  databaseRegion: string;
 };
 
 export const regions: Record<string, RegionConfig> = {
-  us: { r2LocationHint: "wnam" },
+  us: { r2LocationHint: "wnam", databaseRegion: "aws:us-west-2" },
 };
 
 export const regionConfig = (region: string): RegionConfig => {

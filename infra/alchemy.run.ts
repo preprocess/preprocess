@@ -292,6 +292,9 @@ export default Alchemy.Stack(
           Config.withDefault(undefined),
         )) as Cloudflare.R2.Bucket.Location | undefined);
     const placement = r2LocationHint ? { locationHint: r2LocationHint } : {};
+    const apiPlacement = region
+      ? { placement: { region: regionConfig(region).databaseRegion } }
+      : {};
     const runMode = region ? { PREPROCESS_REGION: region } : {};
     const keep = RemovalPolicy.protect(!preview);
 
@@ -649,6 +652,7 @@ export default Alchemy.Stack(
       ...worker,
       name: n.api,
       main: at("apps/api/src/index.ts"),
+      ...apiPlacement,
       workersDev: true,
       crons: apiCrons,
       env: {

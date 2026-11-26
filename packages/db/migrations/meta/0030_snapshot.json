@@ -1,5 +1,5 @@
 {
-  "id": "2dd1ad55-0cae-4901-aaac-595472a27ea5",
+  "id": "c259a2e0-4a31-499a-84d0-32a589860bb9",
   "prevId": "ce8bf69e-d8cc-4022-a3a3-538fb4ac0620",
   "version": "7",
   "dialect": "postgresql",
@@ -1680,6 +1680,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1761,6 +1767,101 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.usage_reports": {
+      "name": "usage_reports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "feature": {
+          "name": "feature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "remainder": {
+          "name": "remainder",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "reported_at": {
+          "name": "reported_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "usage_reports_unreported": {
+          "name": "usage_reports_unreported",
+          "columns": [
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "reported_at is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "usage_reports_organization_id_organization_id_fk": {
+          "name": "usage_reports_organization_id_organization_id_fk",
+          "tableFrom": "usage_reports",
+          "tableTo": "organization",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "usage_reports_organizationId_feature_seq_unique": {
+          "name": "usage_reports_organizationId_feature_seq_unique",
+          "nullsNotDistinct": false,
+          "columns": ["organization_id", "feature", "seq"]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -4584,13 +4685,6 @@
           "notNull": true,
           "default": "'{\"allow\":[],\"block\":[]}'::jsonb"
         },
-        "sandbox_max_size": {
-          "name": "sandbox_max_size",
-          "type": "sandbox_size",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
         "updated_by": {
           "name": "updated_by",
           "type": "text",
@@ -6106,17 +6200,12 @@
     "public.guardrail_kind": {
       "name": "guardrail_kind",
       "schema": "public",
-      "values": ["network", "secret", "mcp", "spending_limit", "sandbox_size"]
+      "values": ["network", "secret", "mcp", "spending_limit"]
     },
     "public.guardrail_request_status": {
       "name": "guardrail_request_status",
       "schema": "public",
       "values": ["pending", "approved", "rejected"]
-    },
-    "public.sandbox_size": {
-      "name": "sandbox_size",
-      "schema": "public",
-      "values": ["small", "medium", "large"]
     },
     "public.log_subject": {
       "name": "log_subject",
