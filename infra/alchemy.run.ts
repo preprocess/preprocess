@@ -369,6 +369,7 @@ export default Alchemy.Stack(
             admin: role.origin,
             app: appRole.origin,
             connectionLimits: originConnectionLimits,
+            output: 2,
           });
           return {
             app: Output.map(granted, ({ app }) => app),
