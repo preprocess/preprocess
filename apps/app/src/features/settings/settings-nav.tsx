@@ -41,6 +41,7 @@ export const GUARDRAIL_SECTIONS = [
   { id: "requests", label: "Requests" },
   { id: "network", label: "Network" },
   { id: "spending", label: "Spending limit" },
+  { id: "sandbox", label: "Sandbox size" },
   { id: "models", label: "Model endpoints" },
 ] as const;
 

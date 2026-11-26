@@ -45,8 +45,8 @@ type Key = keyof Defaults;
 // Empty is the platform's own default.
 type Draft = Record<Key, string>;
 
-export type Field = {
-  key: Key;
+export type Field<K extends string = Key> = {
+  key: K;
   label: string;
   description: string;
 } & (
