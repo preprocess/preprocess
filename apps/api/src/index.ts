@@ -34,6 +34,8 @@ import { guardrailRoutes } from "./routes/guardrails.ts";
 import { scheduleRoutes } from "./routes/schedules.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { spendingRoutes } from "./routes/spending.ts";
+import { retentionRoutes } from "./routes/retention.ts";
+import { sweepRetention } from "./retention.ts";
 import { ingestLogs, sendLogs } from "./logs.ts";
 import { startQueuedEval } from "./evals.ts";
 import { exportLogs, type OtelRetry } from "./otel.ts";
@@ -124,6 +126,7 @@ orgApi.route("/", githubRoutes);
 orgApi.route("/", spendingRoutes);
 orgApi.route("/", guardrailRoutes);
 orgApi.route("/", settingsRoutes);
+orgApi.route("/", retentionRoutes);
 orgApi.route("/", scheduleRoutes);
 orgApi.route("/", webhookRoutes);
 orgApi.route("/", inboxRoutes);
@@ -190,9 +193,11 @@ export default {
       return;
     }
     // 00:20 UTC: sign and store yesterday's audit chain for every
-    // organization, and forget expired idempotency keys.
+    // organization, forget expired idempotency keys, and delete what is past
+    // each organization's retention periods.
     ctx.waitUntil(anchorAll(env, new Date(controller.scheduledTime)));
     ctx.waitUntil(deleteExpiredIdempotencyKeys(env));
+    ctx.waitUntil(sweepRetention(env, new Date(controller.scheduledTime)));
   },
   async queue(
     batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,

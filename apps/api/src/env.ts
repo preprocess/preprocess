@@ -98,6 +98,9 @@ export type Runtime = {
     c: CaseKey & { userId: string; text: string },
   ): Promise<{ id: string; mentioned: string[] }>;
   cancelCase(c: CaseKey): Promise<CaseRoomState>;
+  // Retention (spec 16a): a closed case's run capture, or all of its state.
+  deleteCapture(c: CaseKey): Promise<void>;
+  deleteCase(c: CaseKey): Promise<void>;
   completeCase(
     c: CaseKey,
   ): Promise<

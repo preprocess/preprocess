@@ -55,6 +55,10 @@ import {
   evalSuites,
 } from "../src/schema/evals.ts";
 import { otelExports } from "../src/schema/otel.ts";
+import {
+  organizationRetention,
+  retentionSweeps,
+} from "../src/schema/retention.ts";
 import { webhookDeliveries, webhookEndpoints } from "../src/schema/webhooks.ts";
 import {
   mcpAuthorizations,
@@ -377,6 +381,19 @@ export const seedOrganization = async (name: string) =>
       firstAt: new Date(),
       lastAt: new Date(),
     });
+    await tx.insert(organizationRetention).values({
+      organizationId: org,
+      runCaptureDays: 30,
+      updatedBy: userId,
+    });
+    await tx.insert(retentionSweeps).values({
+      id: newId("retentionSweep"),
+      organizationId: org,
+      kind: "runCapture",
+      days: 30,
+      cutoff: new Date(),
+      counts: { cases: 1 },
+    });
     await tx.insert(otelExports).values({
       organizationId: org,
       endpoint: "https://otel.example.com",
@@ -503,6 +520,8 @@ export const tenantTables = {
   organization_defaults: "organization_id",
   agent_overrides: "organization_id",
   log_summaries: "organization_id",
+  organization_retention: "organization_id",
+  retention_sweeps: "organization_id",
   otel_exports: "organization_id",
   eval_suites: "organization_id",
   eval_suite_cases: "organization_id",
