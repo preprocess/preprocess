@@ -10,7 +10,7 @@
 import { apiKey } from "@better-auth/api-key";
 import { audit, startAuditChain } from "@preprocess/db/audit";
 import type { AuditInput } from "@preprocess/db/audit";
-import { withoutOrg } from "@preprocess/db/client";
+import { withoutOrg, withoutOrgRead } from "@preprocess/db/client";
 import type { SystemTx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import type { IdKind } from "@preprocess/db/ids";
@@ -547,10 +547,27 @@ export const withAuth = async <T>(
   }
 };
 
+// Resolves the session outside a transaction: reading it is a few selects,
+// and refreshing it is a single update.
+export const readSession = (env: Env, request: Request) =>
+  withoutOrgRead(env, "better-auth", (tx) =>
+    createAuth(env, tx, requestContext(request)).api.getSession({
+      headers: request.headers,
+    }),
+  );
+
 // Better Auth's own routes (/api/auth/*), with the signed-in person resolved
-// first so hooks can name who acted.
+// first so hooks can name who acted. Reading the session names nobody, so it
+// skips both the transaction and the second lookup.
 export const handleAuthRequest = async (env: Env, request: Request) => {
   const context = requestContext(request);
+  if (
+    request.method === "GET" &&
+    new URL(request.url).pathname === "/api/auth/get-session"
+  )
+    return withoutOrgRead(env, "better-auth", (tx) =>
+      createAuth(env, tx, context).handler(request),
+    );
   return withAuth(env, context, async (auth) => {
     const session = await auth.api.getSession({ headers: request.headers });
     context.actorId = session?.user.id ?? null;

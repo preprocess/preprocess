@@ -12,7 +12,8 @@
 // (@preprocess/sandbox) to the API, which times and bills it.
 
 import { Files } from "@cloudflare/sandbox";
-import { SandboxMeter } from "@preprocess/sandbox";
+import { initLogs, wideEvent } from "@preprocess/logs";
+import { SandboxMeter, type SandboxOwner } from "@preprocess/sandbox";
 import type {
   SandboxManifest,
   SandboxPreset,
@@ -20,7 +21,20 @@ import type {
 } from "@preprocess/sdk/protocol";
 import { DurableObject } from "cloudflare:workers";
 
-import type { Env, NetworkRules } from "./env.ts";
+import type { DeploymentRef, Env, NetworkRules } from "./env.ts";
+import {
+  LAYER_BUILD_SECONDS,
+  LAYER_INSTANCE,
+  LAYER_LOG_CHARS,
+  layerBuilderName,
+  layerKey,
+  ownsLayer,
+  parseLayerSizes,
+  type Layer,
+  type LayerJob,
+  type LayerResult,
+  type QueuedLayer,
+} from "./layers.ts";
 import type { OutboundProps } from "./outbound.ts";
 
 // Each size's Cloudflare instance type (PRE-87; developers.cloudflare.com/
@@ -76,6 +90,7 @@ export const READ_BYTES = 256_000;
 export type SandboxConfig = {
   organizationId: string;
   agentId: string;
+  deploymentId: string;
   caseId: string;
   network: NetworkRules;
   sandbox: SandboxManifest;
@@ -95,6 +110,31 @@ const tail = (text: string) =>
     : { text, cut: false };
 
 const decoder = new TextDecoder();
+
+// What every process gets: the platform's variables, then the setup's.
+const processEnv = (sandbox: SandboxManifest) => ({
+  ...PROCESS_ENV,
+  ...sandbox.setup?.env,
+});
+
+// exec() needs the instance up, and start() returns before it is.
+const execWhenUp = async (
+  container: Container,
+  cmd: string[],
+  options: ContainerExecOptions,
+) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await container.exec(cmd, options);
+    } catch (error) {
+      if (attempt >= 60 || !container.running) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+};
+
+const textStream = (text: string) =>
+  new Response(text).body as ReadableStream<Uint8Array>;
 
 export const sandboxName = (c: {
   organizationId: string;
@@ -135,9 +175,51 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     );
   }
 
+  // Set while destroy() runs: destroying the container also settles
+  // monitor(), and that stop is the destroy, not a crash. A crash closes the
+  // interval at its last heartbeat, so on staging it billed a 7 s sandbox 0 s.
+  private destroying = false;
+
   private async stopped(type: "sleep" | "crash") {
+    if (this.destroying) return;
     await this.ctx.storage.delete("sandbox:startedAt");
+    const at = new Date();
+    const owner = await this.ctx.storage.get<SandboxOwner>("sandbox:open");
     await this.meter.end(type);
+    if (owner) this.log(owner, "sandbox.stop", at, type);
+  }
+
+  // The container's start and stop as this object saw them, in the case's run
+  // log beside the interval the API timed; the staging smoke test compares
+  // the two.
+  private log(
+    owner: SandboxOwner,
+    kind: "sandbox.start" | "sandbox.stop",
+    at: Date,
+    reason: string,
+  ) {
+    initLogs("runtime", (records) =>
+      this.env.PLATFORM ? this.env.PLATFORM.logs(records) : Promise.resolve(),
+    );
+    const log = wideEvent(
+      kind,
+      {
+        organizationId: owner.organizationId,
+        ...(owner.agent && { agentId: owner.agent }),
+        ...(owner.caseId && { caseId: owner.caseId }),
+      },
+      (promise) => this.ctx.waitUntil(promise),
+    );
+    log.set({
+      message:
+        kind === "sandbox.start"
+          ? `Sandbox ${reason === "wake" ? "woke" : "started"} (${this.size})`
+          : `Sandbox stopped (${reason})`,
+      size: this.size,
+      reason,
+      containerAt: at.toISOString(),
+    });
+    log.emit();
   }
 
   // Starts or wakes the container when it is not running, and returns what
@@ -152,12 +234,19 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     const image = container.images[SANDBOX_IMAGE[config.sandbox.preset]];
     if (!image)
       throw new Error(`no image for the ${config.sandbox.preset} preset`);
+    const layer = config.sandbox.setup
+      ? await this.layerFor(config, image)
+      : null;
     const outbound = (this.ctx.exports as unknown as Exports).Outbound({
       props: { organizationId: config.organizationId, network: config.network },
     });
+    const woken =
+      (await this.ctx.storage.get<number>("sandbox:seq")) !== undefined;
+    let startedAt = new Date();
     try {
       await container.interceptAllOutboundHttp(outbound);
       await container.interceptOutboundHttps("*", outbound);
+      startedAt = new Date();
       container.start({
         image,
         instance: SANDBOX_INSTANCE[this.size],
@@ -171,28 +260,197 @@ export abstract class CaseSandbox extends DurableObject<Env> {
           size: this.size,
         },
       });
-      await container.setInactivityTimeout(
-        config.sandbox.idleTimeoutMinutes * 60_000,
-      );
     } catch (error) {
       if (container.running) await container.destroy();
       throw error;
     }
-    const woken =
-      (await this.ctx.storage.get<number>("sandbox:seq")) !== undefined;
+    // The interval opens as soon as the container is asked to start: setting
+    // its timeout waits for it to boot, which staging measured at 3.7 s.
+    const owner = {
+      organizationId: config.organizationId,
+      agent: config.agentId,
+      caseId: config.caseId,
+    };
+    await this.meter.begin(owner, "case", this.size, woken ? "wake" : "start");
     await this.ctx.storage.put("sandbox:startedAt", Date.now());
-    await this.meter.begin(
-      {
-        organizationId: config.organizationId,
-        agent: config.agentId,
-        caseId: config.caseId,
-      },
-      "case",
-      this.size,
-      woken ? "wake" : "start",
-    );
+    this.log(owner, "sandbox.start", startedAt, woken ? "wake" : "start");
     this.watch();
+    try {
+      await container.setInactivityTimeout(
+        config.sandbox.idleTimeoutMinutes * 60_000,
+      );
+    } catch (error) {
+      await this.destroy();
+      throw error;
+    }
+    if (layer) await this.mount(container, layer);
     return this.install(container, config.sandbox);
+  }
+
+  // The deployment's custom environment for this image: the one its row
+  // names, or, when that was built on an older preset image or collected,
+  // built now and recorded on the row before the first command runs.
+  private async layerFor(config: SandboxConfig, image: string): Promise<Layer> {
+    const platform = this.env.PLATFORM;
+    if (!platform) throw new Error("custom environments need the platform");
+    const deployment: DeploymentRef = {
+      organizationId: config.organizationId,
+      agentId: config.agentId,
+      deploymentId: config.deploymentId,
+    };
+    const named = await platform.sandboxLayer(deployment);
+    if (
+      named &&
+      named.image === image &&
+      ownsLayer(config.organizationId, named.key) &&
+      (await this.env.BUNDLES.head(named.key))
+    )
+      return named;
+    const job: LayerJob = {
+      organizationId: config.organizationId,
+      agentId: config.agentId,
+      preset: config.sandbox.preset,
+      setup: config.sandbox.setup!,
+      network: config.network,
+    };
+    const result = await this.env.SANDBOX_LARGE.getByName(
+      await layerBuilderName(job),
+    ).buildLayer(job);
+    const recorded = await platform.sandboxLayerBuilt({ deployment, result });
+    if ("error" in recorded)
+      throw new Error(
+        `the custom environment is not available: ${recorded.error}`,
+      );
+    if ("error" in result) throw new Error(result.error);
+    return result;
+  }
+
+  // Streams the layer from R2 into mount.sh, which mounts it over the preset;
+  // no command runs before it is in place.
+  private async mount(container: Container, layer: Layer) {
+    const object = await this.env.BUNDLES.get(layer.key);
+    if (!object) throw new Error("the custom environment's layer is missing");
+    const process = await execWhenUp(
+      container,
+      ["/opt/preprocess/layer/mount.sh"],
+      { stdin: object.body, stderr: "combined" },
+    );
+    const output = await process.output();
+    if (output.exitCode === 0) return;
+    await this.destroy();
+    throw new Error(
+      `the custom environment did not mount: ${tail(decoder.decode(output.stdout)).text}`,
+    );
+  }
+
+  // A deploy's build (spec 3): queued here and run on the alarm, which
+  // reports the result for every deployment waiting on it.
+  async queueLayer(queued: QueuedLayer) {
+    const current = await this.ctx.storage.get<QueuedLayer>("layer:queued");
+    const waiting = [...(current?.waiting ?? []), ...queued.waiting].filter(
+      (d, i, all) =>
+        all.findIndex((o) => o.deploymentId === d.deploymentId) === i,
+    );
+    await this.ctx.storage.put("layer:queued", { job: queued.job, waiting });
+    await this.ctx.storage.setAlarm(Date.now());
+  }
+
+  private building: Promise<LayerResult> | undefined;
+
+  // Builds the layer for a setup, or finds it already built. Callers at the
+  // same time share one build.
+  buildLayer(job: LayerJob): Promise<LayerResult> {
+    this.building ??= this.runBuild(job).finally(() => {
+      this.building = undefined;
+    });
+    return this.building;
+  }
+
+  private async runBuild(job: LayerJob): Promise<LayerResult> {
+    const container = this.container();
+    const image = container.images[SANDBOX_IMAGE[job.preset]];
+    if (!image) return { error: `no image for the ${job.preset} preset` };
+    const key = await layerKey(job.organizationId, image, job.setup);
+    const found = await this.env.BUNDLES.head(key);
+    if (found)
+      return {
+        key,
+        image,
+        bytes: found.size,
+        unpackedBytes: Number(
+          found.customMetadata?.unpackedBytes ?? found.size,
+        ),
+      };
+    if (container.running) await container.destroy();
+    const outbound = (this.ctx.exports as unknown as Exports).Outbound({
+      props: { organizationId: job.organizationId, network: job.network },
+    });
+    await container.interceptAllOutboundHttp(outbound);
+    await container.interceptOutboundHttps("*", outbound);
+    container.start({
+      image,
+      instance: LAYER_INSTANCE,
+      enableInternet: false,
+      entrypoint: ["sleep", "infinity"],
+      labels: { org: job.organizationId, agent: job.agentId, kind: "layer" },
+    });
+    await container.setInactivityTimeout(LAYER_BUILD_SECONDS * 1000);
+    await this.meter.begin(
+      { organizationId: job.organizationId, agent: job.agentId },
+      "build",
+      LAYER_INSTANCE,
+    );
+    // The alarm that would heartbeat is busy running this build.
+    const heartbeat = setInterval(() => {
+      void this.meter.heartbeat(true);
+    }, 30_000);
+    try {
+      const process = await execWhenUp(
+        container,
+        ["/opt/preprocess/layer/build.sh"],
+        {
+          stdin: textStream(JSON.stringify(job.setup)),
+          stderr: "combined",
+          cwd: WORKSPACE,
+          env: PROCESS_ENV,
+        },
+      );
+      const timer = setTimeout(
+        () => process.kill(9),
+        LAYER_BUILD_SECONDS * 1000,
+      );
+      const output = await process.output().finally(() => clearTimeout(timer));
+      const text = decoder.decode(output.stdout);
+      const log = text.slice(-LAYER_LOG_CHARS);
+      const sizes = parseLayerSizes(text);
+      if (output.exitCode !== 0 || !sizes)
+        return {
+          error:
+            output.exitCode === 137
+              ? `the setup ran past ${LAYER_BUILD_SECONDS / 60} minutes`
+              : "a setup step failed",
+          log,
+        };
+      const cat = await container.exec(["cat", "/.preprocess/layer.sqfs"], {
+        stderr: "ignore",
+      });
+      const { readable, writable } = new FixedLengthStream(sizes.bytes);
+      const [, put] = await Promise.all([
+        cat.stdout!.pipeTo(writable),
+        this.env.BUNDLES.put(key, readable, {
+          customMetadata: {
+            image,
+            unpackedBytes: String(sizes.unpackedBytes),
+          },
+        }),
+      ]);
+      if (!put) return { error: "the layer could not be stored", log };
+      return { key, image, ...sizes };
+    } finally {
+      clearInterval(heartbeat);
+      if (container.running) await container.destroy();
+      await this.meter.end("destroy");
+    }
   }
 
   // Trusts the outbound gateway's certificate, then installs the agent's
@@ -229,7 +487,7 @@ export abstract class CaseSandbox extends DurableObject<Env> {
       });
     for (const step of steps) {
       const process = await container.exec(step.cmd, {
-        env: PROCESS_ENV,
+        env: processEnv(sandbox),
         stderr: "combined",
         ...(step.user && { user: step.user }),
         ...(step.cwd && { cwd: step.cwd }),
@@ -252,7 +510,7 @@ export abstract class CaseSandbox extends DurableObject<Env> {
       EXEC_SECONDS.max,
     );
     const process = await container.exec(["bash", "-lc", input.command], {
-      env: PROCESS_ENV,
+      env: processEnv(config.sandbox),
       user: USER,
       cwd: input.cwd ?? WORKSPACE,
     });
@@ -306,14 +564,36 @@ export abstract class CaseSandbox extends DurableObject<Env> {
   async destroy() {
     await this.ctx.storage.delete("sandbox:startedAt");
     if (!this.ctx.container?.running) return this.meter.end("crash");
-    await this.ctx.container.destroy();
-    await this.meter.end("destroy");
+    const owner = await this.ctx.storage.get<SandboxOwner>("sandbox:open");
+    this.destroying = true;
+    try {
+      await this.ctx.container.destroy();
+      const at = new Date();
+      await this.meter.end("destroy");
+      if (owner) this.log(owner, "sandbox.stop", at, "destroy");
+    } finally {
+      this.destroying = false;
+    }
   }
 
   // Every heartbeat: a container past its lifetime is destroyed; otherwise
   // the meter heartbeats, or closes a container found gone at its last
   // heartbeat.
   override async alarm() {
+    const queued = await this.ctx.storage.get<QueuedLayer>("layer:queued");
+    if (queued) {
+      const result = await this.buildLayer(queued.job).catch(
+        (error: unknown): LayerResult => ({ error: String(error) }),
+      );
+      // Deploys that queued while it ran share the result.
+      const waiting =
+        (await this.ctx.storage.get<QueuedLayer>("layer:queued"))?.waiting ??
+        queued.waiting;
+      await this.ctx.storage.delete("layer:queued");
+      for (const deployment of waiting)
+        await this.env.PLATFORM?.sandboxLayerBuilt({ deployment, result });
+      return;
+    }
     const startedAt = await this.ctx.storage.get<number>("sandbox:startedAt");
     if (startedAt !== undefined && Date.now() - startedAt >= LIFETIME_MS)
       return this.destroy();

@@ -4,10 +4,12 @@ import {
   Scripts,
   createRootRoute,
   redirect,
+  useRouter,
   useRouterState,
 } from "@tanstack/react-router";
 import { FluidProvider } from "@preprocess/ui/lib/fluid-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { ProductShell } from "../components/product-shell";
@@ -22,6 +24,7 @@ import {
   needsName,
 } from "../features/auth/session";
 import { loadInbox } from "../features/inbox/load-inbox";
+import { onDataChanged } from "../lib/data-changed";
 import { loadRequiredCheckout } from "../features/organizations/billing";
 import { OrganizationsProvider } from "../features/organizations/organizations-context";
 import { isOnboardingPath } from "../server/onboarding-path";
@@ -152,6 +155,15 @@ function RootComponent() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  const router = useRouter();
+  useEffect(
+    () =>
+      onDataChanged(() => {
+        void router.invalidate();
+        void queryClient.invalidateQueries();
+      }),
+    [router],
+  );
   // One shell for every product route, so navigating swaps only the page.
   const outlet =
     isPublicAuthPath(pathname) || isOnboardingPath(pathname) ? (

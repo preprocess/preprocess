@@ -2,8 +2,10 @@
 // CLOUDFLARE_ACCOUNT_ID; .github/workflows/registry.yml runs it daily.
 //   pnpm --filter @preprocess/infra registry usage
 //   pnpm --filter @preprocess/infra registry sweep [open pull request numbers...]
-// usage prints the estimate, and in GitHub Actions a warning annotation once
-// it passes 35 GB of the 50 GB cap. sweep deletes the images no Worker
+// usage prints the estimate. Its first summary line is always
+// REGISTRY_USAGE_GB=<n>, which alerting reads. In GitHub Actions it adds a
+// warning annotation from 35 GB of the 50 GB cap, and from 42 GB it fails.
+// sweep deletes the images no Worker
 // references; scripts/stage.ts deletes a preview's own images when it destroys
 // the preview.
 
@@ -13,6 +15,7 @@ import {
   type Cleaned,
   credentials,
   sweep,
+  failAtBytes,
   usage,
   warnAtBytes,
 } from "../src/registry.ts";
@@ -34,7 +37,9 @@ const report = (cleaned: Cleaned[]) => {
 if (command === "usage") {
   const result = await usage(await credentials());
   const lines = [
-    `Container registry: ${gb(result.uniqueBytes)} of unique blobs in ${result.repositories} repositories (${gb(result.perRepositoryBytes)} counting each repository in full; ${gb(result.chainBytes)} of it prepared btrfs chains). Cap 50 GB, warning at ${gb(warnAtBytes)}.`,
+    `REGISTRY_USAGE_GB=${(result.uniqueBytes / 1e9).toFixed(2)}`,
+    "",
+    `Container registry: ${gb(result.uniqueBytes)} of unique blobs in ${result.repositories} repositories (${gb(result.perRepositoryBytes)} counting each repository in full; ${gb(result.chainBytes)} of it prepared btrfs chains). Cap 50 GB, warning at ${gb(warnAtBytes)}, failing at ${gb(failAtBytes)}.`,
     "",
     "| Repositories | Count | Tags | Unique blobs |",
     "| --- | --- | --- | --- |",
@@ -46,6 +51,12 @@ if (command === "usage") {
   console.log(lines.join("\n"));
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
+  }
+  if (result.uniqueBytes >= failAtBytes) {
+    console.log(
+      `::error title=Container registry at its limit::${gb(result.uniqueBytes)} of the account's 50 GB registry is used, at or above ${gb(failAtBytes)}. See infra/README.md (Container registry).`,
+    );
+    process.exit(1);
   }
   if (result.uniqueBytes >= warnAtBytes && process.env.GITHUB_ACTIONS) {
     console.log(

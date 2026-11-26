@@ -11,6 +11,7 @@ import { HTTPException } from "hono/http-exception";
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { reportDaily, reportUsage } from "./billing.ts";
 import { closeSilentSandboxes } from "./sandbox.ts";
+import { collectSandboxLayers } from "./sandbox-layers.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
@@ -204,9 +205,11 @@ export default {
     }
     // 00:20 UTC: sign and store yesterday's audit chain for every
     // organization, forget expired idempotency keys, delete what is past each
-    // organization's retention periods, and report yesterday's storage and,
-    // on the first, last month's active seats.
+    // organization's retention periods, collect custom sandbox layers no live
+    // deployment names, and report yesterday's storage and, on the first,
+    // last month's active seats.
     const now = new Date(controller.scheduledTime);
+    ctx.waitUntil(collectSandboxLayers(env, now));
     ctx.waitUntil(anchorAll(env, now));
     ctx.waitUntil(deleteExpiredIdempotencyKeys(env));
     ctx.waitUntil(sweepRetention(env, now));

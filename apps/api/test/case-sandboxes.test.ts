@@ -1,16 +1,21 @@
 // Case sandboxes (spec 3, 5 and 16a): a deploy that asks for a sandbox needs a
 // size, the organization's largest-size guardrail holds a larger one in
 // waiting until an Owner or Admin approves, a dashboard override cannot pass
-// it. Billing of awake time is tested in sandbox.test.ts.
+// it, and who may read a case's sandbox time. Billing of awake time is tested
+// in sandbox.test.ts.
 
 import { orgId, withOrg, type OrgId } from "@preprocess/db/client";
+import { newId } from "@preprocess/db/ids";
+import { agents } from "@preprocess/db/schema/access";
 import { auditEvents } from "@preprocess/db/schema/audit";
+import { cases } from "@preprocess/db/schema/cases";
+import { deployments } from "@preprocess/db/schema/deployments";
 import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { sizeAllowed } from "../src/sandbox.ts";
+import { recordSandboxEvent, sizeAllowed } from "../src/sandbox.ts";
 import type { Client } from "./helpers.ts";
-import { createOrganization, signUp, testEnv } from "./helpers.ts";
+import { addMember, createOrganization, signUp, testEnv } from "./helpers.ts";
 // Bundled by vitest.config.ts, as `preprocess deploy` bundles an agent.
 import sandboxAgent from "./dist/sandbox-agent.js?raw";
 
@@ -165,5 +170,113 @@ describe("deploying an agent with a sandbox", () => {
       before: "medium",
       after: "large",
     });
+  });
+});
+
+describe("reading a case's sandbox time", () => {
+  type Intervals = {
+    intervals: {
+      seq: number;
+      size: string;
+      startedAt: string;
+      endedAt: string | null;
+      endReason: string | null;
+    }[];
+  };
+  const caseId = newId("case");
+  const at = (time: string) => new Date(`2026-11-26T${time}Z`);
+
+  beforeAll(async () => {
+    const agentId = newId("agent");
+    const deploymentId = newId("deployment");
+    await withOrg(environment, org, async (tx) => {
+      await tx
+        .insert(agents)
+        .values({ id: agentId, organizationId: org, slug: "timed" });
+      await tx.insert(deployments).values({
+        id: deploymentId,
+        organizationId: org,
+        agentId,
+        environment: "production",
+        status: "ready",
+        bundleSha256: "00",
+        sdkVersion: "0.1.0",
+        manifest: {},
+        source: "cli",
+        createdBy: "seed",
+        promotedAt: new Date(),
+      });
+      await tx.insert(cases).values({
+        id: caseId,
+        organizationId: org,
+        agentId,
+        deploymentId,
+        status: "completed",
+        source: "api",
+      });
+    });
+    const send = (
+      type: "start" | "wake" | "sleep" | "destroy",
+      seq: number,
+      time: string,
+    ) =>
+      recordSandboxEvent(
+        environment,
+        {
+          sandboxId: `sbx_${caseId}`,
+          seq,
+          type,
+          organizationId: org,
+          agent: agentId,
+          caseId,
+          kind: "case",
+          size: "small",
+        },
+        at(time),
+      );
+    await send("start", 1, "09:00:00");
+    await send("sleep", 1, "09:05:00");
+    await send("wake", 2, "09:20:00");
+    await send("destroy", 2, "09:21:30");
+  });
+
+  it("lists each awake interval, oldest first, to someone who can see the case", async () => {
+    const res = await owner.call<Intervals>(
+      `/v1/orgs/${org}/cases/${caseId}/sandbox`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.intervals).toEqual([
+      {
+        seq: 1,
+        size: "small",
+        startedAt: at("09:00:00").toISOString(),
+        endedAt: at("09:05:00").toISOString(),
+        endReason: "sleep",
+      },
+      {
+        seq: 2,
+        size: "small",
+        startedAt: at("09:20:00").toISOString(),
+        endedAt: at("09:21:30").toISOString(),
+        endReason: "destroy",
+      },
+    ]);
+  });
+
+  it("hides the case from a member without access to its agent", async () => {
+    const member = (await addMember(owner, org, "Sandbox Reader")).client;
+    const res = await member.call(`/v1/orgs/${org}/cases/${caseId}/sandbox`);
+    expect(res.status).toBe(404);
+  });
+
+  it("never shows one organization's case to another", async () => {
+    const other = (await signUp("Sandbox Outsider", environment)).client;
+    const otherOrg = await createOrganization(other, "Elsewhere");
+    const own = await other.call(
+      `/v1/orgs/${otherOrg}/cases/${caseId}/sandbox`,
+    );
+    expect(own.status).toBe(404);
+    const theirs = await other.call(`/v1/orgs/${org}/cases/${caseId}/sandbox`);
+    expect([403, 404]).toContain(theirs.status);
   });
 });

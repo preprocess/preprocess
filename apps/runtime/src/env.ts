@@ -4,6 +4,7 @@ import type { SandboxReporter } from "@preprocess/sandbox";
 import type { Approval } from "./approvals.ts";
 import type { Charges } from "./capture.ts";
 import type { CaseRuntime } from "./case-runtime.ts";
+import type { Layer, LayerResult } from "./layers.ts";
 import type { SandboxLarge, SandboxMedium, SandboxSmall } from "./sandbox.ts";
 
 export type Env = {
@@ -228,6 +229,14 @@ export type Platform = {
   // Each sandbox's start, wake, heartbeat, sleep, destroy and crash, which
   // the API times and bills (spec 16a).
   sandboxEvent: SandboxReporter["sandboxEvent"];
+  // Custom environments (spec 3): the layer a deployment's row names, and a
+  // build's result for the row, which the API records, checks against the
+  // size's disk and bills as storage.
+  sandboxLayer(d: DeploymentRef): Promise<Layer | null>;
+  sandboxLayerBuilt(built: {
+    deployment: DeploymentRef;
+    result: LayerResult;
+  }): Promise<{ ok: true } | { error: string }>;
   // Run-log records (design doc 09), queued for the API's consumer.
   logs(records: LogRecord[]): Promise<void>;
   // The memory_propose tool (spec 10); the answer is the tool's result.

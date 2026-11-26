@@ -1,4 +1,4 @@
-# The image copies nothing from its context, only from other images, so a
-# change beside the Dockerfile reuses the published images instead of
-# rebuilding them.
+# The image copies only layer/ from its context, so changes elsewhere beside
+# the Dockerfile (such as test/) reuse the published images.
 *
+!layer/

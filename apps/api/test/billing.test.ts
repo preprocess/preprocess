@@ -29,7 +29,7 @@ import {
 } from "../src/billing.ts";
 import type { Env } from "../src/env.ts";
 import { monthOf } from "../src/metering.ts";
-import { customSandboxImages, getPlan } from "../src/plan.ts";
+import { customImagesAllowed, getPlan } from "../src/plan.ts";
 import { Platform } from "../src/platform.ts";
 import {
   addMember,
@@ -305,13 +305,13 @@ describe("the plan", () => {
       flags: { training: {}, custom_sandbox_images: {} },
       balances: {},
     };
-    expect(await customSandboxImages(environment, orgId(team.org))).toBe(true);
+    expect(await customImagesAllowed(environment, orgId(team.org))).toBe(true);
     customer = {
       subscriptions: [{ plan_id: "free", status: "active" }],
       flags: {},
       balances: {},
     };
-    expect(await customSandboxImages(environment, orgId(free.org))).toBe(false);
+    expect(await customImagesAllowed(environment, orgId(free.org))).toBe(false);
   });
 
   it("is free and unlimited where billing is off", async () => {

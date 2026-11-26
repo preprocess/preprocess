@@ -45,8 +45,12 @@ type WaitingFor = {
 
 type Deployment = {
   id: string;
-  status: "ready" | "waiting" | "failed";
+  status: "ready" | "waiting" | "failed" | "building";
   environment?: "production" | "preview";
+  sandboxEnvironment: {
+    status: "building" | "ready" | "failed";
+    error?: string;
+  } | null;
   waitingFor: WaitingFor;
   model: string;
   reasoning: string;
@@ -215,6 +219,19 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
                   ) : null}
                   <DeploymentStatus deployment={deployment} />
                 </SettingsRow>
+                {deployment.sandboxEnvironment?.status === "building" ? (
+                  <SettingsRow
+                    className="pl-10"
+                    description="The sandbox's custom environment is building. The deployment serves once it is ready."
+                    label="Custom environment"
+                  />
+                ) : deployment.sandboxEnvironment?.status === "failed" ? (
+                  <SettingsRow
+                    className="pl-10"
+                    description={deployment.sandboxEnvironment.error}
+                    label="Custom environment failed"
+                  />
+                ) : null}
                 {needs.map((need) => {
                   const asked = need.change
                     ? pending.find((r) => grants(r, need.change!))
