@@ -86,6 +86,7 @@ describe("network rules", () => {
     expect(start.body).toEqual({
       network: { allow: [], block: [] },
       sandboxMaxSize: null,
+      allowedModels: null,
       modelEndpoints: "hosted",
     });
     const rules = { allow: ["*.example.com"], block: ["Bank.example.com"] };

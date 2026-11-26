@@ -1,19 +1,23 @@
 // The audit log (doc 02): list and verify are free and readable by Owners and
-// Admins; export is paid and refused on the free plan.
+// Admins; export is paid, refused on the free plan, and for Owners only.
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { readAuditEvents, toHex, verifyAuditChain } from "@preprocess/db/audit";
 import type { AuditRow } from "@preprocess/db/audit";
 import { withOrg } from "@preprocess/db/client";
 import { auditEvents } from "@preprocess/db/schema/audit";
+import type { OrgId, Tx } from "@preprocess/db/client";
+import { audit } from "@preprocess/db/audit";
 import { and, asc, eq, gt, gte, lt } from "drizzle-orm";
+import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 
 import { checkSignature, manifestKey } from "../audit-anchor.ts";
 import type { AuditManifest } from "../audit-anchor.ts";
-import { requireAdmin } from "../caller.ts";
+import { eventBase, requireAdmin } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
+import { ApiError } from "../cases.ts";
 import { getPlan } from "../plan.ts";
 
 const OrgParam = z.object({ org: z.string() });
@@ -56,6 +60,120 @@ const Verification = z
       .optional(),
   })
   .openapi("AuditVerification");
+
+type Filters = {
+  action?: string | undefined;
+  actor?: string | undefined;
+  caseId?: string | undefined;
+  from?: string | undefined;
+  to?: string | undefined;
+};
+
+// One page of events after a seq that match the filters, in ascending seq
+// order, read through the chain reader so each carries its hashes.
+const pageEvents = async (
+  tx: Tx,
+  org: OrgId,
+  q: Filters & { after?: number | undefined; limit: number },
+) => {
+  const filtered = await tx
+    .select({ seq: auditEvents.seq })
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.organizationId, org),
+        q.after === undefined ? undefined : gt(auditEvents.seq, q.after),
+        q.action ? eq(auditEvents.action, q.action) : undefined,
+        q.actor ? eq(auditEvents.actorId, q.actor) : undefined,
+        q.caseId ? eq(auditEvents.caseId, q.caseId) : undefined,
+        q.from ? gte(auditEvents.occurredAt, new Date(q.from)) : undefined,
+        q.to ? lt(auditEvents.occurredAt, new Date(q.to)) : undefined,
+      ),
+    )
+    .orderBy(asc(auditEvents.seq))
+    .limit(q.limit);
+  if (filtered.length === 0) return [];
+  const seqs = new Set(filtered.map((r) => r.seq));
+  const page = await readAuditEvents(tx, org, {
+    afterSeq: filtered[0]!.seq - 1,
+    limit: filtered.at(-1)!.seq - filtered[0]!.seq + 1,
+  });
+  return page.filter((r) => seqs.has(r.seq));
+};
+
+// The longest range one export may cover.
+export const EXPORT_MAX_DAYS = 90;
+const EXPORT_PAGE = 500;
+
+const COLUMNS = [
+  "id",
+  "seq",
+  "occurredAt",
+  "actorType",
+  "actorId",
+  "onBehalfOf",
+  "action",
+  "targetType",
+  "targetId",
+  "caseId",
+  "requestId",
+  "ip",
+  "data",
+  "prevHash",
+  "hash",
+] as const;
+
+const csvCell = (value: unknown) => {
+  const text =
+    value === null || value === undefined
+      ? ""
+      : typeof value === "string"
+        ? value
+        : JSON.stringify(value);
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+};
+
+const FORMATS = {
+  csv: {
+    type: "text/csv; charset=utf-8",
+    header: `${COLUMNS.join(",")}\r\n`,
+    line: (e: ReturnType<typeof toEvent>) =>
+      `${COLUMNS.map((c) => csvCell(e[c])).join(",")}\r\n`,
+  },
+  ndjson: {
+    type: "application/x-ndjson",
+    header: "",
+    line: (e: ReturnType<typeof toEvent>) => `${JSON.stringify(e)}\n`,
+  },
+} as const;
+
+const ExportRequest = z
+  .object({
+    format: z.enum(["csv", "ndjson"]).openapi({
+      description: "csv (RFC 4180, a header row, data as JSON) or ndjson",
+    }),
+    from: z.string().datetime().openapi({ description: "Inclusive start" }),
+    to: z.string().datetime().openapi({ description: "Exclusive end" }),
+    action: z.string().optional(),
+    actor: z.string().optional(),
+    caseId: z.string().optional(),
+  })
+  .strict()
+  .openapi("AuditExportRequest");
+
+// Checked before the body, so a caller without the right or the plan learns
+// that first.
+const exportAllowed = createMiddleware<{
+  Bindings: Env;
+  Variables: OrgVariables;
+}>(async (c, next) => {
+  if (c.var.caller.role !== "owner")
+    throw new HTTPException(403, {
+      message: "Only Owners can export the audit log.",
+    });
+  (await getPlan(c.env, c.var.org)).assert("audit_export");
+  await next();
+});
 
 const toEvent = (row: AuditRow) => ({
   ...row,
@@ -103,33 +221,7 @@ export const auditRoutes = new OpenAPIHono<{
       requireAdmin(c.var.caller);
       const q = c.req.valid("query");
       const org = c.var.org;
-      const rows = await withOrg(c.env, org, async (tx) => {
-        const filtered = await tx
-          .select({ seq: auditEvents.seq })
-          .from(auditEvents)
-          .where(
-            and(
-              eq(auditEvents.organizationId, org),
-              q.after === undefined ? undefined : gt(auditEvents.seq, q.after),
-              q.action ? eq(auditEvents.action, q.action) : undefined,
-              q.actor ? eq(auditEvents.actorId, q.actor) : undefined,
-              q.caseId ? eq(auditEvents.caseId, q.caseId) : undefined,
-              q.from
-                ? gte(auditEvents.occurredAt, new Date(q.from))
-                : undefined,
-              q.to ? lt(auditEvents.occurredAt, new Date(q.to)) : undefined,
-            ),
-          )
-          .orderBy(asc(auditEvents.seq))
-          .limit(q.limit);
-        if (filtered.length === 0) return [];
-        const seqs = new Set(filtered.map((r) => r.seq));
-        const page = await readAuditEvents(tx, org, {
-          afterSeq: filtered[0]!.seq - 1,
-          limit: filtered.at(-1)!.seq - filtered[0]!.seq + 1,
-        });
-        return page.filter((r) => seqs.has(r.seq));
-      });
+      const rows = await withOrg(c.env, org, (tx) => pageEvents(tx, org, q));
       return c.json(
         {
           events: rows.map(toEvent),
@@ -283,12 +375,104 @@ export const auditRoutes = new OpenAPIHono<{
       method: "post",
       path: "/audit-events/export",
       tags: ["Audit"],
-      request: { params: OrgParam },
-      responses: { 403: { description: "Export is a paid feature" } },
+      summary: `Export events in a date range of up to ${EXPORT_MAX_DAYS} days as CSV or NDJSON (Owners only, paid plans)`,
+      description:
+        "The file streams in ascending seq order with each event's hashes, so it can be checked against the chain. The export itself is recorded as audit.exported.",
+      middleware: [exportAllowed] as const,
+      request: {
+        params: OrgParam,
+        body: {
+          content: { "application/json": { schema: ExportRequest } },
+          required: true,
+        },
+      },
+      responses: {
+        200: {
+          content: {
+            "text/csv": { schema: z.string() },
+            "application/x-ndjson": { schema: z.string() },
+          },
+          description: "The events, streamed as an attachment",
+        },
+        400: {
+          description: `An invalid body, or a range that is empty or longer than ${EXPORT_MAX_DAYS} days`,
+        },
+        403: {
+          description:
+            "Not an Owner, or the plan does not include audit export",
+        },
+      },
     }),
     async (c) => {
-      requireAdmin(c.var.caller);
-      (await getPlan(c.env, c.var.org)).assert("audit_export");
-      throw new HTTPException(501);
+      const input = c.req.valid("json");
+      const org = c.var.org;
+      const from = new Date(input.from);
+      const to = new Date(input.to);
+      if (to <= from)
+        throw new ApiError(400, "invalid_range", "to must be after from.");
+      if (to.getTime() - from.getTime() > EXPORT_MAX_DAYS * 86_400_000)
+        throw new ApiError(
+          400,
+          "range_too_long",
+          `Export at most ${EXPORT_MAX_DAYS} days at a time.`,
+        );
+      await withOrg(c.env, org, (tx) =>
+        audit(tx, {
+          ...eventBase(c.var),
+          action: "audit.exported",
+          targetType: "organization",
+          targetId: org,
+          data: {
+            format: input.format,
+            from: input.from,
+            to: input.to,
+            filters: {
+              action: input.action ?? null,
+              actor: input.actor ?? null,
+              caseId: input.caseId ?? null,
+            },
+          },
+        }),
+      );
+      const format = FORMATS[input.format];
+      const encoder = new TextEncoder();
+      // Pages are written as the client reads them: each write waits until
+      // the previous chunk was taken, so at most a page is held in memory.
+      const { readable, writable } = new TransformStream<
+        Uint8Array,
+        Uint8Array
+      >();
+      const writer = writable.getWriter();
+      void (async () => {
+        try {
+          if (format.header) await writer.write(encoder.encode(format.header));
+          let after: number | undefined;
+          for (;;) {
+            const page = await withOrg(c.env, org, (tx) =>
+              pageEvents(tx, org, { ...input, after, limit: EXPORT_PAGE }),
+            );
+            if (page.length)
+              await writer.write(
+                encoder.encode(
+                  page.map((r) => format.line(toEvent(r))).join(""),
+                ),
+              );
+            if (page.length < EXPORT_PAGE) break;
+            after = page.at(-1)!.seq;
+          }
+          await writer.close();
+        } catch (error) {
+          await writer.abort(error);
+        }
+      })();
+      const name = `audit-events-${input.from.slice(0, 10)}-${input.to.slice(0, 10)}.${input.format}`;
+      return new Response(readable, {
+        status: 200,
+        headers: {
+          "content-type": format.type,
+          "content-disposition": `attachment; filename="${name}"`,
+          "cache-control": "no-store",
+        },
+      });
     },
   );

@@ -4,6 +4,7 @@
 // when neither its code nor a dashboard override sets them. Owners and Admins
 // change them; everyone else reads them.
 
+import { Badge } from "@preprocess/ui/components/badge";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import {
   Select,
@@ -49,6 +50,8 @@ export type Field<K extends string = Key> = {
   key: K;
   label: string;
   description: string;
+  /** Labelled "Coming soon" and not settable yet (spec 12a). */
+  comingSoon?: true;
 } & (
   | { kind: "choice"; options: readonly { value: string; label: string }[] }
   | { kind: "number" | "text"; placeholder: string }
@@ -119,7 +122,8 @@ export const FIELDS: readonly Field[] = [
   {
     key: "evals.onPush",
     label: "Run evals on push",
-    description: "Platform default: off",
+    description: "Runs marked suites against each new deployment",
+    comingSoon: true,
     kind: "choice",
     options: BOOLEAN,
   },
@@ -157,7 +161,7 @@ export function DefaultsPanel() {
 
   const saved = defaults.data ? toDraft(defaults.data) : null;
   const changed = FIELDS.filter(
-    (f) => draft && saved && draft[f.key] !== saved[f.key],
+    (f) => !f.comingSoon && draft && saved && draft[f.key] !== saved[f.key],
   );
   const invalid = FIELDS.filter(
     (f) => f.kind === "number" && draft?.[f.key] && !/^\d+$/.test(draft[f.key]),
@@ -207,14 +211,18 @@ export function DefaultsPanel() {
                 key={field.key}
                 label={field.label}
                 value={
-                  <DefaultField
-                    disabled={!canEdit}
-                    field={field}
-                    onChange={(text) =>
-                      setDraft({ ...draft, [field.key]: text })
-                    }
-                    value={draft[field.key]}
-                  />
+                  field.comingSoon ? (
+                    <ComingSoon />
+                  ) : (
+                    <DefaultField
+                      disabled={!canEdit}
+                      field={field}
+                      onChange={(text) =>
+                        setDraft({ ...draft, [field.key]: text })
+                      }
+                      value={draft[field.key]}
+                    />
+                  )
                 }
               />
             ))}
@@ -229,6 +237,14 @@ export function DefaultsPanel() {
         ) : null}
       </SettingsSection>
     </SettingsStacked>
+  );
+}
+
+export function ComingSoon() {
+  return (
+    <Badge color="gray" size="sm">
+      Coming soon
+    </Badge>
   );
 }
 

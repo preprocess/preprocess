@@ -17,6 +17,7 @@ import {
 } from "@preprocess/db/schema/evals";
 import { and, asc, count, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
+import { assertModelAllowed } from "../allowed-models.ts";
 import { actor, eventBase, requireDeveloper } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
@@ -25,6 +26,7 @@ import type { Env, StartCase } from "../env.ts";
 import {
   createRuns,
   drainRuns,
+  refuseOnPush,
   suiteCaseValues,
   trimSuite,
   type SuiteCaseSource,
@@ -75,7 +77,10 @@ const Suite = z
     name: z.string(),
     kind: z.enum(["automatic", "manual"]),
     cap: z.number().nullable(),
-    runOnPush: z.boolean(),
+    runOnPush: z.boolean().openapi({
+      description:
+        "Running on each new deployment is not available yet; a stored value reads as it is",
+    }),
     cases: z.number(),
     latestRun: Run.nullable(),
     createdAt: z.string(),
@@ -219,7 +224,10 @@ export const evalRoutes = new OpenAPIHono<{
           z
             .object({
               name: z.string().trim().min(1).max(100),
-              runOnPush: z.boolean().optional(),
+              runOnPush: z.boolean().optional().openapi({
+                description:
+                  "Not available yet: true is refused with 400 not_available",
+              }),
             })
             .strict(),
         ),
@@ -229,6 +237,7 @@ export const evalRoutes = new OpenAPIHono<{
     async (c) => {
       const { agent: slug } = c.req.valid("param");
       const input = c.req.valid("json");
+      refuseOnPush(input.runOnPush);
       const suite = await withOrg(c.env, c.var.org, async (tx) => {
         await requireDeveloper(tx, c.var.caller);
         const agent = await findAgent(tx, slug);
@@ -310,7 +319,7 @@ export const evalRoutes = new OpenAPIHono<{
       path: "/eval-suites/{suite}",
       tags: ["Evals"],
       summary:
-        "Rename a suite, set the automatic suite's cap (1-1000), or mark it to run on push",
+        "Rename a suite or set the automatic suite's cap (1-1000); runOnPush true is not available yet",
       request: {
         params: SuiteParam,
         ...body(
@@ -318,7 +327,10 @@ export const evalRoutes = new OpenAPIHono<{
             .object({
               name: z.string().trim().min(1).max(100).optional(),
               cap: z.number().int().min(1).max(1000).optional(),
-              runOnPush: z.boolean().optional(),
+              runOnPush: z.boolean().optional().openapi({
+                description:
+                  "Not available yet: true is refused with 400 not_available",
+              }),
             })
             .strict(),
         ),
@@ -328,6 +340,7 @@ export const evalRoutes = new OpenAPIHono<{
     async (c) => {
       const { suite: id } = c.req.valid("param");
       const input = c.req.valid("json");
+      refuseOnPush(input.runOnPush);
       const view = await withOrg(c.env, c.var.org, async (tx) => {
         await requireDeveloper(tx, c.var.caller);
         const suite = await findSuite(tx, id);
@@ -601,6 +614,7 @@ export const evalRoutes = new OpenAPIHono<{
             )
           ).model,
         ];
+        for (const model of models) await assertModelAllowed(tx, model);
         const created = await createRuns(tx, {
           organizationId: org,
           suiteId: id,

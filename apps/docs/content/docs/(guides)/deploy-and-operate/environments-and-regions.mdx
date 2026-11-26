@@ -56,9 +56,10 @@ Dynamic Worker, promotion and rollback are pointer updates rather than rebuilds.
   replaces the agent's production scheduler with that deployment's schedules.
 
 <Callout title="Coming soon">
-  `evals.onPush` is accepted in the agent manifest schema, but automatic eval
-  runs on Git push are not wired yet. Run eval suites against a preview or
-  production deployment with `preprocess evals run` or the API.
+  Automatic eval runs on each new deployment are not available yet: a manifest
+  with `evals.onPush: true` deploys with a warning that it has no effect. Run
+  eval suites against a preview or production deployment with `preprocess evals
+  run` or the API.
 </Callout>
 
 ## Platform install stages
