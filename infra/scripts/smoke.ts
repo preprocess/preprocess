@@ -55,6 +55,11 @@ const tokenFor = (minute: number) =>
     .update(`smoke-test:${email}:${minute}`)
     .digest("hex");
 
+// What the custom-environment case runs. Staging serves agents real models,
+// so the case's text names the command rather than relying on the stub's
+// fixture (apps/model-stub/fixtures/chat.json, sandbox-layer-smoke).
+const LAYER_COMMAND = "tree --version; cat /opt/smoke/layer.txt";
+
 const fail = (what: string): never => {
   throw new Error(`smoke test failed: ${what}`);
 };
@@ -263,7 +268,7 @@ const started = await call<{ id: string }>("POST", `/v1/orgs/${org}/cases`, {
     mode === "sandbox"
       ? `Smoke test of the sandbox on ${stage}.`
       : mode === "layer"
-        ? `Smoke test of a custom environment on ${stage}.`
+        ? `Smoke test of a custom environment on ${stage}. Run exactly this command with sandbox_exec, once, and reply with only its output, verbatim: ${LAYER_COMMAND}`
         : `Smoke test of ${stage}.`,
 });
 if (started.status !== 202) fail(`starting the case: ${started.text}`);
