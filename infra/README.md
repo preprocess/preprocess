@@ -120,6 +120,7 @@ stack, as a `selfhost` or `selfhost-<name>` stage (spec 16).
 | `APP_DOMAIN` (optional)                         | The app's hostname on a zone in that account; workers.dev without it                               |
 | `R2_LOCATION_HINT` (optional)                   | Where R2 places the buckets                                                                        |
 | `GITHUB_*` (optional)                           | The install's own GitHub App (docs/design/08-github-app.md)                                        |
+| `PREPROCESS_LICENSE_KEY` (optional)             | The signed license key; without a valid one the install runs the free plan                         |
 
 Each deploy runs `packages/db/bootstrap.sql` with passwords the stack generates
 and keeps in its state, then every pending migration as `preprocess_migrator`,

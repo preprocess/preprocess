@@ -54,10 +54,13 @@ import { regionConfig } from "./src/regions.ts";
 import {
   apiCrons,
   apiSecrets,
+  billingSecrets,
+  billingVars,
   githubSecrets,
   githubVars,
   googleSecrets,
   googleVars,
+  licenseSecrets,
   compatibility,
   durableObjects,
   isPreviewStage,
@@ -367,6 +370,7 @@ export default Alchemy.Stack(
             admin: role.origin,
             app: appRole.origin,
             connectionLimits: originConnectionLimits,
+            output: 2,
           });
           return {
             app: Output.map(granted, ({ app }) => app),
@@ -652,6 +656,35 @@ export default Alchemy.Stack(
         ),
         ...Object.fromEntries(
           githubSecrets.map(
+            (name) =>
+              [
+                name,
+                Config.Redacted(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
+        ...(region &&
+          Object.fromEntries(
+            billingSecrets.map(
+              (name) =>
+                [
+                  name,
+                  Config.Redacted(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
+        ...(region &&
+          Object.fromEntries(
+            billingVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
+        ...Object.fromEntries(
+          (selfHost ? licenseSecrets : []).map(
             (name) =>
               [
                 name,

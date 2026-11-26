@@ -12,7 +12,7 @@ import { and, eq, gte, isNull, sum } from "drizzle-orm";
 
 import { ApiError } from "./cases.ts";
 
-export type SpendVerdict = "ok" | "spending_limit_reached";
+export type SpendVerdict = "ok" | "spending_limit_reached" | "credit_exhausted";
 
 // The start of the calendar month in UTC that `now` falls in.
 export const monthStart = (now: Date) =>

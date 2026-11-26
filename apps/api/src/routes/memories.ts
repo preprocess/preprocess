@@ -333,7 +333,7 @@ const decide = async (
       targetType: "case",
       targetId: caseId,
       caseId,
-      data: { memory: memoryId, agent: found.agentId, text: found.text },
+      data: { memory: memoryId, agent: found.agentId },
     });
     return row!;
   });

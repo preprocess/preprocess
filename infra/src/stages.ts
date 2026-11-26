@@ -97,6 +97,19 @@ export const githubSecrets = [
 export const googleVars = ["GOOGLE_CLIENT_ID"] as const;
 export const googleSecrets = ["GOOGLE_CLIENT_SECRET"] as const;
 
+// Autumn, our cloud's billing (spec 16a), optional: without it billing is off.
+// Never bound on a self-hosted install, which bills nothing.
+export const billingSecrets = ["AUTUMN_SECRET_KEY"] as const;
+// When cards became required, and our own organizations (apps/api/src/env.ts).
+// Both unset, an organization without a plan is not limited.
+export const billingVars = [
+  "BILLING_REQUIRED_FROM",
+  "BILLING_INTERNAL_ORGS",
+] as const;
+// The license key (spec 16), optional and on selfhost stages only: without a
+// valid one the install runs the free plan. Our cloud never binds it.
+export const licenseSecrets = ["PREPROCESS_LICENSE_KEY"] as const;
+
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).
 export const apiCrons = ["20 0 * * *", "* * * * *"];

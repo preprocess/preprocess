@@ -20,6 +20,8 @@ import { actor, eventBase, requireAdmin } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
 import { groupInUse, syncAgents } from "../deploy.ts";
+import { getPlan } from "../plan.ts";
+import { refuseOverSeats } from "../seats.ts";
 
 const OrgParam = z.object({ org: z.string() });
 const GroupParam = OrgParam.extend({ group: z.string() });
@@ -379,11 +381,16 @@ export const groupRoutes = new OpenAPIHono<{
       path: "/groups/{group}/members/{user}",
       tags: ["Groups"],
       request: { params: GroupMemberParam },
-      responses: { ...noContent, 400: { description: "Not a member" } },
+      responses: {
+        ...noContent,
+        400: { description: "Not a member" },
+        402: { description: "Past the license's seat limit" },
+      },
     }),
     async (c) => {
       requireAdmin(c.var.caller);
       const { group: id, user: userId } = c.req.valid("param");
+      const plan = await getPlan(c.env, c.var.org);
       await withOrg(c.env, c.var.org, async (tx) => {
         const group = await findGroup(tx, id);
         const [membership] = await tx
@@ -394,6 +401,7 @@ export const groupRoutes = new OpenAPIHono<{
           throw new HTTPException(400, {
             message: "Only members of the organization can join its groups.",
           });
+        await refuseOverSeats(tx, plan, { group: id, user: userId });
         const added = await tx
           .insert(groupMembers)
           .values({ organizationId: c.var.org, groupId: id, userId })
@@ -477,6 +485,7 @@ export const groupRoutes = new OpenAPIHono<{
       },
       responses: {
         200: json(Grant, "The grant"),
+        402: { description: "Operator access past the license's seat limit" },
         409: { description: "Lowering the access of a group live code names" },
       },
     }),
@@ -484,6 +493,7 @@ export const groupRoutes = new OpenAPIHono<{
       requireAdmin(c.var.caller);
       const { agent: agentId, group: groupId } = c.req.valid("param");
       const { access } = c.req.valid("json");
+      const plan = await getPlan(c.env, c.var.org);
       const grant = await withOrg(c.env, c.var.org, async (tx) => {
         const [agent] = await tx
           .select()
@@ -512,6 +522,8 @@ export const groupRoutes = new OpenAPIHono<{
             [agentId],
             "The group's access cannot be lowered",
           );
+        if (access === "operator")
+          await refuseOverSeats(tx, plan, { group: groupId });
         await tx
           .insert(agentGrants)
           .values({

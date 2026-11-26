@@ -476,7 +476,9 @@ export class CaseRuntime extends DurableObject<Env> {
       next,
       "platform",
       "event",
-      "Halted: the organization reached its monthly spending limit",
+      verdict === "credit_exhausted"
+        ? "Halted: the organization used up its plan's model credit"
+        : "Halted: the organization reached its monthly spending limit",
     );
     await this.report(next, {
       type: "status",
@@ -910,7 +912,7 @@ export class CaseRuntime extends DurableObject<Env> {
           const labels = new Map(options.map((o) => [o.id, o.label]));
           if (await this.overLimit())
             return result(
-              "decide refused: the organization reached its monthly spending limit",
+              "decide refused: the case halted on its organization's spending limit or plan credit",
               true,
             );
           try {
