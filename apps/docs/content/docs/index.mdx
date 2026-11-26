@@ -81,7 +81,7 @@ import { z } from "zod";
 
 export default agent({
   instructions: "You answer stock questions for Acme.",
-  model: "inkling-2-small",
+  model: "deepseek-v4.1-flash",
   tools: {
     lookup_stock: tool({
       description: "Look up stock for a SKU",
