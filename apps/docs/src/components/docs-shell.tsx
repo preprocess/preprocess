@@ -321,8 +321,9 @@ function SectionSwitch({
 }
 
 // Light or dark, one icon button as www.preprocess.com has it. The system
-// theme applies until the person picks one. The server can't know the
-// theme, so the first render assumes light.
+// theme applies until the person picks one. Both icons render and the
+// .dark class picks one, so the icon is right before hydration; the label
+// follows the theme once it is known.
 function ThemeToggle({
   className,
   variant = "ghost",
@@ -346,7 +347,8 @@ function ThemeToggle({
       type="button"
       variant={variant}
     >
-      {isDark ? <Sun aria-hidden /> : <Moon aria-hidden />}
+      <Moon aria-hidden className="dark:hidden" />
+      <Sun aria-hidden className="hidden dark:block" />
     </Button>
   );
 }
