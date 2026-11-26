@@ -43,6 +43,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
 import { GrantAppRole } from "./src/app-role.ts";
+import { originConnectionLimits } from "./src/connections.ts";
 import {
   roleOrigin,
   schemaDigest,
@@ -365,6 +366,7 @@ export default Alchemy.Stack(
           const app = yield* GrantAppRole("GrantAppRole", {
             admin: role.origin,
             app: appRole.origin,
+            connectionLimits: originConnectionLimits,
           });
           return { app, system: role.origin };
         });
@@ -377,10 +379,12 @@ export default Alchemy.Stack(
     const db = yield* Cloudflare.Hyperdrive.Connection("Db", {
       origin: roles.app,
       caching: { disabled: true },
+      originConnectionLimit: originConnectionLimits.app,
     });
     const dbSystem = yield* Cloudflare.Hyperdrive.Connection("DbSystem", {
       origin: roles.system,
       caching: { disabled: true },
+      originConnectionLimit: originConnectionLimits.system,
     });
 
     const files = yield* Cloudflare.R2.Bucket("Files", {
