@@ -16,13 +16,25 @@ import type { OrgId, Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { cases, files } from "@preprocess/db/schema/cases";
 import { logSummaries } from "@preprocess/db/schema/logs";
+import { agentMemories } from "@preprocess/db/schema/memories";
 import {
   organizationRetention,
   RETENTION_KINDS,
   retentionSweeps,
 } from "@preprocess/db/schema/retention";
 import type { RetentionKind } from "@preprocess/db/schema/retention";
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { actor, eventBase } from "./caller.ts";
 import type { Caller, OrgVariables } from "./caller.ts";
@@ -173,7 +185,9 @@ const purgeLogs = async (env: Env, tx: Tx, org: OrgId, due: CaseRef[]) => {
 // Deletes closed cases whole: their files in R2, their Durable Object and run
 // capture, their run logs, then the rows. Review events, approvals, mentions,
 // assignees, webhook deliveries and eval suite membership go with the case
-// row (spec 16a). Audit events, eval results and accepted memories stay.
+// row (spec 16a), and so do the rules the agent proposed on it, whatever their
+// status, except accepted ones. Audit events, eval results and accepted
+// memories stay.
 export const deleteCases = async (
   env: Env,
   tx: Tx,
@@ -198,8 +212,21 @@ export const deleteCases = async (
     ),
   );
   const logs = await purgeLogs(env, tx, org, due);
+  const memories = await tx
+    .delete(agentMemories)
+    .where(
+      and(
+        inArray(agentMemories.caseId, ids),
+        ne(agentMemories.status, "accepted"),
+      ),
+    );
   await tx.delete(cases).where(inArray(cases.id, ids));
-  return { cases: ids.length, files: keys.length, ...logs };
+  return {
+    cases: ids.length,
+    files: keys.length,
+    memories: memories.rowCount ?? 0,
+    ...logs,
+  };
 };
 
 type Purged = { taken: number; counts: Record<string, number> } | null;
@@ -209,6 +236,8 @@ const purgers: Record<
   RetentionKind,
   (env: Env, tx: Tx, org: OrgId, cutoff: Date) => Promise<Purged>
 > = {
+  // Closed cases, and memory rules deleted before the cutoff: a deleted rule
+  // keeps its text until then, even when its case is kept or already gone.
   async cases(env, tx, org, cutoff) {
     const due = await tx
       .select(caseRef)
@@ -217,8 +246,33 @@ const purgers: Record<
       .orderBy(asc(cases.id))
       .limit(BATCH)
       .for("update");
-    if (!due.length) return null;
-    return { taken: due.length, counts: await deleteCases(env, tx, org, due) };
+    const rules = await tx
+      .select({ id: agentMemories.id })
+      .from(agentMemories)
+      .where(
+        and(
+          eq(agentMemories.organizationId, org),
+          eq(agentMemories.status, "deleted"),
+          lt(agentMemories.deletedAt, cutoff),
+        ),
+      )
+      .orderBy(asc(agentMemories.id))
+      .limit(BATCH)
+      .for("update");
+    if (!due.length && !rules.length) return null;
+    const counts = due.length
+      ? await deleteCases(env, tx, org, due)
+      : { memories: 0 };
+    await tx.delete(agentMemories).where(
+      inArray(
+        agentMemories.id,
+        rules.map((r) => r.id),
+      ),
+    );
+    return {
+      taken: Math.max(due.length, rules.length),
+      counts: { ...counts, memories: counts.memories + rules.length },
+    };
   },
 
   async documents(env, tx, org, cutoff) {

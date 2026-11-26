@@ -87,12 +87,14 @@ pull request here can use instead.
 
 ## Models
 
-`decide` runs on Groundhog-1 through Baseten's System One API (`/v1/systemone`)
-and OCR on LightOn OCR 3 4B through OpenAI chat completions
-(`/v1/chat/completions`). The API reaches both through `packages/models` at
-`MODEL_SERVICE_URL` with `MODEL_SERVICE_KEY` as the bearer token, or at an
-organization's own registered endpoint. With neither, `decide` and OCR answer
-`503 model_unavailable`; nothing falls back to a stub.
+Every model is routed on its own (`ROUTES` in
+`packages/models/src/endpoints.ts`, spec 3): Kimi K3.1 Pro, DeepSeek V4.1 Flash
+(normal and fast) and `decide` (groundhog-1, Baseten's System One API) on
+Baseten with `BASETEN_API_KEY`, Qwen 3.8 27B on the runtime's Workers AI
+binding, and OCR on Mistral OCR 4.1 (`/v1/ocr`) with `MISTRAL_API_KEY`. An
+organization's registered endpoint or the install's `MODEL_ENDPOINTS` entry
+overrides a model's provider, and `MODEL_SERVICE_URL` serves any model nothing
+else does. With none of them the model answers `503 model_unavailable`.
 
 Development and previews point `MODEL_SERVICE_URL` at `apps/model-stub`, which
 speaks both contracts, validates requests as strictly as the real services and

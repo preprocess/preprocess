@@ -68,7 +68,7 @@ import {
   familyOf,
   type CaseInputFamily,
 } from "./case-input-kind";
-import { FunnelArt, NoMatchArt } from "../../components/empty-art";
+import { CaseInputArt, NoMatchArt } from "../../components/empty-art";
 import { SettingsSearchField } from "../settings/kit";
 import { CaseInputViewer } from "./case-input-viewer";
 import { filesFromZip } from "./case-input-zip";
@@ -1114,7 +1114,7 @@ export function CaseInputPane({
             >
               <EmptyHeader className="pointer-events-auto group">
                 <EmptyMedia variant="graphic">
-                  {query.trim() === "" ? <FunnelArt /> : <NoMatchArt />}
+                  {query.trim() === "" ? <CaseInputArt /> : <NoMatchArt />}
                 </EmptyMedia>
                 {query.trim() === "" ? (
                   <>

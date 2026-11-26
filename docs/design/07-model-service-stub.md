@@ -1,5 +1,7 @@
 # 07. Stub model service for `decide` and OCR (build step 3)
 
+> **Superseded in part by spec v1.7 (2026-11-26).** `decide` runs on groundhog-1 on Baseten's Model APIs and OCR on Mistral OCR 4.1 (`POST /v1/ocr`, whole document inline) instead of LightOn OCR 3 4B; PDFs are no longer rendered to pages for OCR. Each model is routed on its own (`ROUTES` in `packages/models/src/endpoints.ts`); `MODEL_SERVICE_URL` now serves only models whose provider has no key. The stub sections below still describe `/v1/systemone`.
+
 Scope: build step 3. `decide` runs on the Groundhog-1 decision model and OCR on LightOn OCR 3 4B, both served by our hosted model service, or by a self-hosted install's own serving URLs. Until the hosted service exists, steps 1–6 run against a stub that speaks the same contracts. `/v1/systemone` is the contract between the platform and the decision model, and self-hosters' URLs must implement it.
 
 ## Decision

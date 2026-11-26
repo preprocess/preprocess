@@ -1361,6 +1361,7 @@ export const caseRoutes = new OpenAPIHono<{
         ),
         402: error("The organization has reached its spending limit"),
         404: error("No such file"),
+        413: error("Over 50 MB or 1,000 pages"),
         415: error("Not a PDF or page image"),
       },
     }),

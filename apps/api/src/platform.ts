@@ -62,18 +62,11 @@ export class Platform extends WorkerEntrypoint<Env> {
     return sendLogs(this.env, records);
   }
 
-  async ocrFile(file: {
-    organizationId: string;
-    fileId: string;
-    agentId?: string;
-    caseId?: string;
-  }) {
+  async ocrFile(file: { organizationId: string; fileId: string }) {
     const result = await ocrFile(
       this.env,
       orgId(file.organizationId),
       file.fileId,
-      false,
-      { agent: file.agentId, case: file.caseId },
     );
     return {
       markdown: result.pages.map((p) => p.markdown).join("\n\n"),

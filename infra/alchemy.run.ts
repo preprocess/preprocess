@@ -21,8 +21,10 @@
 //   Their own Postgres from DATABASE_URL, bootstrapped and migrated, never
 //   seeded, never dropped. No PREPROCESS_REGION is bound, so it runs in
 //   self-hosted mode; R2_LOCATION_HINT places its buckets. The API's signing
-//   and auth secrets are generated once into the stack's state. It refuses to
-//   deploy without a real MODEL_SERVICE_URL unless that is "stub".
+//   and auth secrets are generated once into the stack's state. Its models
+//   come from its own provider keys, MODEL_ENDPOINTS or MODEL_SERVICE_URL,
+//   and Qwen from Workers AI in its own account; MODEL_SERVICE_URL=stub
+//   deploys the stub for trying it.
 
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
@@ -53,6 +55,7 @@ import {
 import { regionConfig } from "./src/regions.ts";
 import {
   apiCrons,
+  apiModelSecrets,
   apiSecrets,
   billingSecrets,
   billingVars,
@@ -68,6 +71,7 @@ import {
   isStage,
   names,
   runtimeDurableObjects,
+  runtimeModelSecrets,
   type SelfHostStage,
   type Stage,
 } from "./src/stages.ts";
@@ -491,27 +495,25 @@ export default Alchemy.Stack(
           ],
     }).pipe(keep);
 
-    // Unless MODEL_SERVICE_URL and MODEL_SERVICE_KEY name a real model
-    // service, the API and the runtime call the stub (design doc 07) by URL,
-    // exactly as they would call a real one. The stub accepts any token.
+    // Each model is served by its provider when the provider's key is set
+    // (packages/models endpoints), and Qwen by the runtime's Workers AI
+    // binding. Every other model goes to MODEL_SERVICE_URL: on our stages
+    // other than production that is the stub (design doc 07) unless it names
+    // a real service, and a self-hosted install gets the stub only with
+    // MODEL_SERVICE_URL=stub. The stub accepts any token.
     const modelServiceUrl = yield* Config.String("MODEL_SERVICE_URL").pipe(
       Config.withDefault(""),
     );
-    if (selfHost && !modelServiceUrl)
-      return yield* Effect.die(
-        new Error(
-          'A self-hosted install needs MODEL_SERVICE_URL and MODEL_SERVICE_KEY: our hosted model service or your own. Set MODEL_SERVICE_URL to "stub" only to try Preprocess with fixture answers.',
-        ),
-      );
     const modelStub =
-      modelServiceUrl && modelServiceUrl !== "stub"
-        ? undefined
-        : yield* Cloudflare.Worker("ModelStub", {
+      modelServiceUrl === "stub" ||
+      (!modelServiceUrl && !selfHost && stage !== "production")
+        ? yield* Cloudflare.Worker("ModelStub", {
             ...worker,
             name: n.modelStub,
             main: at("apps/model-stub/src/index.ts"),
             workersDev: true,
-          });
+          })
+        : undefined;
     const modelService = modelStub
       ? {
           MODEL_SERVICE_URL: Output.map(modelStub.url, (url) => {
@@ -520,10 +522,22 @@ export default Alchemy.Stack(
           }),
           MODEL_SERVICE_KEY: "stub",
         }
-      : {
-          MODEL_SERVICE_URL: modelServiceUrl,
-          MODEL_SERVICE_KEY: Config.Redacted("MODEL_SERVICE_KEY"),
-        };
+      : modelServiceUrl
+        ? {
+            MODEL_SERVICE_URL: modelServiceUrl,
+            MODEL_SERVICE_KEY: Config.Redacted("MODEL_SERVICE_KEY"),
+          }
+        : {};
+    const optionalSecrets = (secrets: readonly string[]) =>
+      Object.fromEntries(
+        secrets.map(
+          (name) =>
+            [
+              name,
+              Config.Redacted(name).pipe(Config.withDefault(undefined)),
+            ] as const,
+        ),
+      );
 
     // The GitHub build sandbox: one container per build, started by the
     // BuildSandbox Durable Object from this image (docs/design/08).
@@ -593,6 +607,8 @@ export default Alchemy.Stack(
         STAGE: stage,
         ...runMode,
         ...modelService,
+        ...optionalSecrets(runtimeModelSecrets),
+        AI: Cloudflare.Workers.AI(),
         CASE_RUNTIME: Cloudflare.DurableObject(
           runtimeDurableObjects.CASE_RUNTIME,
         ),
@@ -615,6 +631,7 @@ export default Alchemy.Stack(
         STAGE: stage,
         ...runMode,
         ...modelService,
+        ...optionalSecrets(apiModelSecrets),
         DB: db,
         DB_SYSTEM: dbSystem,
         APP_URL: appUrl,

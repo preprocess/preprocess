@@ -18,8 +18,8 @@ import { atmn, feature, plan } from "atmn";
 // "One time $5"), in dollars.
 const FREE_MODEL_CREDIT_USD = 5;
 
-// Training is priced at 2.5 times what Baseten Loops charges us (spec 16a).
-// Training isn't built, so nothing bills it yet.
+// Training is priced at 2.5 times what its provider charges us. Training is
+// Coming soon and its provider is undecided (spec 12a), so nothing bills it.
 export const TRAINING_MULTIPLIER = 2.5;
 
 const CENTS = 100;

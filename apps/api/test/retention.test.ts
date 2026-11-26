@@ -1,6 +1,7 @@
 // Retention controls (spec 16a): keep-forever defaults, who may change a
 // period, the daily sweep across files, run capture, run logs and whole
-// cases, one retention.purged event per kind, an audit chain that still
+// cases with the memory rules people deleted, one retention.purged event per
+// kind, an audit chain that still
 // verifies, the Owner-only manual delete, and one organization's sweep never
 // reaching another's rows or R2 keys.
 
@@ -16,6 +17,7 @@ import {
 } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
 import { logSummaries } from "@preprocess/db/schema/logs";
+import { agentMemories } from "@preprocess/db/schema/memories";
 import { retentionSweeps } from "@preprocess/db/schema/retention";
 import { eq, inArray } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -87,7 +89,17 @@ type Seeded = {
   recent: string; // completed 2 days ago
   running: string; // rerun of a case that completed 40 days ago
   waiting: string; // open since 60 days ago
+  rules: Record<Rule, string>;
 };
+
+// Memory rules by where they were proposed and what became of them.
+type Rule =
+  | "ancientAccepted"
+  | "ancientDismissed"
+  | "ancientDeleted" // deleted a day ago
+  | "recentAccepted"
+  | "recentStale" // deleted 55 days ago
+  | "recentFresh"; // deleted 2 days ago
 let a: Seeded;
 let b: Seeded;
 
@@ -105,6 +117,14 @@ const seed = async (org: string, userId: string): Promise<Seeded> => {
     recent: newId("case"),
     running: newId("case"),
     waiting: newId("case"),
+    rules: {
+      ancientAccepted: newId("memory"),
+      ancientDismissed: newId("memory"),
+      ancientDeleted: newId("memory"),
+      recentAccepted: newId("memory"),
+      recentStale: newId("memory"),
+      recentFresh: newId("memory"),
+    },
   };
   const all = [s.ancient, s.old, s.cancelled, s.recent, s.running, s.waiting];
   const base = {
@@ -178,6 +198,33 @@ const seed = async (org: string, userId: string): Promise<Seeded> => {
         updatedAt: ago(60),
       },
     ]);
+    const rule = (
+      name: Rule,
+      caseId: string,
+      status: "accepted" | "dismissed" | "deleted",
+      deletedDaysAgo?: number,
+    ) => ({
+      id: s.rules[name],
+      organizationId: org,
+      agentId,
+      caseId,
+      text: `Rule ${name}`,
+      status,
+      ...(deletedDaysAgo !== undefined && {
+        deletedBy: userId,
+        deletedAt: ago(deletedDaysAgo),
+      }),
+    });
+    await tx
+      .insert(agentMemories)
+      .values([
+        rule("ancientAccepted", s.ancient, "accepted"),
+        rule("ancientDismissed", s.ancient, "dismissed"),
+        rule("ancientDeleted", s.ancient, "deleted", 1),
+        rule("recentAccepted", s.recent, "accepted"),
+        rule("recentStale", s.recent, "deleted", 55),
+        rule("recentFresh", s.recent, "deleted", 2),
+      ]);
     for (const caseId of all) {
       const fileId = newId("file");
       const r2Key = `${org}/files/${fileId}`;
@@ -287,6 +334,20 @@ const state = async (s: Seeded) =>
         },
       ]),
     );
+  });
+
+// The memory rules of a seeded organization still stored, text and all.
+const rulesLeft = async (s: Seeded) =>
+  withOrg(environment, orgId(s.org), async (tx) => {
+    const rows = await tx
+      .select({ id: agentMemories.id, text: agentMemories.text })
+      .from(agentMemories)
+      .where(inArray(agentMemories.id, Object.values(s.rules)));
+    return (Object.keys(s.rules) as Rule[])
+      .filter((name) =>
+        rows.some((r) => r.id === s.rules[name] && r.text === `Rule ${name}`),
+      )
+      .sort();
   });
 
 const everything = {
@@ -466,6 +527,17 @@ describe("the daily sweep", () => {
     expect(after[a.waiting]).toEqual(everything);
   });
 
+  it("purges deleted memory rules under the cases period, and every rule but accepted ones with their case", async () => {
+    // The ancient case took its dismissed and deleted rules with it; a rule
+    // deleted 55 days ago went with the 50-day period though its case stays;
+    // accepted rules and one deleted two days ago are kept.
+    expect(await rulesLeft(a)).toEqual([
+      "ancientAccepted",
+      "recentAccepted",
+      "recentFresh",
+    ]);
+  });
+
   it("writes one retention.purged event per kind, with the cutoff and counts", async () => {
     const purged = await events(a.org, "retention.purged");
     expect(purged).toHaveLength(4);
@@ -480,7 +552,13 @@ describe("the daily sweep", () => {
     ]);
     expect(byKind.cases!.data).toMatchObject({
       days: 50,
-      counts: { cases: 1, files: 1, summaries: 1, logObjects: 0 },
+      counts: {
+        cases: 1,
+        files: 1,
+        summaries: 1,
+        logObjects: 0,
+        memories: 3,
+      },
     });
     expect(byKind.documents!.data).toMatchObject({
       days: 30,
@@ -541,6 +619,7 @@ describe("the daily sweep", () => {
   it("never touches another organization's rows or R2 keys", async () => {
     const other = await state(b);
     for (const id of Object.keys(other)) expect(other[id]).toEqual(everything);
+    expect(await rulesLeft(b)).toEqual(Object.keys(b.rules).sort());
     expect(await events(b.org, "retention.purged")).toEqual([]);
     expect(
       (await environment.LOG_BUCKET.list({ prefix: `${b.org}/` })).objects,
@@ -611,6 +690,7 @@ describe("deleting a case by hand", () => {
       summary: false,
       capture: false,
     });
+    expect(await rulesLeft(a)).toEqual(["ancientAccepted", "recentAccepted"]);
     const audited = await events(a.org, "case.deleted");
     expect(audited).toHaveLength(1);
     expect(audited[0]).toMatchObject({ actorId: ownerId, caseId: a.recent });

@@ -9,6 +9,12 @@ export type Env = {
   // Set on our cloud, unset on a self-hosted install; read it through
   // @preprocess/runmode. Only our cloud prices model, decide and OCR calls.
   PREPROCESS_REGION?: string;
+  // Where each model is served (@preprocess/models endpoints): Baseten for
+  // Kimi, DeepSeek and decide, the Workers AI binding for Qwen, an install's
+  // own MODEL_ENDPOINTS, and MODEL_SERVICE_URL (the stub) for the rest.
+  BASETEN_API_KEY?: string;
+  AI?: Ai;
+  MODEL_ENDPOINTS?: string;
   MODEL_SERVICE_URL?: string;
   MODEL_SERVICE_KEY?: string;
   CASE_RUNTIME: DurableObjectNamespace<CaseRuntime>;
@@ -175,8 +181,6 @@ export type Platform = {
   ocrFile(file: {
     organizationId: string;
     fileId: string;
-    agentId?: string;
-    caseId?: string;
   }): Promise<{ markdown: string; pages: number; costMicroUsd: number }>;
   // Run-log records (design doc 09), queued for the API's consumer.
   logs(records: LogRecord[]): Promise<void>;

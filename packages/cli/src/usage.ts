@@ -30,9 +30,9 @@ export const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <
                from a release (the latest by default) or a checkout, as the
                self-hosted stage --stage (default: selfhost); --plan only
                prints what would change. Reads CLOUDFLARE_API_TOKEN,
-               CLOUDFLARE_ACCOUNT_ID, DATABASE_URL, EMAIL_FROM,
-               MODEL_SERVICE_URL and MODEL_SERVICE_KEY from the environment
-               or --env-file; see infra/README.md for the optional ones
+               CLOUDFLARE_ACCOUNT_ID, DATABASE_URL and EMAIL_FROM from the
+               environment or --env-file; see infra/README.md for the
+               optional ones, model provider keys included
   github-app   register your install's own GitHub App on GitHub and write its
                credentials to --out (default: .env.github-app)
 

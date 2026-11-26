@@ -14,8 +14,6 @@ export default [
       "src/components/agent-elements/**",
       // Vendored WorkOS widgets client (generated; re-vendor to update).
       "src/features/workos-client-api/vendor/**",
-      // Vendored Hairline kernel and figures (untyped engine code; see its LICENSE).
-      "src/components/hairline/**",
     ],
   },
   ...rootConfig,

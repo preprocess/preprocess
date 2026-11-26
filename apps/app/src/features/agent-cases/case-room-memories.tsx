@@ -23,7 +23,6 @@ const STATUS_LABEL: Record<RoomMemory["status"], string> = {
   proposed: "Proposed",
   accepted: "Accepted",
   dismissed: "Dismissed",
-  deleted: "Deleted",
 };
 
 /** What the API's refusal means for the person deciding. */

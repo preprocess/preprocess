@@ -12,8 +12,11 @@ calls it for each tool call. Its `globalOutbound` is the runtime's `Outbound`
 entrypoint, which applies the organization's network rules, and its console
 output goes to `apps/tail`.
 
-- **Models** come from `MODEL_SERVICE_URL` (OpenAI-compatible), which is the
-  stub in `apps/model-stub` locally and in tests (design doc 07).
+- **Models** are routed per model (`packages/models` endpoints): Kimi and
+  DeepSeek on Baseten (`BASETEN_API_KEY`), Qwen on the Workers AI binding
+  (`AI`), and the rest at `MODEL_SERVICE_URL`, which is the stub in
+  `apps/model-stub` locally and in tests (design doc 07). A DeepSeek Fast call
+  Baseten serves from base capacity is billed at base rates.
 - **Secrets** are decrypted by the API, never here: this Worker has no key. Each
   call asks the API for the deployment's secrets version; only when a new
   isolate loads does it read the values, which go straight into that isolate's
