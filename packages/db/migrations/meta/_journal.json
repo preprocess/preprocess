@@ -162,6 +162,13 @@
       "when": 1795660405057,
       "tag": "0025_metering",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795663453810,
+      "tag": "0026_retention",
+      "breakpoints": true
     }
   ]
 }

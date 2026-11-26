@@ -35,6 +35,8 @@ import { guardrailRoutes } from "./routes/guardrails.ts";
 import { scheduleRoutes } from "./routes/schedules.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { spendingRoutes } from "./routes/spending.ts";
+import { retentionRoutes } from "./routes/retention.ts";
+import { sweepRetention } from "./retention.ts";
 import { billingRoutes } from "./routes/billing.ts";
 import { ingestLogs, sendLogs } from "./logs.ts";
 import { startQueuedEval } from "./evals.ts";
@@ -127,6 +129,7 @@ orgApi.route("/", spendingRoutes);
 orgApi.route("/", billingRoutes);
 orgApi.route("/", guardrailRoutes);
 orgApi.route("/", settingsRoutes);
+orgApi.route("/", retentionRoutes);
 orgApi.route("/", scheduleRoutes);
 orgApi.route("/", webhookRoutes);
 orgApi.route("/", inboxRoutes);
@@ -195,11 +198,13 @@ export default {
       return;
     }
     // 00:20 UTC: sign and store yesterday's audit chain for every
-    // organization, forget expired idempotency keys, and report yesterday's
-    // storage and, on the first, last month's active seats.
+    // organization, forget expired idempotency keys, delete what is past each
+    // organization's retention periods, and report yesterday's storage and,
+    // on the first, last month's active seats.
     const now = new Date(controller.scheduledTime);
     ctx.waitUntil(anchorAll(env, now));
     ctx.waitUntil(deleteExpiredIdempotencyKeys(env));
+    ctx.waitUntil(sweepRetention(env, now));
     ctx.waitUntil(reportDaily(env, now));
   },
   async queue(

@@ -27,9 +27,22 @@ export type LogQuery = {
 
 export type LogPage = { records: LogRecord[]; cursor: string | null };
 
+// A closed case's records, for retention: its organization, agent and id,
+// and the days it ran.
+export type CaseLogs = {
+  organizationId: string;
+  agentId: string;
+  caseId: string;
+  from: Date;
+  to: Date;
+};
+
 export interface LogStore {
   write(records: LogRecord[]): Promise<void>;
   query(q: LogQuery): Promise<LogPage>;
+  // Deletes a case's records and returns how many objects held them, or
+  // null when the store cannot delete records.
+  purgeCase(c: CaseLogs): Promise<number | null>;
 }
 
 const DAY = 86_400_000;
@@ -134,6 +147,33 @@ export const r2Store = (bucket: R2Bucket): LogStore => ({
       cursor: found.length > q.limit ? records.at(-1)!.id : null,
     };
   },
+
+  // Records that arrive late land the day after the case closed at most.
+  async purgeCase(c) {
+    let deleted = 0;
+    const last = c.to.getTime() + DAY;
+    for (
+      let day = Date.UTC(
+        c.from.getUTCFullYear(),
+        c.from.getUTCMonth(),
+        c.from.getUTCDate(),
+      );
+      day <= last;
+      day += DAY
+    ) {
+      const prefix = `${[c.organizationId, new Date(day).toISOString().slice(0, 10), c.agentId, c.caseId].join("/")}/`;
+      let cursor: string | undefined;
+      do {
+        const page = await bucket.list({ prefix, ...(cursor && { cursor }) });
+        if (page.objects.length) {
+          await bucket.delete(page.objects.map((o) => o.key));
+          deleted += page.objects.length;
+        }
+        cursor = page.truncated ? page.cursor : undefined;
+      } while (cursor);
+    }
+    return deleted;
+  },
 });
 
 const literal = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -228,6 +268,10 @@ export const sqlStore = (env: Env): LogStore => ({
       cursor: rows.length > q.limit ? records.at(-1)!.id : null,
     };
   },
+
+  // R2 SQL only reads. Deleting rows from the Iceberg table takes an Iceberg
+  // engine writing through the Data Catalog, which no Worker binding offers.
+  purgeCase: () => Promise.resolve(null),
 });
 
 export const logStore = (env: Env): LogStore =>

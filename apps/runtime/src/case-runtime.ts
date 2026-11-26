@@ -1771,6 +1771,17 @@ export class CaseRuntime extends DurableObject<Env> {
     return this.state();
   }
 
+  // Retention (spec 16a): the run capture this object keeps beside the copy
+  // in RUNS, or everything it holds when the case is deleted.
+  dropCapture() {
+    this.ctx.storage.sql.exec("DELETE FROM capture");
+  }
+
+  async wipe() {
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+  }
+
   state(): CaseState {
     const meta = this.meta();
     if (!meta) throw new Error("case has not started");

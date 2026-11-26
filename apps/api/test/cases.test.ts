@@ -99,6 +99,8 @@ const runtime: Runtime = {
     calls.push({ method: "complete", input });
     return Promise.resolve(completion);
   },
+  deleteCapture: () => Promise.reject(new Error("unused")),
+  deleteCase: () => Promise.reject(new Error("unused")),
   cancelCase: (input) => {
     calls.push({ method: "cancel", input });
     return Promise.resolve({

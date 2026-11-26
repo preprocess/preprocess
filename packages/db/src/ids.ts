@@ -34,6 +34,7 @@ export const prefixes = {
   evalRun: "evr",
   memory: "mry",
   usageRecord: "use",
+  retentionSweep: "rsw",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
