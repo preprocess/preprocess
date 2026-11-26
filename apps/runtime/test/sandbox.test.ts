@@ -47,7 +47,7 @@ const reported = async (key: CaseKey) =>
 // A small sandbox whose interval is open, as a first sandbox call leaves it.
 // Tests have no container, so every stop the sandbox finds is one it did not
 // see: the API closes those at the last heartbeat.
-const awake = (key: CaseKey, startedAt = Date.now()) =>
+const awake = (key: CaseKey, startedAt = Date.now(), requestedAt?: Date) =>
   runInDurableObject(
     env.SANDBOX_SMALL.getByName(sandboxName(key)),
     async (_, state) => {
@@ -60,6 +60,8 @@ const awake = (key: CaseKey, startedAt = Date.now()) =>
         },
         "case",
         "small",
+        "start",
+        requestedAt,
       );
     },
   );
@@ -99,6 +101,41 @@ describe("sandbox metering", () => {
       [1, "start"],
       [1, "crash"],
     ]);
+  });
+
+  it("times the start when the container was asked to start, and a crash nobody saw at the last check that saw it running", async () => {
+    const key = {
+      organizationId: "org_sbx",
+      agentId: "agt_sbx",
+      caseId: "case_timed",
+    };
+    const requested = new Date(Date.now() - 1_000);
+    await awake(key, Date.now(), requested);
+    const stub = env.SANDBOX_SMALL.getByName(sandboxName(key));
+    await runInDurableObject(stub, (sandbox) => sandbox.alarm());
+    expect((await reported(key)).map((e) => [e.type, e.at])).toEqual([
+      ["start", requested.toISOString()],
+      ["crash", requested.toISOString()],
+    ]);
+  });
+
+  it("ends a stop it saw at the moment it saw it", async () => {
+    const key = {
+      organizationId: "org_sbx",
+      agentId: "agt_sbx",
+      caseId: "case_seen",
+    };
+    await awake(key);
+    const stub = env.SANDBOX_SMALL.getByName(sandboxName(key));
+    const before = Date.now();
+    await runInDurableObject(stub, (sandbox) =>
+      (sandbox as unknown as { stopped(type: "sleep"): Promise<void> }).stopped(
+        "sleep",
+      ),
+    );
+    const stop = (await reported(key)).find((e) => e.type === "sleep");
+    expect(Date.parse(stop!.at!)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(stop!.at!)).toBeLessThanOrEqual(Date.now());
   });
 
   it("does not take the stop its own destroy causes for a crash", async () => {

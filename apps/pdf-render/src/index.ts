@@ -91,7 +91,7 @@ export class Renderer extends DurableObject<Env> {
   }
 
   override async alarm() {
-    await this.meter.heartbeat(this.ctx.container?.running ?? false);
+    await this.meter.check(this.ctx.container?.running ?? false);
   }
 }
 

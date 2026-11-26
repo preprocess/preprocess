@@ -13,7 +13,7 @@
 
 import { Files } from "@cloudflare/sandbox";
 import { initLogs, wideEvent } from "@preprocess/logs";
-import { SandboxMeter, type SandboxOwner } from "@preprocess/sandbox";
+import { CHECK_MS, SandboxMeter, type SandboxOwner } from "@preprocess/sandbox";
 import type {
   SandboxManifest,
   SandboxPreset,
@@ -176,8 +176,8 @@ export abstract class CaseSandbox extends DurableObject<Env> {
   }
 
   // Set while destroy() runs: destroying the container also settles
-  // monitor(), and that stop is the destroy, not a crash. A crash closes the
-  // interval at its last heartbeat, so on staging it billed a 7 s sandbox 0 s.
+  // monitor(), and that stop is the destroy, not a crash. Each stop closes the
+  // interval at the moment it was seen.
   private destroying = false;
 
   private async stopped(type: "sleep" | "crash") {
@@ -185,7 +185,7 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     await this.ctx.storage.delete("sandbox:startedAt");
     const at = new Date();
     const owner = await this.ctx.storage.get<SandboxOwner>("sandbox:open");
-    await this.meter.end(type);
+    await this.meter.end(type, at);
     if (owner) this.log(owner, "sandbox.stop", at, type);
   }
 
@@ -273,14 +273,20 @@ export abstract class CaseSandbox extends DurableObject<Env> {
       if (container.running) await container.destroy();
       throw error;
     }
-    // The interval opens as soon as the container is asked to start: setting
-    // its timeout waits for it to boot, which staging measured at 3.7 s.
+    // The interval opens when the container was asked to start, the same
+    // instant the run log records as its start.
     const owner = {
       organizationId: config.organizationId,
       agent: config.agentId,
       caseId: config.caseId,
     };
-    await this.meter.begin(owner, "case", this.size, woken ? "wake" : "start");
+    await this.meter.begin(
+      owner,
+      "case",
+      this.size,
+      woken ? "wake" : "start",
+      startedAt,
+    );
     await this.ctx.storage.put("sandbox:startedAt", Date.now());
     this.log(owner, "sandbox.start", startedAt, woken ? "wake" : "start");
     this.watch();
@@ -421,8 +427,8 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     );
     // The alarm that would heartbeat is busy running this build.
     const heartbeat = setInterval(() => {
-      void this.meter.heartbeat(true);
-    }, 30_000);
+      void this.meter.check(true);
+    }, CHECK_MS);
     try {
       const process = await execWhenUp(
         container,
@@ -588,7 +594,7 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     try {
       await this.ctx.container.destroy();
       const at = new Date();
-      await this.meter.end("destroy");
+      await this.meter.end("destroy", at);
       if (owner) this.log(owner, "sandbox.stop", at, "destroy");
     } finally {
       this.destroying = false;
@@ -616,7 +622,7 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     const startedAt = await this.ctx.storage.get<number>("sandbox:startedAt");
     if (startedAt !== undefined && Date.now() - startedAt >= LIFETIME_MS)
       return this.destroy();
-    await this.meter.heartbeat(this.ctx.container?.running ?? false);
+    await this.meter.check(this.ctx.container?.running ?? false);
   }
 }
 
