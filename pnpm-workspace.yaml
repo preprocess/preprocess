@@ -8,7 +8,7 @@ catalog:
   # From preprocess/kit: pkg.pr.new builds of a kit main commit until kit's
   # first npm release. `pnpm kit:link` swaps in a local kit checkout.
   '@preprocess/runmode': https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051
-  '@preprocess/ui': https://pkg.pr.new/preprocess/kit/@preprocess/ui@d1c4e3a
+  '@preprocess/ui': https://pkg.pr.new/preprocess/kit/@preprocess/ui@20c3510
   '@cloudflare/vite-plugin': ^1.47.0
   '@cloudflare/vitest-plugin': ^1.9.0
   '@cloudflare/workers-types': ^5.20260722.1

@@ -52,6 +52,8 @@ export const CASE_GROUPS = [
 export type CaseGroup = (typeof CASE_GROUPS)[number];
 
 export type CaseAssignee = {
+  /** The person's user id, which also seeds their avatar. */
+  readonly id: string;
   readonly name: string;
   readonly email: string;
   /** The groups this person belongs to, which they can act for. */
@@ -194,6 +196,7 @@ function readAssignees(value: unknown): CaseAssignee[] {
       throw new CaseContractError("Case.assignees has an invalid entry.");
     }
     return {
+      id: readString(assignee.id, "assignees.id"),
       name: readString(assignee.name, "assignees.name"),
       email: readString(assignee.email, "assignees.email"),
       groups: Array.isArray(assignee.groups)

@@ -570,7 +570,7 @@ export function assigneeCandidates(
   if (live()) return liveAssigneeCandidates({ data: item.agentId });
   return Promise.resolve(
     SEED_PEOPLE.map((person) => ({
-      id: person.email,
+      id: person.id,
       name: person.name,
       email: person.email,
     })),
@@ -595,9 +595,7 @@ export async function setCaseAssignees(
       row.agentId === item.agentId && row.id === item.id
         ? {
             ...row,
-            assignees: SEED_PEOPLE.filter((person) =>
-              ids.includes(person.email),
-            ),
+            assignees: SEED_PEOPLE.filter((person) => ids.includes(person.id)),
             updatedAt: new Date().toISOString(),
           }
         : row,

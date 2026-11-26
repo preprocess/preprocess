@@ -1,3 +1,8 @@
+import {
+  Avatar,
+  AvatarFallback,
+  avatarMarbleSeed,
+} from "@preprocess/ui/components/avatar";
 import { MenuItem } from "@preprocess/ui/components/menu-item";
 import { DropdownSeparator } from "@preprocess/ui/components/dropdown";
 import {
@@ -29,6 +34,7 @@ import {
   Settings,
   Shield,
   Sun,
+  User,
 } from "@preprocess/ui/lib/icons";
 import type { IconComponent } from "@preprocess/ui/lib/icon-context";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
@@ -203,9 +209,13 @@ function UserFooter() {
             className="size-5 rounded-full object-cover outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
             src={profilePictureUrl}
           />
+        ) : user ? (
+          <Avatar className="size-5">
+            <AvatarFallback name={avatarMarbleSeed(user)} />
+          </Avatar>
         ) : (
-          <span className="flex size-5 items-center justify-center rounded-full bg-muted-foreground text-[length:var(--fs-micro-compact,10px)] leading-[var(--lh-micro-compact,12px)] text-background">
-            {initialsOf(name).slice(0, 1)}
+          <span className="flex size-5 items-center justify-center rounded-full bg-hover text-muted-foreground">
+            <User aria-hidden="true" className="size-3" />
           </span>
         )
       }

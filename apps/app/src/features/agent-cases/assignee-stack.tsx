@@ -61,7 +61,7 @@ export function AssigneeStack({
     <Tooltip content={label} side="top">
       <AvatarGroup aria-label={label} className={cn("shrink-0", className)}>
         {shown.map((assignee) => (
-          <Avatar key={assignee.email} size="sm">
+          <Avatar key={assignee.id} size="sm">
             <AvatarFallback name={avatarMarbleSeed(assignee)} />
           </Avatar>
         ))}

@@ -163,6 +163,7 @@ function toCase(
     assignees: item.assignees.map((assignee) => {
       const person = people.get(assignee.id);
       return {
+        id: assignee.id,
         name: assignee.name,
         email: person?.email ?? "",
         groups: person?.groups.map((group) => group.name) ?? [],

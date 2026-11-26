@@ -113,18 +113,26 @@ function createSeedRows(count: number): SeedCase[] {
 /** Seeded people and their groups. Groups nobody here belongs to (Review,
  *  Compliance, Design, People) always leave a case needing assignment. */
 export const SEED_PEOPLE: readonly CaseAssignee[] = [
-  { name: "Ada Park", email: "ada@example.com", groups: ["Legal", "Counsel"] },
   {
+    id: "usr_seed_ada_park",
+    name: "Ada Park",
+    email: "ada@example.com",
+    groups: ["Legal", "Counsel"],
+  },
+  {
+    id: "usr_seed_theo_grant",
     name: "Theo Grant",
     email: "theo@example.com",
     groups: ["Sales", "Finance"],
   },
   {
+    id: "usr_seed_mina_okafor",
     name: "Mina Okafor",
     email: "mina@example.com",
     groups: ["Engineering", "Security"],
   },
   {
+    id: "usr_seed_jules_moreau",
     name: "Jules Moreau",
     email: "jules@example.com",
     groups: ["Ops", "Support"],

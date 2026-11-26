@@ -7,6 +7,11 @@
 // rows divided inside it, body-role labels with caption-role descriptions,
 // and the control on the trailing edge.
 
+import {
+  Avatar,
+  AvatarFallback,
+  avatarMarbleSeed,
+} from "@preprocess/ui/components/avatar";
 import { Badge } from "@preprocess/ui/components/badge";
 import {
   Banner,
@@ -40,6 +45,7 @@ import {
   InfoIcon,
   MoreHorizontalIcon,
   SearchIcon,
+  User,
   XIcon,
 } from "@preprocess/ui/lib/icons";
 import { useShape } from "@preprocess/ui/lib/shape-context";
@@ -404,12 +410,12 @@ export function SettingsIconTile({
   );
 }
 
-/** A person's photo, or their initial on a muted circle. */
+/** A person's photo, else their marble; a muted person glyph without a user. */
 export function SettingsAvatar({
-  name,
+  userId,
   pictureUrl,
 }: {
-  name: string;
+  userId: string | null;
   pictureUrl?: string | null;
 }) {
   if (pictureUrl) {
@@ -421,13 +427,19 @@ export function SettingsAvatar({
       />
     );
   }
+  if (userId) {
+    return (
+      <Avatar aria-hidden="true">
+        <AvatarFallback name={avatarMarbleSeed({ id: userId })} />
+      </Avatar>
+    );
+  }
   return (
     <span
       aria-hidden="true"
-      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-caption text-muted-foreground"
-      style={{ fontVariationSettings: fontWeights.semibold }}
+      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-hover text-muted-foreground"
     >
-      {(name.trim()[0] ?? "?").toUpperCase()}
+      <User className="size-4" />
     </span>
   );
 }

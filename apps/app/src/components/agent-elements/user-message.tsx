@@ -5,6 +5,7 @@ import {
   avatarMarbleSeed,
 } from "@preprocess/ui/components/avatar";
 import { Tooltip } from "@preprocess/ui/components/tooltip";
+import { User } from "@preprocess/ui/lib/icons";
 import { Elevated } from "@preprocess/ui/lib/elevated";
 import type { UIMessage } from "ai";
 import { memo, useState } from "react";
@@ -21,16 +22,6 @@ export type MessageSender = {
 };
 
 export const FALLBACK_SENDER: MessageSender = { name: "You" };
-
-export function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const first = parts[0];
-  const second = parts[1];
-  if (first && second) {
-    return `${first[0]}${second[0]}`.toUpperCase();
-  }
-  return (first ?? name).slice(0, 2).toUpperCase() || "?";
-}
 
 export function senderFromUser(user: {
   id?: string;
@@ -225,15 +216,13 @@ export const UserMessage = memo(function UserMessage({
           {sender.imageUrl ? (
             <AvatarImage alt="" src={sender.imageUrl} />
           ) : null}
-          <AvatarFallback
-            name={avatarMarbleSeed({
-              email: sender.email,
-              id: sender.id,
-              name: sender.name,
-            })}
-          >
-            {initialsOf(senderLabel(sender))}
-          </AvatarFallback>
+          {sender.id ? (
+            <AvatarFallback name={avatarMarbleSeed({ id: sender.id })} />
+          ) : (
+            <span className="flex size-full items-center justify-center rounded-full bg-hover text-muted-foreground">
+              <User aria-hidden="true" className="size-3.5" />
+            </span>
+          )}
         </Avatar>
       </Tooltip>
     </div>
