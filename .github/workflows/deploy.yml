@@ -60,6 +60,8 @@ jobs:
       # Autumn's sandbox (spec 16a): staging bills against it. Optional; without
       # it staging runs with billing off and no plans are pushed.
       AUTUMN_SECRET_KEY: ${{ secrets.AUTUMN_SECRET_KEY }}
+      BILLING_REQUIRED_FROM: ${{ vars.BILLING_REQUIRED_FROM }}
+      BILLING_INTERNAL_ORGS: ${{ vars.BILLING_INTERNAL_ORGS }}
       NO_COLOR: "1"
     steps:
       - name: Check credentials
@@ -105,7 +107,9 @@ jobs:
         if: steps.credentials.outputs.ready == 'true'
         run: |
           # An unset optional value must stay unset, not bind an empty string.
-          [ -n "$AUTUMN_SECRET_KEY" ] || unset AUTUMN_SECRET_KEY
+          for name in AUTUMN_SECRET_KEY BILLING_REQUIRED_FROM BILLING_INTERNAL_ORGS; do
+            [ -n "${!name}" ] || unset "$name"
+          done
           pnpm --filter @preprocess/infra staging:deploy
 
       # The stage's URLs contain the account's workers.dev subdomain, which

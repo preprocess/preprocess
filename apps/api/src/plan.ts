@@ -19,7 +19,7 @@ export type Feature = (typeof paidFeatures)[number];
 export type Limit = "seats";
 
 export type Plan = {
-  name: "free" | "team" | "enterprise";
+  name: "free" | "team" | "enterprise" | "internal";
   features: readonly Feature[];
   limits: { seats: number | null };
   has(feature: Feature): boolean;

@@ -126,7 +126,8 @@ const usagePrice = {
   interval: "month",
 } as const;
 
-// A card is required: Free is attached through checkout, never automatically.
+// A card is required: Free is attached through checkout, never automatically,
+// except to organizations that existed before BILLING_REQUIRED_FROM.
 export const free = plan({
   planId: "free",
   versionSlug: "v1",
@@ -226,6 +227,31 @@ export const enterprise = plan({
   ],
 });
 
+// Preprocess's own organizations: everything, no limits, no price. Never
+// sold; the API attaches it to the organizations BILLING_INTERNAL_ORGS names.
+export const internal = plan({
+  planId: "internal",
+  versionSlug: "v1",
+  active: true,
+  name: "Internal",
+  group: "main",
+  items: [
+    ...[seats, cases, modelUsage, decide, ocr, storage].map((f) => ({
+      featureId: f.featureId,
+      unlimited: true,
+    })),
+    ...[
+      sso,
+      scim,
+      syncedGroups,
+      customRoles,
+      auditExport,
+      training,
+      fineTuneServing,
+    ].map((f) => ({ featureId: f.featureId })),
+  ],
+});
+
 export default atmn({
   features: [
     seats,
@@ -244,5 +270,5 @@ export default atmn({
     training,
     fineTuneServing,
   ],
-  plans: [free, team, enterprise],
+  plans: [free, team, enterprise, internal],
 });

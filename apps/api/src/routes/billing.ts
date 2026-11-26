@@ -6,7 +6,12 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 
 import { autumn } from "../autumn.ts";
-import { cloudPlan, organizationName } from "../billing.ts";
+import {
+  cloudPlan,
+  organizationName,
+  planRequired,
+  readPlan,
+} from "../billing.ts";
 import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
 
@@ -14,9 +19,13 @@ const OrgParam = z.object({ org: z.string() });
 
 const Billing = z
   .object({
-    plan: z.enum(["free", "team", "enterprise"]),
+    plan: z.enum(["free", "team", "enterprise", "internal"]),
     started: z.boolean().openapi({
-      description: "Whether the organization has started a plan at checkout",
+      description: "Whether the organization has started a plan",
+    }),
+    required: z.boolean().openapi({
+      description:
+        "Whether the organization must start a plan at checkout before it can start cases or use models",
     }),
     seats: z
       .number()
@@ -51,7 +60,12 @@ export const billingRoutes = new OpenAPIHono<{
       const plan = await cloudPlan(c.env, c.var.org);
       if (!plan) throw off();
       return c.json(
-        { plan: plan.name, started: plan.started, seats: plan.seats },
+        {
+          plan: plan.name,
+          started: plan.started,
+          required: planRequired(c.env, plan.started),
+          seats: plan.seats,
+        },
         200,
       );
     },
@@ -90,6 +104,7 @@ export const billingRoutes = new OpenAPIHono<{
           description: "The checkout page to send the Owner to",
         },
         403: { description: "Not the Owner" },
+        409: { description: "Already on this plan" },
         404: { description: "Billing is off" },
       },
     }),
@@ -106,15 +121,17 @@ export const billingRoutes = new OpenAPIHono<{
         throw new HTTPException(400, {
           message: "returnTo must be on this app.",
         });
-      await billing.customer(
-        c.var.org,
-        await organizationName(c.env, c.var.org),
+      const current = readPlan(
+        await billing.customer(
+          c.var.org,
+          await organizationName(c.env, c.var.org),
+        ),
       );
-      const { payment_url } = await billing.checkout(c.var.org, plan, back);
-      if (!payment_url)
+      if (current.started && current.name === plan)
         throw new HTTPException(409, {
           message: "The organization is already on this plan.",
         });
-      return c.json({ url: payment_url }, 200);
+      const { url } = await billing.checkout(c.var.org, plan, back);
+      return c.json({ url }, 200);
     },
   );

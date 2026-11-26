@@ -55,6 +55,7 @@ import {
   apiCrons,
   apiSecrets,
   billingSecrets,
+  billingVars,
   githubSecrets,
   githubVars,
   googleSecrets,
@@ -667,6 +668,16 @@ export default Alchemy.Stack(
                 [
                   name,
                   Config.Redacted(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
+        ...(region &&
+          Object.fromEntries(
+            billingVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
                 ] as const,
             ),
           )),

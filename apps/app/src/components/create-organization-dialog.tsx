@@ -14,6 +14,7 @@ import {
 } from "@preprocess/ui/components/loading-button";
 import { useRef, useState, type FormEvent } from "react";
 
+import { freeCheckout } from "../features/organizations/billing";
 import { createOrganization } from "../features/organizations/user-organizations";
 import { validateOrganizationName } from "../server/organization-name";
 import { ValidatedField, type ValidatedFieldHandle } from "./validated-field";
@@ -49,8 +50,10 @@ function CreateOrganizationDialog({
     }
 
     try {
-      await createOrganization(name);
-      window.location.reload();
+      const { organizationId } = await createOrganization(name);
+      const checkout = await freeCheckout(organizationId);
+      if (checkout) window.location.assign(checkout);
+      else window.location.reload();
     } catch (cause) {
       const message =
         cause instanceof Error

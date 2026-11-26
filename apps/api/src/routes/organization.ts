@@ -29,7 +29,7 @@ const Member = z
 
 const PlanSchema = z
   .object({
-    name: z.enum(["free", "team", "enterprise"]),
+    name: z.enum(["free", "team", "enterprise", "internal"]),
     features: z.record(z.enum(paidFeatures), z.boolean()),
   })
   .openapi("Plan");

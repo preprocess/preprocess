@@ -61,6 +61,14 @@ const stubAutumn = () =>
     if (route === "customers.get_or_create")
       return json({ id: body.customer_id, ...customer });
     if (route === "check") return json({ allowed });
+    if (route === "billing.setup_payment")
+      return json({ url: "https://checkout.stripe.com/c/pay/cs_test" });
+    if (route === "billing.attach") {
+      customer.subscriptions = [
+        { plan_id: String(body.plan_id), status: "active" },
+      ];
+      return json({ payment_url: null });
+    }
     return json({});
   });
 
@@ -74,8 +82,8 @@ let ownerId: string;
 let ownerClient: Client;
 
 // An organization with an agent ready to take cases, and an API key for it.
-const organizationWithAgent = async (name: string) => {
-  const owner = await signUp(name, environment);
+const organizationWithAgent = async (name: string, env = environment) => {
+  const owner = await signUp(name, env);
   const id = await createOrganization(owner.client, name);
   const key = await owner.client.call<{ key: string }>(
     "/api/auth/api-key/create",
@@ -103,7 +111,8 @@ const organizationWithAgent = async (name: string) => {
   return {
     org: id,
     ownerId: owner.userId,
-    keyed: new Client(environment, { "x-api-key": key.body.key }),
+    owner: owner.client,
+    keyed: new Client(env, { "x-api-key": key.body.key }),
   };
 };
 
@@ -287,22 +296,6 @@ describe("Free's caps", () => {
     ).toEqual(["cases", "model_usage"]);
   });
 
-  it("refuse cases and model use before the organization starts a plan", async () => {
-    const fresh = await organizationWithAgent("Fresh");
-    stubAutumn();
-    customer = { subscriptions: [], flags: {}, balances: {} };
-    allowed = true;
-    const refused = await fresh.keyed.call<{ error: { code: string } }>(
-      `/v1/orgs/${fresh.org}/cases`,
-      { body: { agent: "invoices", text: "before a plan" } },
-    );
-    expect(refused.status).toBe(402);
-    expect(refused.body.error.code).toBe("plan_required");
-    const gate = new Platform({} as ExecutionContext, environment);
-    expect(await gate.spendGate(fresh.org)).toBe("credit_exhausted");
-    expect(calls.some((c) => c.route === "check")).toBe(false);
-  });
-
   it("fail open when Autumn is down", async () => {
     const down = await organizationWithAgent("Down");
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("outage"));
@@ -310,5 +303,125 @@ describe("Free's caps", () => {
       body: { agent: "invoices", text: "during an outage" },
     });
     expect(created.status).toBe(202);
+  });
+});
+
+describe("starting a plan", () => {
+  const requiredFrom = (at: Date) =>
+    testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      BILLING_REQUIRED_FROM: at.toISOString(),
+      CASES: { send: () => Promise.resolve() } as unknown as Queue,
+    });
+  const attached = () =>
+    calls
+      .filter((c) => c.route === "billing.attach")
+      .map((c) => c.body.plan_id);
+
+  it("limits nothing without a plan until cards are required", async () => {
+    const early = await organizationWithAgent("Early");
+    stubAutumn();
+    customer = { subscriptions: [], flags: {}, balances: {} };
+    const created = await early.keyed.call(`/v1/orgs/${early.org}/cases`, {
+      body: { agent: "invoices", text: "before cards are required" },
+    });
+    expect(created.status).toBe(202);
+    const gate = new Platform({} as ExecutionContext, environment);
+    expect(await gate.spendGate(early.org)).toBe("ok");
+    expect(attached()).toEqual([]);
+  });
+
+  it("refuses cases and model use once cards are required, until the organization starts a plan", async () => {
+    const env = requiredFrom(new Date(Date.now() - 60_000));
+    const late = await organizationWithAgent("Late", env);
+    stubAutumn();
+    customer = { subscriptions: [], flags: {}, balances: {} };
+    const refused = await late.keyed.call<{ error: { code: string } }>(
+      `/v1/orgs/${late.org}/cases`,
+      { body: { agent: "invoices", text: "before a plan" } },
+    );
+    expect(refused.status).toBe(402);
+    expect(refused.body.error.code).toBe("plan_required");
+    const gate = new Platform({} as ExecutionContext, env);
+    expect(await gate.spendGate(late.org)).toBe("credit_exhausted");
+    const billing = await late.keyed.call<{ required: boolean }>(
+      `/v1/orgs/${late.org}/billing`,
+    );
+    expect(billing.body).toMatchObject({ started: false, required: true });
+    expect(attached()).toEqual([]);
+
+    customer.subscriptions = [{ plan_id: "free", status: "active" }];
+    const created = await late.keyed.call(`/v1/orgs/${late.org}/cases`, {
+      body: { agent: "invoices", text: "after checkout" },
+    });
+    expect(created.status).toBe(202);
+  });
+
+  it("puts organizations created before cards were required on Free, without a card", async () => {
+    const env = requiredFrom(new Date(Date.now() + 86_400_000));
+    const existing = await organizationWithAgent("Existing", env);
+    stubAutumn();
+    customer = { subscriptions: [], flags: {}, balances: {} };
+    const plan = await getPlan(env, orgId(existing.org));
+    expect(plan.name).toBe("free");
+    expect(attached()).toEqual(["free"]);
+  });
+
+  it("puts our own organizations on the internal plan", async () => {
+    const ours = await organizationWithAgent("Ours");
+    stubAutumn();
+    customer = {
+      subscriptions: [],
+      flags: {
+        sso: {},
+        scim: {},
+        synced_groups: {},
+        custom_roles: {},
+        audit_export: {},
+      },
+      balances: {},
+    };
+    const env = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      BILLING_INTERNAL_ORGS: `org_other, ${ours.org}`,
+    });
+    const plan = await getPlan(env, orgId(ours.org));
+    expect(plan.name).toBe("internal");
+    expect(plan.features).toHaveLength(5);
+    expect(attached()).toEqual(["internal"]);
+  });
+});
+
+describe("checkout", () => {
+  it("lets only the Owner start a plan, after adding a card, and returns to this app", async () => {
+    const env = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      APP_URL: "https://app.example.test",
+    });
+    const shop = await organizationWithAgent("Shop", env);
+    stubAutumn();
+    customer = { subscriptions: [], flags: {}, balances: {} };
+    const path = `/v1/orgs/${shop.org}/billing/checkout`;
+    const started = await shop.owner.call<{ url: string }>(path, {
+      body: { plan: "free", returnTo: "https://app.example.test/cases" },
+    });
+    expect(started.status).toBe(200);
+    expect(started.body.url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+    expect(
+      calls.find((c) => c.route === "billing.setup_payment")?.body,
+    ).toEqual({
+      customer_id: shop.org,
+      plan_id: "free",
+      success_url: "https://app.example.test/cases",
+    });
+    const elsewhere = await shop.owner.call(path, {
+      body: { plan: "free", returnTo: "https://evil.example/" },
+    });
+    expect(elsewhere.status).toBe(400);
+    const byKey = await shop.keyed.call(path, { body: { plan: "free" } });
+    expect(byKey.status).toBe(403);
+    customer.subscriptions = [{ plan_id: "free", status: "active" }];
+    const again = await shop.owner.call(path, { body: { plan: "free" } });
+    expect(again.status).toBe(409);
   });
 });

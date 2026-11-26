@@ -66,14 +66,21 @@ const client = (key: string) => {
         customer_id: organizationId,
         ...(name && { name }),
       }),
-    // Starts a plan. Always through Autumn's checkout, which collects a card,
-    // since every plan needs one (Free included; Chip, 2026-11-26).
+    // Starts a plan once the customer adds a card in a Stripe setup session,
+    // since every plan needs one (Free included; Chip, 2026-11-26). Attach's
+    // own checkout skips the card for a plan that costs nothing up front.
     checkout: (organizationId: string, planId: string, successUrl: string) =>
+      call<{ url: string }>("billing.setup_payment", {
+        customer_id: organizationId,
+        plan_id: planId,
+        success_url: successUrl,
+      }),
+    // Starts a plan without checkout or a card: only for organizations that
+    // existed before cards were required, and our own (billing.ts).
+    attach: (organizationId: string, planId: string) =>
       call<{ payment_url: string | null }>("billing.attach", {
         customer_id: organizationId,
         plan_id: planId,
-        redirect_mode: "always",
-        success_url: successUrl,
       }),
     // Records usage at the time it happened. A repeated idempotency key is
     // answered 409, which means Autumn already has it.

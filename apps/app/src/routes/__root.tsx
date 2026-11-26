@@ -22,6 +22,7 @@ import {
   needsName,
 } from "../features/auth/session";
 import { loadInbox } from "../features/inbox/load-inbox";
+import { loadRequiredCheckout } from "../features/organizations/billing";
 import { OrganizationsProvider } from "../features/organizations/organizations-context";
 import { isOnboardingPath } from "../server/onboarding-path";
 import { ScenarioToolbar } from "../scenarios/scenario-toolbar";
@@ -113,6 +114,13 @@ export const Route = createRootRoute({
     }
     if (!onName && session.organizationId && onOnboarding) {
       throw redirect({ to: "/" });
+    }
+
+    // Once cards are required, an Owner whose organization has no plan yet
+    // goes to checkout to start Free (spec 16a).
+    if (!onName && session.organizationId) {
+      const checkout = await loadRequiredCheckout();
+      if (checkout) throw redirect({ href: checkout });
     }
 
     const inbox = session.organizationId

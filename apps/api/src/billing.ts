@@ -7,7 +7,7 @@ import { orgId, withOrg, withoutOrg } from "@preprocess/db/client";
 import type { OrgId, SystemTx } from "@preprocess/db/client";
 import { organization } from "@preprocess/db/schema/auth";
 import { usageRecords } from "@preprocess/db/schema/billing";
-import { and, asc, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
 import { autumn, type Autumn, type AutumnCustomer } from "./autumn.ts";
 import type { Env } from "./env.ts";
@@ -159,15 +159,15 @@ export const reportDaily = async (env: Env, now: Date) => {
 };
 
 export type CloudPlan = {
-  name: "free" | "team" | "enterprise";
+  name: "free" | "team" | "enterprise" | "internal";
   features: Set<string>;
   seats: number | null;
-  // Whether the organization has started a plan through checkout. Until it
-  // has, nothing is gated: the sign-up step that asks for a card isn't built.
+  // Whether the organization has started a plan: at checkout, which takes a
+  // card, or attached by plan() below.
   started: boolean;
 };
 
-const PLANS = ["free", "team", "enterprise"] as const;
+const PLANS = ["free", "team", "enterprise", "internal"] as const;
 
 export const readPlan = (customer: AutumnCustomer): CloudPlan => {
   const active = customer.subscriptions.find(
@@ -196,13 +196,51 @@ const remember = <T>(key: string, ms: number, load: () => Promise<T>) => {
   return value;
 };
 
+// When cards became required (BILLING_REQUIRED_FROM), or null.
+const requiredFrom = (env: Env) => {
+  const at = env.BILLING_REQUIRED_FROM && new Date(env.BILLING_REQUIRED_FROM);
+  return at && !Number.isNaN(at.getTime()) ? at : null;
+};
+
+// The plan an organization without one is given without a card: internal for
+// our own, and Free for every organization created before cards were
+// required. Anyone else starts one at checkout.
+const planWithoutCard = async (env: Env, org: OrgId) => {
+  const internal = (env.BILLING_INTERNAL_ORGS ?? "")
+    .split(",")
+    .map((id) => id.trim());
+  if (internal.includes(org)) return "internal";
+  const from = requiredFrom(env);
+  if (!from) return null;
+  const created = await withoutOrg(env, "billing: organization age", (tx) =>
+    tx
+      .select({ createdAt: organization.createdAt })
+      .from(organization)
+      .where(eq(organization.id, org)),
+  );
+  return created[0] && created[0].createdAt < from ? "free" : null;
+};
+
+const loadPlan = async (billing: Autumn, env: Env, org: OrgId) => {
+  const current = readPlan(await billing.customer(org));
+  if (current.started) return current;
+  const given = await planWithoutCard(env, org);
+  if (!given) return current;
+  await billing.attach(org, given);
+  console.log("billing: attached without a card", org, given);
+  return readPlan(await billing.customer(org));
+};
+
 export const cloudPlan = async (env: Env, org: OrgId) => {
   const billing = autumn(env);
   if (!billing) return null;
   try {
-    return await remember(`plan:${org}`, 30_000, async () =>
-      readPlan(await billing.customer(org)),
+    const plan = await remember(`plan:${org}`, 30_000, () =>
+      loadPlan(billing, env, org),
     );
+    // A plan not started yet may start at checkout any moment: read it again.
+    if (!plan.started) cached.delete(`plan:${org}`);
+    return plan;
   } catch (error) {
     // Fail open: an Autumn outage never stops the product.
     console.error("billing: plan", org, error);
@@ -210,10 +248,17 @@ export const cloudPlan = async (env: Env, org: OrgId) => {
   }
 };
 
-// Whether the organization may use a feature: it needs a started plan (every
-// plan, Free included, starts at checkout with a card), and Free caps its
-// monthly cases and its one-time model credit. Where billing is off
-// everything is allowed, and an Autumn outage fails open.
+// Whether an organization without a plan is refused: once cards are
+// required, and the date has passed.
+export const planRequired = (env: Env, started: boolean, now = new Date()) => {
+  const from = requiredFrom(env);
+  return !started && from !== null && now >= from;
+};
+
+// Whether the organization may use a feature: once cards are required it
+// needs a started plan (every plan, Free included, starts at checkout with a
+// card), and Free caps its monthly cases and its one-time model credit. Where
+// billing is off everything is allowed, and an Autumn outage fails open.
 export const entitlement = async (
   env: Env,
   org: OrgId,
@@ -223,7 +268,8 @@ export const entitlement = async (
   if (!billing) return "ok";
   const plan = await cloudPlan(env, org);
   if (!plan) return "ok";
-  if (!plan.started) return "plan_required";
+  if (!plan.started)
+    return planRequired(env, plan.started) ? "plan_required" : "ok";
   try {
     const allowed = await remember(
       `check:${org}:${featureId}`,
