@@ -181,17 +181,18 @@ const runBuild = async (env: Env, ref: BuildRef, signal: AbortSignal) => {
 
 // One per organization, agent and branch (queueName).
 export class BuildQueue extends DurableObject<Env> {
-  private running: AbortController | undefined;
+  private running: { buildId: string; stop: AbortController } | undefined;
 
   async push(build: BuildRef) {
     const replaced = await this.ctx.storage.get<BuildRef>("next");
     await this.ctx.storage.put("next", build);
+    if (this.running && this.running.buildId !== build.buildId)
+      this.running.stop.abort();
     if (replaced)
       await finish(this.env, replaced, {
         status: "superseded",
         error: "a newer push replaced this build",
       });
-    this.running?.abort();
     if ((await this.ctx.storage.getAlarm()) === null)
       await this.ctx.storage.setAlarm(Date.now());
   }
@@ -201,9 +202,10 @@ export class BuildQueue extends DurableObject<Env> {
       const next = await this.ctx.storage.get<BuildRef>("next");
       if (!next) return;
       await this.ctx.storage.delete("next");
-      this.running = new AbortController();
+      const stop = new AbortController();
+      this.running = { buildId: next.buildId, stop };
       try {
-        await runBuild(this.env, next, this.running.signal);
+        await runBuild(this.env, next, stop.signal);
       } finally {
         this.running = undefined;
       }

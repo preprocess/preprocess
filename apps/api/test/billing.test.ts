@@ -17,10 +17,12 @@ import {
   usageReports,
 } from "@preprocess/db/schema/billing";
 import { deployments } from "@preprocess/db/schema/deployments";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   activeSeats,
+  creditStop,
   entitlement,
   planRequired,
   readPlan,
@@ -28,9 +30,10 @@ import {
   seatLimitApplies,
 } from "../src/billing.ts";
 import type { Env } from "../src/env.ts";
-import { monthOf } from "../src/metering.ts";
+import { caseFeeMicroUsd, monthOf } from "../src/metering.ts";
 import { customImagesAllowed, getPlan } from "../src/plan.ts";
 import { Platform } from "../src/platform.ts";
+import { monthSpendParts } from "../src/spend.ts";
 import {
   addMember,
   Client,
@@ -49,8 +52,11 @@ let customer: {
   subscriptions: { plan_id: string; status: string }[];
   flags: Record<string, unknown>;
   balances: Record<string, unknown>;
+  billing_controls?: { auto_topups?: unknown[] };
+  payment_method?: { card: { brand: string; last4: string } };
 };
 let allowed = true;
+let paymentUrl: string | null = null;
 
 const stubAutumn = () =>
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -74,6 +80,21 @@ const stubAutumn = () =>
     if (route === "check") return json({ allowed });
     if (route === "billing.setup_payment")
       return json({ url: "https://checkout.stripe.com/c/pay/cs_test" });
+    if (route === "billing.preview_attach")
+      return json({
+        line_items: [{ description: "Team - Active seats", total: 0 }],
+        total: 0,
+        currency: "usd",
+        next_cycle: { starts_at: Date.UTC(2026, 11, 1), total: 16 },
+      });
+    if (route === "customers.update") {
+      customer.billing_controls = body.billing_controls as never;
+      return json({ id: body.customer_id, ...customer });
+    }
+    if (route === "billing.multi_attach")
+      return json({ payment_url: paymentUrl });
+    if (route === "billing.attach" && body.plan_id === "credits")
+      return json({ payment_url: paymentUrl });
     if (route === "billing.attach") {
       customer.subscriptions = [
         { plan_id: String(body.plan_id), status: "active" },
@@ -157,6 +178,14 @@ afterEach(() => {
   vi.restoreAllMocks();
   calls = [];
   allowed = true;
+  paymentUrl = null;
+});
+
+const balance = (remaining: number, granted = remaining, usage = 0) => ({
+  granted,
+  remaining,
+  usage,
+  unlimited: false,
 });
 
 describe("reporting usage", () => {
@@ -321,7 +350,7 @@ describe("the plan", () => {
 });
 
 describe("Free's caps", () => {
-  it("refuse a new case once the month's cases are used, and halt model calls once the credit is", async () => {
+  it("refuse a new case once the month's cases are used, and halt model calls once the credits are", async () => {
     const capped = await organizationWithAgent("Capped");
     stubAutumn();
     customer = {
@@ -340,7 +369,7 @@ describe("Free's caps", () => {
     expect(await gate.spendGate(capped.org)).toBe("credit_exhausted");
     expect(
       calls.filter((c) => c.route === "check").map((c) => c.body.feature_id),
-    ).toEqual(["cases", "model_usage_credits"]);
+    ).toEqual(["cases"]);
   });
 
   it("fail open when Autumn is down", async () => {
@@ -398,6 +427,7 @@ describe("starting a plan", () => {
     expect(attached()).toEqual([]);
 
     customer.subscriptions = [{ plan_id: "free", status: "active" }];
+    customer.balances = { model_credit: balance(500) };
     const created = await late.keyed.call(`/v1/orgs/${late.org}/cases`, {
       body: { agent: "invoices", text: "after checkout" },
     });
@@ -481,8 +511,8 @@ describe("starting a plan", () => {
       AUTUMN_SECRET_KEY: "am_sk_test_stub",
       BILLING_INTERNAL_ORGS: ours.org,
     });
-    for (const feature of ["cases", "model_usage_credits"])
-      expect(await entitlement(env, orgId(ours.org), feature)).toBe("ok");
+    expect(await entitlement(env, orgId(ours.org), "cases")).toBe("ok");
+    expect(await creditStop(env, orgId(ours.org))).toBe("ok");
     expect(calls.filter((c) => c.route === "check")).toEqual([]);
   });
 });
@@ -518,6 +548,58 @@ describe("checkout", () => {
     customer.subscriptions = [{ plan_id: "free", status: "active" }];
     const again = await shop.owner.call(path, { body: { plan: "free" } });
     expect(again.status).toBe(409);
+  });
+
+  it("starts Team with its first credits, $10 unless the Owner picks more, so it never starts at zero", async () => {
+    const env = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      APP_URL: "https://app.example.test",
+    });
+    const shop = await organizationWithAgent("Teamshop", env);
+    stubAutumn();
+    customer = { subscriptions: [], flags: {}, balances: {} };
+    paymentUrl = "https://checkout.stripe.com/c/pay/cs_test_team";
+    const path = `/v1/orgs/${shop.org}/billing/checkout`;
+    const started = await shop.owner.call<{ url: string }>(path, {
+      body: { plan: "team" },
+    });
+    expect(started.body).toEqual({ url: paymentUrl });
+    expect(calls.find((c) => c.route === "billing.multi_attach")?.body).toEqual(
+      {
+        customer_id: shop.org,
+        plans: [
+          { plan_id: "team" },
+          {
+            plan_id: "credits",
+            feature_quantities: [
+              { feature_id: "model_credit", quantity: 1_000 },
+            ],
+          },
+        ],
+        success_url: "https://app.example.test/",
+      },
+    );
+    calls = [];
+    paymentUrl = null;
+    const charged = await shop.owner.call<{ url: string }>(path, {
+      body: {
+        plan: "team",
+        credits: 5_000,
+        returnTo: "https://app.example.test/billing",
+      },
+    });
+    expect(charged.body).toEqual({ url: "https://app.example.test/billing" });
+    expect(
+      calls.find((c) => c.route === "billing.multi_attach")?.body.plans,
+    ).toContainEqual({
+      plan_id: "credits",
+      feature_quantities: [{ feature_id: "model_credit", quantity: 5_000 }],
+    });
+    expect(
+      (await shop.owner.call(path, { body: { plan: "team", credits: 999 } }))
+        .status,
+    ).toBe(400);
+    expect(calls.some((c) => c.route === "billing.setup_payment")).toBe(false);
   });
 });
 
@@ -569,5 +651,302 @@ describe("Free's seats", () => {
       message:
         "This would make 3 developer and operator seats, and the free plan includes 1. Free a seat or upgrade first.",
     });
+  });
+});
+
+describe("credits", () => {
+  it("stop new cases and metered calls on Free and Team once none are left, whatever Autumn's check says", async () => {
+    const empty = await organizationWithAgent("Emptyco");
+    const funded = await organizationWithAgent("Fundedco");
+    const committed = await organizationWithAgent("Commitco");
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "team", status: "active" }],
+      flags: {},
+      balances: { model_credit: balance(0, 2_500, 2_700) },
+    };
+    const refused = await empty.keyed.call<{
+      error: { code: string; message: string };
+    }>(`/v1/orgs/${empty.org}/cases`, {
+      body: { agent: "invoices", text: "no credits left" },
+    });
+    expect(refused.status).toBe(402);
+    expect(refused.body.error).toEqual({
+      code: "credit_exhausted",
+      message: "Credit balance is empty. An Owner can add credits in Billing.",
+    });
+    const gate = new Platform({} as ExecutionContext, environment);
+    expect(await gate.spendGate(empty.org)).toBe("credit_exhausted");
+
+    customer.balances = { model_credit: balance(40) };
+    const created = await funded.keyed.call(`/v1/orgs/${funded.org}/cases`, {
+      body: { agent: "invoices", text: "with credits" },
+    });
+    expect(created.status).toBe(202);
+    expect(await gate.spendGate(funded.org)).toBe("ok");
+
+    customer = {
+      subscriptions: [{ plan_id: "enterprise", status: "active" }],
+      flags: {},
+      balances: {},
+    };
+    expect(await gate.spendGate(committed.org)).toBe("ok");
+  });
+
+  it("charge a case fee past the month's first 1,000 cases, reported as credits and counted as spend", async () => {
+    expect(
+      [1, 1_000, 1_001, 10_000, 10_001, 100_000, 100_001].map(caseFeeMicroUsd),
+    ).toEqual([0, 0, 20_000, 20_000, 10_000, 10_000, 5_000]);
+    const busy = await organizationWithAgent("Busyco");
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "team", status: "active" }],
+      flags: {},
+      balances: { model_credit: balance(10_000) },
+    };
+    await withOrg(environment, orgId(busy.org), (tx) =>
+      tx.insert(usageRecords).values(
+        Array.from({ length: 1_000 }, () => ({
+          id: newId("usageRecord"),
+          organizationId: busy.org,
+          feature: "cases" as const,
+          quantity: 1,
+          reportedAt: new Date(),
+        })),
+      ),
+    );
+    const created = await busy.keyed.call(`/v1/orgs/${busy.org}/cases`, {
+      body: { agent: "invoices", text: "the 1,001st" },
+    });
+    expect(created.status).toBe(202);
+    const fees = await withOrg(environment, orgId(busy.org), (tx) =>
+      tx
+        .select({ quantity: usageRecords.quantity })
+        .from(usageRecords)
+        .where(eq(usageRecords.feature, "case_fees")),
+    );
+    expect(fees).toEqual([{ quantity: 20_000 }]);
+    expect(
+      (await withOrg(environment, orgId(busy.org), (tx) => monthSpendParts(tx)))
+        .caseFees,
+    ).toBe(20_000);
+
+    await reportUsage(environment);
+    const reported = await withOrg(environment, orgId(busy.org), (tx) =>
+      tx
+        .select({
+          quantity: usageReports.quantity,
+          remainder: usageReports.remainder,
+        })
+        .from(usageReports)
+        .where(eq(usageReports.feature, "case_fee_credits")),
+    );
+    expect(reported).toEqual([{ quantity: 2, remainder: 0 }]);
+  });
+});
+
+describe("billing routes", () => {
+  const env = testEnv({
+    AUTUMN_SECRET_KEY: "am_sk_test_stub",
+    APP_URL: "https://app.example.test",
+    CASES: { send: () => Promise.resolve() } as unknown as Queue,
+  });
+  const team = () => ({
+    subscriptions: [{ plan_id: "team", status: "active" }],
+    flags: {},
+    balances: { model_credit: balance(0) },
+  });
+
+  it("show the credits, what is owed, auto-reload, and the card to the Owner alone", async () => {
+    const shop = await organizationWithAgent("Balanceco", env);
+    stubAutumn();
+    customer = {
+      ...team(),
+      balances: { model_credit: balance(0, 2_500, 2_700) },
+      billing_controls: {
+        auto_topups: [
+          {
+            feature_id: "model_credit",
+            enabled: true,
+            threshold: 500,
+            quantity: 2_000,
+            purchase_limit: {
+              limit_type: "amount",
+              interval: "month",
+              limit: 200,
+            },
+          },
+        ],
+      },
+      payment_method: { card: { brand: "visa", last4: "4242" } },
+    };
+    const path = `/v1/orgs/${shop.org}/billing`;
+    const owner = await shop.owner.call(path);
+    expect(owner.body).toMatchObject({
+      plan: "team",
+      credits: { remaining: 0, owed: 200 },
+      autoReload: {
+        enabled: true,
+        belowCredits: 500,
+        addCredits: 2_000,
+        monthlyLimitUsd: 200,
+      },
+      card: { brand: "visa", last4: "4242" },
+    });
+    expect(
+      calls.filter((c) => c.body.expand).map((c) => c.body.expand),
+    ).toEqual([["payment_method"]]);
+    const byKey = await shop.keyed.call(path);
+    expect(byKey.body).toMatchObject({ credits: { remaining: 0 }, card: null });
+  });
+
+  it("let the Owner buy credits on Free and Team, at least 1,000, charged to the card or finished on Stripe's page", async () => {
+    const shop = await organizationWithAgent("Topupco", env);
+    const big = await organizationWithAgent("Bigco", env);
+    stubAutumn();
+    customer = team();
+    const path = `/v1/orgs/${shop.org}/billing/credits`;
+    expect(
+      (await shop.owner.call(path, { body: { credits: 999 } })).status,
+    ).toBe(400);
+    expect(
+      (await shop.keyed.call(path, { body: { credits: 2_000 } })).status,
+    ).toBe(403);
+    const bought = await shop.owner.call(path, {
+      body: { credits: 2_000, returnTo: "https://app.example.test/billing" },
+    });
+    expect(bought.status).toBe(200);
+    expect(bought.body).toEqual({ url: null });
+    expect(calls.find((c) => c.route === "billing.attach")?.body).toEqual({
+      customer_id: shop.org,
+      plan_id: "credits",
+      feature_quantities: [{ feature_id: "model_credit", quantity: 2_000 }],
+      success_url: "https://app.example.test/billing",
+    });
+    paymentUrl = "https://invoice.stripe.com/i/test";
+    const authenticate = await shop.owner.call(path, {
+      body: { credits: 1_000 },
+    });
+    expect(authenticate.body).toEqual({ url: paymentUrl });
+
+    customer = {
+      subscriptions: [{ plan_id: "enterprise", status: "active" }],
+      flags: {},
+      balances: {},
+    };
+    const refused = await big.owner.call(
+      `/v1/orgs/${big.org}/billing/credits`,
+      {
+        body: { credits: 2_000 },
+      },
+    );
+    expect(refused.status).toBe(409);
+  });
+
+  it("set auto-reload, capped each month at the spending limit unless the Owner names a cap", async () => {
+    const shop = await organizationWithAgent("Reloadco", env);
+    stubAutumn();
+    customer = team();
+    await shop.owner.call(`/v1/orgs/${shop.org}/spending/limit`, {
+      method: "PUT",
+      body: { limitUsd: 150 },
+    });
+    const path = `/v1/orgs/${shop.org}/billing/auto-reload`;
+    const set = await shop.owner.call(path, {
+      method: "PUT",
+      body: { enabled: true, belowCredits: 500, addCredits: 2_000 },
+    });
+    expect(set.status).toBe(200);
+    expect(set.body).toEqual({
+      enabled: true,
+      belowCredits: 500,
+      addCredits: 2_000,
+      monthlyLimitUsd: 150,
+    });
+    expect(calls.find((c) => c.route === "customers.update")?.body).toEqual({
+      customer_id: shop.org,
+      billing_controls: {
+        auto_topups: [
+          {
+            feature_id: "model_credit",
+            enabled: true,
+            threshold: 500,
+            quantity: 2_000,
+            purchase_limit: {
+              limit_type: "amount",
+              interval: "month",
+              limit: 150,
+            },
+          },
+        ],
+      },
+    });
+    const uncapped = await shop.owner.call(path, {
+      method: "PUT",
+      body: {
+        enabled: true,
+        belowCredits: 500,
+        addCredits: 2_000,
+        monthlyLimitUsd: null,
+      },
+    });
+    expect(uncapped.body).toMatchObject({ monthlyLimitUsd: null });
+    expect(
+      (
+        await shop.owner.call(path, {
+          method: "PUT",
+          body: { enabled: true, belowCredits: 500, addCredits: 500 },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await shop.keyed.call(path, {
+          method: "PUT",
+          body: { enabled: false, belowCredits: 0, addCredits: 1_000 },
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("preview a plan change, then make it once a plan is started", async () => {
+    const shop = await organizationWithAgent("Upgradeco", env);
+    const fresh = await organizationWithAgent("Freshco", env);
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "free", status: "active" }],
+      flags: {},
+      balances: { model_credit: balance(500) },
+    };
+    const preview = await shop.owner.call(
+      `/v1/orgs/${shop.org}/billing/plan/preview`,
+      { body: { plan: "team" } },
+    );
+    expect(preview.body).toEqual({
+      totalUsd: 0,
+      lines: [{ description: "Team - Active seats", totalUsd: 0 }],
+      nextInvoice: { at: "2026-12-01T00:00:00.000Z", totalUsd: 16 },
+    });
+    const path = `/v1/orgs/${shop.org}/billing/plan`;
+    const changed = await shop.owner.call(path, { body: { plan: "team" } });
+    expect(changed.status).toBe(200);
+    expect(changed.body).toEqual({ url: null });
+    expect(calls.find((c) => c.route === "billing.attach")?.body).toEqual({
+      customer_id: shop.org,
+      plan_id: "team",
+      success_url: "https://app.example.test/",
+    });
+    expect(
+      (await shop.owner.call(path, { body: { plan: "team" } })).status,
+    ).toBe(409);
+
+    customer = { subscriptions: [], flags: {}, balances: {} };
+    expect(
+      (
+        await fresh.owner.call(`/v1/orgs/${fresh.org}/billing/plan`, {
+          body: { plan: "team" },
+        })
+      ).status,
+    ).toBe(409);
   });
 });

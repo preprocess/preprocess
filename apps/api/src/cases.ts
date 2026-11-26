@@ -26,10 +26,10 @@ import type { Manifest } from "./deploy.ts";
 import { acceptedMemories } from "./memories.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
-import { entitlement } from "./billing.ts";
+import { creditStop, entitlement } from "./billing.ts";
 import { indexCase } from "./case-search.ts";
 import { joinAutomaticSuite } from "./evals.ts";
-import { meter, meterCharges, type Charges } from "./metering.ts";
+import { meter, meterCaseFee, meterCharges, type Charges } from "./metering.ts";
 import { effectiveSettings } from "./settings.ts";
 import { refuseOverLimit } from "./spend.ts";
 import { notifyLater } from "./notify.ts";
@@ -113,7 +113,7 @@ export const createCase = async (
   idempotencyKey?: string,
 ): Promise<{ body: CaseAccepted; replayed: boolean }> => {
   // A plan must be started first; Free caps its monthly cases (spec 16a), and
-  // paid plans bill past their included ones.
+  // Free and Team need credits left (PRE-96).
   const entitled = await entitlement(env, org, "cases");
   if (entitled === "plan_required")
     throw new ApiError(
@@ -126,6 +126,12 @@ export const createCase = async (
       402,
       "credit_exhausted",
       "This organization has used this month's cases on its plan. Upgrade to start more.",
+    );
+  if ((await creditStop(env, org)) === "used_up")
+    throw new ApiError(
+      402,
+      "credit_exhausted",
+      "Credit balance is empty. An Owner can add credits in Billing.",
     );
   const created = await withOrg(env, org, async (tx) => {
     const now = new Date();
@@ -237,6 +243,7 @@ export const createCase = async (
       quantity: 1,
       caseId,
     });
+    await meterCaseFee(tx, env, org, caseId, now);
     if (input.files.length)
       await tx
         .update(files)

@@ -1,7 +1,7 @@
 import { withoutOrg } from "@preprocess/db/client";
 import { user } from "@preprocess/db/schema/auth";
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../src/env.ts";
 import {
@@ -62,20 +62,25 @@ describe("sign-up and sign-in", () => {
     ) => {
       const environment = testEnv({ STAGE: stage });
       const client = new Client(environment);
-      const asked = await client.call("/api/auth/sign-in/magic-link", {
-        body: { email, callbackURL: "/" },
-      });
-      const token = await tokenFor(
-        environment.BETTER_AUTH_SECRET,
-        tokenEmail.toLowerCase(),
-        minute(),
-      );
-      afterAsking();
-      const opened = await client.call(
-        `/api/auth/magic-link/verify?token=${token}&callbackURL=/`,
-      );
-      const session = (await client.call("/api/auth/get-session")).body;
-      return { asked, opened, session };
+      vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
+      try {
+        const asked = await client.call("/api/auth/sign-in/magic-link", {
+          body: { email, callbackURL: "/" },
+        });
+        const token = await tokenFor(
+          environment.BETTER_AUTH_SECRET,
+          tokenEmail.toLowerCase(),
+          minute(),
+        );
+        afterAsking();
+        const opened = await client.call(
+          `/api/auth/magic-link/verify?token=${token}&callbackURL=/`,
+        );
+        const session = (await client.call("/api/auth/get-session")).body;
+        return { asked, opened, session };
+      } finally {
+        vi.useRealTimers();
+      }
     };
 
     it("works on a preview for that stage's exact address, without mailing it", async () => {
@@ -113,25 +118,17 @@ describe("sign-up and sign-in", () => {
     });
 
     it("lasts two minutes at most", async () => {
-      const real = Date.now;
-      try {
-        const { opened, session } = await attempt(
-          "staging",
-          "smoke-test+staging@preprocess.localhost",
-          "smoke-test+staging@preprocess.localhost",
-          () => {
-            const asked = real();
-            Date.now = () => asked + 3 * 60_000;
-          },
-        );
-        expect(opened.status).toBe(403);
-        expect(opened.body).toMatchObject({
-          message: "This address can't sign in here.",
-        });
-        expect(session).toBeNull();
-      } finally {
-        Date.now = real;
-      }
+      const { opened, session } = await attempt(
+        "staging",
+        "smoke-test+staging@preprocess.localhost",
+        "smoke-test+staging@preprocess.localhost",
+        () => vi.setSystemTime(Date.now() + 3 * 60_000),
+      );
+      expect(opened.status).toBe(403);
+      expect(opened.body).toMatchObject({
+        message: "This address can't sign in here.",
+      });
+      expect(session).toBeNull();
     });
   });
 

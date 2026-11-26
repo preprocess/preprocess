@@ -504,7 +504,7 @@ export class CaseRuntime extends DurableObject<Env> {
       "platform",
       "event",
       verdict === "credit_exhausted"
-        ? "Halted: the organization used up its plan's model credit"
+        ? "Halted: credit balance is empty"
         : "Halted: the organization reached its monthly spending limit",
     );
     await this.report(next, {

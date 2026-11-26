@@ -21,6 +21,7 @@ import { organization, user } from "./auth.ts";
 // cases: one per case created (a rerun is not a new case). model_usage,
 // decide and ocr: micro-USD charged at our prices. log_bytes: run-log bytes
 // stored, which storage counts. sandbox: micro-USD for case sandbox time.
+// case_fees: micro-USD for a case past the month's free ones.
 export const meteredFeature = pgEnum("metered_feature", [
   "cases",
   "model_usage",
@@ -28,6 +29,7 @@ export const meteredFeature = pgEnum("metered_feature", [
   "ocr",
   "log_bytes",
   "sandbox",
+  "case_fees",
 ]);
 
 export const usageRecords = pgTable(

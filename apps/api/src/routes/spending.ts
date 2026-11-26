@@ -29,7 +29,7 @@ const Spending = z
     month: z.string().openapi({ example: "2026-11" }),
     spentUsd: z.number().openapi({
       description:
-        "Metered use of the hosted service this calendar month (UTC), every deployment included: cases, eval runs, OCR calls and sandbox time. The spending limit enforces this total",
+        "Metered use of the hosted service this calendar month (UTC), every deployment included: cases, eval runs, OCR calls, sandbox time and case fees. The spending limit enforces this total",
     }),
     casesUsd: z.number().openapi({ description: "Of which cases" }),
     evalsUsd: z.number().openapi({ description: "Of which eval runs" }),

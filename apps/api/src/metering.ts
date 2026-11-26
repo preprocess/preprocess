@@ -6,7 +6,7 @@ import type { Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { seatActivity, usageRecords } from "@preprocess/db/schema/billing";
 import { runMode } from "@preprocess/runmode";
-import { and, eq, inArray, sum } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sum } from "drizzle-orm";
 
 import type { Env } from "./env.ts";
 
@@ -71,6 +71,42 @@ export const meterCharges = async (
       quantity: charges[kind as keyof Charges] - (known.get(feature) ?? 0),
       caseId,
     });
+};
+
+// A case's fee by its place in the organization's month (spec 16a): the
+// first 1,000 are free, then $0.02 each up to 10,000, $0.01 up to 100,000 and
+// $0.005 after, in micro-USD. Fees are paid in credits like other usage.
+export const caseFeeMicroUsd = (nth: number) =>
+  nth <= 1_000 ? 0 : nth <= 10_000 ? 20_000 : nth <= 100_000 ? 10_000 : 5_000;
+
+// Meters a new case's fee, once its own case record is in the ledger.
+export const meterCaseFee = async (
+  tx: Tx,
+  env: Pick<Env, "PREPROCESS_REGION">,
+  organizationId: string,
+  caseId: string,
+  now = new Date(),
+) => {
+  if (!metered(env)) return;
+  const [row] = await tx
+    .select({ cases: count() })
+    .from(usageRecords)
+    .where(
+      and(
+        eq(usageRecords.organizationId, organizationId),
+        eq(usageRecords.feature, "cases"),
+        gte(
+          usageRecords.at,
+          new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+        ),
+      ),
+    );
+  await meter(tx, env, {
+    organizationId,
+    feature: "case_fees",
+    quantity: caseFeeMicroUsd(row?.cases ?? 0),
+    caseId,
+  });
 };
 
 // The first day of the UTC month `at` falls in, as Postgres stores a date.
