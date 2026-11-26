@@ -39,6 +39,7 @@ export type AutumnCustomer = {
         id: string;
         plan_id: string | null;
         included_grant: number;
+        usage: number;
       }[];
     }
   >;
@@ -207,6 +208,19 @@ const client = (key: string) => {
         feature_id: grant.featureId,
         included_grant: grant.credits,
         balance_id: grant.id,
+      }),
+    // Takes back a balance's grant. What was already used from it stays as
+    // usage, so it is owed rather than forgiven.
+    revoke: (
+      organizationId: string,
+      balance: { featureId: string; id: string; usage: number },
+    ) =>
+      call<unknown>("balances.update", {
+        customer_id: organizationId,
+        feature_id: balance.featureId,
+        balance_id: balance.id,
+        included_grant: 0,
+        remaining: 0 - balance.usage,
       }),
     // What attach() would charge, without charging.
     preview: (organizationId: string, p: Purchase) =>

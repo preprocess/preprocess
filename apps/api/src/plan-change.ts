@@ -41,7 +41,7 @@ import {
 } from "drizzle-orm";
 
 import { autumn } from "./autumn.ts";
-import { readPlan, storedBytes } from "./billing.ts";
+import { readPlan, settleFreeCredits, storedBytes } from "./billing.ts";
 import { planSwitchedEmail, seatEndingEmail } from "./email-templates.ts";
 import { emailBrand, sendEmail } from "./email.ts";
 import type { Env } from "./env.ts";
@@ -483,9 +483,10 @@ export const runPlanChanges = async (env: Env, now = new Date()) => {
       if (change.at && change.at > now) continue;
       const plan = readPlan(await billing.customer(org));
       if (plan.name === "team" && plan.change) continue;
-      if (plan.name === "free" && plan.started)
+      if (plan.name === "free" && plan.started) {
+        await settleFreeCredits(env, org);
         await switchToFree(env, change, plan.seats ?? FREE_SEATS);
-      else await forgetChange(env, org);
+      } else await forgetChange(env, org);
     } catch (error) {
       console.error("billing: plan change", org, error);
     }
