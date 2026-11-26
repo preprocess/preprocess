@@ -16,6 +16,7 @@ const api = "https://api.cloudflare.com/client/v4";
 const registryHost = "registry.cloudflare.com";
 
 export const warnAtBytes = 35e9;
+export const failAtBytes = 42e9;
 // A shared image younger than this may belong to a deploy still in progress,
 // pushed but not yet referenced by any Worker, so the sweep leaves it.
 const minimumAgeMs = 2 * 24 * 60 * 60 * 1000;

@@ -2,8 +2,9 @@
 # (PRE-90). Daily, this deletes the images that neither a Worker's newest 10
 # versions nor its current deployment use (closed previews' repositories, and
 # images older than two days in the shared and the old staging and production
-# repositories), then walks the registry and warns once the estimate passes
-# 35 GB. See infra/README.md (Container registry).
+# repositories), then walks the registry: a warning from 35 GB, and the run
+# fails from 42 GB. The job summary's first line is always REGISTRY_USAGE_GB=<n>.
+# See infra/README.md (Container registry).
 
 name: Registry
 
