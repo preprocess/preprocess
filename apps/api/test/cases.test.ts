@@ -645,9 +645,13 @@ describe("approvals", () => {
         .where(eq(reviewEvents.caseId, caseId))
         .orderBy(asc(reviewEvents.at)),
     );
-    expect(events.slice(-2).map((e) => [e.kind, e.path])).toEqual([
-      ["approval.approved", "pay_invoice"],
-      ["approval.rejected", "pay_invoice"],
+    expect(
+      events
+        .slice(-2)
+        .map((e) => [e.kind, e.path, (e.after as { note: string }).note]),
+    ).toEqual([
+      ["approval.approved", "pay_invoice", "Matches the PO"],
+      ["approval.rejected", "pay_invoice", "Wrong vendor"],
     ]);
     const audited = await withOrg(environment, orgId(org), (tx) =>
       tx
@@ -661,11 +665,18 @@ describe("approvals", () => {
         )
         .orderBy(asc(auditEvents.seq)),
     );
+    // The person's note is case content: it stays in the review events,
+    // which go with the case, and never enters the audit log.
     expect(
-      audited.map((a) => [a.action, a.actorId, a.data.approval, a.data.note]),
+      audited.map((a) => [
+        a.action,
+        a.actorId,
+        a.data.approval,
+        "note" in a.data,
+      ]),
     ).toEqual([
-      ["case.approval.approved", operatorId, pending.id, "Matches the PO"],
-      ["case.approval.rejected", operatorId, pending.id, "Wrong vendor"],
+      ["case.approval.approved", operatorId, pending.id, false],
+      ["case.approval.rejected", operatorId, pending.id, false],
     ]);
   });
 });
