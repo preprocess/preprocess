@@ -80,7 +80,7 @@ const Purchase = z
   .object({
     url: z.string().url().nullable().openapi({
       description:
-        "Stripe's page to finish payment on (no card yet, card authentication or a declined card); null when the card on file was charged",
+        "The payment page to send the Owner to when the card on file can't be charged (no card yet, the bank needs to confirm the payment, or the card was declined); null when the card on file was charged",
     }),
   })
   .openapi("BillingPurchase");
@@ -89,7 +89,7 @@ const returnTo = z
   .string()
   .url()
   .optional()
-  .openapi({ description: "Where Stripe's page returns to" });
+  .openapi({ description: "Where the Owner returns after paying" });
 
 const off = () =>
   new HTTPException(404, { message: "Billing is not available here." });
@@ -340,7 +340,7 @@ export const billingRoutes = new OpenAPIHono<{
       responses: {
         200: {
           content: { "application/json": { schema: Purchase } },
-          description: "The change, or Stripe's page to finish it on",
+          description: "The change, or the payment page to finish it on",
         },
         403: { description: "Not the Owner" },
         409: { description: "No plan started yet, or already on this plan" },
@@ -400,7 +400,7 @@ export const billingRoutes = new OpenAPIHono<{
       responses: {
         200: {
           content: { "application/json": { schema: Purchase } },
-          description: "The purchase, or Stripe's page to finish it on",
+          description: "The purchase, or the payment page to finish it on",
         },
         403: { description: "Not the Owner" },
         409: { description: "Not on Free or Team" },
