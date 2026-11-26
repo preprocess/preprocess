@@ -3,9 +3,16 @@
 // binding is the sink: it writes each message to a file and logs its path,
 // so nothing leaves the machine.
 
+import { runMode } from "@preprocess/runmode";
+
 import { invitationEmail, magicLinkEmail } from "./email-templates.ts";
-import type { RenderedEmail } from "./email-templates.ts";
+import type { Brand, RenderedEmail } from "./email-templates.ts";
 import type { Env } from "./env.ts";
+
+export const emailBrand = (env: Env): Brand => ({
+  appUrl: env.APP_URL,
+  selfHosted: runMode(env).kind === "self-hosted",
+});
 
 export const sendEmail = (env: Env, to: string, email: RenderedEmail) =>
   env.EMAIL.send({ from: env.EMAIL_FROM, to, ...email });
@@ -22,15 +29,12 @@ export const sendInvitationEmail = async (
   await sendEmail(
     env,
     invitation.email,
-    invitationEmail(
-      { appUrl: env.APP_URL },
-      {
-        url: new URL(`/invitations/${invitation.id}`, env.APP_URL).href,
-        email: invitation.email,
-        orgName: invitation.organizationName,
-        inviterName: invitation.inviterName,
-      },
-    ),
+    invitationEmail(emailBrand(env), {
+      url: new URL(`/invitations/${invitation.id}`, env.APP_URL).href,
+      email: invitation.email,
+      orgName: invitation.organizationName,
+      inviterName: invitation.inviterName,
+    }),
   );
 };
 
@@ -41,6 +45,6 @@ export const sendMagicLinkEmail = async (
   await sendEmail(
     env,
     message.email,
-    magicLinkEmail({ appUrl: env.APP_URL }, { url: message.url }),
+    magicLinkEmail(emailBrand(env), { url: message.url }),
   );
 };

@@ -38,7 +38,11 @@ export const escapeHtml = (value: string) =>
       ]!,
   );
 
-export type Brand = { appUrl: string };
+// selfHosted drops "on Preprocess" from footers (Chip, 2026-11-26).
+export type Brand = { appUrl: string; selfHosted: boolean };
+
+const onPreprocess = (brand: Brand) =>
+  brand.selfHosted ? "" : " on Preprocess";
 
 export type RenderedEmail = { subject: string; html: string; text: string };
 
@@ -209,13 +213,13 @@ const footer = (html: string) =>
       "</td></tr></table>",
   );
 
-const settingsFooter = (orgName: string, settingsUrl: string) =>
+const settingsFooter = (brand: Brand, orgName: string, settingsUrl: string) =>
   footer(
-    `Sent for ${escapeHtml(orgName)} on Preprocess. You can turn these emails off in <a class="pp-muted" href="${escapeHtml(settingsUrl)}" target="_blank" style="color:${light.muted};text-decoration:underline;">notification settings</a>.`,
+    `Sent for ${escapeHtml(orgName)}${onPreprocess(brand)}. You can turn these emails off in <a class="pp-muted" href="${escapeHtml(settingsUrl)}" target="_blank" style="color:${light.muted};text-decoration:underline;">notification settings</a>.`,
   );
 
-const settingsText = (orgName: string, settingsUrl: string) =>
-  `--\nSent for ${orgName} on Preprocess. Turn these emails off in notification settings: ${settingsUrl}\n`;
+const settingsText = (brand: Brand, orgName: string, settingsUrl: string) =>
+  `--\nSent for ${orgName}${onPreprocess(brand)}. Turn these emails off in notification settings: ${settingsUrl}\n`;
 
 // The initial on --muted. Images from user.image or organization.logo can be
 // on any host, so emails show the initial and load nothing third-party.
@@ -317,9 +321,9 @@ export const taggedEmail = (
         caseCard(brand, "tagged", data.agent, title) +
         quote(null, data.message) +
         button("Open case", data.url) +
-        settingsFooter(data.orgName, data.settingsUrl),
+        settingsFooter(brand, data.orgName, data.settingsUrl),
     ),
-    text: `${data.tagger} tagged ${data.groupName} on ${title}:\n\n${data.message}\n\nOpen the case: ${data.url}\n\n${settingsText(data.orgName, data.settingsUrl)}`,
+    text: `${data.tagger} tagged ${data.groupName} on ${title}:\n\n${data.message}\n\nOpen the case: ${data.url}\n\n${settingsText(brand, data.orgName, data.settingsUrl)}`,
   };
 };
 
@@ -335,9 +339,9 @@ export const assignedEmail = (brand: Brand, data: CaseData): RenderedEmail => {
       heading("A case was assigned to you", "0") +
         caseCard(brand, "assigned", data.agent, title) +
         button("Open case", data.url) +
-        settingsFooter(data.orgName, data.settingsUrl),
+        settingsFooter(brand, data.orgName, data.settingsUrl),
     ),
-    text: `${title} on the ${data.agent} agent was assigned to you.\n\nOpen the case: ${data.url}\n\n${settingsText(data.orgName, data.settingsUrl)}`,
+    text: `${title} on the ${data.agent} agent was assigned to you.\n\nOpen the case: ${data.url}\n\n${settingsText(brand, data.orgName, data.settingsUrl)}`,
   };
 };
 
@@ -357,34 +361,34 @@ export const waitingEmail = (
         caseCard(brand, "waiting", data.agent, title) +
         (data.reason ? quote("Reason", data.reason) : "") +
         button("Open case", data.url) +
-        settingsFooter(data.orgName, data.settingsUrl),
+        settingsFooter(brand, data.orgName, data.settingsUrl),
     ),
-    text: `${title} on the ${data.agent} agent is waiting on ${data.groupName}.\n\n${data.reason ? `Reason: ${data.reason}\n\n` : ""}Open the case: ${data.url}\n\n${settingsText(data.orgName, data.settingsUrl)}`,
+    text: `${title} on the ${data.agent} agent is waiting on ${data.groupName}.\n\n${data.reason ? `Reason: ${data.reason}\n\n` : ""}Open the case: ${data.url}\n\n${settingsText(brand, data.orgName, data.settingsUrl)}`,
   };
 };
 
-// Not in the handoff: composed from its blocks (heading, body, button,
-// footer) for Design to confirm.
+// Composed from the handoff's blocks; Design approved the copy.
 export const webhookDisabledEmail = (
   brand: Brand,
-  data: { url: string; endpointUrl: string; orgName: string },
+  data: { url: string; endpointUrl: string; orgName: string; days: number },
 ): RenderedEmail => {
+  const period = data.days === 1 ? "1 day" : `${data.days} days`;
   const subject = "A Preprocess webhook endpoint was disabled";
   return {
     subject,
     html: page(
       brand,
       subject,
-      `Every delivery to ${data.endpointUrl} failed for 3 days.`,
+      `Every delivery to ${data.endpointUrl} failed for ${period}.`,
       heading("A webhook endpoint was disabled") +
         paragraph(
-          `Every delivery to ${escapeHtml(data.endpointUrl)} failed for 3 days, so the endpoint was disabled. Fix the receiver, then enable it again.`,
+          `Every delivery to ${escapeHtml(data.endpointUrl)} failed for ${period}, so the endpoint was disabled. Fix the receiver, then enable it again.`,
         ) +
         button("Open webhooks", data.url) +
         footer(
-          `Sent to the owners and admins of ${escapeHtml(data.orgName)} on Preprocess.`,
+          `Sent to the owners and admins of ${escapeHtml(data.orgName)}${onPreprocess(brand)}.`,
         ),
     ),
-    text: `Every delivery to ${data.endpointUrl} failed for 3 days, so the endpoint was disabled.\n\nFix the receiver, then enable it again: ${data.url}\n\n--\nSent to the owners and admins of ${data.orgName} on Preprocess.\n`,
+    text: `Every delivery to ${data.endpointUrl} failed for ${period}, so the endpoint was disabled.\n\nFix the receiver, then enable it again: ${data.url}\n\n--\nSent to the owners and admins of ${data.orgName}${onPreprocess(brand)}.\n`,
   };
 };

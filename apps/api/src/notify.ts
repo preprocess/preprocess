@@ -3,7 +3,7 @@
 // writes an outbox row; the EMAILS consumer resolves recipients at send time,
 // skips people who turned email off, and sends one email per person. Keys
 // already sent are kept in KV for a day, so a redelivery sends nothing twice.
-// No email names another person.
+// A person's tag names that person; nothing else names other people.
 
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
@@ -14,7 +14,7 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { assignedEmail, taggedEmail, waitingEmail } from "./email-templates.ts";
 import type { RenderedEmail } from "./email-templates.ts";
-import { sendEmail } from "./email.ts";
+import { emailBrand, sendEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import { readOutbox, writeOutbox } from "./outbox.ts";
@@ -89,12 +89,23 @@ const caseData = (
   caseTitle: ref.title,
 });
 
+// The display name of the person who tagged, or "Someone" without one.
+const taggerName = async (tx: Tx, by: string) => {
+  const id = by.startsWith("person:") ? by.slice("person:".length) : null;
+  if (!id) return "Someone";
+  const [person] = await tx
+    .select({ name: user.name })
+    .from(user)
+    .where(eq(user.id, id));
+  return person?.name.trim() || "Someone";
+};
+
 const compose = async (
   env: Env,
   tx: Tx,
   notice: Notice,
 ): Promise<Email | null> => {
-  const brand = { appUrl: env.APP_URL };
+  const brand = emailBrand(env);
   if (notice.type === "mention") {
     const [mention] = await tx
       .select()
@@ -114,7 +125,10 @@ const compose = async (
       ),
       email: taggedEmail(brand, {
         ...caseData(env, ref, mention.caseId),
-        tagger: mention.by === "agent" ? `The ${ref.agent} agent` : "Someone",
+        tagger:
+          mention.by === "agent"
+            ? `The ${ref.agent} agent`
+            : await taggerName(tx, mention.by),
         groupName: group.name,
         message: mention.message,
       }),

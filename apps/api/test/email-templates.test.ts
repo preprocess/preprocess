@@ -3,14 +3,20 @@
 
 import { describe, expect, it } from "vitest";
 
+import { emailBrand } from "../src/email.ts";
+import type { Env } from "../src/env.ts";
 import {
+  assignedEmail,
   invitationEmail,
   magicLinkEmail,
   taggedEmail,
   waitingEmail,
+  webhookDisabledEmail,
 } from "../src/email-templates.ts";
+import { testEnv } from "./helpers.ts";
 
-const brand = { appUrl: "https://app.example.test" };
+const brand = { appUrl: "https://app.example.test", selfHosted: false };
+const selfHosted = { ...brand, selfHosted: true };
 const caseData = {
   url: "https://app.example.test/cases/agt_1/case_1",
   settingsUrl: "https://app.example.test/settings/account",
@@ -78,5 +84,57 @@ describe("system emails", () => {
     });
     const preheader = /mso-hide:all[^>]*>([^&]*)&/.exec(long.html)?.[1];
     expect(preheader).toBe(`${"x".repeat(99)}…`);
+  });
+
+  it("name Preprocess in footers on our cloud only", () => {
+    const webhook = {
+      url: "https://app.example.test/developers/webhooks",
+      endpointUrl: "https://hooks.example.test",
+      orgName: "Northwind",
+      days: 3,
+    };
+    const cloud = [
+      assignedEmail(brand, caseData),
+      webhookDisabledEmail(brand, webhook),
+    ];
+    const own = [
+      assignedEmail(selfHosted, caseData),
+      webhookDisabledEmail(selfHosted, webhook),
+    ];
+    expect(cloud[0]!.text).toContain(
+      "Sent for Acme <script> on Preprocess. Turn",
+    );
+    expect(cloud[1]!.html).toContain(
+      "owners and admins of Northwind on Preprocess.",
+    );
+    expect(own[0]!.text).toContain("Sent for Acme <script>. Turn");
+    expect(own[0]!.html).toContain(
+      "Sent for Acme &lt;script&gt;. You can turn",
+    );
+    expect(own[1]!.text).toContain("owners and admins of Northwind.\n");
+    for (const email of own) {
+      expect(email.html).not.toContain("on Preprocess.");
+      expect(email.text).not.toContain("on Preprocess.");
+    }
+  });
+
+  it("read self-hosting from the run mode", () => {
+    expect(emailBrand(testEnv()).selfHosted).toBe(false);
+    expect(
+      emailBrand(
+        testEnv({ PREPROCESS_REGION: undefined } as unknown as Partial<Env>),
+      ).selfHosted,
+    ).toBe(true);
+  });
+
+  it("state the disable period it is given", () => {
+    const email = webhookDisabledEmail(brand, {
+      url: "https://app.example.test/developers/webhooks",
+      endpointUrl: "https://hooks.example.test",
+      orgName: "Northwind",
+      days: 5,
+    });
+    expect(email.text).toContain("failed for 5 days, so");
+    expect(email.html).toContain("failed for 5 days, so");
   });
 });
