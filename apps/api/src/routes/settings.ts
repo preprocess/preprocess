@@ -17,11 +17,13 @@ import type { SettingValues } from "@preprocess/db/schema/settings";
 import type { SandboxSize } from "@preprocess/sdk/protocol";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 
+import { assertModelAllowed } from "../allowed-models.ts";
 import { actor, eventBase, requireAdmin, requireDeveloper } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
 import type { Manifest } from "../deploy.ts";
 import type { Env } from "../env.ts";
+import { refuseOnPush } from "../evals.ts";
 import {
   agentOverrideValues,
   DEFAULTS,
@@ -48,7 +50,13 @@ const Defaults = z
     timeoutSeconds: DEFAULTS.timeoutSeconds.schema.nullable().optional(),
     toolRetries: DEFAULTS.toolRetries.schema.nullable().optional(),
     sandboxImage: DEFAULTS.sandboxImage.schema.nullable().optional(),
-    "evals.onPush": DEFAULTS["evals.onPush"].schema.nullable().optional(),
+    "evals.onPush": DEFAULTS["evals.onPush"].schema
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          "Not available yet: true is refused with 400 not_available; a stored value reads as it is",
+      }),
   })
   .strict()
   .openapi("OrganizationDefaults", {
@@ -138,6 +146,8 @@ const setOverride = async (
 ) => {
   await requireDeveloper(tx, vars.caller);
   const agent = await findAgent(tx, slug);
+  if (key === "model" && value !== undefined)
+    await assertModelAllowed(tx, value as string);
   if (key === SANDBOX_SIZE_KEY && value !== undefined) {
     const manifest = (await currentDeployment(tx, agent.id))?.manifest as
       Manifest | undefined;
@@ -220,7 +230,10 @@ export const settingsRoutes = new OpenAPIHono<{
         string,
         string | number | boolean | null | undefined
       >;
+      refuseOnPush(patch["evals.onPush"]);
       const body = await withOrg(c.env, c.var.org, async (tx) => {
+        if (typeof patch.model === "string")
+          await assertModelAllowed(tx, patch.model);
         const before = await organizationDefaultValues(tx);
         const next: SettingValues = { ...before };
         for (const [key, value] of Object.entries(patch)) {
@@ -295,6 +308,7 @@ export const settingsRoutes = new OpenAPIHono<{
           "invalid_value",
           `Not a value for ${key}: ${z.prettifyError(parsed.error)}`,
         );
+      if (key === "evals.onPush") refuseOnPush(parsed.data);
       return c.json(
         await withOrg(c.env, c.var.org, (tx) =>
           setOverride(

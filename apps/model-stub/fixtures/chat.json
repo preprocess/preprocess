@@ -200,5 +200,53 @@
         "content": "The sandbox said: {{results}}"
       }
     ]
+  },
+  {
+    "name": "ocr-invoice",
+    "match": "Invoice 1042 - 2026-11-02",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "decide",
+            "arguments": {
+              "path": "vendor",
+              "prompt": "Which vendor sent this invoice?"
+            }
+          }
+        ]
+      },
+      {
+        "toolCalls": [
+          {
+            "name": "schema_answer",
+            "arguments": {
+              "answers": [
+                {
+                  "path": "vendor",
+                  "value": "acme"
+                },
+                {
+                  "path": "amount",
+                  "value": 1285
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "content": "Read invoice 1042 from its OCR text. {{results}}"
+      }
+    ]
+  },
+  {
+    "name": "smoke",
+    "match": "Smoke test of ",
+    "turns": [
+      {
+        "content": "Stub model: the deployment works."
+      }
+    ]
   }
 ]

@@ -42,7 +42,7 @@ export const GUARDRAIL_SECTIONS = [
   { id: "network", label: "Network" },
   { id: "spending", label: "Spending limit" },
   { id: "sandbox", label: "Sandbox size" },
-  { id: "models", label: "Model endpoints" },
+  { id: "models", label: "Models" },
 ] as const;
 
 const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [

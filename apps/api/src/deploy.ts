@@ -46,7 +46,9 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
 import type { AuditInput } from "@preprocess/db/audit";
+import { assertModelAllowed } from "./allowed-models.ts";
 import { decrypt, orgKeyVersion } from "./crypto.ts";
+import { ON_PUSH_UNAVAILABLE } from "./evals.ts";
 import type { Env } from "./env.ts";
 import { markSeat } from "./metering.ts";
 import { effectiveNetwork, permits } from "./network.ts";
@@ -58,6 +60,7 @@ import { nextFire, schedulerName } from "./scheduler.ts";
 import {
   agentOverrideValues,
   clearOverrides,
+  effectiveSettings,
   overrideWarnings,
 } from "./settings.ts";
 import type { NetworkRules } from "./network.ts";
@@ -704,6 +707,11 @@ export const deploy = async (
       message: `the agent's manifest is invalid: ${z.prettifyError(read.error)}`,
     });
   const manifest = read.data;
+  if (manifest.evals?.onPush)
+    manifest.warnings = [
+      ...(manifest.warnings ?? []),
+      `evals.onPush has no effect: ${ON_PUSH_UNAVAILABLE}`,
+    ];
   for (const s of manifest.schedules ?? []) {
     try {
       nextFire(s, new Date());
@@ -734,6 +742,10 @@ export const deploy = async (
       throw new HTTPException(422, {
         message: `the code names groups this organization does not have: ${unknown.join(", ")}`,
       });
+    await assertModelAllowed(
+      tx,
+      (await effectiveSettings(tx, agent.id, manifest)).model,
+    );
     await tx.insert(deployments).values({
       id,
       organizationId: org,

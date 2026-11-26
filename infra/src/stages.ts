@@ -97,6 +97,16 @@ export const runtimeModelSecrets = [
 ] as const;
 export const apiModelSecrets = ["MISTRAL_API_KEY", "MODEL_ENDPOINTS"] as const;
 
+// Whether a stage calls real model providers at all. Production and
+// self-hosted installs do. Previews never do, and staging only when its deploy
+// sets REAL_MODELS=true (the "Deploy" workflow's manual real_models input).
+// Otherwise the stage gets no provider keys, no MODEL_ENDPOINTS and no Workers
+// AI binding, so every agent model, decide and OCR call goes to the stub.
+export const callsRealModels = (stage: Stage, realModels: boolean) =>
+  stage === "production" ||
+  isSelfHostStage(stage) ||
+  (stage === "staging" && realModels);
+
 // The API's secrets, read from the deploy environment and bound as
 // secret_text. Locally `pnpm dev` writes generated values to apps/api/.dev.vars.
 export const apiSecrets = ["BETTER_AUTH_SECRET", "AUDIT_SIGNING_KEY"] as const;

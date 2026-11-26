@@ -15,7 +15,9 @@ deliberately and read its changelog first.
 - `scripts/stage.ts` deploys a `pr-<number>` or `staging` stage (and destroys
   previews) and prints its outputs.
 - `scripts/smoke.ts` is the end-to-end smoke test of a deployed stage; it
-  deploys and runs the stub agent in `smoke-agent/`.
+  deploys and runs the stub agent in `smoke-agent/`. `scripts/model-check.ts`
+  runs one case per agent model, on the stub by default or on the real providers
+  with `MODELS=real`.
 
 ## Stages
 
@@ -44,7 +46,11 @@ Every stage deploys the whole product, the same way:
   provider keys `BASETEN_API_KEY` (runtime: Kimi, DeepSeek, decide) and
   `MISTRAL_API_KEY` (API: OCR), and the stub model service (`apps/model-stub`)
   for every model whose provider has no key. Production never gets the stub, and
-  `MODEL_SERVICE_URL` replaces it with a real service;
+  `MODEL_SERVICE_URL` replaces it with a real service. Previews and staging call
+  no real provider (`callsRealModels` in `src/stages.ts`): they bind no provider
+  key, no `MODEL_ENDPOINTS` and no Workers AI, so the stub answers every agent
+  model, decide and OCR call. Only a staging deploy with `REAL_MODELS=true`
+  binds them;
 - Postgres through two Hyperdrive configs (caching off), with every file in
   `packages/db/migrations` applied before any Worker is updated.
 
@@ -151,11 +157,21 @@ it.
    agent in `smoke-agent/` to the smoke-test organization and running one case
    to completion. The user's password is derived from the stage's
    `BETTER_AUTH_SECRET` and its address is on `EMAIL_FROM`'s domain, so the test
-   needs no secret of its own.
+   needs no secret of its own. The case must get the stub's fixture reply, so a
+   stage that reached a real provider fails here. Then `model-check` runs one
+   case per agent model on the stub, each with an OCR'd invoice and a decide
+   call, and writes each case's charge to the job summary.
 4. **Promote to production**: mints a token for the `preprocess-deploy` GitHub
    App and starts `deploy-preprocess.yml` in preprocess/internal with the
    commit's sha. Internal holds production's configuration, checks the sha is on
    `main` and passed "Staging smoke test", and runs `deploy:production`.
+
+**The full real-model pass** runs only by hand: start "Deploy" on `main` with
+`real_models` checked. That run deploys staging with the provider keys, runs the
+smoke test, then `model-check` with `MODELS=real` (every agent model, decide and
+OCR on Baseten, Workers AI and Mistral) in its own "Real-model pass" job, and
+promotes nothing to production. The next push to `main` puts staging back on the
+stub.
 
 A job whose secrets aren't set reports "skipped" with the missing names and
 stays green. The smoke test runs only after a real staging deploy, so its check

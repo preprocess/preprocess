@@ -71,6 +71,7 @@ import {
   isPreviewStage,
   isSelfHostStage,
   isStage,
+  callsRealModels,
   names,
   runtimeDurableObjects,
   sandboxDurableObjects,
@@ -507,11 +508,18 @@ export default Alchemy.Stack(
     // binding. Every other model goes to MODEL_SERVICE_URL: on our stages
     // other than production that is the stub (design doc 07) unless it names
     // a real service, and a self-hosted install gets the stub only with
-    // MODEL_SERVICE_URL=stub. The stub accepts any token.
+    // MODEL_SERVICE_URL=stub. The stub accepts any token. A stage that calls
+    // no real models (previews, and staging unless REAL_MODELS=true) binds no
+    // provider key and no Workers AI, so the stub serves every call.
+    const realModels = callsRealModels(
+      stage,
+      yield* Config.Boolean("REAL_MODELS").pipe(Config.withDefault(false)),
+    );
     const modelServiceUrl = yield* Config.String("MODEL_SERVICE_URL").pipe(
       Config.withDefault(""),
     );
     const modelStub =
+      !realModels ||
       modelServiceUrl === "stub" ||
       (!modelServiceUrl && !selfHost && stage !== "production")
         ? yield* Cloudflare.Worker("ModelStub", {
@@ -637,8 +645,10 @@ export default Alchemy.Stack(
         STAGE: stage,
         ...runMode,
         ...modelService,
-        ...optionalSecrets(runtimeModelSecrets),
-        AI: Cloudflare.Workers.AI(),
+        ...(realModels && {
+          ...optionalSecrets(runtimeModelSecrets),
+          AI: Cloudflare.Workers.AI(),
+        }),
         CASE_RUNTIME: Cloudflare.DurableObject(
           runtimeDurableObjects.CASE_RUNTIME,
         ),
@@ -663,7 +673,7 @@ export default Alchemy.Stack(
         STAGE: stage,
         ...runMode,
         ...modelService,
-        ...optionalSecrets(apiModelSecrets),
+        ...(realModels && optionalSecrets(apiModelSecrets)),
         DB: db,
         DB_SYSTEM: dbSystem,
         APP_URL: appUrl,

@@ -229,8 +229,15 @@
     {
       "idx": 35,
       "version": "7",
-      "when": 1795733160805,
-      "tag": "0036_mcp_transport",
+      "when": 1795732901212,
+      "tag": "0036_allowed_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795734543810,
+      "tag": "0037_mcp_transport",
       "breakpoints": true
     }
   ]

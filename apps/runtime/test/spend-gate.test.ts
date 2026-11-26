@@ -82,13 +82,18 @@ describe("the spending limit", () => {
     const done = await settle(key);
     expect(done.status).toBe("completed");
     const responses = kinds(done, "model.response").map(
-      (e) => e.data.usage as { input: number; output: number },
+      (e) =>
+        e.data.usage as { input: number; output: number; cacheRead: number },
     );
     expect(responses.length).toBeGreaterThan(0);
-    // DeepSeek V4.1 Flash, the default: $0.30 in and $1.20 out per MTok, so
-    // 0.315 and 1.26 micro-USD a token with the markup.
+    expect(responses.some((u) => u.cacheRead > 0)).toBe(true);
+    // DeepSeek V4.1 Flash, the default: $0.30 in, $0.007 cached in and $1.20
+    // out per MTok, so 0.315, 0.00735 and 1.26 micro-USD a token with the
+    // markup.
     const expected = responses.reduce(
-      (sum, u) => sum + Math.round(u.input * 0.315 + u.output * 1.26),
+      (sum, u) =>
+        sum +
+        Math.round(u.input * 0.315 + u.cacheRead * 0.00735 + u.output * 1.26),
       0,
     );
     expect(expected).toBeGreaterThan(0);

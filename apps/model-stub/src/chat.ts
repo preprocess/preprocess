@@ -74,10 +74,22 @@ export const agentChat = (c: Context, request: ChatRequest) => {
   const completionTokens = Math.ceil(
     ((content ?? "").length + JSON.stringify(toolCalls).length) / 4,
   );
+  const lastAssistant = request.messages
+    .map((m) => m.role)
+    .lastIndexOf("assistant");
   const usage = {
     prompt_tokens: promptTokens,
     completion_tokens: completionTokens,
     total_tokens: promptTokens + completionTokens,
+    prompt_tokens_details: {
+      cached_tokens:
+        lastAssistant < 0
+          ? 0
+          : Math.ceil(
+              JSON.stringify(request.messages.slice(0, lastAssistant + 1))
+                .length / 4,
+            ),
+    },
   };
   const finish = toolCalls.length ? "tool_calls" : "stop";
   if (!request.stream) {

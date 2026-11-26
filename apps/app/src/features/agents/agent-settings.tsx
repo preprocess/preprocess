@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
-import { FIELDS, type Field } from "../settings/defaults-panel";
+import { ComingSoon, FIELDS, type Field } from "../settings/defaults-panel";
 import {
   ErrorLine,
   PatternList,
@@ -229,7 +229,9 @@ function SettingRow({
       description={SOURCE[setting.source]}
       label={label}
       value={
-        field?.kind === "choice" ? (
+        field?.comingSoon ? (
+          <ComingSoon />
+        ) : field?.kind === "choice" ? (
           <Select onValueChange={(next) => setDraft(next)} value={draft}>
             <SelectTrigger aria-label={label} className="w-52" />
             <SelectContent>
@@ -261,17 +263,19 @@ function SettingRow({
           Clear override
         </LoadingButton>
       ) : null}
-      <LoadingButton
-        disabled={!changed}
-        onAction={async () => {
-          if (field?.kind === "number" && !/^\d+$/.test(draft))
-            throw new Error(`${label} must be a whole number.`);
-          await onOverride(parse(field, draft));
-        }}
-        onError={onError}
-      >
-        Override
-      </LoadingButton>
+      {field?.comingSoon ? null : (
+        <LoadingButton
+          disabled={!changed}
+          onAction={async () => {
+            if (field?.kind === "number" && !/^\d+$/.test(draft))
+              throw new Error(`${label} must be a whole number.`);
+            await onOverride(parse(field, draft));
+          }}
+          onError={onError}
+        >
+          Override
+        </LoadingButton>
+      )}
     </SettingsRow>
   );
 }

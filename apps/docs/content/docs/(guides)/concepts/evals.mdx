@@ -79,10 +79,12 @@ external mutations:
   scores aren't inflated).
 
 <Callout title="Coming soon">
-  Automatic eval runs on git push (`evals.onPush` in agent code/settings and
-  `runOnPush` on suites) are accepted in the configuration schema and API, but
-  are not yet wired to start runs automatically on push. Today, start eval runs
-  manually from the app, CLI, API or MCP.
+  Automatic eval runs on each new deployment are not available yet. The API
+  refuses turning them on, `evals.onPush` as an organization default or agent
+  override and `runOnPush` on a suite, with `400 not_available`. Values stored
+  earlier still read as they are and can be turned off. Code that sets
+  `evals: {onPush: true}` still deploys, with a warning that it has no effect.
+  Today, start eval runs manually from the app, CLI, API or MCP.
 </Callout>
 
 ## How to use it

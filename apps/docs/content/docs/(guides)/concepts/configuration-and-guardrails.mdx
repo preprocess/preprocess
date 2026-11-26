@@ -81,7 +81,7 @@ Only an Owner or Admin can loosen a guardrail directly. Making the change is the
 approval, and every change is written to the audit log (`guardrail.updated`,
 `secret.granted` or `mcp.granted`).
 
-Preprocess enforces five guardrails:
+Preprocess enforces six guardrails:
 
 - **Network rules:** An organization-wide `allow` list and `block` list (up to
   200 host patterns each, exact hosts like `api.example.com` or wildcards like
@@ -99,15 +99,26 @@ Preprocess enforces five guardrails:
   eval runs, OCR calls, sandbox time and case fees. When the cap is reached, new
   metered calls are refused and running cases transition to `halted` until a
   person raises the limit or the month rolls over and reruns them.
+- **Allowed models:** The catalogue models agents may run on (`null`, the
+  default, allows every model). Set it with
+  `PUT /v1/orgs/{org}/guardrails/allowed-models` and a body like
+  `{"models": ["deepseek-v4.1-flash"]}`, or under Guardrails → Models in the
+  app. Every path that picks a model checks it: deploys, the organization's
+  default model, an agent's `model` override, starting a case, rerunning one,
+  approving an approval, and eval runs. A model outside the list is refused with
+  `409 model_not_allowed` and an error that names the model. Changing the list
+  doesn't change any deployment, so an agent whose model is taken off keeps its
+  code and settings but can't start cases until the model is allowed again or
+  its model changes.
 - **Secret grants:** Which agents are allowed to receive each organization
   secret.
 - **MCP server grants:** Which agents are allowed to call each registered MCP
   server.
 
 <Callout title="Coming soon">
-  Custom model-endpoint guardrails (restricting which model endpoints an
-  organization sends data to) are not yet configurable; `GET /v1/orgs/{org}
-  /guardrails` currently returns `modelEndpoints: "hosted"`.
+  Custom model endpoints (sending model calls to your own serving URLs) are not
+  yet configurable; `GET /v1/orgs/{org}/guardrails` currently returns
+  `modelEndpoints: "hosted"`.
 </Callout>
 
 ## Guardrail loosening requests

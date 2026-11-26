@@ -1,5 +1,5 @@
 {
-  "id": "2ab59bdd-1596-4445-a649-057df562e9c8",
+  "id": "0c4c7fcf-c877-429f-8225-f142f7dcc33d",
   "prevId": "90914a60-6c3b-4b76-a274-deeaddc3e0aa",
   "version": "7",
   "dialect": "postgresql",
@@ -4946,6 +4946,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "allowed_models": {
+          "name": "allowed_models",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
         "updated_by": {
           "name": "updated_by",
           "type": "text",
@@ -5345,14 +5351,6 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
-        },
-        "transport": {
-          "name": "transport",
-          "type": "mcp_transport",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'streamable_http'"
         },
         "oauth_client": {
           "name": "oauth_client",
@@ -6496,11 +6494,6 @@
       "name": "mcp_connection_status",
       "schema": "public",
       "values": ["active", "needs_reauth", "revoked"]
-    },
-    "public.mcp_transport": {
-      "name": "mcp_transport",
-      "schema": "public",
-      "values": ["streamable_http", "sse"]
     }
   },
   "schemas": {},

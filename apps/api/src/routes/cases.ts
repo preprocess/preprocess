@@ -39,6 +39,7 @@ import {
   mayApprove,
   visibleAgents,
 } from "../access.ts";
+import { assertCaseModelAllowed } from "../allowed-models.ts";
 import { eventBase, requireAdmin } from "../caller.ts";
 import type { OrgRole, OrgVariables } from "../caller.ts";
 import { applyCorrection } from "../case-search.ts";
@@ -347,9 +348,11 @@ const decideApproval = async (
     );
   if (status === "running")
     throw new ApiError(409, "case_running", "Decide once the run ends.");
-  const allowed = await withOrg(c.env, c.var.org, (tx) =>
-    mayApprove(tx, c.var.caller, key.agentId, found.group),
-  );
+  const allowed = await withOrg(c.env, c.var.org, async (tx) => {
+    const may = await mayApprove(tx, c.var.caller, key.agentId, found.group);
+    if (may && approve) await assertCaseModelAllowed(tx, caseId);
+    return may;
+  });
   if (!allowed)
     throw new ApiError(
       403,
@@ -493,7 +496,9 @@ export const caseRoutes = new OpenAPIHono<{
         400: error("Body fails validation"),
         402: error("The organization has reached its spending limit"),
         404: error("Agent, deployment or file not visible"),
-        409: error("No production deployment, or the same key in progress"),
+        409: error(
+          "No production deployment, the same key in progress, or a model the organization does not allow",
+        ),
         422: error("Same Idempotency-Key, different request"),
       },
     }),
@@ -1044,6 +1049,7 @@ export const caseRoutes = new OpenAPIHono<{
         c.var.org,
         async (tx) => {
           await refuseOverLimit(tx);
+          await assertCaseModelAllowed(tx, key.caseId);
           const events = await tx
             .select({
               kind: reviewEvents.kind,

@@ -7,6 +7,10 @@
 //    first run, then read the session back.
 // 3. In the smoke-test organization, deploy a stub agent (smoke-agent/agent.ts) and
 //    run one case on it to completion.
+// 4. The case's reply is the model stub's fixture answer (apps/model-stub,
+//    fixtures/chat.json): staging and previews call no real model provider
+//    (src/stages.ts callsRealModels), and a reply from anything else fails.
+//    MODELS=real, set by a hand-started real_models deploy, skips this.
 //
 // With SMOKE=sandbox, step 3 deploys smoke-agent/sandbox.ts instead, whose case
 // runs one command in a small sandbox. Once the sandbox's interval closes, it
@@ -55,16 +59,16 @@ const tokenFor = (minute: number) =>
     .update(`smoke-test:${email}:${minute}`)
     .digest("hex");
 
-// What the custom-environment case runs. Staging serves agents real models,
-// so the case's text names the command rather than relying on the stub's
-// fixture (apps/model-stub/fixtures/chat.json, sandbox-layer-smoke).
+// What the custom-environment case runs: the stub's sandbox-layer-smoke
+// fixture (apps/model-stub/fixtures/chat.json) runs this exact command. The
+// case's text names it too, so the step also works on a real model.
 const LAYER_COMMAND = "tree --version; cat /opt/smoke/layer.txt";
 
 // What the sandbox case runs: the container's own clock, now and when PID 1
 // started (now minus how long PID 1 has run, from /proc/uptime and
 // /proc/1/stat to the clock tick; /proc/stat's btime is whole seconds).
-// Staging serves agents real models, so the case's text names the command;
-// the stub's sandbox-smoke fixture runs the same one locally.
+// The stub's sandbox-smoke fixture runs this exact command; the case's text
+// names it too, so the step also works on a real model.
 const SANDBOX_COMMAND =
   'read up _ < /proc/uptime; t=$(cut -d\' \' -f22 /proc/1/stat); hz=$(getconf CLK_TCK); now=$(date +%s%3N); s=$(awk -v n="$now" -v u="$up" -v t="$t" -v hz="$hz" \'BEGIN { printf "%d", n - (u - t / hz) * 1000 }\'); echo "sandbox ok now_ms=$now pid1_start_ms=$s"';
 
@@ -296,6 +300,27 @@ for (let attempt = 0; ; attempt++) {
   if (attempt > 90) fail(`the case never completed (last: ${state.text})`);
   await sleep(2000);
 }
+
+// The stub's fixture answers (apps/model-stub/fixtures/chat.json): "smoke"
+// for the plain case, sandbox-smoke and sandbox-layer-smoke for the others.
+const stubReply = mode
+  ? "The sandbox said: "
+  : "Stub model: the deployment works.";
+const answered = await call<{ thread: { kind: string; text: string }[] }>(
+  "GET",
+  `/v1/orgs/${org}/cases/${started.body.id}/room`,
+);
+const agentReply = (answered.body?.thread ?? [])
+  .filter((m) => m.kind === "agent")
+  .map((m) => m.text)
+  .join("\n");
+if (process.env.MODELS === "real")
+  console.log("models: real providers (MODELS=real), stub check skipped");
+else if (!agentReply.includes(stubReply))
+  fail(
+    `the case was not answered by the model stub, so ${stage} may be calling a real model provider. Expected "${stubReply}", got: ${agentReply.slice(0, 300) || "(no reply)"}`,
+  );
+else console.log(`models: the stub answered the case (${stubReply.trim()})`);
 
 if (mode === "sandbox") await measureSandbox(org, started.body.id);
 if (mode === "layer")

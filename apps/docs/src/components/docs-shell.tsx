@@ -279,15 +279,12 @@ function SectionRows({
     );
     return group.label ? (
       <SidebarGroup className="px-0 pt-6" key={index}>
-        {index > 0 ? (
-          <hr aria-hidden className="mx-2 mb-4 h-px border-0 bg-border" />
-        ) : null}
         <SidebarGroupLabel
           className={cn(
             typeClass("caption"),
-            "h-auto px-2 pb-1.5 text-muted-foreground",
+            "h-auto px-2 pb-1.5 text-foreground",
           )}
-          style={{ fontVariationSettings: fontWeights.normal }}
+          style={{ fontVariationSettings: fontWeights.semibold }}
         >
           {group.label}
         </SidebarGroupLabel>
@@ -433,6 +430,8 @@ function ThemeToggle({
   );
 }
 
+const supportHref = "mailto:support@preprocess.com";
+
 // Support by email, beside GitHub and the theme.
 function SupportLink({
   className,
@@ -445,7 +444,7 @@ function SupportLink({
     <Button
       aria-label="Support"
       className={cn("text-muted-foreground hover:text-foreground", className)}
-      render={<a href="mailto:support@preprocess.com" />}
+      render={<a href={supportHref} />}
       size="icon-sm"
       title="Support"
       variant={variant}
@@ -536,7 +535,15 @@ function SidebarBody({
         </nav>
       </ScrollArea>
       <SidebarFooter className="flex-row items-center gap-1 px-4 pt-3 pb-4">
-        <SupportLink />
+        <Button
+          className="min-w-0 flex-1 justify-start"
+          leadingIcon={Headset}
+          render={<a href={supportHref} />}
+          size="sm"
+          variant="ghost"
+        >
+          Support
+        </Button>
         <GitHubLink />
         <ThemeToggle />
       </SidebarFooter>

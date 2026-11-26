@@ -10,6 +10,15 @@
 #
 # Until a stage's secrets exist, its job reports "skipped" with the missing
 # names and stays green. v* tags are self-hosted releases and deploy nothing.
+#
+# Staging calls no real model provider (infra/src/stages.ts callsRealModels):
+# it binds no provider key and no Workers AI, and the stub answers every agent
+# model, decide and OCR call in its provider's API shape, so the smoke test
+# checks our code paths, parsing and metering for nothing. The full real-model
+# pass (every agent model, decide and OCR on the providers) runs only when this
+# workflow is started by hand on main with real_models; that run redeploys
+# staging with the provider keys, runs the pass, and promotes nothing. The next
+# push puts staging back on the stub.
 
 name: Deploy
 
@@ -17,6 +26,14 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      real_models:
+        description:
+          Deploy staging with the provider keys and run the full real-model pass
+          (every agent model, decide and OCR). Costs real money.
+        type: boolean
+        default: false
 
 # One push at a time, start to finish, so the smoke test always checks the
 # commit staging is running. A newer push waits (superseded pending pushes are
@@ -35,6 +52,7 @@ jobs:
   staging:
     name: Deploy staging
     needs: ci
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: staging
@@ -63,10 +81,14 @@ jobs:
       BILLING_REQUIRED_FROM: ${{ vars.BILLING_REQUIRED_FROM }}
       BILLING_INTERNAL_ORGS: ${{ vars.BILLING_INTERNAL_ORGS }}
       BILLING_ENFORCED_ORGS: ${{ vars.BILLING_ENFORCED_ORGS }}
-      # Model providers (packages/models endpoints). Optional; a model whose
-      # provider has no key is served by the stub on staging.
-      BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
-      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      # Model providers (packages/models endpoints), only for a hand-started
+      # real_models run. Otherwise staging gets no keys and the stub serves
+      # every model; the stack refuses them anyway without REAL_MODELS.
+      REAL_MODELS: ${{ inputs.real_models && 'true' || '' }}
+      BASETEN_API_KEY:
+        ${{ inputs.real_models && secrets.BASETEN_API_KEY || '' }}
+      MISTRAL_API_KEY:
+        ${{ inputs.real_models && secrets.MISTRAL_API_KEY || '' }}
       NO_COLOR: "1"
     steps:
       - name: Check credentials
@@ -113,7 +135,7 @@ jobs:
         run: |
           # An unset optional value must stay unset, not bind an empty string.
           for name in AUTUMN_SECRET_KEY BILLING_REQUIRED_FROM BILLING_INTERNAL_ORGS \
-            BILLING_ENFORCED_ORGS BASETEN_API_KEY MISTRAL_API_KEY; do
+            BILLING_ENFORCED_ORGS REAL_MODELS BASETEN_API_KEY MISTRAL_API_KEY; do
             [ -n "${!name}" ] || unset "$name"
           done
           pnpm --filter @preprocess/infra staging:deploy
@@ -150,6 +172,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: staging
+    env:
+      # Whether the stage calls real providers, so the smoke test knows to
+      # expect the stub's answers (scripts/smoke.ts).
+      MODELS: ${{ inputs.real_models && 'real' || 'stub' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -169,6 +195,26 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra smoke
+
+      # One case per agent model on the stub, each with an invoice that is
+      # OCR'd and a decide call, so our routing, parsing and metering for
+      # every provider's response shape run on each deploy. The job summary
+      # shows each case's charge. It does not gate production until it has
+      # passed reliably. On a real_models run the stage calls the providers,
+      # and the real-model pass below checks them instead.
+      - name: Smoke test every model on the stub
+        if: ${{ !inputs.real_models }}
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          STAGE: staging
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run:
+          OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra
+          model-check
 
       # One case runs a command in a small sandbox, and the job summary shows
       # the container's start and stop beside the interval the API billed.
@@ -199,9 +245,46 @@ jobs:
           OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra
           smoke:layer
 
+  # Only on a hand-started run with real_models: every agent model, decide and
+  # OCR on the real providers, through the staging the run just deployed with
+  # their keys. Any case that does not complete fails this job.
+  real-models:
+    name: Real-model pass
+    needs: smoke
+    if: inputs.real_models
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: staging-outputs
+      - name: Real-model pass
+        env:
+          STAGE: staging
+          MODELS: real
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run:
+          OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra
+          model-check
+
+  # Pushes only: a hand-started run tests staging and promotes nothing.
   production:
     name: Promote to production
     needs: smoke
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: production

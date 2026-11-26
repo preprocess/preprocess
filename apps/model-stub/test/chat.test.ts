@@ -89,4 +89,28 @@ describe("chat completions stub", () => {
     );
     expect(response.status).toBe(503);
   });
+  it("reports the conversation so far as cached prompt tokens, like the providers", async () => {
+    const usage = async (messages: object[]) =>
+      (
+        await (
+          await chat({ model: "@cf/qwen/qwen3.8-27b", messages })
+        ).json<{
+          usage: {
+            prompt_tokens: number;
+            prompt_tokens_details: { cached_tokens: number };
+          };
+        }>()
+      ).usage;
+    const user = { role: "user", content: "Smoke test of staging." };
+    expect((await usage([user])).prompt_tokens_details.cached_tokens).toBe(0);
+    const later = await usage([
+      user,
+      { role: "assistant", content: "Stub model: the deployment works." },
+      { role: "user", content: "Again." },
+    ]);
+    expect(later.prompt_tokens_details.cached_tokens).toBeGreaterThan(0);
+    expect(later.prompt_tokens_details.cached_tokens).toBeLessThan(
+      later.prompt_tokens,
+    );
+  });
 });
