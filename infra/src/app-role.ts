@@ -3,8 +3,9 @@
 // which holds admin on it. The deploy then checks that the login role can't
 // bypass row-level security and fails before any Worker uses it if it can.
 // It also fails when the server can't take both Hyperdrive pools at their
-// limits (connections.ts), before either config changes. The limits are part
-// of the input, so changing them runs the check again.
+// limits (connections.ts). Both Hyperdrive origins come from its output, so
+// neither config changes before it passes. The limits are part of the input,
+// so changing them runs the check again.
 
 import type { PostgresOrigin } from "@alchemy.run/planetscale";
 import { Action } from "alchemy";
@@ -98,5 +99,5 @@ export const GrantAppRole = Action(
         new GrantFailed({
           message: `Granting preprocess_app failed: ${error instanceof Error ? error.message : String(error)}`,
         }),
-    }).pipe(Effect.as(input.app)),
+    }).pipe(Effect.as({ app: input.app, system: input.admin })),
 );

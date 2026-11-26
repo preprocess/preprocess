@@ -363,12 +363,15 @@ export default Alchemy.Stack(
             branch,
             inheritedRoles: [],
           });
-          const app = yield* GrantAppRole("GrantAppRole", {
+          const granted = yield* GrantAppRole("GrantAppRole", {
             admin: role.origin,
             app: appRole.origin,
             connectionLimits: originConnectionLimits,
           });
-          return { app, system: role.origin };
+          return {
+            app: Output.map(granted, ({ app }) => app),
+            system: Output.map(granted, ({ system }) => system),
+          };
         });
     // On our stages DB logs in as its own PlanetScale role, made a member of
     // preprocess_app (migration 0001) without BYPASSRLS by GrantAppRole, and
