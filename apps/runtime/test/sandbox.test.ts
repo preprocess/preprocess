@@ -101,6 +101,35 @@ describe("sandbox metering", () => {
     ]);
   });
 
+  it("does not take the stop its own destroy causes for a crash", async () => {
+    const key = {
+      organizationId: "org_sbx",
+      agentId: "agt_sbx",
+      caseId: "case_destroying",
+    };
+    await awake(key);
+    type Watched = {
+      destroying: boolean;
+      stopped(type: "crash"): Promise<void>;
+    };
+    const stub = env.SANDBOX_SMALL.getByName(sandboxName(key));
+    await runInDurableObject(stub, async (sandbox) => {
+      const watched = sandbox as unknown as Watched;
+      watched.destroying = true;
+      await watched.stopped("crash");
+    });
+    expect((await reported(key)).map((e) => e.type)).toEqual(["start"]);
+    await runInDurableObject(stub, async (sandbox) => {
+      const watched = sandbox as unknown as Watched;
+      watched.destroying = false;
+      await watched.stopped("crash");
+    });
+    expect((await reported(key)).map((e) => e.type)).toEqual([
+      "start",
+      "crash",
+    ]);
+  });
+
   it("ends a sandbox at its lifetime cap", async () => {
     const key = {
       organizationId: "org_sbx",

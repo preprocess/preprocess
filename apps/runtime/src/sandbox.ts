@@ -175,7 +175,13 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     );
   }
 
+  // Set while destroy() runs: destroying the container also settles
+  // monitor(), and that stop is the destroy, not a crash. A crash closes the
+  // interval at its last heartbeat, so on staging it billed a 7 s sandbox 0 s.
+  private destroying = false;
+
   private async stopped(type: "sleep" | "crash") {
+    if (this.destroying) return;
     await this.ctx.storage.delete("sandbox:startedAt");
     const at = new Date();
     const owner = await this.ctx.storage.get<SandboxOwner>("sandbox:open");
@@ -234,6 +240,8 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     const outbound = (this.ctx.exports as unknown as Exports).Outbound({
       props: { organizationId: config.organizationId, network: config.network },
     });
+    const woken =
+      (await this.ctx.storage.get<number>("sandbox:seq")) !== undefined;
     let startedAt = new Date();
     try {
       await container.interceptAllOutboundHttp(outbound);
@@ -252,24 +260,29 @@ export abstract class CaseSandbox extends DurableObject<Env> {
           size: this.size,
         },
       });
-      await container.setInactivityTimeout(
-        config.sandbox.idleTimeoutMinutes * 60_000,
-      );
     } catch (error) {
       if (container.running) await container.destroy();
       throw error;
     }
-    const woken =
-      (await this.ctx.storage.get<number>("sandbox:seq")) !== undefined;
-    await this.ctx.storage.put("sandbox:startedAt", Date.now());
+    // The interval opens as soon as the container is asked to start: setting
+    // its timeout waits for it to boot, which staging measured at 3.7 s.
     const owner = {
       organizationId: config.organizationId,
       agent: config.agentId,
       caseId: config.caseId,
     };
     await this.meter.begin(owner, "case", this.size, woken ? "wake" : "start");
+    await this.ctx.storage.put("sandbox:startedAt", Date.now());
     this.log(owner, "sandbox.start", startedAt, woken ? "wake" : "start");
     this.watch();
+    try {
+      await container.setInactivityTimeout(
+        config.sandbox.idleTimeoutMinutes * 60_000,
+      );
+    } catch (error) {
+      await this.destroy();
+      throw error;
+    }
     if (layer) await this.mount(container, layer);
     return this.install(container, config.sandbox);
   }
@@ -552,10 +565,15 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     await this.ctx.storage.delete("sandbox:startedAt");
     if (!this.ctx.container?.running) return this.meter.end("crash");
     const owner = await this.ctx.storage.get<SandboxOwner>("sandbox:open");
-    await this.ctx.container.destroy();
-    const at = new Date();
-    await this.meter.end("destroy");
-    if (owner) this.log(owner, "sandbox.stop", at, "destroy");
+    this.destroying = true;
+    try {
+      await this.ctx.container.destroy();
+      const at = new Date();
+      await this.meter.end("destroy");
+      if (owner) this.log(owner, "sandbox.stop", at, "destroy");
+    } finally {
+      this.destroying = false;
+    }
   }
 
   // Every heartbeat: a container past its lifetime is destroyed; otherwise
