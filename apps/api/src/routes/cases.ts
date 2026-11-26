@@ -8,6 +8,7 @@ import { withOrg } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { agents, groups } from "@preprocess/db/schema/access";
+import { sandboxIntervals } from "@preprocess/db/schema/billing";
 import {
   caseAssignees,
   cases,
@@ -738,6 +739,62 @@ export const caseRoutes = new OpenAPIHono<{
           updatedAt: k.updatedAt.toISOString(),
           completedAt: k.completedAt?.toISOString() ?? null,
           url: new URL(`/cases/${k.agentId}/${id}`, c.env.APP_URL).href,
+        },
+        200,
+      );
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "get",
+      path: "/cases/{id}/sandbox",
+      tags: ["Cases"],
+      summary: "A case's sandbox time",
+      description:
+        "Each interval the case's sandbox was awake, as the platform timed and billed it. An interval still awake has no end.",
+      request: { params: CaseParam },
+      responses: {
+        200: json(
+          z.object({
+            intervals: z.array(
+              z.object({
+                seq: z.number(),
+                size: z.string(),
+                startedAt: z.string(),
+                endedAt: z.string().nullable(),
+                endReason: z.string().nullable(),
+              }),
+            ),
+          }),
+          "Oldest first",
+        ),
+        404: error("Not visible"),
+      },
+    }),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      await loadCase(c, id, false);
+      const rows = await withOrg(c.env, c.var.org, (tx) =>
+        tx
+          .select()
+          .from(sandboxIntervals)
+          .where(
+            and(
+              eq(sandboxIntervals.caseId, id),
+              eq(sandboxIntervals.kind, "case"),
+            ),
+          )
+          .orderBy(asc(sandboxIntervals.startedAt), asc(sandboxIntervals.seq)),
+      );
+      return c.json(
+        {
+          intervals: rows.map((r) => ({
+            seq: r.seq,
+            size: r.size,
+            startedAt: r.startedAt.toISOString(),
+            endedAt: r.endedAt?.toISOString() ?? null,
+            endReason: r.endReason,
+          })),
         },
         200,
       );
