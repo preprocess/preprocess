@@ -4,6 +4,8 @@
 
 import { modelEndpoint } from "@preprocess/models/endpoints";
 import { ocrPage } from "@preprocess/models/ocr";
+import { ocrCostMicroUsd } from "@preprocess/models/prices";
+import { runMode } from "@preprocess/runmode";
 import type { OcrBlock } from "@preprocess/models/ocr";
 import { withOrg } from "@preprocess/db/client";
 import type { OrgId } from "@preprocess/db/client";
@@ -16,6 +18,8 @@ import type { Env } from "./env.ts";
 export type OcrResult = {
   pages: { index: number; markdown: string; blocks?: OcrBlock[] }[];
   model: string;
+  // What our cloud charges for these pages (spec 16a); zero self-hosted.
+  costMicroUsd: number;
 };
 
 // The model takes one page image per request; PDFs are rendered to page
@@ -71,5 +75,7 @@ export const ocrFile = async (
       ...(page.blocks && { blocks: page.blocks }),
     })),
     model: results[0]?.usage.model ?? endpoint.model,
+    costMicroUsd:
+      runMode(env).kind === "cloud" ? ocrCostMicroUsd(results.length) : 0,
   };
 };

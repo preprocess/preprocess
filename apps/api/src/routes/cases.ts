@@ -1354,9 +1354,12 @@ export const caseRoutes = new OpenAPIHono<{
     async (c) => {
       const input = c.req.valid("json");
       await withOrg(c.env, c.var.org, refuseOverLimit);
-      return c.json(
-        await ocrFile(c.env, c.var.org, input.file, input.grounding),
-        200,
+      const { pages, model } = await ocrFile(
+        c.env,
+        c.var.org,
+        input.file,
+        input.grounding,
       );
+      return c.json({ pages, model }, 200);
     },
   );

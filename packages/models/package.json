@@ -11,7 +11,8 @@
     "./client": "./src/client.ts",
     "./endpoints": "./src/endpoints.ts",
     "./decide": "./src/decide.ts",
-    "./ocr": "./src/ocr.ts"
+    "./ocr": "./src/ocr.ts",
+    "./prices": "./src/prices.ts"
   },
   "scripts": {
     "lint": "eslint .",

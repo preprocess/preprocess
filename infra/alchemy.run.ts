@@ -583,6 +583,7 @@ export default Alchemy.Stack(
       main: at("apps/runtime/src/index.ts"),
       env: {
         STAGE: stage,
+        ...runMode,
         ...modelService,
         CASE_RUNTIME: Cloudflare.DurableObject(
           runtimeDurableObjects.CASE_RUNTIME,

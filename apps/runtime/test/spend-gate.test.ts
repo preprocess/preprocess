@@ -2,7 +2,8 @@ import { env, exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import type { CaseState, CaseView } from "../src/case-runtime.ts";
-import type { CaseKey, StartCase } from "../src/env.ts";
+import type { CaseKey, Env, StartCase } from "../src/env.ts";
+import { modelCost } from "../src/models.ts";
 import { deploy } from "./deploy.ts";
 // Bundled by vitest.config.ts, as the deploy command uploads it.
 import sampleAgent from "./dist/sample-agent.js?raw";
@@ -74,6 +75,47 @@ describe("the spending limit", () => {
     expect(JSON.stringify(first.context.messages)).toContain(
       "Check stock for SKU A1",
     );
+  });
+
+  it("charges each model response at Baseten's price plus 5% and reports it, so the limit can trip", async () => {
+    const key = await begin("org_priced", 100);
+    const done = await settle(key);
+    expect(done.status).toBe("completed");
+    const responses = kinds(done, "model.response").map(
+      (e) => e.data.usage as { input: number; output: number },
+    );
+    expect(responses.length).toBeGreaterThan(0);
+    // DeepSeek V4.1 Flash, the default: $0.30 in and $1.20 out per MTok, so
+    // 0.315 and 1.26 micro-USD a token with the markup.
+    const expected = responses.reduce(
+      (sum, u) => sum + Math.round(u.input * 0.315 + u.output * 1.26),
+      0,
+    );
+    expect(expected).toBeGreaterThan(0);
+    const reported = kinds(done, "case.event")
+      .map((e) => e.data)
+      .filter((d) => d.type === "status");
+    expect(reported.at(-1)).toMatchObject({
+      status: "completed",
+      costMicroUsd: expected,
+    });
+  });
+
+  it("prices nothing on a self-hosted install, whose model URL is its own", () => {
+    expect(modelCost({ STAGE: "dev" } as Env, "kimi-k3.1-pro")).toEqual({
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
+    const kimi = modelCost(
+      { STAGE: "dev", PREPROCESS_REGION: "us" } as Env,
+      "kimi-k3.1-pro",
+    );
+    expect(kimi.input).toBeCloseTo(2.1);
+    expect(kimi.output).toBeCloseTo(10.5);
+    expect(kimi.cacheRead).toBeCloseTo(0.21);
+    expect(kimi.cacheWrite).toBe(0);
   });
 
   it("halts a running case at its next model call instead of making it", async () => {
