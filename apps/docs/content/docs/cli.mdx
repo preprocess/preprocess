@@ -6,11 +6,26 @@ description: The preprocess command.
 import { DynamicCodeBlock } from "fumadocs-ui/components/dynamic-codeblock";
 import { usage } from "@preprocess/cli/usage";
 
+`@preprocess/cli` is the command-line bridge between your local git repository
+and your Preprocess organization. Use it to bundle and deploy agents from a
+laptop or CI, pull dashboard setting overrides and group slugs back into
+`preprocess.config.json` before a release, start cases against production or
+preview deployments, inspect run logs, run eval suites, and install or upgrade a
+self-hosted Preprocess stack in your own Cloudflare account
+(`preprocess install`).
+
 Hand this prompt to your coding agent to set up the CLI and deploy.
 
 <AgentPrompt name="cli" />
 
 Or follow the steps yourself.
+
+<Callout title="Coming soon" type="warning">
+  `@preprocess/cli` is MIT licensed and versioned, but npm publishing is coming
+  soon, so `npm install --save-dev @preprocess/cli` will not resolve from the
+  public registry yet. Today, the package lives in `packages/cli` of
+  [preprocess/preprocess](https://github.com/preprocess/preprocess).
+</Callout>
 
 ## Install
 
@@ -32,13 +47,12 @@ export PREPROCESS_API_KEY=...`}
 - `PREPROCESS_API_URL` is the origin your organization's app is served from.
 - `PREPROCESS_ORG` is your organization's id.
 - `PREPROCESS_API_KEY` is an organization API key. An Owner or Admin creates one
-  in Developers → Keys & webhooks. The key acts with an Admin's rights, so it
-  can deploy and promote; a person needs to be an Owner, an Admin or in the
-  Developers group to do the same. The key is shown once, so copy it then. The
-  CLI reads the key only from the environment, so it never lands in your shell
-  history or CI logs.
+  in Developers → Keys & webhooks. The key acts with Admin rights, so it can
+  deploy, promote, and work cases (it cannot approve—approving always requires a
+  person). Each key is shown once at creation, and the CLI reads it only from
+  the environment so it never lands in shell history or CI logs.
 
-`--api` and `--org` override the first two for one command.
+Pass `--api` and `--org` to override the first two for a single command.
 
 ## Deploy
 
@@ -46,16 +60,21 @@ export PREPROCESS_API_KEY=...`}
 npx preprocess deploy
 ```
 
-`deploy` bundles `src/index.ts` (or the entry you name), uploads it, and prints
-the new deployment's status and any warnings. The first deploy creates the
-agent. Settings in `preprocess.config.json`, beside your package.json, ship with
-the code.
+`deploy` bundles `src/index.ts` (or the entry file you specify), uploads the
+bundle with your current git branch and commit, and prints the new deployment's
+status (`ready` or `waiting`), any cleared overrides, and any build warnings.
+The first deploy under a new name creates the agent. Deploying from `main`
+creates and promotes a production deployment; deploying from any other branch
+(or outside git) creates an isolated preview. Settings in
+`preprocess.config.json` beside `package.json` ship with the bundle.
 
 ## Keep settings in step
 
-People can change an agent's settings in the app. `config pull` writes those
-overrides into `preprocess.config.json`, so the next deploy keeps them.
-`groups pull` writes the organization's groups into the same file.
+Because code is the truth at deploy, promoting a new release clears any
+temporary overrides set in the app dashboard. Run `config pull` before deploying
+to pull active overrides into `preprocess.config.json` and commit them to git;
+run `groups pull` to write the organization's current group slugs into the same
+file so `deploy` can warn when code references a missing slug.
 
 ```sh
 npx preprocess config pull
@@ -70,10 +89,11 @@ npx preprocess evals list
 npx preprocess evals run regressions --model deepseek-v4.1-flash --model kimi-k3.1-pro
 ```
 
-`logs` prints run logs, newest first, for a case, an agent, a deployment, or the
-whole organization. Organization-wide logs need Developers or Admins.
-`evals run` runs a suite against a deployment (production by default), once per
-`--model`, and waits for the results.
+`logs` streams run logs, newest first, filtered by case, agent, deployment, or
+the whole organization (organization-wide logs require Developers or Admins).
+`evals run` executes a suite against a deployment (production by default), once
+per `--model`, and waits for the results so you can compare accuracy, latency,
+and cost across models before changing production.
 
 ## Reference
 

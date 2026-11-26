@@ -1,80 +1,98 @@
 ---
 title: Review and approvals
 description:
-  How people check an agent's answers, correct them, and approve what the code
-  says needs a person.
+  How operators check and correct an agent's answers, and how code-declared
+  approvals gate risky actions and completions.
 ---
 
-Review is how people act on a case: they check the agent's answers, correct
-them, and decide on what the agent's code asked a person to approve. All of it
-happens in the case room's Review tab, and the same actions are in the API and,
-except for approving, in MCP.
+Review and approvals are the two human-in-the-loop mechanisms in Preprocess.
+They live together in the case room's Review tab, but they serve different
+purposes:
 
-Review and approvals are separate things. **Review** is checking answers, and
-any operator can do it. An **approval** is a requirement the code declares: a
-named group, or any operator, has to say yes before something happens.
+- **Review** is checking and correcting the agent's structured answers. Any
+  operator of the agent can review any visible field.
+- **Approval** is a hard gate declared in code: a named group (or any operator)
+  must explicitly approve before a tool runs, a field value stands, or a case
+  completes.
 
-## Why people review
+## Why review and approvals are separate
 
-Agents are useful long before they're right every time. Review lets a team put
-an agent to work while a person still checks what matters, and only that: the
-schema marks which fields need review, so people check the vendor and the total,
-not every line. Every correction is recorded, kept beside the agent's original
-answer, and becomes the expected result when the case joins an eval suite.
+Agents deliver value long before they are 100% autonomous. Review lets a team
+deploy an invoice agent today while keeping human eyes on only the fields that
+carry risk—say `vendor` and `total`, rather than every line item. Approvals
+solve a different problem: organizational authority. An accounts-payable
+operator may be allowed to code an invoice, while only a member of
+`finance-leads` is allowed to approve a payment over $5,000.
 
-## What people can do
+Separating the two keeps everyday review fast while letting engineers enforce
+strict governance in code.
 
-In the Review tab, each field shows its answer, its status and, when a check
-fails, the check's message beside it. People can:
+## How review works
 
-- **Confirm** an answer the agent gave. It becomes `confirmed`.
-- **Change** an answer. It becomes `confirmed` too, and fields that depended on
-  the old value turn `stale`. They can fill stale fields by hand or leave them
-  for the agent.
-- **Search** a field's full option list, not only the options the agent narrowed
-  it to.
-- **Accept a suggestion.** When the agent arrives at a different value for an
-  answer a person entered, it never overwrites it: its value waits beside the
-  person's, and a person accepts it or leaves it.
-- **Rerun** the agent, which finishes the remaining work and sees what people
-  changed, or **Complete** the case. See
-  [Cases](/concepts/cases#rerun-complete-and-cancel).
+In the case room's Review tab (or through the API and MCP), every visible field
+displays its current value, status (`agent`, `confirmed`, `stale`, or empty),
+and any failing check message right beside it. Operators can:
 
-Two people editing the same field can't overwrite each other: an edit carries
-the version it was made against, and a stale one is refused.
+- **Confirm** an agent's answer, turning its status to `confirmed`.
+- **Edit** an answer, which also marks it `confirmed` and marks dependent fields
+  `stale` so nothing downstream silently stays out of sync. Operators can fix
+  stale fields by hand or leave them for the agent to recompute on a rerun.
+- **Search** a field's full `s.source()` option list—not just the subset the
+  agent considered.
+- **Accept or ignore a suggestion.** On a rerun, the agent never overwrites a
+  `confirmed` human answer. If it arrives at a different value, that value sits
+  beside the operator's answer as a suggestion until a person accepts or
+  dismisses it.
+- **Rerun** the agent (sending a delta prompt of what changed) or **Complete**
+  the case once every check, success condition, and approval is satisfied.
 
-Every action is recorded as a review event: the field, the value before and
-after, who did it and when. The agent is told what changed, never who changed
-it.
+### Concurrency and attribution
 
-## Where review shows up
+Two operators working the same case cannot silently overwrite each other: every
+field edit carries the answer version it was made against, and a stale write is
+refused. Every confirm, edit, suggestion decision, and approval writes a durable
+**review event** recording the field, before/after values, actor, and timestamp.
+On a rerun, the runtime tells the agent _what_ changed—never _who_ changed it.
+Every completed case's human corrections become the expected answers when that
+case is replayed in an eval suite.
 
-Each person's inbox collects what needs them, newest first:
+## Where work surfaces in the inbox
 
-| Item      | When                                                        |
-| --------- | ----------------------------------------------------------- |
-| Waiting   | A case waits on one of their groups.                        |
-| Review    | A case they can work has visible fields waiting for review. |
-| Approval  | An approval their group, or any operator, can decide.       |
-| Memory    | The agent proposed a rule to remember.                      |
-| Mention   | Someone, or the agent, tagged one of their groups.          |
-| Assigned  | The case was assigned to them.                              |
-| Guardrail | For Owners and Admins: a deployment waits on a guardrail.   |
+Each person's inbox gathers every item that needs their attention, newest first:
 
-Waits on a person's groups, tags and assignments are also emailed straight away.
-Each person can turn those emails off.
+| Inbox item | When it appears                                              |
+| ---------- | ------------------------------------------------------------ |
+| Waiting    | A case is waiting on one of the person's groups.             |
+| Review     | A case they can work has visible fields requiring review.    |
+| Approval   | A pending approval their group (or any operator) can decide. |
+| Memory     | An agent proposed a new rule to remember across cases.       |
+| Mention    | A person or agent tagged one of their groups with `@slug`.   |
+| Assigned   | An Owner, Admin, or API key assigned the case to them.       |
+| Guardrail  | (Owners and Admins) A deployment is waiting on a guardrail.  |
 
-## Approvals
+Group waits, `@slug` tags, and assignments also send immediate email
+notifications unless the person has muted them in settings.
 
-An approval is declared in code, at one of three levels:
+## Approvals in code
 
-| Level      | Declared on           | What waits                                 | `when` receives   |
-| ---------- | --------------------- | ------------------------------------------ | ----------------- |
-| Completion | `agent({ approval })` | The case's completion.                     | The final answers |
-| Field      | A schema field        | That value, or a group's or list's subtree | The answers       |
-| Tool       | `tool({ approval })`  | The tool call, before it runs              | The call's input  |
+Approvals are declared directly in TypeScript at three levels:
+
+| Level      | Where it's declared   | What pauses until approved                     | `when` receives   |
+| ---------- | --------------------- | ---------------------------------------------- | ----------------- |
+| Tool       | `tool({ approval })`  | The tool call, _before_ `run` executes         | The tool's input  |
+| Field      | A schema field        | That field's value (or a group/list's subtree) | The answers (`a`) |
+| Completion | `agent({ approval })` | The case's transition to `completed`           | The final answers |
 
 ```ts
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+declare function pay(
+  env: Record<string, string | undefined>,
+  invoiceId: string,
+  amount: number,
+): Promise<unknown>;
+
 export default agent({
   instructions: "Pay approved supplier invoices.",
   groups: ["finance-leads"],
@@ -92,50 +110,60 @@ export default agent({
 });
 ```
 
-`approval: true` means any operator of the agent can approve. `{ group }` names
-the group whose members approve; it must be in the agent's `groups`. `when`
-decides per case or per call. It must not be async, and if it throws, the
-approval applies.
+- `approval: true` allows any operator of the agent to approve.
+- `{ group }` restricts approval to members of that group (which must also be
+  listed in the agent's `groups`).
+- `when` is a synchronous predicate that decides per call or per case whether
+  the gate applies. **It fails closed:** if `when` throws an error, Preprocess
+  treats the approval as required rather than skipping it.
 
-### How each level behaves
+### Lifecycle and failure modes at each level
 
-**Tool calls.** The call doesn't run. The case waits until a person decides.
-Approved, the call runs with exactly the input that was approved, and the agent
-continues with its result. Rejected, the call never runs, and the agent
-continues knowing it was rejected and why.
-
-**Field values.** When a run ends, each field that needs approval gets a request
-for its current value. If the value changes before anyone decides, the request
-goes stale and a new one opens for the new value. A rejection keeps the case
-waiting with the reason until the value changes and is approved.
-
-**Completion.** When the run ends with everything else in place, the case waits
-for approval instead of completing. Approved, it completes. Rejected, it keeps
-waiting with the reason, and the next run asks again.
+- **Tool approvals.** When the model invokes a gated tool and `when` matches,
+  the runtime halts before calling `run` and moves the case to `waiting`. If a
+  person approves, `run` executes with the exact input that was approved and the
+  agent resumes with its return value. If a person rejects, `run` never
+  executes; the agent continues knowing the call was rejected and why, so it can
+  adjust or hand off to a team.
+- **Field approvals.** When a run finishes, each field requiring approval opens
+  a request bound to its current value. If anyone edits that value before a
+  decision is made, the old request becomes `stale` and a new request opens for
+  the updated value. Rejecting a field approval keeps the case `waiting` with
+  the rejection reason until the value changes and is approved.
+- **Completion approvals.** Evaluated only after all checks pass and the success
+  condition is met. Instead of completing, the case enters `waiting`. Approving
+  completes the case immediately; rejecting keeps it `waiting` with the reason
+  and asks again on the next run.
 
 ### Who can approve
 
-Approving is a person's act. It needs operator access to the agent (through an
-operator group or Developers) and, when the code names a group, membership of
-that group. Viewers never approve, API keys can't approve, and the
-organization's MCP server leaves approvals out.
+Approving is strictly a human act:
 
-A group the code names as an approver must keep operator access to the agent. If
-it doesn't have that access when you deploy, the deployment waits until an Admin
-grants it; while live code names the group, its access can't be lowered or
-removed. A rejection needs a reason, which the agent and the thread see. Every
-decision is in the audit log with who made it.
+- The approver must have **operator access** to the agent (via an operator group
+  or Developers) and, if the code names a group, belong to that group.
+- Viewers, API keys, and the organization's MCP server can never approve.
+- Rejecting always requires a written reason, which is shown in the case thread
+  and fed back to the agent. Every approval and rejection is logged in the audit
+  log (with the rejection/approval note stored in review events).
+
+Because an approving group must hold operator access, Preprocess enforces that
+link at deploy time: if the group lacks operator access, the deployment enters
+`waiting` until an Admin grants it. While any live deployment names that group
+as an approver, its operator access cannot be lowered or removed.
 
 ## Proposed memories
 
-While it works, an agent can propose a rule to remember, such as "Northwind
-invoices are always in EUR". The proposal shows up in the inbox for a person to
-accept or dismiss. Accepted rules go into every later case's context, starting
-with the next run.
+During a case, the agent can call `memory_propose` to suggest a reusable rule
+(for example, `"Northwind Paper invoices are always billed in EUR"`). Proposals
+land in the inbox for an operator to accept or dismiss—API keys and MCP cannot
+accept them. Accepted rules are injected into the context of every subsequent
+case for that agent (up to 100 active rules per agent), and can be audited or
+deleted from the agent's Memories view at any time.
 
 ## Related
 
-- [Output schema](/concepts/output-schema): which fields need review, and what
-  stale means.
-- [Groups and access](/concepts/groups-and-access): who is an operator.
-- [Cases](/concepts/cases): waiting, rerun and complete.
+- [Output schema](/concepts/output-schema): field review settings, staleness,
+  and `allReviewed`.
+- [Groups and access](/concepts/groups-and-access): operator access and group
+  locks.
+- [Cases](/concepts/cases): `waiting`, reruns, and completion.

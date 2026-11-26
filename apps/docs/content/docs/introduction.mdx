@@ -1,53 +1,109 @@
 ---
 title: Introduction
-description: What Preprocess is, what you write, and who uses it.
+description:
+  What Preprocess is, how agent code splits from the operator workspace, and how
+  Cloud compares to self-hosted.
 ---
 
-Preprocess is where you deploy agents you write as code, and where the rest of
-your company works the cases those agents handle. You write the agent in
-TypeScript with the SDK. Preprocess runs it and gives everyone else what they
-need to work with it: an inbox, a case room with the agent's thread, a review
-screen built from the agent's output schema, and approvals that go to the right
-team.
+Preprocess is where applied AI engineers deploy agents written as TypeScript
+code, and where the rest of the company works the cases those agents handle. You
+write the agent in your own git repository with `@preprocess/sdk`. Preprocess
+hosts the runtime, isolates your code, and builds the workspace around it: an
+inbox, a case room with the agent's thread, a field-by-field review screen
+generated from your output schema, and approvals routed to the right team.
 
-## What you write and what you get
+Most production agents stall on everything around the model call: where state
+lives while a job waits on a human, how an operator corrects one field without
+losing the rest, how finance approves a payout before a tool fires, and how
+those corrections turn into regressions tests for the next release. Preprocess
+handles that operational layer once so every agent you ship starts with it.
 
-An agent is a module in your own git repository. It declares its instructions,
-its model, the tools it can call, the shape of the answer it produces, the
-checks that answer must pass, and what a person has to approve. Nobody changes
-that behavior in the app; it changes when you deploy new code.
+## Agent code vs. the operator workspace
 
-Everything around the agent comes from Preprocess:
+Preprocess draws a hard boundary between **what engineers own in code** and
+**what operators do in the app**.
 
-- **Deployments.** Every deploy is stored and pinned. Your production branch
-  serves production, other branches are previews, and rolling back means serving
-  an earlier deployment again.
-- **Cases.** An API call, a schedule, someone in the app or an MCP client starts
-  a case: one job for one agent, with its own thread and answers.
-- **Review and approvals.** People check the agent's answers field by field,
-  change them, and approve what your code says needs approving.
-- **Access.** Groups decide who works or reads an agent's cases, and which team
-  a case waits on.
-- **Records.** Every run is captured, logged and audited, and completed cases
-  become evals for the next version.
+Your agent is a TypeScript module in git. It declares its instructions, its
+model, the tools it can call, the shape of the answer it must produce, the
+checks that answer has to pass, the teams it can hand work to, and which actions
+require human approval. Because behavior lives in code, changes go through pull
+requests, code review, preview deployments, and one-click rollbacks. Nobody
+edits prompts or wires tools in a dashboard, so production never drifts into a
+hidden copy of your agent.
+
+Everything around that module comes from the platform:
+
+- **Deployments.** Every deploy stores an immutable bundle and its manifest.
+  Your production branch (`main`) serves live traffic, feature branches produce
+  isolated previews, and rolling back means pointing production at an earlier
+  deployment.
+- **Cases.** An API call, a cron schedule, a person in the app, or an MCP client
+  starts a case: one job for one agent, with its own thread, structured answers,
+  and lifecycle status.
+- **Review and approvals.** Operators inspect the agent's answers field by
+  field, correct mistakes, and approve gated tool calls, field values, or
+  completions. Every edit is attributed and recorded.
+- **Groups and guardrails.** Agent code names teams by group slug, never by
+  individual. Secrets, MCP servers, outbound network hosts, and group access are
+  gated by organization guardrails before a deployment can serve traffic.
+- **Records and evals.** Every run is captured in full (model turns, tool calls,
+  tokens, timing), logged, and audited. Completed cases with human corrections
+  feed straight into eval suites for the next version.
 
 ## Who uses it
 
-| Who       | What they do                                                                 | How they get access                       |
-| --------- | ---------------------------------------------------------------------------- | ----------------------------------------- |
-| Developer | Writes agents with the SDK, deploys them, sets configuration and runs evals. | The organization's Developers group       |
-| Operator  | Works cases: reviews answers, approves, reruns and completes them.           | A group with operator access to the agent |
-| Viewer    | Reads an agent's cases.                                                      | A group with viewer access to the agent   |
+| Who       | What they do                                                                  | How they get access                       |
+| --------- | ----------------------------------------------------------------------------- | ----------------------------------------- |
+| Developer | Writes agents with the SDK, deploys them, sets configuration, and runs evals. | The organization's Developers group       |
+| Operator  | Works cases: reviews answers, approves, reruns, and completes them.           | A group with operator access to the agent |
+| Viewer    | Reads an agent's cases without changing them.                                 | A group with viewer access to the agent   |
 
-Separately, everyone in the organization has one fixed role: Owner, Admin or
-Member. Roles govern the organization, groups govern agents. See
+Access splits along two axes that do not overlap. Every person has one
+organization **role** (Owner, Admin, or Member) that governs organization-wide
+resources like members, secrets, and guardrails. **Groups** govern agents.
+Seeing every case as an Admin does not make you an operator; to edit or approve
+a case, you still belong to an operator group or Developers. See
 [Groups and access](/concepts/groups-and-access).
 
-## Where it runs
+## Cloud vs. self-hosted
 
-Preprocess runs entirely on Cloudflare: Workers, Durable Objects, R2, Queues and
-Postgres through Hyperdrive. Use our cloud, or install the same stack in your
-own Cloudflare account with `preprocess install`.
+Preprocess runs on Cloudflare: Workers, Durable Objects, R2, Queues, Containers,
+and standard Postgres through Hyperdrive, with authentication handled inside
+your own Workers by Better Auth. You can run on **Preprocess Cloud** or install
+the exact same stack into your own Cloudflare account with `preprocess install`
+(or its GitHub Action).
+
+Both deployments come from the same Alchemy infrastructure definition in
+`preprocess/preprocess`. The platform enforces a strict portability rule:
+product code may only use Cloudflare and Postgres primitives that the
+self-hosted installer creates in a customer's account. Cloud-only capabilities
+(billing, usage metering, open sign-up, and Preprocess's hosted model keys) sit
+behind a single run-mode variable (`PREPROCESS_REGION`, unset in self-hosted
+stages) that turns those hosted extras on or off without switching
+implementations.
+
+| Concern            | Preprocess Cloud                                                                                                                                            | Self-hosted (`preprocess install`)                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Infrastructure     | Managed in Preprocess's Cloudflare account (`us` region at launch).                                                                                         | Deployed by Alchemy into your own Cloudflare account (Workers Paid) with optional `R2_LOCATION_HINT`.                                                    |
+| Database           | Managed PlanetScale Postgres through Hyperdrive.                                                                                                            | Any standard Postgres database Hyperdrive can reach (`DATABASE_URL`).                                                                                    |
+| Agent models       | Routed by Preprocess: Kimi K3.1 Pro, DeepSeek V4.1 Flash (normal and fast), and `decide` on Baseten; Qwen 3.8 27B on Cloudflare Workers AI; OCR on Mistral. | Your own provider keys (`BASETEN_API_KEY`, `MISTRAL_API_KEY`), your account's Workers AI binding (`AI`), or your own serving URLs via `MODEL_ENDPOINTS`. |
+| Billing & licenses | Usage-based billing (seats, cases, tokens, OCR, storage) through Autumn/Stripe; spending limits enforced per month.                                         | Open-source core under Elastic License 2.0; paid compliance features unlocked by an offline signed license key (Ed25519) with zero usage reporting.      |
+| Upgrades           | Continuous; every deploy migrates with expand-and-contract safety.                                                                                          | Versioned `v*` releases with upgrade notes; run `preprocess install` to upgrade in place.                                                                |
+
+**When to pick Cloud:** You want to deploy an agent in minutes without managing
+a Cloudflare account, Postgres instance, or model provider keys, and you want
+pay-as-you-go metering with built-in spending limits.
+
+**When to pick self-hosted:** Your compliance boundary requires case data,
+uploaded files, audit logs, and Postgres to stay inside your own Cloudflare
+account and database, or you want to point agents at your own model serving
+endpoints.
+
+<Callout title="Coming soon">
+  Hosted training runs, trained-model serving, case sandboxes for custom images,
+  npm publishing for `@preprocess/sdk` and `@preprocess/cli`, and SSO/directory
+  sync are not live yet. Each is noted where it applies across the docs.
+</Callout>
 
 ## Next
 
@@ -57,11 +113,11 @@ own Cloudflare account with `preprocess install`.
     href="/quickstart"
     icon="terminal"
     hint="preprocess deploy"
-    description="Write an agent, deploy it and take one case from start to finished."
+    description="Write an invoice agent, deploy it, and take one case from start to finished."
   />
   <Card
     title="How it works"
     href="/how-it-works"
-    description="Follow one case from the call that opens it to the result going out."
+    description="Why the runtime is split this way, and what happens to one case end to end."
   />
 </Cards>

@@ -3,11 +3,26 @@ title: SDK
 description: Write an agent with @preprocess/sdk.
 ---
 
+`@preprocess/sdk` is the TypeScript contract between your git repository and the
+Preprocess runtime. Instead of importing a model client or writing a retry loop,
+you export one declarative `agent()` module—its instructions, model, tools,
+output schema, groups, and approvals. Preprocess bundles that module at deploy
+time, runs the model loop inside each case's Durable Object, and invokes your
+code inside a stateless Dynamic Worker only when the model calls a tool or the
+output schema needs evaluation.
+
 Hand this prompt to your coding agent to write an agent and deploy it.
 
 <AgentPrompt name="sdk" />
 
 Or follow the steps yourself.
+
+<Callout title="Coming soon" type="warning">
+  `@preprocess/sdk` is MIT licensed and versioned, but npm publishing is coming
+  soon, so `npm install @preprocess/sdk` will not resolve from the public
+  registry yet. Today, the package lives in `packages/sdk` of
+  [preprocess/preprocess](https://github.com/preprocess/preprocess).
+</Callout>
 
 ## Install
 
@@ -15,14 +30,16 @@ Or follow the steps yourself.
 npm install @preprocess/sdk zod
 ```
 
-The SDK is MIT licensed and uses [Zod](https://zod.dev) 4 to describe tool
-inputs.
+The SDK is MIT licensed and uses [Zod](https://zod.dev) 4 to validate tool
+inputs and generate the JSON Schema the model sees.
 
 ## An agent
 
-An agent is the default export of a module. Preprocess bundles that module,
-stores the bundle for each deployment, and runs it as a Worker. The model loop
-runs on the platform; your code runs only when the model calls one of its tools.
+An agent is the default export of a TypeScript module. Preprocess bundles that
+module, verifies its manifest, stores the immutable bundle for each deployment,
+and loads it into an isolated Dynamic Worker on demand. Because the Worker is
+stateless, keep durable state in your own external systems or in the case's
+output schema.
 
 ```ts title="src/index.ts"
 import { agent, tool } from "@preprocess/sdk";
@@ -47,46 +64,59 @@ export default agent({
 });
 ```
 
-`model` is one of `kimi-k3.1-pro`, `deepseek-v4.1-flash` (the default),
-`deepseek-v4.1-flash-fast` and `qwen3.8-27b`.
+`model` is one of `deepseek-v4.1-flash` (the default),
+`deepseek-v4.1-flash-fast`, `kimi-k3.1-pro` (served on Baseten), or
+`qwen3.8-27b` (served on Cloudflare Workers AI). See
+[Agents](/concepts/agents#models-routing-ocr-and-decide) for routing, OCR, and
+`decide` details.
 
-Deploy it with `preprocess deploy` (see [CLI](/cli)). The agent's name is your
-package.json name without its scope, unless you pass `--agent`.
+Deploy with `preprocess deploy` (see [CLI](/cli)). The agent's slug comes from
+your `package.json` name without its scope unless you pass `--agent`.
 
 ## Tools
 
-`tool()` takes a `description` the model reads, a Zod `input` schema, and a
-`run` function. `run` receives the parsed input and a context with:
+`tool()` defines one capability the model can invoke. It takes a `description`
+the model reads, a Zod `input` schema, and a `run` function. `run` receives the
+parsed input and a context object with:
 
-- `env`: the secrets the agent declared and was granted;
-- `case`: the case being worked, with its `id`;
-- `mcp(server)`: a client for an MCP server the agent declared.
+- `env`: the secrets the agent declared and an Admin granted (ungranted secrets
+  are `undefined`);
+- `case`: the current case, with its `id`;
+- `mcp(server)`: a client for a declared MCP server;
+- `waitOn(group, { reason })` and `tag(group, message)`: hand off or notify a
+  declared group.
 
-Set `sideEffects: true` on a tool that changes something outside Preprocess.
-Such a tool is never retried, and when an eval replays a case, it reuses the
-result the tool returned instead of calling it again. Set `approval` on a tool a
-person must approve before it runs (see [Approvals](#approvals)).
+Set `sideEffects: true` on any tool that changes state outside Preprocess
+(sending emails, paying invoices, writing to an ERP). Side-effecting tools are
+never retried if they throw, and eval replays reuse their recorded output
+instead of calling the external system again. Set `approval` on a tool a person
+must approve before `run` executes (see [Approvals](#approvals)).
 
 ## Secrets
 
-`secrets` lists the organization secrets the code needs. Only the secrets an
-Admin has granted to the agent are bound, and the rest are `undefined`. Values
-reach only your code. They never reach the model, the case thread, logs or run
-capture.
+`secrets` declares the organization secret names your code expects. Only secrets
+an Admin has explicitly granted to the agent are bound into `env`; if a
+deployment declares an ungranted secret, it enters `waiting` until granted.
+Values reach only your Dynamic Worker—never the model, the case thread, logs, or
+run capture.
 
 <Callout>
-  As a second line of defence, the SDK removes bound values from tool results,
-  errors and console output. Code that transforms a value can still leak it, so
-  return only what the model needs.
+  As a second line of defense, the SDK strips bound secret values from tool
+  results, thrown errors, and console output. Code that encodes or transforms a
+  secret can still leak it, so return only the fields the model needs.
 </Callout>
 
 ## MCP servers
 
-`mcp` lists the MCP servers the agent uses, by the name the organization
-registered them under. Calls go through Preprocess, which adds the
-organization's connection token, so your code never holds it.
+`mcp` declares the organization MCP servers your tools can call, by their
+registered slug. Calls proxy through Preprocess, which attaches the
+organization's connection token on the platform side so your code never holds
+it.
 
 ```ts
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
 export default agent({
   instructions: "You keep CRM contacts current.",
   mcp: ["crm"],
@@ -102,13 +132,14 @@ export default agent({
 
 ## Output schema
 
-`schema` declares what a case produces: a tree of groups, lists and fields that
-people review in the case room. Every function in the schema receives `a`, an
-accessor over the answers. It records each path it reads, so Preprocess knows
-what to work out again when an answer changes.
+`schema` declares the structured answer a case produces: a tree of groups,
+lists, and typed fields rendered in the case room's Review tab and emitted on
+`case.completed`. Every schema function receives `a`, a tracked accessor over
+the answers that records every path it reads so Preprocess automatically knows
+which fields turn stale when an answer changes.
 
 ```ts
-import { agent, schema as s } from "@preprocess/sdk";
+import { agent, allReviewed, schema as s } from "@preprocess/sdk";
 
 export default agent({
   instructions: "Code invoices.",
@@ -131,55 +162,68 @@ export default agent({
             message: "Lines do not add up",
           },
       },
+      success: allReviewed,
     },
   ),
   tools: {},
 });
 ```
 
-- **Fields** are `text`, `number`, `boolean`, `date`, `select`, `multiselect`
-  and `fetched`, nested with `group` and `list`. Each takes `description`,
-  `visible(a)`, and `review` (`"required"`, `"none"`, or a function of the
-  answers).
-- **The accessor** has `a.get(path)`, which returns `null` for an empty or
-  hidden answer, plus `a.all("lines[*].amount")`, `a.sum(...)`,
-  `a.fetched(path)` and `a.sibling(name)` for the field beside this one in a
-  list item.
-- **Options** for a select are an array, a function of the answers, or
-  `s.source({ search, get })` for long lists that are searched and paged rather
-  than loaded whole.
-- **Fetched fields** declare their `inputs`. The fetch runs again only when
-  those inputs change.
+- **Fields** are `text`, `number`, `boolean`, `date`, `select`, `multiselect`,
+  and `fetched`, composed with `group` and `list`. Each supports `description`,
+  `visible(a)`, `review` (`"required"`, `"none"`, or a function of `a`),
+  `approval`, and `invalidates`.
+- **The accessor** provides `a.get(path)` (returning `null` for empty or hidden
+  fields), `a.all("lines[*].amount")`, `a.sum(...)`, `a.fetched(path)`, and
+  `a.sibling(name)` inside a list item.
+- **Options** for `select` / `multiselect` take a static array, a function of
+  `a`, or `s.source({ search, get, page })` for large catalogs searched on
+  demand without loading them into model context.
+- **Fetched fields** declare `inputs(a)` and `fetch(inputs, ctx)`. The fetch
+  re-runs automatically only when `inputs` changes.
+
+See [Output schema](/concepts/output-schema) for staleness, suggestions, and
+checks.
 
 ## Approvals
 
-`approval` asks a person to approve before something happens:
+`approval` pauses execution until an eligible person says yes, declared at one
+of three levels:
 
-- on `agent()`, before a case completes;
-- on a schema field, before its value stands;
-- on `tool()`, before the tool runs.
+- on `agent()`, before a case transitions to `completed`;
+- on a schema field (or group/list), before its value stands;
+- on `tool()`, before `run` executes.
 
-`true` means any operator can approve. `{ group, when }` names the group that
-approves (it must be listed in `groups`) and decides per case or call. `when`
-receives the answers, or the tool's input, and must not be async. If it throws,
-the approval applies.
+`true` allows any operator of the agent to approve. `{ group, when }` restricts
+approval to a named group (which must be listed in `groups`) and decides per
+case or per call. `when` receives the answers or the tool's input and must be
+synchronous—if it throws, the approval fails closed and applies. See
+[Review and approvals](/concepts/review-and-approvals).
 
 ## Groups and schedules
 
-`groups` lists the slugs of the organization's groups the agent refers to. In a
-tool, `ctx.waitOn(group, { reason })` hands the case to that group and
-`ctx.tag(group, message)` notifies it.
+`groups` lists every organization group slug the agent references. Inside a
+tool, `ctx.waitOn(group, { reason })` parks the case on that group when the run
+ends, and `ctx.tag(group, message)` notifies it in the thread.
 
-`schedules` starts cases on a cron schedule:
+`schedules` starts cases automatically on a 5-field cron schedule (UTC by
+default, or any IANA `timezone`; skipped on previews unless `previews: true`):
 
 ```ts
-schedules: [{ name: "nightly", cron: "0 2 * * *", text: "Reconcile yesterday's orders" }],
+schedules: [
+  {
+    name: "nightly",
+    cron: "0 2 * * *",
+    text: "Reconcile yesterday's orders",
+  },
+],
 ```
 
 ## Memory
 
-While it works a case, an agent can propose a rule to remember, such as "Acme
-invoices are always in EUR". A person reviews the proposal from the Inbox. Once
-they accept it, the agent reads the rule on every later case. An agent holds at
-most 100 rules. You can read them in the agent's Memories section and through
-the API.
+While working a case, the agent can call `memory_propose` to suggest a rule to
+remember across cases, such as `"Acme invoices are always in EUR"`. An operator
+accepts or dismisses the proposal from the Inbox. Once accepted, Preprocess
+injects the rule into every later case for that agent (up to 100 active rules
+per agent). You can inspect or delete rules in the agent's Memories view or
+through the API.

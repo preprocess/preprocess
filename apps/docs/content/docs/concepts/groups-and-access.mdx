@@ -1,107 +1,132 @@
 ---
 title: Groups and access
 description:
-  Roles govern the organization; groups decide who works each agent's cases, and
-  which team a case waits on.
+  Roles govern organization administration; groups govern who works each agent's
+  cases and which teams agent code can hand work to.
 ---
 
-Preprocess has two kinds of access, and they don't overlap. A **role** is what a
-person can do in the organization: manage members, groups, secrets and settings.
-A **group** is what a person can do with an agent: work its cases, read them, or
-manage every agent. Nobody gets access to an agent on their own; they get it
-through a group.
+Preprocess separates access into two non-overlapping layers: **roles** govern
+the organization, and **groups** govern agents. Nobody receives direct per-user
+permissions on an agent; every person's access to an agent flows through the
+groups they belong to.
 
-## Why groups and not people
+## Why code only knows groups
 
-Agents hand work to teams, not to individuals. Code that names a person breaks
-the day that person moves on, and a case waiting on one person stalls when
-they're away. So the agent and its code only ever know groups: they wait on a
-group, tag a group and name a group to approve. To reach one person, make a
-group for them alone.
+Operational teams change constantly—people go on vacation, switch squads, or
+leave the company. Agent code that hard-codes an individual's email or user id
+breaks the day that person moves on, and cases routed to one person stall when
+they are out of office.
 
-Groups also keep access reviewable. Who can work an agent's cases is one list of
-grants, not a scatter of individual permissions.
+In Preprocess, agent code only ever names **group slugs** (`accounts-payable`,
+`finance-leads`). When a tool calls `ctx.waitOn("accounts-payable")` or names
+`finance-leads` as an approver, the entire team sees the case in their inbox and
+anyone in the group can pick it up. If a workflow genuinely routes to one
+person, create a single-member group for that role and swap members in the app
+without redeploying code.
 
-## Roles
+Groups also keep security auditable: knowing who can work an agent's cases means
+reading one list of group grants instead of hunting through scattered individual
+permissions.
 
-Everyone in an organization has exactly one fixed role.
+## Organization roles
 
-| Role   | Can                                                                                                                                                                                                                |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Owner  | Everything an Admin can, and owns the organization.                                                                                                                                                                |
-| Admin  | Manage members, groups and grants, secrets, API keys, webhooks, settings and guardrails; approve guardrail requests; deploy, promote and roll back agents; archive agents; see every case and assign people to it. |
-| Member | Whatever their groups grant. Deploying, promoting and rolling back need the Developers group.                                                                                                                      |
+Every member of an organization has exactly one fixed role:
 
-Seeing every case doesn't let an Owner or Admin work one. To edit, rerun or
-complete a case, they need an operator group like anyone else.
+| Role   | What they can do                                                                                                                                                                                                  |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Owner  | Everything an Admin can, plus organization ownership, shortening retention periods, and deleting individual cases.                                                                                                |
+| Admin  | Manage members, groups, agent grants, secrets, API keys, webhooks, settings, and guardrails; approve guardrail requests; deploy, promote, roll back, and archive agents; view every case and assign people to it. |
+| Member | Only what their groups grant. Deploying, promoting, and rolling back require membership in the Developers group.                                                                                                  |
 
-## Groups
+**Visibility is not operator access.** An Owner or Admin can read every case in
+the organization for oversight and can assign cases to people, but cannot edit
+answers, rerun, approve, or complete a case unless they also belong to an
+operator group for that agent (or Developers).
 
-A group has a slug (`accounts-payable`), a name, a description and members.
-Admins and Owners create and change groups, and the slug is what code uses.
+## Groups and agent grants
 
-Each group can be granted access to an agent:
+A group has a unique slug (such as `accounts-payable`), a display name, a
+description, and a member list managed by Owners and Admins. The slug is what
+agent code references.
 
-| Access   | Can                                                                               |
-| -------- | --------------------------------------------------------------------------------- |
-| Operator | Work the agent's cases: start, edit answers, rerun, complete, cancel and approve. |
-| Viewer   | Read the agent's cases.                                                           |
+Each group can be granted one of two access levels on an agent:
 
-A person in several groups gets the highest access any of them has on that
-agent.
+| Grant    | What members can do on that agent                                                  |
+| -------- | ---------------------------------------------------------------------------------- |
+| Operator | Work cases: start, edit and confirm answers, rerun, complete, cancel, and approve. |
+| Viewer   | Read the agent's cases and history without changing anything.                      |
 
-**Developers** is a group every organization starts with. Its members manage
-every agent: they deploy, change settings, run evals and work every agent's
-cases. It needs no grants, takes none, and can't be deleted.
+When a person belongs to multiple groups with access to the same agent, their
+effective permission is the highest grant across those groups.
 
-## How code uses groups
+**Developers** is a built-in group present in every organization. Its members
+can deploy, promote, roll back, change agent settings, run evals, and work cases
+across _every_ agent. Developers needs no per-agent grants, accepts none, and
+cannot be deleted.
 
-An agent lists the group slugs it uses in `groups`. Its code can then:
+## How code and guardrails stay in sync
 
-- make a case wait on a group, with `ctx.waitOn(slug, { reason })`;
-- tag a group in the case thread, with `ctx.tag(slug, message)` or the agent's
+An agent declares every group slug it references in `groups`. Once declared, its
+code can:
+
+- park a case on a team with `ctx.waitOn(slug, { reason })`;
+- notify a team in the case thread with `ctx.tag(slug, message)` or the platform
   `tag_group` tool;
-- name a group as the approver of a tool call, a field or the case.
+- require a team's approval on a tool call, schema field, or case completion.
 
-The agent sees groups, never people: `groups_list` returns the groups with
-access to the agent, and it can only wait on or tag those.
+At runtime, the agent sees only groups (via `groups_list`), never individual
+people, and can only wait on or tag groups that have access to the agent.
 
-Preprocess keeps code and access consistent at every step:
+To prevent broken handoffs in production, Preprocess enforces a three-part
+contract across deploy and runtime:
 
-- A deploy fails if the code names a group the organization doesn't have.
-- A deployment waits if the code names a group with no access to the agent, or
-  an approving group without operator access, until an Admin grants it.
-- While a live deployment names a group, the group can't be deleted and its
-  access to that agent can't be removed or lowered. Deploy code that stops
-  naming it first.
+1. **Unknown group fails deploy.** Naming a slug that does not exist in the
+   organization fails the deploy immediately before anything is stored.
+2. **Missing grant holds the deployment.** Naming an existing group that has no
+   grant on the agent—or naming an approving group that only has Viewer access
+   instead of Operator access—places the deployment in `waiting` and opens a
+   guardrail request for an Admin.
+3. **Live deployments lock their groups.** While any live deployment (current
+   production or the newest deployment on another branch) references a group,
+   that group cannot be deleted and its grant on the agent cannot be removed or
+   lowered below what the code requires. Deploy code that stops referencing the
+   group first.
 
-`preprocess groups pull` writes the organization's groups into
-`preprocess.config.json`, and a deploy warns when the code names a group that
-isn't in it.
+To keep local code in sync with your organization's slugs, run
+`preprocess groups pull`. It writes the organization's groups into
+`preprocess.config.json`, and `preprocess deploy` warns if your code names a
+slug missing from that list.
 
-## API keys
+## API keys vs. human sessions
 
-An organization API key belongs to the organization, not a person. It acts with
-an Admin's rights across the API, including deploying and promoting, which is
-what the deploy GitHub Action relies on, and it works every agent's cases. It
-can't approve: approving is a person's act. Owners and Admins create keys in
-Developers → Keys & webhooks, and each key is shown once.
+An **organization API key** belongs to the organization rather than to an
+individual user. Owners and Admins create keys in Developers → Keys & webhooks
+(each key is shown once at creation).
+
+API keys act with Admin rights across `/v1`, the CLI, and the organization's MCP
+server—so CI pipelines can deploy and promote agents, and backend systems can
+start, read, edit, and rerun cases. However, **API keys cannot approve** tool
+calls, field values, or completions, cannot accept or dismiss proposed memories,
+and cannot decide guardrail requests. Those decisions always require a signed-in
+person.
 
 ## Identity
 
-Sign-in, organizations, members and API keys run on the open-source Better Auth
-library inside Preprocess's own Workers, with every record in your Postgres. No
-hosted identity service is involved, in our cloud or self-hosted.
+Sign-in, organizations, memberships, and API keys run on the open-source Better
+Auth library inside Preprocess's own Workers, backed directly by Postgres. No
+third-party hosted auth provider is required, on Preprocess Cloud or
+self-hosted.
 
-<Callout title="Coming">
-  Single sign-on, directory sync and groups synced from your identity provider
-  aren't available yet. Today, groups and their members are managed in
-  Preprocess.
+<Callout title="Coming soon">
+  Single sign-on (SSO), directory sync, and groups synced from an external
+  identity provider are not available yet. Today, members and groups are managed
+  directly in Preprocess.
 </Callout>
 
 ## Related
 
-- [Review and approvals](/concepts/review-and-approvals): who can approve.
-- [Cases](/concepts/cases#who-can-do-what): who can see and work a case.
-- [Deployments](/concepts/deployments#waiting-deployments): why a group can hold
-  a deployment.
+- [Review and approvals](/concepts/review-and-approvals): how operator access
+  and approving groups work in practice.
+- [Cases](/concepts/cases#who-can-do-what): per-action permissions on cases.
+- [Deployments](/concepts/deployments#waiting-deployments-vs-failed-deploys):
+  how missing group grants hold a deployment in `waiting`.

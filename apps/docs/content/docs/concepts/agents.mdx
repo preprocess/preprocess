@@ -5,112 +5,181 @@ description:
   Preprocess.
 ---
 
-An agent is the default export of a TypeScript module, written with
-`@preprocess/sdk` and kept in your own git repository. It does one kind of job,
-such as coding invoices or triaging claims, and every job it does is a
-[case](/concepts/cases).
+An agent is the default export of a TypeScript module written with
+`@preprocess/sdk` and kept in your own git repository. Each agent does one kind
+of job—coding invoices, triaging claims, reconciling payouts—and every job it
+runs is a [case](/concepts/cases).
 
 ## Why agents are code
 
-Everything that decides how an agent behaves lives in the code: its
-instructions, its tools, the answer it must produce, the checks on that answer,
-the teams it hands work to and what needs a person's approval. So an agent is
-reviewed, versioned and rolled back like the rest of your software, and the app
-never has a second, hidden copy of its behavior. People in the app work the
-agent's cases; they don't edit the agent.
+Prompts, tool definitions, output schemas, validation checks, and approval gates
+are software, not configuration trivia. When they live in a web UI, changes skip
+code review, cannot be tested in pull requests, and drift away from the systems
+the agent talks to.
 
-An agent exists from its first deploy. There is no "new agent" button: the first
-`preprocess deploy` or GitHub build under a new name creates it.
+In Preprocess, everything that defines an agent's behavior lives in git:
+
+- its instructions and model choice;
+- the tools the model can call and which ones have side effects;
+- the [output schema](/concepts/output-schema), checks, and completion rule;
+- the teams ([groups](/concepts/groups-and-access)) it hands work to or asks for
+  approval;
+- the secrets, MCP servers, and outbound network hosts it requires.
+
+Because code is the single source of truth, the app has no "new agent" button
+and no prompt editor. An agent comes into existence on its first
+`preprocess deploy` or GitHub App build under a new name, and its behavior
+changes only when you deploy a new version.
+
+## Models, routing, OCR, and `decide`
+
+Preprocess runs four open-weight agent models, plus two fixed-purpose models for
+structured classification (`decide`) and document extraction (`ocr`). There are
+no Anthropic, OpenAI, or Gemini models and no bring-your-own LLM provider keys
+on Preprocess Cloud.
+
+| Model id                   | Model                      | Served by             | When to pick it                                                              |
+| -------------------------- | -------------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `deepseek-v4.1-flash`      | DeepSeek V4.1 Flash        | Baseten               | Default. Strong general accuracy at low token cost for most workflows.       |
+| `deepseek-v4.1-flash-fast` | DeepSeek V4.1 Flash (fast) | Baseten (Fast tier)   | Same model on lower-latency capacity when interactive turnaround matters.    |
+| `kimi-k3.1-pro`            | Kimi K3.1 Pro              | Baseten               | Harder multi-step reasoning, dense documents, or complex tool orchestration. |
+| `qwen3.8-27b`              | Qwen 3.8 27B               | Cloudflare Workers AI | Lighter extraction/routing jobs; runs directly on Workers AI in the account. |
+
+Two operational details matter when choosing a model:
+
+- **Fast-tier fallback.** When Baseten's Fast capacity is short, it serves a
+  `deepseek-v4.1-flash-fast` request from standard capacity. The runtime reads
+  the model name returned in the response and reprices that turn at the standard
+  `deepseek-v4.1-flash` rate so you never pay Fast rates for standard latency.
+- **Retired models.** Deployments built with an older SDK that name a retired
+  model (`inkling-2-mini` or `inkling-2-small`) automatically route to
+  `deepseek-v4.1-flash` so old deployments keep working without redeploying.
+
+Alongside the agent models, the platform routes two fixed-purpose capabilities:
+
+- **`decide`** calls Baseten's `groundhog-1` decision model to pick from a
+  field's full option list (returning one option or top candidates with
+  probabilities) without stuffing hundreds of options into the agent's context.
+- **`ocr`** sends uploaded PDFs and page images (PNG, JPEG, or WebP, up to 50 MB
+  and 1,000 pages) to Mistral OCR (`mistral-ocr-4-1`) on Mistral's global API,
+  returning per-page Markdown before the first model turn.
+
+On a self-hosted install, Qwen 3.8 27B uses your Cloudflare account's `AI`
+binding by default; for Kimi, DeepSeek, `decide`, and OCR, you can supply your
+own provider keys (`BASETEN_API_KEY`, `MISTRAL_API_KEY`) or point any model at
+your own serving URLs via `MODEL_ENDPOINTS`.
+
+<Callout title="Coming soon">
+  Hosted fine-tuning on corrected cases and trained-model serving are not live
+  yet. All training endpoints (`POST /training/runs`, `POST /agents/{agent}
+  /retrain`, and the Tinker-compatible API) currently return `501 coming_soon`,
+  and all launch models are marked non-trainable for now. Capture, datasets,
+  exports, and evals work today.
+</Callout>
 
 ## What an agent declares
 
-`agent()` takes one object. Only `instructions` and `tools` are required.
+`agent()` takes one configuration object. Only `instructions` and `tools` are
+required.
 
-| Option           | What it declares                                                                                                 |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `instructions`   | What the agent does, in plain language. The model reads it at the start of every case.                           |
-| `model`          | `deepseek-v4.1-flash` (the default), `deepseek-v4.1-flash-fast`, `kimi-k3.1-pro` or `qwen3.8-27b`.               |
-| `reasoning`      | `low`, `medium` (the default) or `high`.                                                                         |
-| `tools`          | The tools the model may call, each with a description, a Zod input schema and a `run` function.                  |
-| `schema`         | The [output schema](/concepts/output-schema): the answer a case produces, its checks and its success condition.  |
-| `groups`         | The groups the code may wait on, tag or name as approvers. See [Groups and access](/concepts/groups-and-access). |
-| `approval`       | Whether a person approves the case before it completes. Tools and fields take their own `approval`.              |
-| `secrets`        | Organization secrets the code needs. Only the ones an Admin grants reach it.                                     |
-| `mcp`            | MCP servers the code calls, by the name the organization registered them under.                                  |
-| `network`        | Hosts the code may reach.                                                                                        |
-| `schedules`      | Cron schedules that start cases.                                                                                 |
-| `ocr`            | Whether files are turned into text before the first model call.                                                  |
-| `timeoutSeconds` | The wall clock for each run. A run that passes it fails.                                                         |
-| `toolRetries`    | How many times a tool that throws runs again. Tools marked `sideEffects` never do.                               |
+| Option           | What it declares                                                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `instructions`   | Plain-language instructions read by the model at the start of every case.                                                        |
+| `model`          | `deepseek-v4.1-flash` (default), `deepseek-v4.1-flash-fast`, `kimi-k3.1-pro`, or `qwen3.8-27b`.                                  |
+| `reasoning`      | `low`, `medium` (default), or `high`.                                                                                            |
+| `tools`          | Tools the model can call, each with a `description`, Zod `input` schema, `run` handler, and optional `sideEffects` / `approval`. |
+| `schema`         | The [output schema](/concepts/output-schema): structured answers, checks, and success condition.                                 |
+| `groups`         | Group slugs the code may wait on, tag, or name as approvers. See [Groups and access](/concepts/groups-and-access).               |
+| `approval`       | Whether a person must approve the case before it completes. Tools and fields take their own `approval`.                          |
+| `secrets`        | Organization secret names the code needs. Only secrets an Admin grants are bound into `env`.                                     |
+| `mcp`            | Registered organization MCP server slugs the code can call through `ctx.mcp(server)`.                                            |
+| `network`        | Outbound host patterns the code is allowed to `fetch()`.                                                                         |
+| `schedules`      | Cron schedules (`name`, 5-field `cron`, optional `timezone` and `previews`) that start cases automatically.                      |
+| `ocr`            | When `true`, runs OCR on uploaded files before the first model turn.                                                             |
+| `timeoutSeconds` | Positive integer wall-clock limit per run. Passing it marks the case `failed`.                                                   |
+| `toolRetries`    | Whole-number retry count when a non-`sideEffects` tool throws. Defaults to `0`.                                                  |
 
-<Callout title="Coming">
-  The SDK also accepts `sandboxImage` and `evals: {onPush}`, and stores them as
-  settings, but nothing acts on them yet: tools don't run in a sandbox, and
-  deploying doesn't start eval runs. Run suites by hand with `preprocess evals
-  run`.
+<Callout title="Coming soon">
+  Case sandboxes and automatic evals on push are not wired yet. The SDK accepts
+  `sandboxImage` and `evals: {onPush}` and stores them as settings, and the
+  platform already meters sandbox lifecycle events for internal containers, but
+  agent tools do not execute inside a custom sandbox image yet and pushing code
+  does not trigger eval runs. Today, tools run in Dynamic Workers and you run
+  eval suites manually with `preprocess evals run`.
 </Callout>
 
-All three are open-weight models, served through Baseten; there are no
-Anthropic, OpenAI or Gemini models and no bring-your-own provider keys. DeepSeek
-V4.1 Flash also comes in a fast variant. A deployment built with an older SDK
-that names a retired model runs on DeepSeek V4.1 Flash.
+### Validation and setting precedence
 
-<Callout title="Coming">
-  Fine-tuning DeepSeek V4.1 Flash and Qwen 3.8 27B on your corrected cases, and
-  serving the trained versions, isn't built yet. Kimi K3.1 Pro won't be
-  trainable.
-</Callout>
+The SDK validates your definition before anything is stored. A deploy fails
+immediately if `instructions` is empty, `model` or `reasoning` is unknown, a
+tool name is not `snake_case`, a secret uses a reserved name (`MCP`, `MODELS`,
+or `PREPROCESS_*`), an approval references a group missing from `groups`, or a
+schedule has an invalid 5-field cron or unknown IANA timezone.
 
-`deploy` rejects a definition that breaks these rules (an unknown model, a tool
-name that isn't `snake_case`, an approval group missing from `groups`, an
-invalid cron) before anything is stored. The [SDK](/sdk) page has the details of
-each option.
-
-Settings such as `model`, `reasoning`, `ocr` and `timeoutSeconds` can also live
-in `preprocess.config.json` beside your `package.json`; where both set a value,
-the file wins and the deploy warns. An organization can set defaults for them,
-and people can override them in the app between deployments.
+Operational settings (`model`, `reasoning`, `ocr`, `timeoutSeconds`,
+`toolRetries`) can also live in `preprocess.config.json` beside `package.json`.
+Where both code and `preprocess.config.json` set a value, the config file wins
+and `deploy` prints a warning. Between deployments, an organization can apply
+org-wide defaults or dashboard overrides for an agent; promoting a new
+deployment resets overrides back to what code and `preprocess.config.json`
+declare. See [Deployments](/concepts/deployments#code-is-truth-over-overrides).
 
 ## How an agent runs
 
-The model loop doesn't run in your code. It runs in Preprocess's case runtime,
-which calls your code when it needs it:
+The model loop never executes inside your bundle. It runs in Preprocess's case
+runtime (one Durable Object per case), which loads your deployment's bundle into
+a stateless Dynamic Worker isolate and calls it only on well-defined hooks:
 
-- once at the start of a case, to read the agent's manifest;
-- for every tool call the model makes;
-- every time the output schema is evaluated: visibility, options, fetched data,
-  checks and the success condition are all functions in your code.
+- once at case start, to read the manifest;
+- on each model tool call (`/tools/{name}`);
+- whenever the output schema needs evaluation (`visible`, `review`, dynamic
+  `options`, `s.source`, `s.fetched`, `checks`, and `success`).
 
-Your code runs as a stateless Worker in its own isolate, one per deployment.
-Keep state in your own systems, or in the case's answers.
+Because the Dynamic Worker is stateless, never rely on module-level memory
+persisting across tool calls or turns. Keep durable state in your own external
+systems or in the case's output schema answers.
 
-Besides your tools, the model always has a set of platform tools:
+### Failure modes and isolation boundaries
 
-| Tool                             | What it does                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------------- |
-| `schema_overview`, `schema_read` | Read the whole output schema: fields, descriptions, conditions, values, status. |
-| `schema_answer`                  | Answer fields.                                                                  |
-| `options_search`, `options_page` | Search and page through a long option list without loading it whole.            |
-| `decide`                         | Pick from a field's full option list with the decision model.                   |
-| `groups_list`, `tag_group`       | See the groups with access to the agent, and tag one in the case thread.        |
-| `memory_propose`                 | Propose a rule to remember across cases, for a person to accept or dismiss.     |
+- **Thrown tools vs. `sideEffects`.** If a tool throws an uncaught error, the
+  runtime retries it up to `toolRetries` times. Marking a tool
+  `sideEffects: true` disables retries completely—so a payment, email, or ERP
+  write is never double-executed on a transient timeout—and tells eval replays
+  to reuse the recorded output instead of calling the external system again.
+- **Timeouts.** `timeoutSeconds` caps the wall clock of a single run starting
+  from the agent's first prompt. Exceeding it marks the case `failed`; an
+  operator can still inspect what happened and rerun it.
+- **Secret and token isolation.** The model sees tool names, descriptions, input
+  schemas, and return values—never your source code or secret values. Granted
+  secrets enter only your Dynamic Worker's `env`, and the SDK strips those
+  secret strings from tool results, thrown errors, and console output as a
+  second line of defense. MCP connection tokens never enter your Worker at all;
+  `ctx.mcp(server)` proxies calls through Preprocess, which attaches the
+  organization's token.
 
-## What the agent can't see
+### Platform tools
 
-The model sees your tools' names, descriptions, input schemas and results. It
-never sees your code or the secrets it uses. Secret values go into your code's
-`env` when the runtime loads it, and the SDK removes them from tool results,
-errors and console output as a second line of defense. MCP connection tokens
-never reach your code at all: calls go through Preprocess, which adds them.
+Beside the tools you write, the runtime automatically exposes a built-in set of
+platform tools to the model:
+
+| Tool                             | What it does                                                                        |
+| -------------------------------- | ----------------------------------------------------------------------------------- |
+| `schema_overview`, `schema_read` | Inspect the output schema tree, field descriptions, conditions, values, and status. |
+| `schema_answer`                  | Write answers to visible schema fields (validated against field types and options). |
+| `options_search`, `options_page` | Search and paginate a `s.source()` option list without loading it into context.     |
+| `decide`                         | Pick from a field's full option list using the `groundhog-1` decision model.        |
+| `groups_list`, `tag_group`       | List groups with access to the agent and tag a group in the case thread.            |
+| `memory_propose`                 | Propose a reusable rule across cases for a person to accept or dismiss.             |
 
 ## Archiving
 
-An Owner or Admin can archive an agent. Archiving keeps its deployments, cases
-and history, and refuses new deploys under its name.
+An Owner or Admin can archive an agent when it is retired. Archiving preserves
+its deployments, cases, captures, and audit history, and refuses any new deploys
+under its name.
 
 ## Related
 
-- [Deployments](/concepts/deployments): what a deploy stores and which one
-  serves.
-- [Cases](/concepts/cases): the jobs an agent works.
-- [SDK](/sdk): every option with examples.
+- [Deployments](/concepts/deployments): immutability, previews, guardrails, and
+  rollbacks.
+- [Cases](/concepts/cases): the jobs an agent executes.
+- [SDK](/sdk): complete `agent()` and `tool()` reference with examples.

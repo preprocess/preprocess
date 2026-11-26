@@ -1,57 +1,77 @@
 ---
 title: Output schema
 description:
-  The answer a case produces, declared in code as a tree of fields that the
-  agent fills in and people review.
+  The structured answer a case produces, declared in code as a live tree of
+  fields with automatic dependency tracking, checks, and completion rules.
 ---
 
-The output schema is the shape of the answer a case produces: a tree of fields,
-declared in your agent's code with `schema` from the SDK. The agent fills the
-fields in, people review them in the case room, and the finished answers are
-what your systems receive when the case completes.
+The output schema is the structured answer a case produces: a tree of typed
+fields declared in your agent's code with `schema` from `@preprocess/sdk`. The
+agent populates the tree, operators review and correct it in the case room, and
+downstream systems consume the finished JSON when the case completes.
 
-## Why a schema
+## Why a live schema instead of free text or static JSON
 
-A free-text answer is hard to check, hard to correct and hard to hand to another
-system. A schema gives each part of the answer a place, a type and a rule:
+Free-text answers are easy for a model to emit and hard for everyone else to
+use: operators have to read paragraphs to spot one wrong number, corrections
+cannot be diffed cleanly, and downstream systems end up scraping prose. Even a
+static JSON Schema falls short in real operations because fields depend on each
+other—a European invoice needs a VAT number, line-item GL accounts depend on the
+selected vendor, and high-value totals require human review.
 
-- the review screen is built from it, so people check one field at a time;
-- checks and the success condition decide when the case is done, the same way
-  for the agent and for people;
-- when a person corrects one field, Preprocess knows which other answers
-  depended on it;
-- your systems get typed JSON, and every correction becomes an eval case.
+Preprocess's output schema solves both problems in one declaration:
 
-## Fields
+- **One UI and one API contract.** The Review tab in the case room is generated
+  directly from the schema tree, and `case.completed` delivers the exact same
+  typed shape.
+- **Shared completion rules.** Named checks and the success condition run the
+  same way whether the agent or an operator tries to finish the case.
+- **Automatic dependency tracking.** When an operator corrects one field,
+  Preprocess knows which other answers depended on it and marks only those
+  fields stale.
+- **Corrections become evals.** Because every answer has a stable path, human
+  edits turn directly into expected outputs for regression suites.
 
-A schema is a root `s.group` of fields:
+## Building blocks
 
-| Builder                                     | Holds                                                        |
-| ------------------------------------------- | ------------------------------------------------------------ |
-| `s.text`, `s.number`, `s.boolean`, `s.date` | A single value.                                              |
-| `s.select`, `s.multiselect`                 | One or several options.                                      |
-| `s.fetched`                                 | Data your code fetches from inputs the other answers supply. |
-| `s.group`                                   | Named fields.                                                |
-| `s.list`                                    | Any number of items of one field, often a group.             |
+Every schema starts with a root `s.group` containing nested fields:
 
-Every field takes a `description` the agent reads, and can take:
+| Builder                                     | Holds                                                                |
+| ------------------------------------------- | -------------------------------------------------------------------- |
+| `s.text`, `s.number`, `s.boolean`, `s.date` | A single scalar value.                                               |
+| `s.select`, `s.multiselect`                 | One or multiple options from a list, function, or live source.       |
+| `s.fetched`                                 | External data fetched automatically when its declared inputs change. |
+| `s.group`                                   | A named collection of child fields.                                  |
+| `s.list`                                    | A repeatable list of one item schema (typically an `s.group`).       |
 
-- `visible(a)`: whether the field applies, from the other answers. A hidden
-  field's value is left out of the output.
-- `review`: `"required"`, `"none"`, or a function of the answers. A field
-  inherits its group's review setting; the default is `"none"`.
-- `approval`: a person approves its value before it stands. See
+Every field accepts a `description` (read by the model) and optional behavioral
+hooks:
+
+- `visible(a)`: returns whether the field applies given the current answers.
+  Hidden fields are omitted from the final output and read as `null`.
+- `review`: `"required"`, `"none"`, or a function of `a`. Fields inherit their
+  enclosing group's review setting; the root default is `"none"`.
+- `approval`: requires a person to approve the field's value (or a group/list
+  subtree) before it stands. See
   [Review and approvals](/concepts/review-and-approvals).
-- `invalidates`: paths that go stale when this field changes, for dependencies
-  your functions don't read directly.
+- `invalidates`: explicit paths to mark stale when this field changes, for
+  indirect dependencies your functions do not read through `a`.
 
-Paths are dotted, with list indices: `vendor`, `lines[2].glAccount`, or
-`lines[*].amount` for every item.
+Paths use dot notation with bracketed list indices—`vendor`,
+`lines[2].glAccount`, or `lines[*].amount` across every item in a list.
 
 ## An example
 
 ```ts
-const invoice = s.group(
+import { allReviewed, schema as s } from "@preprocess/sdk";
+
+declare function erp(
+  env: Record<string, string | undefined>,
+  path: string,
+): Promise<never>;
+declare function accountsFor(vendor: unknown): string[];
+
+export const invoice = s.group(
   {
     vendor: s.select({
       description: "Who sent the invoice",
@@ -93,88 +113,110 @@ const invoice = s.group(
 );
 ```
 
-Here the vendor list lives in an ERP and is searched rather than loaded, the
-payment terms are fetched once a vendor is chosen, `vatNumber` only appears for
-euro invoices, each line's account options depend on the vendor, and the total
-needs review only above 10,000.
+In this single tree, vendors are searched live from an ERP rather than loaded
+into context, payment terms refresh whenever `vendor` changes, `vatNumber`
+appears only for euro invoices, line-item GL accounts filter by vendor, and
+`total` triggers human review only above 10,000.
 
-## Functions run in your code
+## How schema evaluation and dependency tracking work
 
-Every function in the schema (`visible`, `review`, options, `fetch`, checks and
-the success condition) runs in your agent's Worker, not in Preprocess. So they
-can call your systems with the agent's secrets, through `env`, within the
-agent's `network` rules. Preprocess calls them whenever the answers change and
-at the end of every run.
+Every function in the schema (`visible`, `review`, dynamic `options`,
+`s.source`, `s.fetched`, `checks`, and `success`) runs inside **your agent's
+Dynamic Worker**, not in Preprocess's core code. That means schema hooks can
+call external APIs using the agent's granted `env` secrets within its `network`
+rules. Preprocess invokes evaluation whenever an answer changes and at the end
+of every run.
 
-Each function gets `a`, an accessor over the current answers: `a.get(path)`,
-`a.all(pattern)`, `a.sum(pattern)`, `a.fetched(path)` and, inside a list item,
-`a.sibling(name)`. A hidden or empty answer reads as `null`. The accessor
-records every path a function reads, and that record is how Preprocess knows
-what depends on what: there are no dependency rules to write.
+Each function receives `a`, a tracked accessor over the current answers:
 
-## Options
+- `a.get(path)` reads one field (returning `null` if empty or hidden);
+- `a.all(pattern)` and `a.sum(pattern)` read or sum across list wildcards such
+  as `lines[*].amount`;
+- `a.fetched(path)` reads the resolved payload of an `s.fetched` field;
+- `a.sibling(name)` reads a sibling field inside the same list item.
 
-A select's options can be a fixed array, a function of the answers, or
-`s.source({ search, get, page })` for lists too long to load. A source is
-searched and paged through the agent's `options_search` and `options_page`
-tools, and reviewers can search it in the app. The whole list never enters the
-model's context.
+Whenever a function calls `a`, the accessor records every path it read. You do
+not write a separate dependency graph: Preprocess derives it directly from
+execution.
 
-For a long list the agent can also call `decide`, which picks from the field's
-full option list with the decision model, on the platform side: one option, or
-the best few with probabilities.
+## Choosing how options are loaded
 
-## Answers and their status
+Select and multiselect fields support three option strategies, each with a clear
+trade-off:
 
-Every answer has a status:
+1. **Static array (`["EUR", "USD", "GBP"]`).** Best for small, fixed enums that
+   fit easily in the manifest and never change per case.
+2. **Dynamic function (`(a) => accountsFor(a.get("vendor"))`).** Best when a
+   manageable option set depends on another answer in the case.
+3. **Live source (`s.source({ search, get, page })`).** Best for large catalogs
+   (thousands of vendors, SKUs, or cost centers) that would bloat the model's
+   context window. The agent searches and pages it through `options_search` and
+   `options_page`, and operators search it interactively in the Review tab.
 
-| Status      | Meaning                                                 |
-| ----------- | ------------------------------------------------------- |
-| empty       | Nobody has answered it.                                 |
-| `agent`     | The agent answered it.                                  |
-| `confirmed` | A person entered or confirmed it.                       |
-| `stale`     | Something it depended on changed after it was answered. |
+For large option lists, the agent can also call the platform `decide` tool,
+which runs Baseten's `groundhog-1` decision model over the field's full option
+set on the platform side—returning either the best choice or top candidates with
+probabilities without burning agent context tokens.
 
-When an answer changes, every field whose functions read it, and every path it
-`invalidates`, is evaluated again. Those that hold a value turn stale, with the
-change that caused it. Fetched fields fetch again instead, when their inputs
-change. Staleness doesn't cascade further on its own, because a stale value
-hasn't changed.
+## Answer statuses, staleness, and suggestions
 
-The agent never overwrites a person's answer. If it arrives at a different
-value, that value is kept beside the person's as a suggestion, and a person
-accepts it or leaves it.
+Every field tracks its own status:
+
+| Status      | Meaning                                                      |
+| ----------- | ------------------------------------------------------------ |
+| empty       | Neither the agent nor a person has entered a value yet.      |
+| `agent`     | Populated by the agent; not yet confirmed by a person.       |
+| `confirmed` | Entered or explicitly confirmed by an operator.              |
+| `stale`     | An upstream value this field depended on changed afterwards. |
+
+When an answer changes (for example, an operator switches `vendor` from
+Northwind to Globex), Preprocess re-evaluates every field whose hooks read
+`vendor` plus any path in `invalidates`:
+
+- Populated dependent fields turn **`stale`** with the reason attached so
+  operators—or the agent on a rerun—know exactly what needs re-checking.
+- `s.fetched` fields re-run their `fetch` automatically whenever their `inputs`
+  value changes.
+- **Staleness does not cascade further on its own**, because turning a field
+  stale does not change its stored value. Downstream fields only turn stale once
+  that field's value actually changes.
+
+**Human answers are never overwritten.** If the agent runs again and computes a
+different value for a `confirmed` field, Preprocess stores the agent's value
+beside the person's as a **suggestion**. The operator can accept it with one
+click or leave their own value in place.
 
 ## Checks and the success condition
 
-Both go on the root group.
+Both live in the options object of the root `s.group`:
 
-- **Checks** are named functions over the answers, whoever entered them. Each
-  returns `true`, or a message, optionally naming the field it's about. A
-  failing check shows beside that field in the Review tab and keeps the case
-  waiting.
-- **The success condition** says when the case is done. `allReviewed`, from the
-  SDK, means every visible field that needs review has a person's answer. Write
-  your own to require more, or less.
+- **Checks** are named functions over `a` that enforce invariants regardless of
+  who entered the answers. Each returns `true`, or an error message (optionally
+  pointing to a specific `field`). Any failing check renders beside its field in
+  the Review tab and keeps the case in `waiting`.
+- **Success condition** decides when a case with passing checks is allowed to
+  complete. The SDK exports `allReviewed`, which returns `true` once every
+  visible field with `review: "required"` is `confirmed`. You can write a custom
+  function when you need stricter or looser rules.
 
-Without a success condition, a case with passing checks completes when the
-agent's run ends, even if fields marked for review haven't been reviewed. Use
-`success: allReviewed` when review should hold the case.
+<Callout>
+  A common mistake is marking fields `review: "required"` without setting
+  `success: allReviewed` on the root group. Without a success condition, a case
+  whose checks pass completes immediately at the end of the agent's run even if
+  required review fields are still unconfirmed.
+</Callout>
 
-## What the agent sees
+## What the agent sees and what goes out
 
-There's no progressive reveal. The agent's context always holds an overview of
-the whole tree and its state, and the agent can read any field in full with
-`schema_read`: its description, what its conditions read, its value, status, why
-it's hidden or stale, and its fetched data. It answers visible fields in any
-order with `schema_answer`, and a value that doesn't fit the field's type or
-options is refused.
+There is no progressive reveal: the agent always receives an overview of the
+entire schema tree and its current state, and can call `schema_read` on any
+field to inspect its description, dependencies, value, status, staleness reason,
+or fetched data. It writes visible fields in any order via `schema_answer`;
+values that violate the field's type or allowed options are refused immediately.
 
-## The output
-
-What your systems receive (the `answers` on a case and in `case.completed`) is a
-nested object of the visible answers, shaped like the schema. A fetched field's
-value is its fetched data, after `transform` if it has one:
+When the case completes, `answers` on the case API and inside `case.completed`
+webhooks is a plain nested JSON object containing only visible fields (with
+`s.fetched` fields resolved through their optional `transform`):
 
 ```json
 {
@@ -195,7 +237,8 @@ value is its fetched data, after `transform` if it has one:
 
 ## Related
 
-- [Review and approvals](/concepts/review-and-approvals): how people work the
-  answers.
-- [Cases](/concepts/cases): when a case waits and when it completes.
-- [SDK](/sdk#output-schema): the builders and the accessor.
+- [Review and approvals](/concepts/review-and-approvals): how operators confirm,
+  edit, and approve schema fields.
+- [Cases](/concepts/cases): how checks and success conditions govern `waiting`
+  and `completed`.
+- [SDK](/sdk#output-schema): builder signatures and accessor reference.

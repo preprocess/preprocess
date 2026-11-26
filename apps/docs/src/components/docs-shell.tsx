@@ -50,7 +50,6 @@ import {
   Home,
   Menu,
   Moon,
-  Plug,
   Search,
   Sun,
   Terminal,
@@ -101,7 +100,6 @@ const guideIcons: Record<string, typeof Home> = {
   "/": Home,
   "/sdk": Code,
   "/cli": Terminal,
-  "/mcp": Plug,
 };
 
 // HTTP methods take the status hues, the docs' only use of them.
@@ -224,7 +222,7 @@ function GuideRows({
         {section.pages.map((page) => (
           <SidebarMenuItem key={page.url}>
             <SidebarMenuButton
-              icon={guideIcons[page.url] ?? FileText}
+              icon={guideIcons[page.url]}
               isActive={page.url === pathname}
               render={<PageLink url={page.url} />}
             >
