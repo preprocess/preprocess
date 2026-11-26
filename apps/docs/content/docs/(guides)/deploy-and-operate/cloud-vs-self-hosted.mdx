@@ -58,7 +58,7 @@ product works.
 | **Cloudflare account**       | Operated by Preprocess, Inc.                                                  | Your own Cloudflare account (Workers Paid)                                     |
 | **Database**                 | Managed Postgres per region, branched for previews                            | Any Postgres database Hyperdrive can reach (`DATABASE_URL`)                    |
 | **Data and secret locality** | Stored in Preprocess's US region (`wnam` R2, `aws:us-west-2` Postgres)        | Stored in your Postgres and R2 buckets (`R2_LOCATION_HINT`)                    |
-| **Models, `decide` and OCR** | Hosted routing included (provider list price + 5% markup)                     | Your own provider keys, custom `MODEL_ENDPOINTS` or Workers AI in your account |
+| **Models, `decide` and OCR** | Hosted routing included                                                       | Your own provider keys, custom `MODEL_ENDPOINTS` or Workers AI in your account |
 | **Case sandboxes**           | Metered per second awake by size                                              | Paid directly to Cloudflare on your account                                    |
 | **Billing and licensing**    | Free, Team or Enterprise plans with active seats, prepaid credits and storage | Free plan by default, or flat annual seat license via `PREPROCESS_LICENSE_KEY` |
 | **Usage reporting**          | Metered per organization                                                      | None; licensed self-hosted installs report no usage                            |
@@ -93,5 +93,5 @@ sets a seat limit for developers and operators.
 
 Continue to [Self-hosting on Cloudflare](/deploy-and-operate/self-hosting) to
 deploy into your own account, or read
-[Billing, credits and spending limits](/deploy-and-operate/billing-and-limits)
-for Preprocess Cloud pricing and self-hosted licensing.
+[Security and data handling](/deploy-and-operate/security-and-data-handling) for
+isolation, encryption and audit guarantees.
