@@ -360,6 +360,30 @@ const keepViewing = async (
     .onConflictDoNothing();
 };
 
+// An agent created after the switch is visible to Viewers too, as it would
+// have been to the Developers they left.
+export const grantViewersNewAgent = async (
+  tx: Tx,
+  org: string,
+  agentId: string,
+) => {
+  const [viewers] = await tx
+    .select({ id: groups.id })
+    .from(groups)
+    .where(and(eq(groups.organizationId, org), eq(groups.slug, VIEWERS.slug)));
+  if (!viewers) return;
+  await tx
+    .insert(agentGrants)
+    .values({
+      organizationId: org,
+      agentId,
+      groupId: viewers.id,
+      access: "viewer",
+      grantedBy: "billing",
+    })
+    .onConflictDoNothing();
+};
+
 // Once Free has started: leaves seats past Free's limit, keeping each
 // person's groups to restore, and tells the Owners what changed.
 export const switchToFree = async (
