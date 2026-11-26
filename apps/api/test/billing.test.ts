@@ -11,7 +11,11 @@ import {
   groupMembers,
   groups,
 } from "@preprocess/db/schema/access";
-import { seatActivity, usageRecords } from "@preprocess/db/schema/billing";
+import {
+  seatActivity,
+  usageRecords,
+  usageReports,
+} from "@preprocess/db/schema/billing";
 import { deployments } from "@preprocess/db/schema/deployments";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -155,18 +159,28 @@ afterEach(() => {
 });
 
 describe("reporting usage", () => {
-  it("sends each unreported record once, under its id, and never log bytes", async () => {
+  it("sends each unreported record once, in whole units, and never log bytes", async () => {
     stubAutumn();
     customer = { subscriptions: [], flags: {}, balances: {} };
-    const ids = [newId("usageRecord"), newId("usageRecord")];
     await withOrg(environment, orgId(org), (tx) =>
       tx.insert(usageRecords).values([
-        { id: ids[0]!, organizationId: org, feature: "cases", quantity: 1 },
         {
-          id: ids[1]!,
+          id: newId("usageRecord"),
+          organizationId: org,
+          feature: "cases",
+          quantity: 1,
+        },
+        {
+          id: newId("usageRecord"),
+          organizationId: org,
+          feature: "cases",
+          quantity: 1,
+        },
+        {
+          id: newId("usageRecord"),
           organizationId: org,
           feature: "model_usage",
-          quantity: 4_200,
+          quantity: 24_200,
         },
         {
           id: newId("usageRecord"),
@@ -177,20 +191,28 @@ describe("reporting usage", () => {
       ]),
     );
     await reportUsage(environment);
-    const tracked = calls.filter((c) => c.route === "track");
-    expect(
-      tracked
-        .filter((c) => c.body.customer_id === org)
-        .map((c) => [c.key, c.body.feature_id, c.body.value]),
-    ).toEqual([
-      [ids[0], "cases", 1],
-      [ids[1], "model_usage", 4_200],
+    // Other test files report usage too, so read what was reported for this
+    // organization rather than which run sent it.
+    const reported = () =>
+      withOrg(environment, orgId(org), (tx) =>
+        tx
+          .select({
+            feature: usageReports.feature,
+            quantity: usageReports.quantity,
+            remainder: usageReports.remainder,
+            reportedAt: usageReports.reportedAt,
+          })
+          .from(usageReports)
+          .orderBy(usageReports.feature),
+      );
+    const first = await reported();
+    expect(first.map((r) => [r.feature, r.quantity, r.remainder])).toEqual([
+      ["cases", 2, 0],
+      ["model_usage_credits", 2, 4_200],
     ]);
-    calls = [];
+    expect(first.every((r) => r.reportedAt)).toBe(true);
     await reportUsage(environment);
-    expect(
-      calls.filter((c) => c.route === "track" && c.body.customer_id === org),
-    ).toEqual([]);
+    expect(await reported()).toEqual(first);
   });
 
   it("sends nothing where billing is off", async () => {
@@ -317,7 +339,7 @@ describe("Free's caps", () => {
     expect(await gate.spendGate(capped.org)).toBe("credit_exhausted");
     expect(
       calls.filter((c) => c.route === "check").map((c) => c.body.feature_id),
-    ).toEqual(["cases", "model_usage"]);
+    ).toEqual(["cases", "model_usage_credits"]);
   });
 
   it("fail open when Autumn is down", async () => {

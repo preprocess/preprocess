@@ -53,7 +53,7 @@ export class Platform extends WorkerEntrypoint<Env> {
     // Free's one-time model credit (spec 16a): model usage stops when it is
     // used up, until the organization upgrades. Without a started plan there
     // is no credit at all.
-    return (await entitlement(this.env, org, "model_usage")) === "ok"
+    return (await entitlement(this.env, org, "model_usage_credits")) === "ok"
       ? "ok"
       : "credit_exhausted";
   }
