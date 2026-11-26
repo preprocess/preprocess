@@ -91,6 +91,8 @@ const stubAutumn = () =>
       customer.billing_controls = body.billing_controls as never;
       return json({ id: body.customer_id, ...customer });
     }
+    if (route === "billing.multi_attach")
+      return json({ payment_url: paymentUrl });
     if (route === "billing.attach" && body.plan_id === "credits")
       return json({ payment_url: paymentUrl });
     if (route === "billing.attach") {
@@ -547,6 +549,58 @@ describe("checkout", () => {
     const again = await shop.owner.call(path, { body: { plan: "free" } });
     expect(again.status).toBe(409);
   });
+
+  it("starts Team with its first credits, $10 unless the Owner picks more, so it never starts at zero", async () => {
+    const env = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      APP_URL: "https://app.example.test",
+    });
+    const shop = await organizationWithAgent("Teamshop", env);
+    stubAutumn();
+    customer = { subscriptions: [], flags: {}, balances: {} };
+    paymentUrl = "https://checkout.stripe.com/c/pay/cs_test_team";
+    const path = `/v1/orgs/${shop.org}/billing/checkout`;
+    const started = await shop.owner.call<{ url: string }>(path, {
+      body: { plan: "team" },
+    });
+    expect(started.body).toEqual({ url: paymentUrl });
+    expect(calls.find((c) => c.route === "billing.multi_attach")?.body).toEqual(
+      {
+        customer_id: shop.org,
+        plans: [
+          { plan_id: "team" },
+          {
+            plan_id: "credits",
+            feature_quantities: [
+              { feature_id: "model_credit", quantity: 1_000 },
+            ],
+          },
+        ],
+        success_url: "https://app.example.test/",
+      },
+    );
+    calls = [];
+    paymentUrl = null;
+    const charged = await shop.owner.call<{ url: string }>(path, {
+      body: {
+        plan: "team",
+        credits: 5_000,
+        returnTo: "https://app.example.test/billing",
+      },
+    });
+    expect(charged.body).toEqual({ url: "https://app.example.test/billing" });
+    expect(
+      calls.find((c) => c.route === "billing.multi_attach")?.body.plans,
+    ).toContainEqual({
+      plan_id: "credits",
+      feature_quantities: [{ feature_id: "model_credit", quantity: 5_000 }],
+    });
+    expect(
+      (await shop.owner.call(path, { body: { plan: "team", credits: 999 } }))
+        .status,
+    ).toBe(400);
+    expect(calls.some((c) => c.route === "billing.setup_payment")).toBe(false);
+  });
 });
 
 describe("Free's seats", () => {
@@ -619,8 +673,7 @@ describe("credits", () => {
     expect(refused.status).toBe(402);
     expect(refused.body.error).toEqual({
       code: "credit_exhausted",
-      message:
-        "This organization has run out of credits. Its Owner can buy more in Billing.",
+      message: "Credit balance is empty. An Owner can add credits in Billing.",
     });
     const gate = new Platform({} as ExecutionContext, environment);
     expect(await gate.spendGate(empty.org)).toBe("credit_exhausted");

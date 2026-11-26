@@ -135,7 +135,22 @@ const client = (key: string) => {
     // (billing.ts).
     attach: (organizationId: string, p: Purchase) =>
       call<AutumnAttached>("billing.attach", purchase(organizationId, p)),
-    // What buy() would charge, without charging.
+    // Several plans bought together on one Stripe page or one charge, such as
+    // Team with its first credits.
+    attachTogether: (
+      organizationId: string,
+      plans: Omit<Purchase, "successUrl">[],
+      successUrl: string,
+    ) =>
+      call<AutumnAttached>("billing.multi_attach", {
+        customer_id: organizationId,
+        plans: plans.map((p) => {
+          const { customer_id: _, ...plan } = purchase(organizationId, p);
+          return plan;
+        }),
+        success_url: successUrl,
+      }),
+    // What attach() would charge, without charging.
     preview: (organizationId: string, p: Purchase) =>
       call<AutumnPreview>(
         "billing.preview_attach",
