@@ -8,7 +8,6 @@ import type { ReactNode } from "react";
 
 import { OnThisPage } from "./docs-toc";
 import { crumbsFor, PageLink, rowLabel } from "./page-tree";
-import { Wordmark } from "./wordmark";
 
 // Below lg the breadcrumb is one eyebrow line over the title: the page's
 // ancestors, or the section itself on its landing page.
@@ -98,8 +97,8 @@ function PageFooter({ home }: { home: boolean }) {
 
 // One docs page as a document: a large title and a lead paragraph, the body
 // in a reading column with the table of contents to its right, and the pages
-// either side of it at the foot. The home page is one wider column under the
-// mark; API pages are wide enough for their examples column.
+// either side of it at the foot. The home page draws its own opening in one
+// wider column; API pages are wide enough for their examples column.
 export function DocsArticle({
   title,
   description,
@@ -130,41 +129,41 @@ export function DocsArticle({
           className={cn(
             "w-full min-w-0",
             layout === "home"
-              ? "max-w-[760px]"
+              ? "max-w-[880px]"
               : layout === "api"
                 ? "max-w-[1048px]"
                 : "max-w-[680px]",
           )}
         >
           {layout === "home" ? (
-            <Wordmark className="mb-2 hidden size-9 lg:block" markOnly />
+            children
           ) : (
-            <Eyebrow tree={tree} url={url} />
+            <>
+              <Eyebrow tree={tree} url={url} />
+              <h1
+                className={cn(
+                  typeClass("display"),
+                  "tracking-[-0.03em] text-foreground",
+                )}
+                data-page-title
+                style={{ fontVariationSettings: fontWeights.medium }}
+              >
+                {title}
+              </h1>
+              {description ? (
+                <p
+                  className={cn(
+                    typeClass("title"),
+                    "mt-3 text-muted-foreground",
+                  )}
+                >
+                  {description}
+                </p>
+              ) : null}
+              <div className="typeset docs-prose mt-8">{children}</div>
+              <Neighbours tree={tree} url={url} />
+            </>
           )}
-          <h1
-            className={cn(
-              typeClass("display"),
-              "tracking-[-0.03em] text-foreground",
-            )}
-            data-page-title
-            style={{ fontVariationSettings: fontWeights.medium }}
-          >
-            {title}
-          </h1>
-          {description ? (
-            <p className={cn(typeClass("title"), "mt-3 text-muted-foreground")}>
-              {description}
-            </p>
-          ) : null}
-          <div
-            className={cn(
-              "typeset docs-prose",
-              layout === "home" ? "mt-7" : "mt-8",
-            )}
-          >
-            {children}
-          </div>
-          {layout === "home" ? null : <Neighbours tree={tree} url={url} />}
           <PageFooter home={layout === "home"} />
         </article>
         {rail ? (
