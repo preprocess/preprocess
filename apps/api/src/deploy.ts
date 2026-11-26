@@ -48,7 +48,7 @@ import { z } from "zod";
 import type { AuditInput } from "@preprocess/db/audit";
 import { assertModelAllowed } from "./allowed-models.ts";
 import { decrypt, orgKeyVersion } from "./crypto.ts";
-import { ON_PUSH_UNAVAILABLE } from "./evals.ts";
+import { startPushRuns } from "./evals.ts";
 import type { Env } from "./env.ts";
 import { markSeat } from "./metering.ts";
 import { effectiveNetwork, permits } from "./network.ts";
@@ -445,6 +445,8 @@ export const syncDeployment = async (
     .update(deployments)
     .set({ status, waitingFor, network })
     .where(eq(deployments.id, deploymentId));
+  if (status === "ready" && deployment.status !== "ready")
+    await startPushRuns(tx, org, deployment);
   const existingSecrets = waiting.length
     ? await tx
         .select({ name: secrets.name })
@@ -707,11 +709,6 @@ export const deploy = async (
       message: `the agent's manifest is invalid: ${z.prettifyError(read.error)}`,
     });
   const manifest = read.data;
-  if (manifest.evals?.onPush)
-    manifest.warnings = [
-      ...(manifest.warnings ?? []),
-      `evals.onPush has no effect: ${ON_PUSH_UNAVAILABLE}`,
-    ];
   for (const s of manifest.schedules ?? []) {
     try {
       nextFire(s, new Date());
@@ -750,7 +747,8 @@ export const deploy = async (
       id,
       organizationId: org,
       agentId: agent.id,
-      status: "ready",
+      // Ready once the first sync finds nothing it waits for.
+      status: "waiting",
       bundleSha256,
       sdkVersion: manifest.sdk.version,
       ...(setup && {

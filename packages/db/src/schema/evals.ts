@@ -132,6 +132,10 @@ export const evalRuns = pgTable(
     unique("eval_runs_org_id_unique").on(t.organizationId, t.id),
     index().on(t.organizationId, t.suiteId, t.createdAt),
     index().on(t.organizationId, t.createdAt),
+    // A suite runs on push at most once per deployment.
+    uniqueIndex("eval_runs_one_push")
+      .on(t.suiteId, t.deploymentId)
+      .where(sql`trigger = 'push'`),
     foreignKey({
       columns: [t.organizationId, t.suiteId],
       foreignColumns: [evalSuites.organizationId, evalSuites.id],
