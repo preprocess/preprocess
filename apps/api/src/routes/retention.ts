@@ -173,7 +173,7 @@ export const retentionRoutes = new OpenAPIHono<{
       tags: ["Cases"],
       summary: "Delete a closed case (Owner)",
       description:
-        "Deletes the case, its files, run capture, review events, approvals and mentions, and removes it from eval suites. Audit events stay; exports already taken and trained checkpoints are not changed. Audited as case.deleted.",
+        "Deletes the case, its files, run capture, review events, approvals and mentions, and the memory rules proposed on it except accepted ones, and removes it from eval suites. Audit events stay; exports already taken and trained checkpoints are not changed. Audited as case.deleted.",
       request: { params: CaseParam },
       responses: {
         204: { description: "Deleted" },
