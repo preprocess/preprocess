@@ -1,3 +1,8 @@
+import { Badge } from "@preprocess/ui/components/badge";
+import { Button } from "@preprocess/ui/components/button";
+
+import type { ReactNode } from "react";
+
 import { SettingsEmpty, SettingsSection } from "../settings/kit";
 
 // Sections of the agent page that have no real page yet: a title and what
@@ -7,26 +12,39 @@ function Placeholder({
   description,
   emptyTitle,
   emptyDescription,
+  actions,
 }: Readonly<{
   title: string;
   description: string;
   emptyTitle: string;
   emptyDescription: string;
+  actions?: ReactNode;
 }>) {
   return (
-    <SettingsSection description={description} title={title}>
+    <SettingsSection actions={actions} description={description} title={title}>
       <SettingsEmpty description={emptyDescription} title={emptyTitle} />
     </SettingsSection>
   );
 }
 
-/** Placeholder: the agent's datasets, training runs and fine-tuned models. */
+/** Placeholder: the agent's datasets, training runs and fine-tuned models.
+ *  Training runs and Retrain on corrections are Coming soon (spec 12a). */
 export function AgentTraining() {
   return (
     <Placeholder
+      actions={
+        <>
+          <Badge color="gray" size="sm">
+            Coming soon
+          </Badge>
+          <Button disabled variant="secondary">
+            Retrain on corrections
+          </Button>
+        </>
+      }
       description="Datasets built from this agent's reviewed cases, training runs, and the fine-tuned models they produce."
-      emptyDescription="Training for this agent will show up here."
-      emptyTitle="No training yet"
+      emptyDescription="Captured cases and review events are already being collected for training, so they will be ready when training runs ship."
+      emptyTitle="Training is coming soon"
       title="Training"
     />
   );

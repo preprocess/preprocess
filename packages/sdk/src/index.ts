@@ -117,6 +117,9 @@ export type AgentDefinition<S extends string> = {
   groups?: readonly string[];
   schedules?: readonly ScheduleDefinition[];
   ocr?: boolean;
+  // Give the agent the search_cases tool over its own completed cases in the
+  // same environment. Off unless set.
+  searchCases?: boolean;
   // Hosts the code may reach, in the outbound Worker's pattern syntax.
   network?: readonly string[];
   timeoutSeconds?: number;
@@ -292,6 +295,7 @@ const SETTINGS = [
   "model",
   "reasoning",
   "ocr",
+  "searchCases",
   "network",
   "timeoutSeconds",
   "toolRetries",
@@ -397,6 +401,9 @@ export const agent = <const S extends string = never>(
       })),
     }),
     ...(definition.ocr !== undefined && { ocr: definition.ocr }),
+    ...(definition.searchCases !== undefined && {
+      searchCases: definition.searchCases,
+    }),
     ...(definition.network && { network: [...definition.network] }),
     ...(definition.timeoutSeconds !== undefined && {
       timeoutSeconds: definition.timeoutSeconds,

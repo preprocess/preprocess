@@ -1,4 +1,5 @@
 import type { LogRecord } from "@preprocess/logs";
+import type { SandboxOwner } from "@preprocess/sandbox";
 import type { Pipeline } from "cloudflare:pipelines";
 
 import type { BuildQueue } from "./builds.ts";
@@ -132,6 +133,8 @@ export type BuildRequest = {
   directory: string;
   entry: string;
   timeoutSeconds: number;
+  // Whose build it is, for sandbox metering (sandbox.ts).
+  owner: SandboxOwner;
 };
 
 export type BuildResult =
@@ -162,6 +165,9 @@ export type Env = {
   BILLING_REQUIRED_FROM?: string;
   // Preprocess's own organizations, comma-separated ids: the internal plan.
   BILLING_INTERNAL_ORGS?: string;
+  // Organizations billed like customers now, whatever BILLING_REQUIRED_FROM
+  // says, comma-separated ids: a test organization before go-live.
+  BILLING_ENFORCED_ORGS?: string;
   // Self-hosted only: the signed license key (license.ts). Without a valid
   // one the install runs the free plan.
   PREPROCESS_LICENSE_KEY?: string;
@@ -203,7 +209,9 @@ export type Env = {
   FILES: R2Bucket;
   RUNTIME: Runtime;
   // apps/pdf-render: PDF pages to PNGs in a sandbox container.
-  PDF_RENDER?: { renderPdf(pdf: Uint8Array): Promise<Uint8Array[]> };
+  PDF_RENDER?: {
+    renderPdf(pdf: Uint8Array, owner: SandboxOwner): Promise<Uint8Array[]>;
+  };
   // 32 random bytes, base64: Secrets Store on our cloud, a local variable in
   // development and tests. Only this Worker binds it (design doc 01).
   SECRETS_MASTER_KEY: string | SecretsStoreSecret;

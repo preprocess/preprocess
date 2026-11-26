@@ -24,6 +24,7 @@ import {
   caseAssignees,
   caseApprovals,
   caseMentions,
+  caseSearch,
   cases,
   files,
   idempotencyKeys,
@@ -47,7 +48,12 @@ import {
 } from "../src/schema/settings.ts";
 import { logSummaries } from "../src/schema/logs.ts";
 import { agentMemories } from "../src/schema/memories.ts";
-import { seatActivity, usageRecords } from "../src/schema/billing.ts";
+import {
+  sandboxIntervals,
+  seatActivity,
+  usageRecords,
+  usageReports,
+} from "../src/schema/billing.ts";
 import {
   evalResults,
   evalRuns,
@@ -291,6 +297,17 @@ export const seedOrganization = async (name: string) =>
       before: null,
       after: "acme",
     });
+    await tx.insert(caseSearch).values({
+      organizationId: org,
+      caseId,
+      agentId,
+      environment: "production",
+      input: "Invoice from Acme",
+      inputHash: "00",
+      answers: { vendor: "acme" },
+      changed: ["vendor"],
+      completedAt: now,
+    });
     await tx.insert(caseMentions).values({
       id: newId("mention"),
       organizationId: org,
@@ -450,11 +467,31 @@ export const seedOrganization = async (name: string) =>
       quantity: 1,
       caseId,
     });
+    await tx.insert(usageReports).values({
+      id: newId("usageReport"),
+      organizationId: org,
+      feature: "cases",
+      seq: 1,
+      quantity: 1,
+      remainder: 0,
+    });
     await tx.insert(seatActivity).values({
       organizationId: org,
       userId,
       month: "2026-11-01",
       role: "operator",
+    });
+    await tx.insert(sandboxIntervals).values({
+      id: newId("sandboxInterval"),
+      organizationId: org,
+      sandboxId: `sandbox-${org}`,
+      seq: 1,
+      agent: agentId,
+      caseId,
+      kind: "case",
+      size: "small",
+      startedAt: new Date("2026-11-26T03:00:00Z"),
+      lastSeenAt: new Date("2026-11-26T03:00:30Z"),
     });
     await audit(tx, {
       organizationId: org,
@@ -492,11 +529,14 @@ export const tenantTables = {
   idempotency_keys: "organization_id",
   files: "organization_id",
   review_events: "organization_id",
+  case_search: "organization_id",
   case_mentions: "organization_id",
   case_approvals: "organization_id",
   agent_memories: "organization_id",
   usage_records: "organization_id",
+  usage_reports: "organization_id",
   seat_activity: "organization_id",
+  sandbox_intervals: "organization_id",
   inbox_reads: "organization_id",
   outbox: "organization_id",
   webhook_endpoints: "organization_id",

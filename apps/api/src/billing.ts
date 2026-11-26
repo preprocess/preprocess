@@ -6,8 +6,9 @@
 import { orgId, withOrg, withoutOrg } from "@preprocess/db/client";
 import type { OrgId, SystemTx } from "@preprocess/db/client";
 import { organization } from "@preprocess/db/schema/auth";
-import { usageRecords } from "@preprocess/db/schema/billing";
-import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { newId } from "@preprocess/db/ids";
+import { usageRecords, usageReports } from "@preprocess/db/schema/billing";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
 import { autumn, type Autumn, type AutumnCustomer } from "./autumn.ts";
 import type { Env } from "./env.ts";
@@ -15,52 +16,167 @@ import { monthOf } from "./metering.ts";
 
 const BATCH = 500;
 
-// Sends the ledger's unreported rows, oldest first, each under its own id as
-// the idempotency key, so a retry never counts twice. Log bytes are not sent:
-// they feed the daily storage figure.
+// A credit is $0.01. The ledger records usage in micro-USD.
+export const MICRO_USD_PER_CREDIT = 10_000;
+
+// Storage is billed in GB-months; each day adds that day's share, counted in
+// millionths of one.
+const MICRO_GB_MONTHS_PER_GB_MONTH = 1_000_000;
+
+// The billing service's feature for each ledger feature, and how many ledger
+// units make one billed unit. Log bytes are not sent: they feed the daily
+// storage figure.
+const billedAs = {
+  cases: { featureId: "cases", per: 1 },
+  model_usage: { featureId: "model_usage_credits", per: MICRO_USD_PER_CREDIT },
+  decide: { featureId: "decide_credits", per: MICRO_USD_PER_CREDIT },
+  ocr: { featureId: "ocr_credits", per: MICRO_USD_PER_CREDIT },
+  sandbox: { featureId: "sandbox_credits", per: MICRO_USD_PER_CREDIT },
+} as const;
+
+// Adds the next report of a feature: the remainder the last one carried plus
+// these ledger units, sent as whole billed units with the rest carried on.
+// Nothing is rounded up.
+const addReport = async (
+  tx: SystemTx,
+  report: {
+    id: string;
+    organizationId: string;
+    feature: string;
+    units: number;
+    per: number;
+  },
+) => {
+  const [last] = await tx
+    .select({ seq: usageReports.seq, remainder: usageReports.remainder })
+    .from(usageReports)
+    .where(
+      and(
+        eq(usageReports.organizationId, report.organizationId),
+        eq(usageReports.feature, report.feature),
+      ),
+    )
+    .orderBy(desc(usageReports.seq))
+    .limit(1);
+  const total = (last?.remainder ?? 0) + report.units;
+  const quantity = Math.floor(total / report.per);
+  await tx.insert(usageReports).values({
+    id: report.id,
+    organizationId: report.organizationId,
+    feature: report.feature,
+    seq: (last?.seq ?? 0) + 1,
+    quantity,
+    remainder: total - quantity * report.per,
+  });
+};
+
+// Gathers the ledger's unreported rows into one report per organization and
+// feature, then sends every unsent report.
 export const reportUsage = async (env: Env) => {
   const billing = autumn(env);
   if (!billing) return;
-  const rows = await withoutOrg(env, "billing: unreported usage", (tx) =>
+  const unbundled = and(
+    isNull(usageRecords.reportedAt),
+    isNull(usageRecords.reportId),
+    ne(usageRecords.feature, "log_bytes"),
+  );
+  const groups = await withoutOrg(env, "billing: unreported usage", (tx) =>
+    tx
+      .selectDistinct({
+        organizationId: usageRecords.organizationId,
+        feature: usageRecords.feature,
+      })
+      .from(usageRecords)
+      .where(unbundled)
+      .limit(BATCH),
+  );
+  for (const { organizationId, feature } of groups) {
+    if (feature === "log_bytes") continue;
+    try {
+      await withoutOrg(env, "billing: bundle usage", async (tx) => {
+        const rows = await tx
+          .select({ id: usageRecords.id, quantity: usageRecords.quantity })
+          .from(usageRecords)
+          .where(
+            and(
+              eq(usageRecords.organizationId, organizationId),
+              eq(usageRecords.feature, feature),
+              unbundled,
+            ),
+          )
+          .limit(BATCH * 10)
+          .for("update");
+        if (!rows.length) return;
+        const id = newId("usageReport");
+        await addReport(tx, {
+          id,
+          organizationId,
+          feature: billedAs[feature].featureId,
+          per: billedAs[feature].per,
+          units: rows.reduce((total, row) => total + row.quantity, 0),
+        });
+        await tx
+          .update(usageRecords)
+          .set({ reportId: id })
+          .where(
+            inArray(
+              usageRecords.id,
+              rows.map((row) => row.id),
+            ),
+          );
+      });
+    } catch (error) {
+      console.error("billing: bundle usage", organizationId, feature, error);
+    }
+  }
+  await sendReports(env, billing);
+};
+
+// Sends unsent reports, oldest first, each under its own id as the
+// idempotency key, so a retry never counts twice.
+const sendReports = async (env: Env, billing: Autumn) => {
+  const reports = await withoutOrg(env, "billing: unsent reports", (tx) =>
     tx
       .select()
-      .from(usageRecords)
-      .where(
-        and(
-          isNull(usageRecords.reportedAt),
-          ne(usageRecords.feature, "log_bytes"),
-        ),
-      )
-      .orderBy(asc(usageRecords.at))
+      .from(usageReports)
+      .where(isNull(usageReports.reportedAt))
+      .orderBy(asc(usageReports.at))
       .limit(BATCH),
   );
   const sent: string[] = [];
   const known = new Set<string>();
-  for (const row of rows) {
+  for (const report of reports) {
     try {
-      if (!known.has(row.organizationId)) {
-        await billing.customer(row.organizationId);
-        known.add(row.organizationId);
+      if (report.quantity > 0) {
+        if (!known.has(report.organizationId)) {
+          await billing.customer(report.organizationId);
+          known.add(report.organizationId);
+        }
+        await billing.track({
+          organizationId: report.organizationId,
+          featureId: report.feature,
+          value: report.quantity,
+          at: report.at,
+          idempotencyKey: report.id,
+        });
       }
-      await billing.track({
-        organizationId: row.organizationId,
-        featureId: row.feature,
-        value: row.quantity,
-        at: row.at,
-        idempotencyKey: row.id,
-      });
-      sent.push(row.id);
+      sent.push(report.id);
     } catch (error) {
-      console.error("billing: report usage", row.organizationId, error);
+      console.error("billing: report usage", report.organizationId, error);
     }
   }
   if (sent.length)
-    await withoutOrg(env, "billing: mark usage reported", (tx) =>
-      tx
+    await withoutOrg(env, "billing: mark usage reported", async (tx) => {
+      const now = new Date();
+      await tx
+        .update(usageReports)
+        .set({ reportedAt: now })
+        .where(inArray(usageReports.id, sent));
+      await tx
         .update(usageRecords)
-        .set({ reportedAt: new Date() })
-        .where(inArray(usageRecords.id, sent)),
-    );
+        .set({ reportedAt: now })
+        .where(inArray(usageRecords.reportId, sent));
+    });
 };
 
 // People with a paid seat (spec 16a): members of the Developers group or of a
@@ -120,24 +236,40 @@ const track = async (
   }
 };
 
-// Once a day, after midnight UTC. Storage is billed per GB-month, tracked in
-// thousandths of one: each day adds that day's share. On the first of a
-// month, the month that ended reports its active seats.
+// Once a day, after midnight UTC. Each day adds that day's share of a
+// GB-month of storage. On the first of a month, the month that ended reports
+// its active seats.
 export const reportDaily = async (env: Env, now: Date) => {
   const billing = autumn(env);
   if (!billing) return;
   const yesterday = new Date(now.getTime() - 86_400_000);
   const day = yesterday.toISOString().slice(0, 10);
   const stored = await withoutOrg(env, "billing: storage", storedBytes);
-  for (const { org, bytes } of stored)
-    if (bytes > 0)
-      await track(billing, {
-        organizationId: org,
-        featureId: "storage",
-        value: ((bytes / 1e9) * 1000) / daysIn(yesterday),
-        at: now,
-        idempotencyKey: `storage:${org}:${day}`,
+  for (const { org, bytes } of stored) {
+    if (bytes <= 0) continue;
+    const id = `storage:${org}:${day}`;
+    try {
+      await withoutOrg(env, "billing: storage report", async (tx) => {
+        const [done] = await tx
+          .select({ id: usageReports.id })
+          .from(usageReports)
+          .where(eq(usageReports.id, id));
+        if (done) return;
+        await addReport(tx, {
+          id,
+          organizationId: org,
+          feature: "storage_gb_months",
+          per: MICRO_GB_MONTHS_PER_GB_MONTH,
+          units: Math.floor(
+            (bytes * MICRO_GB_MONTHS_PER_GB_MONTH) / 1e9 / daysIn(yesterday),
+          ),
+        });
       });
+    } catch (error) {
+      console.error("billing: storage report", org, error);
+    }
+  }
+  await sendReports(env, billing);
   if (now.getUTCDate() !== 1) return;
   const month = monthOf(yesterday);
   const seats = await withoutOrg(env, "billing: active seats", async (tx) => {
@@ -202,17 +334,30 @@ const requiredFrom = (env: Env) => {
   return at && !Number.isNaN(at.getTime()) ? at : null;
 };
 
-// The plan an organization without one is given without a card: internal for
-// our own, and Free for every organization created before cards were
-// required. Anyone else starts one at checkout.
-const isInternal = (env: Env, org: OrgId) =>
-  (env.BILLING_INTERNAL_ORGS ?? "")
+const listed = (list: string | undefined, org: OrgId) =>
+  (list ?? "")
     .split(",")
     .map((id) => id.trim())
     .includes(org);
 
+const isInternal = (env: Env, org: OrgId) =>
+  listed(env.BILLING_INTERNAL_ORGS, org);
+
+// Whether billing holds for an organization: for those BILLING_ENFORCED_ORGS
+// names, always; for the rest, once BILLING_REQUIRED_FROM has passed.
+const enforced = (env: Env, org: OrgId, now: Date) => {
+  if (listed(env.BILLING_ENFORCED_ORGS, org)) return true;
+  const from = requiredFrom(env);
+  return from !== null && now >= from;
+};
+
+// The plan an organization without one is given without a card: internal for
+// our own, and Free for every organization created before cards were
+// required. Anyone else, and any organization billed early, starts one at
+// checkout.
 const planWithoutCard = async (env: Env, org: OrgId) => {
   if (isInternal(env, org)) return "internal";
+  if (listed(env.BILLING_ENFORCED_ORGS, org)) return null;
   const from = requiredFrom(env);
   if (!from) return null;
   const created = await withoutOrg(env, "billing: organization age", (tx) =>
@@ -251,19 +396,19 @@ export const cloudPlan = async (env: Env, org: OrgId) => {
   }
 };
 
-// Whether an organization without a plan is refused: once cards are
-// required, and the date has passed.
-export const planRequired = (env: Env, started: boolean, now = new Date()) => {
-  const from = requiredFrom(env);
-  return !started && from !== null && now >= from;
-};
+// Whether an organization without a plan is refused: once billing holds for
+// it.
+export const planRequired = (
+  env: Env,
+  org: OrgId,
+  started: boolean,
+  now = new Date(),
+) => !started && enforced(env, org, now);
 
-// Whether the plan's seat limit holds: like the card, only once billing is
-// enforced, and never for our own organizations.
-export const seatLimitApplies = (env: Env, org: OrgId, now = new Date()) => {
-  const from = requiredFrom(env);
-  return from !== null && now >= from && !isInternal(env, org);
-};
+// Whether the plan's seat limit holds: like the card, only once billing holds
+// for the organization, and never for our own organizations.
+export const seatLimitApplies = (env: Env, org: OrgId, now = new Date()) =>
+  enforced(env, org, now) && !isInternal(env, org);
 
 // Whether the organization may use a feature: once cards are required it
 // needs a started plan (every plan, Free included, starts at checkout with a
@@ -279,7 +424,7 @@ export const entitlement = async (
   const plan = await cloudPlan(env, org);
   if (!plan) return "ok";
   if (!plan.started)
-    return planRequired(env, plan.started) ? "plan_required" : "ok";
+    return planRequired(env, org, plan.started) ? "plan_required" : "ok";
   try {
     const allowed = await remember(
       `check:${org}:${featureId}`,

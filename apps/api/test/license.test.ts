@@ -8,7 +8,11 @@ import { agents } from "@preprocess/db/schema/access";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Env } from "../src/env.ts";
-import { licenseKeys, readLicense } from "../src/license.ts";
+import {
+  licenseKeys,
+  PLACEHOLDER_LICENSE_KEY,
+  readLicense,
+} from "../src/license.ts";
 import { getPlan } from "../src/plan.ts";
 import { countSeats } from "../src/seats.ts";
 import {
@@ -36,6 +40,14 @@ const generate = () =>
 
 let signing: CryptoKeyPair;
 let other: CryptoKeyPair;
+let signingPublic: string;
+
+const publicOf = async (pair: CryptoKeyPair) =>
+  base64url(
+    new Uint8Array(
+      (await crypto.subtle.exportKey("raw", pair.publicKey)) as ArrayBuffer,
+    ),
+  );
 
 type Payload = {
   kid?: string;
@@ -73,12 +85,12 @@ const anyOrg = orgId("org_license_unit");
 beforeAll(async () => {
   signing = await generate();
   other = await generate();
-  const raw = await crypto.subtle.exportKey("raw", signing.publicKey);
-  licenseKeys[TEST_KID] = base64url(new Uint8Array(raw as ArrayBuffer));
+  signingPublic = await publicOf(signing);
+  licenseKeys.push(signingPublic);
 });
 
 afterAll(() => {
-  delete licenseKeys[TEST_KID];
+  licenseKeys.splice(licenseKeys.indexOf(signingPublic), 1);
 });
 
 describe("license key", () => {
@@ -124,10 +136,32 @@ describe("license key", () => {
     expect((await readLicense(tampered)).status).toBe("invalid");
   });
 
-  it("an unknown kid is invalid", async () => {
-    const key = await sign({ kid: "nobody-2026" });
-    expect((await readLicense(key)).status).toBe("invalid");
-    expect((await getPlan(selfHosted(key), anyOrg)).name).toBe("free");
+  it("verifies against any listed key, so a rotation adds the new key", async () => {
+    const next = await generate();
+    const byNext = await sign({ kid: "next-2027" }, next.privateKey);
+    const byCurrent = await sign();
+    expect((await readLicense(byNext)).status).toBe("invalid");
+    const keys = [...licenseKeys, await publicOf(next)];
+    expect((await readLicense(byCurrent, new Date(), keys)).status).toBe(
+      "active",
+    );
+    const state = await readLicense(byNext, new Date(), keys);
+    expect(state.status).toBe("active");
+    expect(state.status === "active" && state.license.kid).toBe("next-2027");
+    // Retiring the old key leaves its licenses invalid.
+    expect(
+      (await readLicense(byCurrent, new Date(), [await publicOf(next)])).status,
+    ).toBe("invalid");
+  });
+
+  it("ships only the placeholder key, which verifies nothing", async () => {
+    expect(licenseKeys.filter((k) => k !== signingPublic)).toEqual([
+      PLACEHOLDER_LICENSE_KEY,
+    ]);
+    expect(
+      (await readLicense(await sign(), new Date(), [PLACEHOLDER_LICENSE_KEY]))
+        .status,
+    ).toBe("invalid");
   });
 
   it("garbage and no key give the free plan", async () => {

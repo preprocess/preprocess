@@ -19,8 +19,8 @@ import {
 
 import { agents, groups } from "./access.ts";
 import { organization, user } from "./auth.ts";
-import { bytea } from "./columns.ts";
-import { deployments } from "./deployments.ts";
+import { bytea, tsvector } from "./columns.ts";
+import { deploymentEnvironment, deployments } from "./deployments.ts";
 
 export const caseStatus = pgEnum("case_status", [
   "queued",
@@ -194,6 +194,49 @@ export const reviewEvents = pgTable(
   },
   (t) => [
     index().on(t.organizationId, t.caseId, t.at),
+    foreignKey({
+      columns: [t.organizationId, t.caseId],
+      foreignColumns: [cases.organizationId, cases.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+// What an agent's search_cases tool finds (spec 10): one row per completed
+// case, written when it completes and updated on every correction a person
+// makes afterwards. Deleting the case, by hand or by retention, deletes it.
+export const caseSearch = pgTable(
+  "case_search",
+  {
+    organizationId: text().notNull(),
+    caseId: text().primaryKey(),
+    agentId: text().notNull(),
+    environment: deploymentEnvironment().notNull(),
+    title: text(),
+    // The case's input text, capped, and its files' names.
+    input: text().notNull(),
+    // SHA-256 of the input text and the files' hashes: an eval excludes cases
+    // with the same input as the one it replays.
+    inputHash: text().notNull(),
+    // The agent's final message, and the answers with every correction.
+    answer: text(),
+    answers: jsonb().$type<Record<string, unknown>>(),
+    // Answer paths a person changed.
+    changed: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    completedAt: timestamp({ withTimezone: true }).notNull(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    document: tsvector()
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('simple', coalesce(title, '')), 'A') || setweight(jsonb_to_tsvector('simple', coalesce(answers, '{}'::jsonb), '["string", "numeric"]'), 'A') || setweight(to_tsvector('simple', coalesce(answer, '')), 'B') || setweight(to_tsvector('simple', input), 'C')`,
+      ),
+  },
+  (t) => [
+    index().on(t.organizationId, t.agentId, t.environment, t.completedAt),
+    index().on(t.organizationId, t.agentId, t.inputHash),
+    index("case_search_document").using("gin", t.document),
     foreignKey({
       columns: [t.organizationId, t.caseId],
       foreignColumns: [cases.organizationId, cases.id],

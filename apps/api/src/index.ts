@@ -10,6 +10,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { reportDaily, reportUsage } from "./billing.ts";
+import { closeSilentSandboxes } from "./sandbox.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
@@ -45,6 +46,7 @@ import { logRoutes } from "./routes/logs.ts";
 import { otelRoutes } from "./routes/otel.ts";
 import { evalRoutes } from "./routes/evals.ts";
 import { memoryRoutes } from "./routes/memories.ts";
+import { trainingRoutes } from "./routes/training.ts";
 import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
 export { BuildQueue } from "./builds.ts";
@@ -137,6 +139,7 @@ orgApi.route("/", logRoutes);
 orgApi.route("/", otelRoutes);
 orgApi.route("/", evalRoutes);
 orgApi.route("/", memoryRoutes);
+orgApi.route("/", trainingRoutes);
 
 // The MCP server (src/mcp-server.ts) takes an organization API key, and each
 // tool call is a request to this API with the same key, so the API's own
@@ -191,10 +194,12 @@ export default {
   fetch: app.fetch,
   scheduled(controller, env, ctx) {
     // Every minute: re-send outbox rows a failed queue send left behind.
-    // Every minute, too: report metered usage to billing (our cloud only).
+    // Every minute, too: report metered usage to billing and close the awake
+    // intervals of sandboxes gone silent (our cloud only).
     if (controller.cron === "* * * * *") {
       ctx.waitUntil(sweepOutbox(env));
       ctx.waitUntil(reportUsage(env));
+      ctx.waitUntil(closeSilentSandboxes(env));
       return;
     }
     // 00:20 UTC: sign and store yesterday's audit chain for every

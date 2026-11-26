@@ -58,6 +58,7 @@ import {
   apiModelSecrets,
   apiSecrets,
   billingSecrets,
+  billingOrgs,
   billingVars,
   githubSecrets,
   githubVars,
@@ -290,6 +291,9 @@ export default Alchemy.Stack(
           Config.withDefault(undefined),
         )) as Cloudflare.R2.Bucket.Location | undefined);
     const placement = r2LocationHint ? { locationHint: r2LocationHint } : {};
+    const apiPlacement = region
+      ? { placement: { region: regionConfig(region).databaseRegion } }
+      : {};
     const runMode = region ? { PREPROCESS_REGION: region } : {};
     const keep = RemovalPolicy.protect(!preview);
 
@@ -556,6 +560,8 @@ export default Alchemy.Stack(
         SANDBOX: Cloudflare.DurableObject("BuildSandbox", {
           containers: [buildImage],
         }),
+        // Times each build's container for metering (spec 16a).
+        PLATFORM: Cloudflare.WorkerEntrypoint(apiRef, "Platform"),
       },
     });
 
@@ -575,6 +581,8 @@ export default Alchemy.Stack(
         RENDERER: Cloudflare.DurableObject("Renderer", {
           containers: [renderImage],
         }),
+        // Times each render's container for metering (spec 16a).
+        PLATFORM: Cloudflare.WorkerEntrypoint(apiRef, "Platform"),
       },
     });
 
@@ -624,6 +632,7 @@ export default Alchemy.Stack(
       ...worker,
       name: n.api,
       main: at("apps/api/src/index.ts"),
+      ...apiPlacement,
       workersDev: true,
       crons: apiCrons,
       env: {
@@ -703,6 +712,11 @@ export default Alchemy.Stack(
                 ] as const,
             ),
           )),
+        ...(region &&
+          billingOrgs[stage] && {
+            BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),
+            BILLING_ENFORCED_ORGS: billingOrgs[stage].enforced.join(","),
+          }),
         ...Object.fromEntries(
           (selfHost ? licenseSecrets : []).map(
             (name) =>

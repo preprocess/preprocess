@@ -1,0 +1,44 @@
+# Small real calls to the model providers on staging (spec v1.7), started by
+# hand: one case per agent model, one decide call and one OCR'd document.
+# It reads the staging URLs from the latest deploy run's artifact, which lasts
+# a day, so run it within a day of a staging deploy.
+name: Staging model check
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  check:
+    name: Staging model check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Staging URLs from the latest deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=$(gh run list --workflow deploy.yml --status success --limit 1 --json databaseId -q '.[0].databaseId')
+          gh run download "$run" --name staging-outputs
+      - name: Model check
+        env:
+          STAGE: staging
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run:
+          OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra
+          model-check

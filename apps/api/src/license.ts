@@ -1,18 +1,22 @@
 // The offline license key (spec 16). A key is base64url(payload) + "." +
-// base64url(signature): Ed25519 over the exact payload bytes, which are JSON
-// naming the signing key's id (kid), so keys can rotate. There is no license
-// server; the key is checked on every entitlement read.
+// base64url(signature): Ed25519 over the exact payload bytes. The payload
+// names the signing key's id (kid), for the issuer's records only. There is
+// no license server; the key is checked on every entitlement read.
 
 import { z } from "zod";
 
-// Raw Ed25519 public keys, base64url, by kid. Only Preprocess, Inc. holds the
-// private keys, which are secrets and never code.
-export const licenseKeys: Record<string, string> = {
-  // PLACEHOLDER: replace with the production signing key's public half before
-  // the first license is issued. Its private half was thrown away, so nothing
-  // verifies against it.
-  "placeholder-2026": "GscneMHhWGSvdH1zphFxxo0nYfOJ_wKE9OIUqpIO6H0",
-};
+// PLACEHOLDER, NOT A REAL SIGNING KEY. Its private half was thrown away, so
+// no license verifies against it. Replace it with the production key's public
+// half (preprocess/internal docs/licence-signing.md) before the first license
+// is issued.
+export const PLACEHOLDER_LICENSE_KEY =
+  "GscneMHhWGSvdH1zphFxxo0nYfOJ_wKE9OIUqpIO6H0";
+
+// Raw Ed25519 public keys, base64url. A license verifies if any of them signed
+// it, so rotating adds the new key and removes the old one only once no
+// license needs it. Only Preprocess, Inc. holds the private keys, which are
+// secrets and never code.
+export const licenseKeys: string[] = [PLACEHOLDER_LICENSE_KEY];
 
 export const GRACE_DAYS = 30;
 const day = 24 * 60 * 60 * 1000;
@@ -48,14 +52,11 @@ const fromBase64url = (text: string) => {
   return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 };
 
-const verified = async (key: string, keys: Record<string, string>) => {
-  const [payloadPart, signaturePart, ...rest] = key.trim().split(".");
-  if (!payloadPart || !signaturePart || rest.length > 0) return null;
-  const bytes = fromBase64url(payloadPart);
-  const parsed = Payload.safeParse(JSON.parse(new TextDecoder().decode(bytes)));
-  if (!parsed.success) return null;
-  const publicKey = keys[parsed.data.kid];
-  if (!publicKey) return null;
+const signedBy = async (
+  publicKey: string,
+  signature: Uint8Array,
+  bytes: Uint8Array,
+) => {
   const imported = await crypto.subtle.importKey(
     "raw",
     fromBase64url(publicKey),
@@ -63,13 +64,19 @@ const verified = async (key: string, keys: Record<string, string>) => {
     false,
     ["verify"],
   );
-  const ok = await crypto.subtle.verify(
-    { name: "Ed25519" },
-    imported,
-    fromBase64url(signaturePart),
-    bytes,
-  );
-  return ok ? parsed.data : null;
+  return crypto.subtle.verify({ name: "Ed25519" }, imported, signature, bytes);
+};
+
+const verified = async (key: string, keys: readonly string[]) => {
+  const [payloadPart, signaturePart, ...rest] = key.trim().split(".");
+  if (!payloadPart || !signaturePart || rest.length > 0) return null;
+  const bytes = fromBase64url(payloadPart);
+  const parsed = Payload.safeParse(JSON.parse(new TextDecoder().decode(bytes)));
+  if (!parsed.success) return null;
+  const signature = fromBase64url(signaturePart);
+  for (const publicKey of keys)
+    if (await signedBy(publicKey, signature, bytes)) return parsed.data;
+  return null;
 };
 
 export const readLicense = async (
