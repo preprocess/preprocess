@@ -11,13 +11,17 @@ import {
   groupMembers,
   groups,
 } from "@preprocess/db/schema/access";
+import { organization } from "@preprocess/db/schema/auth";
 import {
+  demotedSeats,
+  freeCreditGrants,
+  planChanges,
   seatActivity,
   usageRecords,
   usageReports,
 } from "@preprocess/db/schema/billing";
-import { deployments } from "@preprocess/db/schema/deployments";
-import { eq } from "drizzle-orm";
+import { deployments, sandboxLayers } from "@preprocess/db/schema/deployments";
+import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
@@ -32,12 +36,14 @@ import {
 import type { Env } from "../src/env.ts";
 import { caseFeeMicroUsd, monthOf } from "../src/metering.ts";
 import { customImagesAllowed, getPlan } from "../src/plan.ts";
+import { runPlanChanges } from "../src/plan-change.ts";
 import { Platform } from "../src/platform.ts";
 import { monthSpendParts } from "../src/spend.ts";
 import {
   addMember,
   Client,
   createOrganization,
+  sent,
   signUp,
   testEnv,
 } from "./helpers.ts";
@@ -49,7 +55,12 @@ type Call = {
 };
 let calls: Call[] = [];
 let customer: {
-  subscriptions: { plan_id: string; status: string }[];
+  subscriptions: {
+    plan_id: string;
+    status: string;
+    started_at?: number;
+    current_period_end?: number;
+  }[];
   flags: Record<string, unknown>;
   balances: Record<string, unknown>;
   billing_controls?: { auto_topups?: unknown[] };
@@ -57,6 +68,7 @@ let customer: {
 };
 let allowed = true;
 let paymentUrl: string | null = null;
+let failUpdate = false;
 
 const stubAutumn = () =>
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -91,6 +103,12 @@ const stubAutumn = () =>
       customer.billing_controls = body.billing_controls as never;
       return json({ id: body.customer_id, ...customer });
     }
+    if (route === "billing.update") {
+      if (failUpdate)
+        return Promise.resolve(new Response("{}", { status: 500 }));
+      return json({ payment_url: null });
+    }
+    if (route === "balances.create") return json({ success: true });
     if (route === "billing.multi_attach")
       return json({ payment_url: paymentUrl });
     if (route === "billing.attach" && body.plan_id === "credits")
@@ -179,6 +197,7 @@ afterEach(() => {
   calls = [];
   allowed = true;
   paymentUrl = null;
+  failUpdate = false;
 });
 
 const balance = (remaining: number, granted = remaining, usage = 0) => ({
@@ -537,6 +556,7 @@ describe("checkout", () => {
     ).toEqual({
       customer_id: shop.org,
       plan_id: "free",
+      customize: { remove_items: [{ feature_id: "model_credit" }] },
       success_url: "https://app.example.test/cases",
     });
     const elsewhere = await shop.owner.call(path, {
@@ -800,7 +820,7 @@ describe("billing routes", () => {
     expect(byKey.body).toMatchObject({ credits: { remaining: 0 }, card: null });
   });
 
-  it("let the Owner buy credits on Free and Team, at least 1,000, charged to the card or finished on Stripe's page", async () => {
+  it("let the Owner buy credits on Free and Team, at least 1,000, charged to the card or finished on the payment page", async () => {
     const shop = await organizationWithAgent("Topupco", env);
     const big = await organizationWithAgent("Bigco", env);
     stubAutumn();
@@ -948,5 +968,548 @@ describe("billing routes", () => {
         })
       ).status,
     ).toBe(409);
+  });
+});
+
+describe("moving down a plan", () => {
+  const env = testEnv({
+    AUTUMN_SECRET_KEY: "am_sk_test_stub",
+    APP_URL: "https://app.example.test",
+  });
+  const team = () => ({
+    subscriptions: [{ plan_id: "team", status: "active" }],
+    flags: {},
+    balances: { model_credit: balance(800) },
+  });
+  const toFree = (client: Client, org: string) =>
+    client.call<{ url: string | null; error?: string }>(
+      `/v1/orgs/${org}/billing/plan`,
+      { body: { plan: "free" } },
+    );
+
+  it("moves Team to Free at the end of the billing period, and shows the change waiting", async () => {
+    const shop = await organizationWithAgent("Downco", env);
+    stubAutumn();
+    customer = team();
+    const moved = await toFree(shop.owner, shop.org);
+    expect(moved.status).toBe(200);
+    expect(moved.body).toEqual({ url: null });
+    expect(calls.find((c) => c.route === "billing.attach")?.body).toEqual({
+      customer_id: shop.org,
+      plan_id: "free",
+      customize: { remove_items: [{ feature_id: "model_credit" }] },
+      success_url: "https://app.example.test/",
+      plan_schedule: "end_of_cycle",
+    });
+
+    const later = await organizationWithAgent("Laterco", env);
+    customer = {
+      ...team(),
+      subscriptions: [
+        { plan_id: "team", status: "active" },
+        {
+          plan_id: "free",
+          status: "scheduled",
+          started_at: Date.UTC(2026, 11, 26),
+        },
+      ],
+    };
+    const billing = await later.owner.call(`/v1/orgs/${later.org}/billing`);
+    expect(billing.body).toMatchObject({
+      plan: "team",
+      change: { plan: "free", at: "2026-12-26T00:00:00.000Z" },
+      credits: { remaining: 800 },
+    });
+  });
+
+  it("leaves Enterprise changes to us", async () => {
+    const big = await organizationWithAgent("Contactco", env);
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "enterprise", status: "active" }],
+      flags: {},
+      balances: {},
+    };
+    for (const path of ["billing/plan", "billing/checkout"]) {
+      const refused = await big.owner.call<{ error: string }>(
+        `/v1/orgs/${big.org}/${path}`,
+        { body: { plan: "team" } },
+      );
+      expect(refused.status).toBe(409);
+      expect(refused.body.error).toBe(
+        "Contact us to change an Enterprise plan.",
+      );
+    }
+    expect(
+      calls.some(
+        (c) =>
+          c.route.startsWith("billing.") &&
+          c.route !== "billing.preview_attach",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("keeping Team", () => {
+  it("cancels a waiting move to Free, and answers 409 when none is waiting", async () => {
+    const env = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      APP_URL: "https://app.example.test",
+    });
+    const shop = await organizationWithAgent("Keepco", env);
+    stubAutumn();
+    customer = {
+      subscriptions: [
+        { plan_id: "team", status: "active" },
+        {
+          plan_id: "free",
+          status: "scheduled",
+          started_at: Date.UTC(2026, 11, 26),
+        },
+      ],
+      flags: {},
+      balances: { model_credit: balance(800) },
+    };
+    const path = `/v1/orgs/${shop.org}/billing/plan/change`;
+    expect((await shop.keyed.call(path, { method: "DELETE" })).status).toBe(
+      403,
+    );
+    const kept = await shop.owner.call(path, { method: "DELETE" });
+    expect(kept.status).toBe(204);
+    expect(calls.find((c) => c.route === "billing.update")?.body).toEqual({
+      customer_id: shop.org,
+      plan_id: "team",
+      cancel_action: "uncancel",
+    });
+    customer.subscriptions = [{ plan_id: "team", status: "active" }];
+    expect((await shop.owner.call(path, { method: "DELETE" })).status).toBe(
+      409,
+    );
+  });
+});
+
+describe("moving from Team down to Free", () => {
+  it("previews what changes, warns those losing a seat, switches at the period's end, pauses custom environments, and restores on Team", async () => {
+    const DAY = 86_400_000;
+    const env = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      APP_URL: "https://app.example.test",
+      CASES: { send: () => Promise.resolve() } as unknown as Queue,
+    });
+    const end = Date.UTC(2026, 11, 26);
+    const onTeam = () => ({
+      subscriptions: [
+        { plan_id: "team", status: "active", current_period_end: end },
+      ],
+      flags: { custom_sandbox_images: {} },
+      balances: { model_credit: balance(800) },
+    });
+    stubAutumn();
+    customer = onTeam();
+    const shop = await organizationWithAgent("Shrinkco", env);
+    const people: Awaited<ReturnType<typeof addMember>>[] = [];
+    for (const name of ["Ann Seat", "Bo Seat", "Cy Seat", "Di Seat"])
+      people.push(await addMember(shop.owner, shop.org, name));
+    const [ann, bo, cy, di] = people as [
+      (typeof people)[number],
+      (typeof people)[number],
+      (typeof people)[number],
+      (typeof people)[number],
+    ];
+    const listed = await shop.owner.call<
+      { id: string; isDevelopers: boolean }[]
+    >(`/v1/orgs/${shop.org}/groups`);
+    const developers = listed.body.find((g) => g.isDevelopers)!.id;
+    for (const person of people)
+      expect(
+        (
+          await shop.owner.call(
+            `/v1/orgs/${shop.org}/groups/${developers}/members/${person.userId}`,
+            { method: "PUT" },
+          )
+        ).status,
+      ).toBe(204);
+    const styled = newId("agent");
+    await withOrg(env, orgId(shop.org), async (tx) => {
+      await tx.insert(seatActivity).values(
+        people.map((p, i) => ({
+          organizationId: shop.org,
+          userId: p.userId,
+          month: monthOf(new Date()),
+          role: "developer" as const,
+          firstAt: new Date(Date.now() - (10 - i) * 60_000),
+        })),
+      );
+      await tx
+        .insert(agents)
+        .values({ id: styled, organizationId: shop.org, slug: "styled" });
+      await tx.insert(deployments).values({
+        id: newId("deployment"),
+        organizationId: shop.org,
+        agentId: styled,
+        environment: "production",
+        status: "ready",
+        bundleSha256: "00",
+        sdkVersion: "0.1.0",
+        manifest: {},
+        source: "cli",
+        createdBy: shop.ownerId,
+        promotedAt: new Date(),
+        sandboxLayer: {
+          status: "ready",
+          key: `org/${shop.org}/layers/styled`,
+          image: "preset",
+          bytes: 7e9,
+        },
+      });
+      await tx.insert(sandboxLayers).values({
+        organizationId: shop.org,
+        key: `org/${shop.org}/layers/styled`,
+        image: "preset",
+        bytes: 7e9,
+        unpackedBytes: 7e9,
+      });
+    });
+
+    const previewPath = `/v1/orgs/${shop.org}/billing/plan/change/preview`;
+    expect((await shop.keyed.call(previewPath)).status).toBe(403);
+    const preview = await shop.owner.call(previewPath);
+    expect(preview.status).toBe(200);
+    const person = (p: typeof ann, keeps: boolean) => ({
+      userId: p.userId,
+      name: expect.any(String) as string,
+      email: expect.any(String) as string,
+      keeps,
+    });
+    expect(preview.body).toEqual({
+      at: "2026-12-26T00:00:00.000Z",
+      items: [
+        {
+          kind: "seats",
+          limit: 3,
+          people: [
+            person(di, true),
+            person(cy, true),
+            person(bo, true),
+            person(ann, false),
+          ],
+        },
+        { kind: "agents", agents: [{ id: styled, slug: "styled" }] },
+        { kind: "storage", gb: 7, includedGb: 5, usdPerMonth: 0.2 },
+      ],
+    });
+
+    const planPath = `/v1/orgs/${shop.org}/billing/plan`;
+    const badPick = await shop.owner.call<{ error: string }>(planPath, {
+      body: { plan: "free", keep: [shop.ownerId] },
+    });
+    expect(badPick.status).toBe(422);
+    expect(badPick.body.error).toBe(
+      "Pick only people who currently have a developer or operator seat.",
+    );
+    const cancelled = await shop.owner.call(planPath, {
+      body: {
+        plan: "free",
+        keep: [ann.userId, bo.userId, cy.userId],
+        reason: "Too few cases",
+      },
+    });
+    expect(cancelled.status).toBe(200);
+    const waiting = () =>
+      withOrg(env, orgId(shop.org), (tx) => tx.select().from(planChanges));
+    expect(await waiting()).toMatchObject([
+      {
+        plan: "free",
+        at: new Date(end),
+        keep: [ann.userId, bo.userId, cy.userId],
+        reason: "Too few cases",
+        warnedAt: null,
+      },
+    ]);
+
+    customer = {
+      ...onTeam(),
+      subscriptions: [
+        { plan_id: "team", status: "active", current_period_end: end },
+        { plan_id: "free", status: "scheduled", started_at: end },
+      ],
+    };
+    const mailTo = (address: string) =>
+      sent
+        .filter(
+          (m) => m.to === address && m.subject.startsWith("Your access to"),
+        )
+        .map((m) => m.subject);
+    const diEmail = (
+      await withoutOrg(env, "test", (tx) =>
+        tx.execute<{ email: string }>(
+          sql`select email from "user" where id = ${di.userId}`,
+        ),
+      )
+    ).rows[0]!.email;
+    await runPlanChanges(env, new Date(end - 4 * DAY));
+    expect(mailTo(diEmail)).toEqual([]);
+    await runPlanChanges(env, new Date(end - 2 * DAY));
+    await runPlanChanges(env, new Date(end - DAY));
+    expect(mailTo(diEmail)).toEqual([
+      "Your access to Shrinkco changes on December 26, 2026",
+    ]);
+    expect((await waiting())[0]!.warnedAt).not.toBeNull();
+
+    customer = {
+      subscriptions: [{ plan_id: "free", status: "active" }],
+      flags: {},
+      balances: {
+        model_credit: balance(800),
+        seats: { granted: 3, remaining: 3, usage: 0, unlimited: false },
+      },
+    };
+    await runPlanChanges(env, new Date(end + 60_000));
+    expect(await waiting()).toEqual([]);
+    const developersNow = await withOrg(env, orgId(shop.org), (tx) =>
+      tx
+        .select({ userId: groupMembers.userId })
+        .from(groupMembers)
+        .where(eq(groupMembers.groupId, developers)),
+    );
+    expect(developersNow.map((m) => m.userId).sort()).toEqual(
+      [ann.userId, bo.userId, cy.userId].sort(),
+    );
+    expect(
+      await withOrg(env, orgId(shop.org), (tx) =>
+        tx
+          .select({
+            userId: demotedSeats.userId,
+            groupId: demotedSeats.groupId,
+          })
+          .from(demotedSeats),
+      ),
+    ).toEqual([{ userId: di.userId, groupId: developers }]);
+    // Di keeps viewer access to every agent Developers could see.
+    const viewing = () =>
+      withOrg(env, orgId(shop.org), async (tx) => {
+        const [viewers] = await tx
+          .select({ id: groups.id })
+          .from(groups)
+          .where(eq(groups.slug, "free-viewers"));
+        return {
+          members: (
+            await tx
+              .select({ userId: groupMembers.userId })
+              .from(groupMembers)
+              .where(eq(groupMembers.groupId, viewers!.id))
+          ).map((m) => m.userId),
+          grants: (
+            await tx
+              .select({
+                agentId: agentGrants.agentId,
+                access: agentGrants.access,
+              })
+              .from(agentGrants)
+              .where(eq(agentGrants.groupId, viewers!.id))
+          ).sort((x, y) => x.agentId.localeCompare(y.agentId)),
+        };
+      });
+    const agentIds = (
+      await withOrg(env, orgId(shop.org), (tx) =>
+        tx.select({ id: agents.id }).from(agents),
+      )
+    )
+      .map((x) => x.id)
+      .sort();
+    expect(await viewing()).toEqual({
+      members: [di.userId],
+      grants: agentIds.map((agentId) => ({ agentId, access: "viewer" })),
+    });
+    const ownerEmail = sent.find((m) => m.subject === "Shrinkco moved to Free");
+    expect(ownerEmail?.text).toContain(
+      "1 person moved to viewer: Di Seat. Upgrade to Team any time to restore their previous role in one click.",
+    );
+    expect(ownerEmail?.text).toContain(
+      "Paused because they use a custom environment: styled.",
+    );
+
+    // The plan is cached for 30 seconds per isolate.
+    const later = Date.now() + 60_000;
+    vi.spyOn(Date, "now").mockReturnValue(later);
+    const billing = await shop.owner.call(`/v1/orgs/${shop.org}/billing`);
+    expect(billing.body).toMatchObject({
+      plan: "free",
+      switched: { people: 1, agents: [{ id: styled, slug: "styled" }] },
+    });
+    const paused = await shop.keyed.call<{
+      error: { code: string; message: string };
+    }>(`/v1/orgs/${shop.org}/cases`, {
+      body: { agent: "styled", text: "on Free" },
+    });
+    expect(paused.status).toBe(409);
+    expect(paused.body.error).toEqual({
+      code: "agent_paused",
+      message:
+        "styled is paused because it uses a custom environment, which requires the Team plan. Upgrade to Team to resume automatically, or remove the custom setup in code.",
+    });
+    expect(
+      (
+        await shop.keyed.call(`/v1/orgs/${shop.org}/cases`, {
+          body: { agent: "invoices", text: "no custom environment" },
+        })
+      ).status,
+    ).toBe(202);
+    const restorePath = `/v1/orgs/${shop.org}/billing/roles/restore`;
+    expect(
+      (await shop.owner.call(restorePath, { method: "POST" })).status,
+    ).toBe(409);
+
+    customer = {
+      subscriptions: [{ plan_id: "team", status: "active" }],
+      flags: { custom_sandbox_images: {} },
+      balances: { model_credit: balance(800) },
+    };
+    vi.spyOn(Date, "now").mockReturnValue(later + 60_000);
+    const restored = await shop.owner.call(restorePath, { method: "POST" });
+    expect(restored.status).toBe(200);
+    expect(restored.body).toEqual({ people: 1 });
+    const back = await withOrg(env, orgId(shop.org), (tx) =>
+      tx
+        .select({ userId: groupMembers.userId })
+        .from(groupMembers)
+        .where(eq(groupMembers.groupId, developers)),
+    );
+    expect(back.map((m) => m.userId)).toContain(di.userId);
+    expect((await viewing()).members).toEqual([]);
+    expect(
+      (
+        await shop.keyed.call(`/v1/orgs/${shop.org}/cases`, {
+          body: { agent: "styled", text: "back on Team" },
+        })
+      ).status,
+    ).toBe(202);
+    expect(
+      (await shop.owner.call(`/v1/orgs/${shop.org}/billing`)).body,
+    ).toMatchObject({ switched: null });
+  });
+});
+
+describe("Free's $5", () => {
+  const free = (
+    fingerprint: string,
+    balances: Record<string, unknown> = {},
+  ) => ({
+    subscriptions: [{ plan_id: "free", status: "active" }],
+    flags: {},
+    balances,
+    payment_method: { card: { brand: "visa", last4: "4242", fingerprint } },
+  });
+  const grants = () => calls.filter((c) => c.route === "balances.create");
+  const recorded = (org: string) =>
+    withoutOrg(environment, "test: free credits", (tx) =>
+      tx
+        .select({
+          card: freeCreditGrants.cardFingerprint,
+          granted: freeCreditGrants.granted,
+        })
+        .from(freeCreditGrants)
+        .where(eq(freeCreditGrants.organizationId, org)),
+    );
+
+  it("is granted once per organization and once per card, never by attaching Free", async () => {
+    const first = await organizationWithAgent("Fiveco");
+    const again = await organizationWithAgent("Farmco");
+    const card = `fp_${first.org}`;
+    stubAutumn();
+    customer = free(card);
+    await getPlan(environment, orgId(first.org));
+    expect(grants().map((c) => c.body)).toEqual([
+      {
+        customer_id: first.org,
+        feature_id: "model_credit",
+        included_grant: 500,
+        balance_id: "free_credit",
+      },
+    ]);
+    expect(await recorded(first.org)).toEqual([{ card, granted: true }]);
+
+    calls = [];
+    await getPlan(environment, orgId(again.org));
+    expect(grants()).toEqual([]);
+    expect(await recorded(again.org)).toEqual([{ card: null, granted: false }]);
+  });
+
+  it("is not granted again to an organization that had it, by us or by Free before", async () => {
+    const back = await organizationWithAgent("Backco");
+    const legacy = await organizationWithAgent("Legacyco");
+    await withoutOrg(environment, "test: free credits", (tx) =>
+      tx.insert(freeCreditGrants).values({
+        organizationId: back.org,
+        cardFingerprint: null,
+        granted: true,
+      }),
+    );
+    stubAutumn();
+    customer = free(`fp_${back.org}`);
+    await getPlan(environment, orgId(back.org));
+    customer = free(`fp_${legacy.org}`, {
+      model_credit: {
+        ...balance(120, 500, 380),
+        breakdown: [{ id: "cus_ent_1", plan_id: "free", included_grant: 500 }],
+      },
+    });
+    await getPlan(environment, orgId(legacy.org));
+    expect(grants()).toEqual([]);
+    expect(await recorded(legacy.org)).toEqual([{ card: null, granted: true }]);
+  });
+});
+
+describe("deleting an organization", () => {
+  const deleting = (client: Client, org: string) =>
+    client.call("/api/auth/organization/delete", {
+      body: { organizationId: org },
+    });
+  const exists = async (org: string) =>
+    (
+      await withoutOrg(environment, "test: organization", (tx) =>
+        tx
+          .select({ id: organization.id })
+          .from(organization)
+          .where(eq(organization.id, org)),
+      )
+    ).length > 0;
+
+  it("ends Team after reporting its seats and usage, and stops if billing can't", async () => {
+    const kept = await organizationWithAgent("Stuckco");
+    const gone = await organizationWithAgent("Goneco");
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "team", status: "active" }],
+      flags: {},
+      balances: { model_credit: balance(300) },
+    };
+    failUpdate = true;
+    const refused = await deleting(kept.owner, kept.org);
+    expect(refused.status).toBe(503);
+    expect(refused.body).toMatchObject({
+      message:
+        "This organization's plan couldn't be closed, so nothing was deleted. Try again in a few minutes.",
+    });
+    expect(await exists(kept.org)).toBe(true);
+
+    failUpdate = false;
+    calls = [];
+    await withOrg(environment, orgId(gone.org), (tx) =>
+      tx.insert(usageRecords).values({
+        id: newId("usageRecord"),
+        organizationId: gone.org,
+        feature: "model_usage",
+        quantity: 30_000,
+      }),
+    );
+    expect((await deleting(gone.owner, gone.org)).status).toBe(200);
+    expect(await exists(gone.org)).toBe(false);
+    const routes = calls.map((c) => [
+      c.route,
+      c.body.feature_id ?? c.body.cancel_action,
+    ]);
+    expect(routes).toContainEqual(["track", "model_usage_credits"]);
+    expect(routes.at(-1)).toEqual(["billing.update", "cancel_end_of_cycle"]);
   });
 });

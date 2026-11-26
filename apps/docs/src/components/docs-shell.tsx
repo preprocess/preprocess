@@ -53,6 +53,7 @@ import {
   Copy,
   FileText,
   Hash,
+  Headset,
   Home,
   Menu,
   Moon,
@@ -218,24 +219,12 @@ function FolderRow({
           size={14}
         />
       </SidebarMenuBadge>
-      <SidebarMenuSub open={open}>
+      <SidebarMenuSub className="ml-0 border-l-0 pl-0" open={open}>
         {folderPages(folder).map((page) => (
           <PageRow item={page} key={page.url} pathname={pathname} />
         ))}
       </SidebarMenuSub>
     </SidebarMenuItem>
-  );
-}
-
-// A deep-dive page has no icon; the empty column keeps its label in line
-// with the section's Overview.
-function NoIcon({ size }: { size?: number | string }) {
-  return (
-    <span
-      aria-hidden
-      className="shrink-0"
-      style={{ width: size, height: size }}
-    />
   );
 }
 
@@ -274,7 +263,7 @@ function SectionRows({
                     ? first === "/api"
                       ? Braces
                       : Home
-                    : NoIcon
+                    : undefined
                 }
                 isActive={node.url === pathname}
                 render={<PageLink url={node.url} />}
@@ -289,8 +278,19 @@ function SectionRows({
       </SidebarMenu>
     );
     return group.label ? (
-      <SidebarGroup className="px-0 pt-4" key={index}>
-        <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+      <SidebarGroup className="px-0 pt-6" key={index}>
+        {index > 0 ? (
+          <hr aria-hidden className="mx-2 mb-4 h-px border-0 bg-border" />
+        ) : null}
+        <SidebarGroupLabel
+          className={cn(
+            typeClass("caption"),
+            "h-auto px-2 pb-1.5 text-muted-foreground",
+          )}
+          style={{ fontVariationSettings: fontWeights.normal }}
+        >
+          {group.label}
+        </SidebarGroupLabel>
         {menu}
       </SidebarGroup>
     ) : (
@@ -433,6 +433,28 @@ function ThemeToggle({
   );
 }
 
+// Support by email, beside GitHub and the theme.
+function SupportLink({
+  className,
+  variant = "ghost",
+}: {
+  className?: string;
+  variant?: "ghost" | "tertiary";
+}) {
+  return (
+    <Button
+      aria-label="Support"
+      className={cn("text-muted-foreground hover:text-foreground", className)}
+      render={<a href="mailto:support@preprocess.com" />}
+      size="icon-sm"
+      title="Support"
+      variant={variant}
+    >
+      <Headset aria-hidden />
+    </Button>
+  );
+}
+
 // The GitHub mark (Octicons mark-github, MIT). Lucide dropped its brand
 // icons, so the kit has none to offer.
 function GitHubLink({
@@ -514,6 +536,7 @@ function SidebarBody({
         </nav>
       </ScrollArea>
       <SidebarFooter className="flex-row items-center gap-1 px-4 pt-3 pb-4">
+        <SupportLink />
         <GitHubLink />
         <ThemeToggle />
       </SidebarFooter>
@@ -830,6 +853,10 @@ function MobileMenu({
                   Open the app
                 </Button>
                 <ThemeToggle
+                  className="size-11 rounded-full"
+                  variant="tertiary"
+                />
+                <SupportLink
                   className="size-11 rounded-full"
                   variant="tertiary"
                 />

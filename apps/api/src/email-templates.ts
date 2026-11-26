@@ -392,3 +392,78 @@ export const webhookDisabledEmail = (
     text: `Every delivery to ${data.endpointUrl} failed for ${period}, so the endpoint was disabled.\n\nFix the receiver, then enable it again: ${data.url}\n\n--\nSent to the owners and admins of ${data.orgName}${onPreprocess(brand)}.\n`,
   };
 };
+
+export const longDate = (at: Date) =>
+  at.toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
+// Three days before Team ends (PRE-96), to each person losing a seat.
+export const seatEndingEmail = (
+  brand: Brand,
+  data: { url: string; orgName: string; at: Date; email: string },
+): RenderedEmail => {
+  const date = longDate(data.at);
+  const subject = `Your access to ${data.orgName} changes on ${date}`;
+  const line = `${data.orgName} moves from Team to Free on ${date}, which includes 3 developer and operator seats. Starting then, your access changes to viewer—you can still read cases and none of your work is deleted, but you won’t be able to deploy, run evals or work cases. If you still need access, ask an Owner.`;
+  const sentTo = `Sent to ${data.email} as a member of ${data.orgName}${onPreprocess(brand)}.`;
+  return {
+    subject,
+    html: page(
+      brand,
+      subject,
+      clip(line),
+      heading(escapeHtml(`Your access changes on ${date}`)) +
+        paragraph(escapeHtml(line)) +
+        button(escapeHtml(`Open ${data.orgName}`), data.url) +
+        footer(escapeHtml(sentTo)),
+    ),
+    text: `${line}\n\nOpen ${data.orgName}: ${data.url}\n\n--\n${sentTo}\n`,
+  };
+};
+
+// When Team has ended (PRE-96), to the Owners: what changed with it.
+export const planSwitchedEmail = (
+  brand: Brand,
+  data: {
+    url: string;
+    orgName: string;
+    demoted: string[];
+    pausedAgents: string[];
+  },
+): RenderedEmail => {
+  const subject = `${data.orgName} moved to Free`;
+  const n = data.demoted.length;
+  const lines = [
+    ...(n
+      ? [
+          n === 1
+            ? `1 person moved to viewer: ${data.demoted[0]}. Upgrade to Team any time to restore their previous role in one click.`
+            : `${n} people moved to viewer: ${data.demoted.join(", ")}. Upgrade to Team any time to restore their previous roles in one click.`,
+        ]
+      : []),
+    ...(data.pausedAgents.length
+      ? [
+          `Paused because they use a custom environment: ${data.pausedAgents.join(", ")}. They resume automatically if you return to Team.`,
+        ]
+      : []),
+    "Free includes 1,000 cases a month, and storage over 5 GB bills at $0.10/GB-month at month end. Your credits and auto-reload carried over unchanged.",
+  ];
+  const sentTo = `Sent to the owners of ${data.orgName}${onPreprocess(brand)}.`;
+  return {
+    subject,
+    html: page(
+      brand,
+      subject,
+      clip(lines[0]!),
+      heading(escapeHtml(`${data.orgName} is now on Free`)) +
+        lines.map((l) => paragraph(escapeHtml(l))).join("") +
+        button("Open Billing", data.url) +
+        footer(escapeHtml(sentTo)),
+    ),
+    text: `${lines.join("\n\n")}\n\nOpen Billing: ${data.url}\n\n--\n${sentTo}\n`,
+  };
+};

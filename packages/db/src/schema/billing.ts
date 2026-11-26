@@ -5,9 +5,11 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   date,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -157,4 +159,49 @@ export const sandboxIntervals = pgTable(
       .on(t.lastSeenAt)
       .where(sql`ended_at is null`),
   ],
+);
+
+// Free's one-time $5 of credits (PRE-96): at most once per organization and
+// once per card. Not tenant-scoped, and kept when an organization is deleted,
+// so a new organization on the same card gets none. granted is false when the
+// card had already had it elsewhere.
+export const freeCreditGrants = pgTable("free_credit_grants", {
+  organizationId: text().primaryKey(),
+  cardFingerprint: text().unique(),
+  granted: boolean().notNull(),
+  at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+// A move down to Free waiting for the end of Team's billing period (PRE-96):
+// who the Owner picked to keep a seat, why they left, and whether the people
+// losing a seat were warned. The switch at the period's end deletes the row;
+// so does keeping Team.
+export const planChanges = pgTable("plan_changes", {
+  organizationId: text()
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  plan: text().notNull(),
+  at: timestamp({ withTimezone: true }),
+  keep: jsonb().$type<string[]>(),
+  reason: text(),
+  requestedBy: text().notNull(),
+  requestedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  warnedAt: timestamp({ withTimezone: true }),
+});
+
+// The seat groups people left when Team ended (PRE-96), so an Owner back on
+// Team can restore their previous roles in one step.
+export const demotedSeats = pgTable(
+  "demoted_seats",
+  {
+    organizationId: text()
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    groupId: text().notNull(),
+    demotedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.userId, t.groupId] })],
 );

@@ -40,6 +40,20 @@ const seatHolders = async (tx: Tx, extraGroup?: string) => {
   return new Set(rows.map((r) => r.userId));
 };
 
+// The memberships that make people seat holders: each person in the
+// Developers group or a group with operator access, with that group.
+export const seatMemberships = (tx: Tx) =>
+  tx
+    .select({ userId: groupMembers.userId, groupId: groupMembers.groupId })
+    .from(groupMembers)
+    .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+    .where(
+      or(
+        eq(groups.isDevelopers, true),
+        inArray(groupMembers.groupId, operatorGroups(tx)),
+      ),
+    );
+
 export const countSeats = async (tx: Tx) => (await seatHolders(tx)).size;
 
 // The most seats changes may reach: about 10% over the limit.

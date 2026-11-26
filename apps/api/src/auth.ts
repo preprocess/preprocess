@@ -31,6 +31,7 @@ import {
 } from "better-auth/plugins/organization/access";
 import { and, count, eq, gt, sql } from "drizzle-orm";
 
+import { endBillingForDeletion } from "./billing.ts";
 import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 
@@ -415,6 +416,15 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             });
           },
           async beforeDeleteOrganization({ organization: org, user }) {
+            try {
+              await endBillingForDeletion(env, org.id);
+            } catch (error) {
+              console.error("billing: deleting organization", org.id, error);
+              throw new APIError("SERVICE_UNAVAILABLE", {
+                message:
+                  "This organization's plan couldn't be closed, so nothing was deleted. Try again in a few minutes.",
+              });
+            }
             await record({
               organizationId: org.id,
               actorType: "person",
