@@ -546,7 +546,7 @@ export function MembersPanel() {
                       <TableCell>
                         <div className="flex min-w-0 items-center gap-3">
                           <SettingsAvatar
-                            name={name}
+                            userId={row.kind === "member" ? row.userId : null}
                             pictureUrl={
                               row.kind === "member" ? row.image : null
                             }

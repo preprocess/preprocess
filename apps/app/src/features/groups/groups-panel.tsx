@@ -330,7 +330,7 @@ function GroupMembers({
                 description={person.email}
                 key={person.id}
                 label={person.name}
-                leading={<SettingsAvatar name={person.name} />}
+                leading={<SettingsAvatar userId={person.id} />}
               >
                 {synced ? null : (
                   <SettingsRowMenu
