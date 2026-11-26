@@ -8,10 +8,13 @@
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
 import { agents, groupMembers, groups } from "@preprocess/db/schema/access";
-import { user } from "@preprocess/db/schema/auth";
+import { organization, user } from "@preprocess/db/schema/auth";
 import { caseMentions, cases } from "@preprocess/db/schema/cases";
 import { and, eq, isNull } from "drizzle-orm";
 
+import { assignedEmail, taggedEmail, waitingEmail } from "./email-templates.ts";
+import type { RenderedEmail } from "./email-templates.ts";
+import { sendEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import { readOutbox, writeOutbox } from "./outbox.ts";
@@ -40,7 +43,7 @@ export const notifyLater = async (
 export const caseRoomUrl = (env: Env, agentId: string, caseId: string) =>
   new URL(`/cases/${agentId}/${caseId}`, env.APP_URL).href;
 
-type Email = { key: string; userIds: string[]; subject: string; text: string };
+type Email = { key: string; userIds: string[]; email: RenderedEmail };
 
 const caseRef = async (tx: Tx, caseId: string) => {
   const [row] = await tx
@@ -48,9 +51,11 @@ const caseRef = async (tx: Tx, caseId: string) => {
       agentId: cases.agentId,
       title: cases.title,
       agent: agents.slug,
+      orgName: organization.name,
     })
     .from(cases)
     .innerJoin(agents, eq(agents.id, cases.agentId))
+    .innerJoin(organization, eq(organization.id, cases.organizationId))
     .where(eq(cases.id, caseId));
   return row ?? null;
 };
@@ -72,11 +77,24 @@ const membersOf = async (tx: Tx, groupId: string) =>
       .where(eq(groupMembers.groupId, groupId))
   ).map((m) => m.id);
 
+const caseData = (
+  env: Env,
+  ref: NonNullable<Awaited<ReturnType<typeof caseRef>>>,
+  caseId: string,
+) => ({
+  url: caseRoomUrl(env, ref.agentId, caseId),
+  settingsUrl: new URL("/settings/account", env.APP_URL).href,
+  orgName: ref.orgName,
+  agent: ref.agent,
+  caseTitle: ref.title,
+});
+
 const compose = async (
   env: Env,
   tx: Tx,
   notice: Notice,
 ): Promise<Email | null> => {
+  const brand = { appUrl: env.APP_URL };
   if (notice.type === "mention") {
     const [mention] = await tx
       .select()
@@ -88,50 +106,38 @@ const compose = async (
       groupOf(tx, mention.groupId),
     ]);
     if (!ref || !group) return null;
-    const title = ref.title ?? "a case";
     return {
       key: `mention:${mention.id}`,
       // A person is not emailed about their own reference.
       userIds: (await membersOf(tx, mention.groupId)).filter(
         (id) => mention.by !== `person:${id}`,
       ),
-      subject: `${group.name} was tagged on ${title} (${ref.agent})`,
-      text: [
-        `${mention.by === "agent" ? `The ${ref.agent} agent` : "Someone"} tagged ${group.name} on ${title}:`,
-        "",
-        mention.message,
-        "",
-        `Open the case: ${caseRoomUrl(env, ref.agentId, mention.caseId)}`,
-      ].join("\n"),
+      email: taggedEmail(brand, {
+        ...caseData(env, ref, mention.caseId),
+        tagger: mention.by === "agent" ? `The ${ref.agent} agent` : "Someone",
+        groupName: group.name,
+        message: mention.message,
+      }),
     };
   }
   const ref = await caseRef(tx, notice.caseId);
   if (!ref) return null;
-  const title = ref.title ?? "A case";
-  const link = `Open the case: ${caseRoomUrl(env, ref.agentId, notice.caseId)}`;
   if (notice.type === "assigned")
     return {
       key: `assigned:${notice.caseId}:${notice.assignedAt}`,
       userIds: [notice.userId],
-      subject: `${title} (${ref.agent}) was assigned to you`,
-      text: [
-        `${title} on the ${ref.agent} agent was assigned to you.`,
-        "",
-        link,
-      ].join("\n"),
+      email: assignedEmail(brand, caseData(env, ref, notice.caseId)),
     };
   const group = await groupOf(tx, notice.groupId);
   if (!group) return null;
   return {
     key: `waiting:${notice.caseId}:${notice.since}`,
     userIds: await membersOf(tx, notice.groupId),
-    subject: `${title} (${ref.agent}) is waiting on ${group.name}`,
-    text: [
-      `${title} on the ${ref.agent} agent is waiting on ${group.name}.`,
-      ...(notice.reason ? ["", `Reason: ${notice.reason}`] : []),
-      "",
-      link,
-    ].join("\n"),
+    email: waitingEmail(brand, {
+      ...caseData(env, ref, notice.caseId),
+      groupName: group.name,
+      reason: notice.reason,
+    }),
   };
 };
 
@@ -166,12 +172,7 @@ export const sendNotice = async (env: Env, message: OutboxMessage) => {
   for (const recipient of recipients) {
     const sentKey = `${email.key}:${recipient.id}`;
     if (await env.EMAILS_SENT.get(sentKey)) continue;
-    await env.EMAIL.send({
-      from: env.EMAIL_FROM,
-      to: recipient.address,
-      subject: email.subject,
-      text: email.text,
-    });
+    await sendEmail(env, recipient.address, email.email);
     await env.EMAILS_SENT.put(sentKey, "1", { expirationTtl: 86_400 });
   }
 };

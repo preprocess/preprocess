@@ -1,8 +1,14 @@
-// Transactional email through Cloudflare Email Sending. Locally the runtime's
-// send_email binding is the sink: it writes each message to a file and logs
-// its path, so nothing leaves the machine.
+// Transactional email through Cloudflare Email Sending, as HTML with a
+// plain-text part (email-templates.ts). Locally the runtime's send_email
+// binding is the sink: it writes each message to a file and logs its path,
+// so nothing leaves the machine.
 
+import { invitationEmail, magicLinkEmail } from "./email-templates.ts";
+import type { RenderedEmail } from "./email-templates.ts";
 import type { Env } from "./env.ts";
+
+export const sendEmail = (env: Env, to: string, email: RenderedEmail) =>
+  env.EMAIL.send({ from: env.EMAIL_FROM, to, ...email });
 
 export const sendInvitationEmail = async (
   env: Env,
@@ -13,35 +19,28 @@ export const sendInvitationEmail = async (
     inviterName: string;
   },
 ) => {
-  const url = new URL(`/invitations/${invitation.id}`, env.APP_URL).href;
-  await env.EMAIL.send({
-    from: env.EMAIL_FROM,
-    to: invitation.email,
-    subject: `Join ${invitation.organizationName} on Preprocess`,
-    text: [
-      `${invitation.inviterName} invited you to join ${invitation.organizationName} on Preprocess.`,
-      "",
-      `Join ${invitation.organizationName}: ${url}`,
-      "",
-      "If you did not expect this, you can ignore this email.",
-    ].join("\n"),
-  });
+  await sendEmail(
+    env,
+    invitation.email,
+    invitationEmail(
+      { appUrl: env.APP_URL },
+      {
+        url: new URL(`/invitations/${invitation.id}`, env.APP_URL).href,
+        email: invitation.email,
+        orgName: invitation.organizationName,
+        inviterName: invitation.inviterName,
+      },
+    ),
+  );
 };
 
 export const sendMagicLinkEmail = async (
   env: Env,
   message: { email: string; url: string },
 ) => {
-  await env.EMAIL.send({
-    from: env.EMAIL_FROM,
-    to: message.email,
-    subject: "Your sign-in link for Preprocess",
-    text: [
-      "Use this link to sign in to Preprocess. It works once and expires in 15 minutes:",
-      "",
-      message.url,
-      "",
-      "If you did not ask for it, you can ignore this email.",
-    ].join("\n"),
-  });
+  await sendEmail(
+    env,
+    message.email,
+    magicLinkEmail({ appUrl: env.APP_URL }, { url: message.url }),
+  );
 };

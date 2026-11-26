@@ -28,6 +28,8 @@ import {
 } from "drizzle-orm";
 
 import { decrypt, encrypt, orgKey, orgKeyVersion } from "./crypto.ts";
+import { webhookDisabledEmail } from "./email-templates.ts";
+import { sendEmail } from "./email.ts";
 import { caseRoomUrl } from "./notify.ts";
 import type { Env } from "./env.ts";
 import { readOutbox, writeOutbox } from "./outbox.ts";
@@ -423,16 +425,17 @@ const disableIfFailing = async (env: Env, tx: Tx, endpointId: string) => {
         inArray(member.role, ["owner", "admin"]),
       ),
     );
-  const link = new URL("/developers/webhooks", env.APP_URL).href;
-  for (const admin of admins)
-    await env.EMAIL.send({
-      from: env.EMAIL_FROM,
-      to: admin.email,
-      subject: "A Preprocess webhook endpoint was disabled",
-      text: [
-        `Every delivery to ${endpoint.url} failed for 3 days, so the endpoint was disabled.`,
-        "",
-        `Fix the receiver, then enable it again: ${link}`,
-      ].join("\n"),
-    });
+  const [org] = await tx
+    .select({ name: organization.name })
+    .from(organization)
+    .where(eq(organization.id, endpoint.organizationId));
+  const email = webhookDisabledEmail(
+    { appUrl: env.APP_URL },
+    {
+      url: new URL("/developers/webhooks", env.APP_URL).href,
+      endpointUrl: endpoint.url,
+      orgName: org?.name ?? "your organization",
+    },
+  );
+  for (const admin of admins) await sendEmail(env, admin.email, email);
 };
