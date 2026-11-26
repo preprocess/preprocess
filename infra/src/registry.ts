@@ -63,7 +63,8 @@ export const credentials = async (): Promise<Credentials> => {
   };
 };
 
-const retrying = async (request: () => Promise<Response>) => {
+// Cloudflare's API answers 429 and the odd 5xx; retry those with backoff.
+export const retrying = async (request: () => Promise<Response>) => {
   for (let attempt = 1; ; attempt++) {
     const response = await request();
     if ((response.status !== 429 && response.status < 500) || attempt === 5) {
