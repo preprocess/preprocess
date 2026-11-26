@@ -21,14 +21,26 @@ export class AutumnError extends Error {
 
 export type AutumnCustomer = {
   id: string;
-  subscriptions: { plan_id: string; status: string }[];
+  subscriptions: { plan_id: string; status: string; started_at?: number }[];
   flags: Record<string, unknown>;
   balances: Record<
     string,
-    { granted: number; remaining: number; usage: number; unlimited: boolean }
+    {
+      granted: number;
+      remaining: number;
+      usage: number;
+      unlimited: boolean;
+      breakdown?: {
+        id: string;
+        plan_id: string | null;
+        included_grant: number;
+      }[];
+    }
   >;
   billing_controls?: { auto_topups?: AutoTopUp[] };
-  payment_method?: { card?: { brand: string; last4: string } } | null;
+  payment_method?: {
+    card?: { brand: string; last4: string; fingerprint?: string };
+  } | null;
 };
 
 // Autumn's auto top-up: below threshold credits, buy quantity more, at most
@@ -65,17 +77,29 @@ type Purchase = {
   // Prepaid quantities by feature, such as credits bought.
   quantities?: Record<string, number>;
   successUrl?: string;
+  // A downgrade waits for the end of the billing period.
+  atPeriodEnd?: boolean;
 };
+
+// Free's $5 of credits is granted once per organization and card, by the
+// API itself (billing.ts), never by attaching Free: Autumn grants a plan's
+// included credits again on every attach.
+const withoutFreeCredits = (planId: string) =>
+  planId === "free" && {
+    customize: { remove_items: [{ feature_id: "model_credit" }] },
+  };
 
 const purchase = (organizationId: string, p: Purchase) => ({
   customer_id: organizationId,
   plan_id: p.planId,
+  ...withoutFreeCredits(p.planId),
   ...(p.quantities && {
     feature_quantities: Object.entries(p.quantities).map(
       ([feature_id, quantity]) => ({ feature_id, quantity }),
     ),
   }),
   ...(p.successUrl && { success_url: p.successUrl }),
+  ...(p.atPeriodEnd && { plan_schedule: "end_of_cycle" }),
 });
 
 export type Autumn = ReturnType<typeof client>;
@@ -127,6 +151,7 @@ const client = (key: string) => {
       call<{ url: string }>("billing.setup_payment", {
         customer_id: organizationId,
         plan_id: planId,
+        ...withoutFreeCredits(planId),
         success_url: successUrl,
       }),
     // A plan change or a credit purchase, charged to the card on file. Also
@@ -149,6 +174,34 @@ const client = (key: string) => {
           return plan;
         }),
         success_url: successUrl,
+      }),
+    // Cancels a plan change waiting for the end of the billing period.
+    keep: (organizationId: string, planId: string) =>
+      call<AutumnAttached>("billing.update", {
+        customer_id: organizationId,
+        plan_id: planId,
+        cancel_action: "uncancel",
+      }),
+    // Ends a plan at the end of its billing period with nothing after it, so
+    // that period's invoice bills what was used; for a deleted organization.
+    // Ending it now (cancel_immediately) issues no invoice for usage billed
+    // in arrears, such as seats.
+    end: (organizationId: string, planId: string) =>
+      call<AutumnAttached>("billing.update", {
+        customer_id: organizationId,
+        plan_id: planId,
+        cancel_action: "cancel_end_of_cycle",
+      }),
+    // A one-time grant, idempotent by its id for the customer.
+    grant: (
+      organizationId: string,
+      grant: { featureId: string; credits: number; id: string },
+    ) =>
+      call<unknown>("balances.create", {
+        customer_id: organizationId,
+        feature_id: grant.featureId,
+        included_grant: grant.credits,
+        balance_id: grant.id,
       }),
     // What attach() would charge, without charging.
     preview: (organizationId: string, p: Purchase) =>

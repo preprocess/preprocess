@@ -7,10 +7,19 @@ import { orgId, withOrg, withoutOrg } from "@preprocess/db/client";
 import type { OrgId, SystemTx } from "@preprocess/db/client";
 import { organization } from "@preprocess/db/schema/auth";
 import { newId } from "@preprocess/db/ids";
-import { usageRecords, usageReports } from "@preprocess/db/schema/billing";
+import {
+  freeCreditGrants,
+  usageRecords,
+  usageReports,
+} from "@preprocess/db/schema/billing";
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
-import { autumn, type Autumn, type AutumnCustomer } from "./autumn.ts";
+import {
+  autumn,
+  AutumnError,
+  type Autumn,
+  type AutumnCustomer,
+} from "./autumn.ts";
 import type { Env } from "./env.ts";
 import { monthOf } from "./metering.ts";
 
@@ -84,13 +93,15 @@ const addReport = async (
 
 // Gathers the ledger's unreported rows into one report per organization and
 // feature, then sends every unsent report.
-export const reportUsage = async (env: Env) => {
+// `only` limits it to one organization.
+export const reportUsage = async (env: Env, only?: string) => {
   const billing = autumn(env);
   if (!billing) return;
   const unbundled = and(
     isNull(usageRecords.reportedAt),
     isNull(usageRecords.reportId),
     ne(usageRecords.feature, "log_bytes"),
+    only ? eq(usageRecords.organizationId, only) : undefined,
   );
   const groups = await withoutOrg(env, "billing: unreported usage", (tx) =>
     tx
@@ -141,17 +152,24 @@ export const reportUsage = async (env: Env) => {
       console.error("billing: bundle usage", organizationId, feature, error);
     }
   }
-  await sendReports(env, billing);
+  const unsent = await sendReports(env, billing, only);
+  if (only && unsent) throw new Error(`${unsent} usage reports were not sent`);
 };
 
 // Sends unsent reports, oldest first, each under its own id as the
-// idempotency key, so a retry never counts twice.
-const sendReports = async (env: Env, billing: Autumn) => {
+// idempotency key, so a retry never counts twice. Returns how many are left
+// unsent.
+const sendReports = async (env: Env, billing: Autumn, only?: string) => {
   const reports = await withoutOrg(env, "billing: unsent reports", (tx) =>
     tx
       .select()
       .from(usageReports)
-      .where(isNull(usageReports.reportedAt))
+      .where(
+        and(
+          isNull(usageReports.reportedAt),
+          only ? eq(usageReports.organizationId, only) : undefined,
+        ),
+      )
       .orderBy(asc(usageReports.at))
       .limit(BATCH),
   );
@@ -189,6 +207,7 @@ const sendReports = async (env: Env, billing: Autumn) => {
         .set({ reportedAt: now })
         .where(inArray(usageRecords.reportId, sent));
     });
+  return reports.length - sent.length;
 };
 
 // People with a paid seat (spec 16a): members of the Developers group or of a
@@ -306,6 +325,8 @@ export const reportDaily = async (env: Env, now: Date) => {
 
 export type CloudPlan = {
   name: "free" | "team" | "enterprise" | "internal";
+  // A plan change waiting for the end of the billing period.
+  change: { plan: CloudPlan["name"]; at: Date | null } | null;
   features: Set<string>;
   seats: number | null;
   // Whether the organization has started a plan: at checkout, which takes a
@@ -323,8 +344,19 @@ export const readPlan = (customer: AutumnCustomer): CloudPlan => {
   );
   const name = (active?.plan_id ?? "free") as CloudPlan["name"];
   const seats = customer.balances.seats;
+  const scheduled = customer.subscriptions.find(
+    (s) =>
+      s.status === "scheduled" &&
+      (PLANS as readonly string[]).includes(s.plan_id),
+  );
   return {
     name,
+    change: scheduled
+      ? {
+          plan: scheduled.plan_id as CloudPlan["name"],
+          at: scheduled.started_at ? new Date(scheduled.started_at) : null,
+        }
+      : null,
     features: new Set(Object.keys(customer.flags ?? {})),
     seats: name === "free" && seats && !seats.unlimited ? seats.granted : null,
     started: Boolean(active),
@@ -383,14 +415,88 @@ const planWithoutCard = async (env: Env, org: OrgId) => {
   return created[0] && created[0].createdAt < from ? "free" : null;
 };
 
+// Free's $5 (Chip, 2026-11-26: "One time $5"), granted by us at most once
+// per organization and once per card (Captain), so moving between Team and
+// Free, or deleting and recreating an organization on the same card, never
+// grants it again. Free is attached without it (autumn.ts).
+const FREE_CREDITS = 500;
+const FREE_CREDITS_ID = "free_credit";
+
+const grantFreeCredits = async (
+  billing: Autumn,
+  env: Env,
+  org: OrgId,
+  customer: AutumnCustomer,
+) => {
+  const [done] = await withoutOrg(env, "billing: free credits", (tx) =>
+    tx
+      .select({ org: freeCreditGrants.organizationId })
+      .from(freeCreditGrants)
+      .where(eq(freeCreditGrants.organizationId, org)),
+  );
+  if (done) return;
+  // Before PRE-96, attaching Free carried the $5 itself.
+  const had = Boolean(
+    customer.balances[CREDITS]?.breakdown?.some(
+      (b) =>
+        b.id === FREE_CREDITS_ID ||
+        (b.plan_id === "free" && b.included_grant > 0),
+    ),
+  );
+  const card = had
+    ? null
+    : ((await billing.customer(org, undefined, "payment_method")).payment_method
+        ?.card?.fingerprint ?? null);
+  const claimed = await withoutOrg(env, "billing: claim free credits", (tx) =>
+    tx
+      .insert(freeCreditGrants)
+      .values({ organizationId: org, cardFingerprint: card, granted: true })
+      .onConflictDoNothing()
+      .returning({ org: freeCreditGrants.organizationId }),
+  );
+  if (!claimed.length) {
+    // The card had its $5 in another organization.
+    await withoutOrg(env, "billing: refuse free credits", (tx) =>
+      tx
+        .insert(freeCreditGrants)
+        .values({ organizationId: org, cardFingerprint: null, granted: false })
+        .onConflictDoNothing(),
+    );
+    console.log("billing: free credits already used on this card", org);
+    return;
+  }
+  if (had) return;
+  try {
+    await billing.grant(org, {
+      featureId: CREDITS,
+      credits: FREE_CREDITS,
+      id: FREE_CREDITS_ID,
+    });
+  } catch (error) {
+    if (error instanceof AutumnError && error.status === 409) return;
+    await withoutOrg(env, "billing: release free credits", (tx) =>
+      tx
+        .delete(freeCreditGrants)
+        .where(eq(freeCreditGrants.organizationId, org)),
+    );
+    throw error;
+  }
+};
+
 const loadPlan = async (billing: Autumn, env: Env, org: OrgId) => {
-  const current = readPlan(await billing.customer(org));
-  if (current.started) return current;
-  const given = await planWithoutCard(env, org);
-  if (!given) return current;
-  await billing.attach(org, { planId: given });
-  console.log("billing: attached without a card", org, given);
-  return readPlan(await billing.customer(org));
+  let customer = await billing.customer(org);
+  if (!readPlan(customer).started) {
+    const given = await planWithoutCard(env, org);
+    if (given) {
+      await billing.attach(org, { planId: given });
+      console.log("billing: attached without a card", org, given);
+      customer = await billing.customer(org);
+    }
+  }
+  const current = readPlan(customer);
+  if (current.started && current.name === "free")
+    await grantFreeCredits(billing, env, org, customer);
+  return current;
 };
 
 export const cloudPlan = async (env: Env, org: OrgId) => {
@@ -495,6 +601,33 @@ export const readCredits = (customer: AutumnCustomer) => {
     remaining: balance.remaining,
     owed: Math.max(0, balance.usage - balance.granted),
   };
+};
+
+// Deleting an organization ends Team (Captain): its usage and this month's
+// seats are reported now, and Team is cancelled so nothing more accrues; the
+// period's invoice bills them, with no refund, and credits left are
+// forfeited. Any failure stops the deletion.
+export const endBillingForDeletion = async (env: Env, org: string) => {
+  const billing = autumn(env);
+  if (!billing) return;
+  const plan = readPlan(await billing.customer(org));
+  if (!plan.started || plan.name !== "team") return;
+  await reportUsage(env, org);
+  const now = new Date();
+  const month = monthOf(now);
+  const seats = await withoutOrg(env, "billing: seats at deletion", (tx) =>
+    activeSeats(tx, org, month),
+  );
+  if (seats > 0)
+    await billing.track({
+      organizationId: org,
+      featureId: "seats",
+      value: seats,
+      at: now,
+      idempotencyKey: `seats:${org}:${month}`,
+    });
+  await billing.end(org, "team");
+  console.log("billing: ended Team for a deleted organization", org);
 };
 
 // The organization's name, for its Autumn customer.

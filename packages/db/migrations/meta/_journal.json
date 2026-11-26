@@ -211,6 +211,13 @@
       "when": 1795714666971,
       "tag": "0033_case_fees",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795723527489,
+      "tag": "0034_free_credit_grants",
+      "breakpoints": true
     }
   ]
 }

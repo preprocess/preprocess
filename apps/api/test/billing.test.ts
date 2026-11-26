@@ -11,7 +11,9 @@ import {
   groupMembers,
   groups,
 } from "@preprocess/db/schema/access";
+import { organization } from "@preprocess/db/schema/auth";
 import {
+  freeCreditGrants,
   seatActivity,
   usageRecords,
   usageReports,
@@ -49,7 +51,7 @@ type Call = {
 };
 let calls: Call[] = [];
 let customer: {
-  subscriptions: { plan_id: string; status: string }[];
+  subscriptions: { plan_id: string; status: string; started_at?: number }[];
   flags: Record<string, unknown>;
   balances: Record<string, unknown>;
   billing_controls?: { auto_topups?: unknown[] };
@@ -57,6 +59,7 @@ let customer: {
 };
 let allowed = true;
 let paymentUrl: string | null = null;
+let failUpdate = false;
 
 const stubAutumn = () =>
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -91,6 +94,12 @@ const stubAutumn = () =>
       customer.billing_controls = body.billing_controls as never;
       return json({ id: body.customer_id, ...customer });
     }
+    if (route === "billing.update") {
+      if (failUpdate)
+        return Promise.resolve(new Response("{}", { status: 500 }));
+      return json({ payment_url: null });
+    }
+    if (route === "balances.create") return json({ success: true });
     if (route === "billing.multi_attach")
       return json({ payment_url: paymentUrl });
     if (route === "billing.attach" && body.plan_id === "credits")
@@ -179,6 +188,7 @@ afterEach(() => {
   calls = [];
   allowed = true;
   paymentUrl = null;
+  failUpdate = false;
 });
 
 const balance = (remaining: number, granted = remaining, usage = 0) => ({
@@ -537,6 +547,7 @@ describe("checkout", () => {
     ).toEqual({
       customer_id: shop.org,
       plan_id: "free",
+      customize: { remove_items: [{ feature_id: "model_credit" }] },
       success_url: "https://app.example.test/cases",
     });
     const elsewhere = await shop.owner.call(path, {
@@ -800,7 +811,7 @@ describe("billing routes", () => {
     expect(byKey.body).toMatchObject({ credits: { remaining: 0 }, card: null });
   });
 
-  it("let the Owner buy credits on Free and Team, at least 1,000, charged to the card or finished on Stripe's page", async () => {
+  it("let the Owner buy credits on Free and Team, at least 1,000, charged to the card or finished on the payment page", async () => {
     const shop = await organizationWithAgent("Topupco", env);
     const big = await organizationWithAgent("Bigco", env);
     stubAutumn();
@@ -948,5 +959,246 @@ describe("billing routes", () => {
         })
       ).status,
     ).toBe(409);
+  });
+});
+
+describe("moving down a plan", () => {
+  const env = testEnv({
+    AUTUMN_SECRET_KEY: "am_sk_test_stub",
+    APP_URL: "https://app.example.test",
+  });
+  const team = () => ({
+    subscriptions: [{ plan_id: "team", status: "active" }],
+    flags: {},
+    balances: { model_credit: balance(800) },
+  });
+  const toFree = (client: Client, org: string) =>
+    client.call<{ url: string | null; error?: string }>(
+      `/v1/orgs/${org}/billing/plan`,
+      { body: { plan: "free" } },
+    );
+
+  it("moves Team to Free at the end of the billing period, and shows the change waiting", async () => {
+    const shop = await organizationWithAgent("Downco", env);
+    stubAutumn();
+    customer = team();
+    const moved = await toFree(shop.owner, shop.org);
+    expect(moved.status).toBe(200);
+    expect(moved.body).toEqual({ url: null });
+    expect(calls.find((c) => c.route === "billing.attach")?.body).toEqual({
+      customer_id: shop.org,
+      plan_id: "free",
+      customize: { remove_items: [{ feature_id: "model_credit" }] },
+      success_url: "https://app.example.test/",
+      plan_schedule: "end_of_cycle",
+    });
+
+    const later = await organizationWithAgent("Laterco", env);
+    customer = {
+      ...team(),
+      subscriptions: [
+        { plan_id: "team", status: "active" },
+        {
+          plan_id: "free",
+          status: "scheduled",
+          started_at: Date.UTC(2026, 11, 26),
+        },
+      ],
+    };
+    const billing = await later.owner.call(`/v1/orgs/${later.org}/billing`);
+    expect(billing.body).toMatchObject({
+      plan: "team",
+      change: { plan: "free", at: "2026-12-26T00:00:00.000Z" },
+      credits: { remaining: 800 },
+    });
+  });
+
+  it("leaves Enterprise changes to us", async () => {
+    const big = await organizationWithAgent("Contactco", env);
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "enterprise", status: "active" }],
+      flags: {},
+      balances: {},
+    };
+    for (const path of ["billing/plan", "billing/checkout"]) {
+      const refused = await big.owner.call<{ error: string }>(
+        `/v1/orgs/${big.org}/${path}`,
+        { body: { plan: "team" } },
+      );
+      expect(refused.status).toBe(409);
+      expect(refused.body.error).toBe(
+        "Contact us to change an Enterprise plan.",
+      );
+    }
+    expect(
+      calls.some(
+        (c) =>
+          c.route.startsWith("billing.") &&
+          c.route !== "billing.preview_attach",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("keeping Team", () => {
+  it("cancels a waiting move to Free, and answers 409 when none is waiting", async () => {
+    const env = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      APP_URL: "https://app.example.test",
+    });
+    const shop = await organizationWithAgent("Keepco", env);
+    stubAutumn();
+    customer = {
+      subscriptions: [
+        { plan_id: "team", status: "active" },
+        {
+          plan_id: "free",
+          status: "scheduled",
+          started_at: Date.UTC(2026, 11, 26),
+        },
+      ],
+      flags: {},
+      balances: { model_credit: balance(800) },
+    };
+    const path = `/v1/orgs/${shop.org}/billing/plan/change`;
+    expect((await shop.keyed.call(path, { method: "DELETE" })).status).toBe(
+      403,
+    );
+    const kept = await shop.owner.call(path, { method: "DELETE" });
+    expect(kept.status).toBe(204);
+    expect(calls.find((c) => c.route === "billing.update")?.body).toEqual({
+      customer_id: shop.org,
+      plan_id: "team",
+      cancel_action: "uncancel",
+    });
+    customer.subscriptions = [{ plan_id: "team", status: "active" }];
+    expect((await shop.owner.call(path, { method: "DELETE" })).status).toBe(
+      409,
+    );
+  });
+});
+
+describe("Free's $5", () => {
+  const free = (
+    fingerprint: string,
+    balances: Record<string, unknown> = {},
+  ) => ({
+    subscriptions: [{ plan_id: "free", status: "active" }],
+    flags: {},
+    balances,
+    payment_method: { card: { brand: "visa", last4: "4242", fingerprint } },
+  });
+  const grants = () => calls.filter((c) => c.route === "balances.create");
+  const recorded = (org: string) =>
+    withoutOrg(environment, "test: free credits", (tx) =>
+      tx
+        .select({
+          card: freeCreditGrants.cardFingerprint,
+          granted: freeCreditGrants.granted,
+        })
+        .from(freeCreditGrants)
+        .where(eq(freeCreditGrants.organizationId, org)),
+    );
+
+  it("is granted once per organization and once per card, never by attaching Free", async () => {
+    const first = await organizationWithAgent("Fiveco");
+    const again = await organizationWithAgent("Farmco");
+    const card = `fp_${first.org}`;
+    stubAutumn();
+    customer = free(card);
+    await getPlan(environment, orgId(first.org));
+    expect(grants().map((c) => c.body)).toEqual([
+      {
+        customer_id: first.org,
+        feature_id: "model_credit",
+        included_grant: 500,
+        balance_id: "free_credit",
+      },
+    ]);
+    expect(await recorded(first.org)).toEqual([{ card, granted: true }]);
+
+    calls = [];
+    await getPlan(environment, orgId(again.org));
+    expect(grants()).toEqual([]);
+    expect(await recorded(again.org)).toEqual([{ card: null, granted: false }]);
+  });
+
+  it("is not granted again to an organization that had it, by us or by Free before", async () => {
+    const back = await organizationWithAgent("Backco");
+    const legacy = await organizationWithAgent("Legacyco");
+    await withoutOrg(environment, "test: free credits", (tx) =>
+      tx.insert(freeCreditGrants).values({
+        organizationId: back.org,
+        cardFingerprint: null,
+        granted: true,
+      }),
+    );
+    stubAutumn();
+    customer = free(`fp_${back.org}`);
+    await getPlan(environment, orgId(back.org));
+    customer = free(`fp_${legacy.org}`, {
+      model_credit: {
+        ...balance(120, 500, 380),
+        breakdown: [{ id: "cus_ent_1", plan_id: "free", included_grant: 500 }],
+      },
+    });
+    await getPlan(environment, orgId(legacy.org));
+    expect(grants()).toEqual([]);
+    expect(await recorded(legacy.org)).toEqual([{ card: null, granted: true }]);
+  });
+});
+
+describe("deleting an organization", () => {
+  const deleting = (client: Client, org: string) =>
+    client.call("/api/auth/organization/delete", {
+      body: { organizationId: org },
+    });
+  const exists = async (org: string) =>
+    (
+      await withoutOrg(environment, "test: organization", (tx) =>
+        tx
+          .select({ id: organization.id })
+          .from(organization)
+          .where(eq(organization.id, org)),
+      )
+    ).length > 0;
+
+  it("ends Team after reporting its seats and usage, and stops if billing can't", async () => {
+    const kept = await organizationWithAgent("Stuckco");
+    const gone = await organizationWithAgent("Goneco");
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "team", status: "active" }],
+      flags: {},
+      balances: { model_credit: balance(300) },
+    };
+    failUpdate = true;
+    const refused = await deleting(kept.owner, kept.org);
+    expect(refused.status).toBe(503);
+    expect(refused.body).toMatchObject({
+      message:
+        "This organization's plan couldn't be closed, so nothing was deleted. Try again in a few minutes.",
+    });
+    expect(await exists(kept.org)).toBe(true);
+
+    failUpdate = false;
+    calls = [];
+    await withOrg(environment, orgId(gone.org), (tx) =>
+      tx.insert(usageRecords).values({
+        id: newId("usageRecord"),
+        organizationId: gone.org,
+        feature: "model_usage",
+        quantity: 30_000,
+      }),
+    );
+    expect((await deleting(gone.owner, gone.org)).status).toBe(200);
+    expect(await exists(gone.org)).toBe(false);
+    const routes = calls.map((c) => [
+      c.route,
+      c.body.feature_id ?? c.body.cancel_action,
+    ]);
+    expect(routes).toContainEqual(["track", "model_usage_credits"]);
+    expect(routes.at(-1)).toEqual(["billing.update", "cancel_end_of_cycle"]);
   });
 });
