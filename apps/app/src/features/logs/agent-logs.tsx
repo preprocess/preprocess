@@ -1,7 +1,7 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
-import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
+import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { ChevronDown } from "@preprocess/ui/lib/icons";
 import { cn } from "@preprocess/ui/lib/utils";
@@ -170,31 +170,38 @@ export function AgentLogs({ agentSlug }: Readonly<{ agentSlug: string }>) {
 
   return (
     <SettingsSection
+      className="[contain:inline-size]"
       description="Console output, errors and platform events from this agent's cases in the last 7 days, newest first."
       title="Logs"
     >
-      <div className="flex flex-wrap items-center gap-3">
-        <Tabs
-          aria-label="Log level"
-          onValueChange={(value) => setFilter(value as Filter)}
-          value={filter}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <ScrollArea
+          className="min-w-0 md:shrink-0"
+          orientation="horizontal"
+          viewportClassName="scroll-fade-x"
         >
-          <TabsList>
-            {FILTERS.map((value) => {
-              const count = counts.get(value) ?? 0;
-              const label = value === "all" ? "All" : LEVEL_LABEL[value];
-              return (
-                <TabItem
-                  key={value}
-                  label={`${label} ${countFormat.format(count)}${more ? "+" : ""}`}
-                  value={value}
-                />
-              );
-            })}
-          </TabsList>
-        </Tabs>
+          <div className="w-max">
+            <Tabs
+              aria-label="Log level"
+              onSelect={(index) => setFilter(FILTERS[index] ?? "all")}
+              selectedIndex={Math.max(0, FILTERS.indexOf(filter))}
+            >
+              {FILTERS.map((value, index) => {
+                const count = counts.get(value) ?? 0;
+                const label = value === "all" ? "All" : LEVEL_LABEL[value];
+                return (
+                  <TabsItem
+                    index={index}
+                    key={value}
+                    label={`${label} ${countFormat.format(count)}${more ? "+" : ""}`}
+                  />
+                );
+              })}
+            </Tabs>
+          </div>
+        </ScrollArea>
         <SettingsSearchField
-          className="min-w-48 flex-1"
+          className="md:min-w-48 md:flex-1"
           label="Search logs"
           onChange={setQuery}
           placeholder="Search messages"

@@ -34,7 +34,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@preprocess/ui/components/sidebar-menu";
-import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
+import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { useTouchPrimary } from "@preprocess/ui/hooks/use-touch-primary";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
@@ -291,7 +291,7 @@ function SearchTrigger({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-// Guides or Reference: a segmented switch whose segments are links.
+// Guides or Reference: tabs whose items are links.
 function SectionSwitch({
   inReference,
   referenceUrl,
@@ -302,20 +302,18 @@ function SectionSwitch({
   const router = useRouter();
   return (
     <Tabs
-      className="w-full"
-      onValueChange={(value) => {
-        const url = value === "reference" ? referenceUrl : "/";
+      aria-label="Section"
+      onSelect={(index) => {
+        const url = index === 1 ? referenceUrl : "/";
         if (url) void router.navigate({ href: url });
       }}
+      selectedIndex={inReference ? 1 : 0}
       size="compact"
-      value={inReference ? "reference" : "guides"}
     >
-      <TabsList className="w-full *:flex-1">
-        <TabItem icon={BookOpen} label="Guides" value="guides" />
-        {referenceUrl ? (
-          <TabItem icon={Code} label="Reference" value="reference" />
-        ) : null}
-      </TabsList>
+      <TabsItem icon={BookOpen} index={0} label="Guides" />
+      {referenceUrl ? (
+        <TabsItem icon={Code} index={1} label="Reference" />
+      ) : null}
     </Tabs>
   );
 }

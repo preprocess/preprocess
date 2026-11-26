@@ -27,7 +27,7 @@ import {
   useFluidHover,
   useRegisterFluidHoverItem,
 } from "@preprocess/ui/hooks/use-fluid-hover";
-import { TabItem, Tabs, TabsList } from "@preprocess/ui/components/tabs";
+import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
   OrbitSparkle,
@@ -931,24 +931,25 @@ export function CaseInbox({
     view === "all"
       ? Object.values(statusCounts).reduce((total, n) => total + n, 0)
       : (statusCounts[VIEW_LABEL[view]] ?? 0);
+  const statusTabs = (
+    <Tabs
+      aria-label="Case status"
+      onSelect={(index) => onSearchChange({ view: VIEW_ORDER[index] ?? "all" })}
+      selectedIndex={Math.max(0, VIEW_ORDER.indexOf(search.view))}
+      size="compact"
+    >
+      {VIEW_ORDER.map((view, index) => (
+        <TabsItem
+          index={index}
+          key={view}
+          label={`${VIEW_LABEL[view]} ${countFormat.format(viewCount(view))}`}
+        />
+      ))}
+    </Tabs>
+  );
   const toolbar = (
     <div className="flex items-center gap-2">
-      <Tabs
-        aria-label="Case status"
-        onValueChange={(view) => onSearchChange({ view: view as CasesView })}
-        size="compact"
-        value={search.view}
-      >
-        <TabsList>
-          {VIEW_ORDER.map((view) => (
-            <TabItem
-              key={view}
-              label={`${VIEW_LABEL[view]} ${countFormat.format(viewCount(view))}`}
-              value={view}
-            />
-          ))}
-        </TabsList>
-      </Tabs>
+      <div className="hidden md:block">{statusTabs}</div>
       {/* The buttons share one hover highlight, indexed left to right. */}
       <Toolbar label="Case options">
         <CaseFilterMenu
@@ -968,23 +969,41 @@ export function CaseInbox({
       <AddCaseButton agentId={agent?.id} agents={startAgents} />
     </div>
   );
+  const environment = (
+    <CaseEnvironmentSelect
+      onChange={(env) => onSearchChange({ env })}
+      value={search.env}
+    />
+  );
+  const searchField = (className: string) => (
+    <SettingsSearchField
+      className={className}
+      label="Search cases"
+      onChange={(q) => onSearchChange({ q })}
+      placeholder="Search cases"
+      value={search.q}
+    />
+  );
   const scope = (
-    <>
-      <CaseEnvironmentSelect
-        onChange={(env) => onSearchChange({ env })}
-        value={search.env}
-      />
-      <SettingsSearchField
-        className="w-64"
-        label="Search cases"
-        onChange={(q) => onSearchChange({ q })}
-        placeholder="Search cases"
-        value={search.q}
-      />
-    </>
+    <div className="hidden min-w-0 items-center gap-3 md:flex">
+      {environment}
+      {searchField("w-64")}
+    </div>
   );
   const body = (
     <>
+      {/* Narrow screens: the header keeps the title and actions; the status
+          tabs take their own row, scrolling sideways when the counts don't
+          fit, with the environment and search below them. */}
+      <div className="flex shrink-0 flex-col gap-2 border-b border-border py-2 md:hidden">
+        <ScrollArea orientation="horizontal" viewportClassName="scroll-fade-x">
+          <div className="w-max px-3">{statusTabs}</div>
+        </ScrollArea>
+        <div className="flex items-center gap-2 px-3">
+          {environment}
+          {searchField("min-w-0 flex-1")}
+        </div>
+      </div>
       <CaseFilterChips
         onChange={(patch) => onSearchChange(patch)}
         search={agentScoped ? { ...search, agent: [] } : search}
