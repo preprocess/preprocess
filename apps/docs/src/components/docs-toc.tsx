@@ -4,7 +4,6 @@ import {
   ChevronRight,
   TextAlignStart,
 } from "@preprocess/ui/lib/icons";
-import { spring } from "@preprocess/ui/lib/springs";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
 import { cn } from "@preprocess/ui/lib/utils";
 import {
@@ -13,10 +12,7 @@ import {
   useTOCItems,
 } from "fumadocs-ui/components/toc";
 import { TOCItem, TOCItems } from "fumadocs-ui/components/toc/clerk";
-import { motion } from "motion/react";
 import { useState } from "react";
-
-import { Wordmark } from "./wordmark";
 
 // The table of contents in Fumadocs' clerk style: a track that follows each
 // heading's depth and lights up the sections in view.
@@ -91,29 +87,28 @@ export function OnThisPagePopover() {
   );
 }
 
-// Below lg, once the title scrolls away, the header's left side becomes the
-// mark and the section in view; tapping it opens the contents over the page.
+// Below lg, once the title scrolls away, a second bar under the header
+// names the section in view; tapping it opens the contents over the page.
 export function MobileContents({ title }: { title?: string }) {
   const [open, setOpen] = useState(false);
   const current = useCurrentSection();
   return (
     <>
-      <motion.button
-        animate={{ opacity: 1 }}
+      <button
         aria-expanded={open}
-        className={cn(typeClass("body"), "flex min-w-0 items-center gap-2")}
-        initial={{ opacity: 0 }}
+        className={cn(
+          typeClass("body"),
+          "flex h-11 w-full items-center gap-2 px-5 text-left text-foreground",
+        )}
         onClick={() => setOpen(!open)}
-        transition={spring.moderate}
         type="button"
       >
-        <Wordmark className="size-4.5" markOnly />
-        <span aria-hidden className="h-4 w-px shrink-0 bg-border" />
+        <TextAlignStart className="shrink-0 text-muted-foreground" size={14} />
         <span
-          className="min-w-0 truncate text-foreground"
+          className="min-w-0 flex-1 truncate"
           style={{ fontVariationSettings: fontWeights.medium }}
         >
-          {current ?? title}
+          {current ?? title ?? "On this page"}
         </span>
         <ChevronDown
           className={cn(
@@ -122,12 +117,12 @@ export function MobileContents({ title }: { title?: string }) {
           )}
           size={14}
         />
-      </motion.button>
+      </button>
       {open ? (
         <>
           <button
             aria-label="Close contents"
-            className="fixed inset-0 top-13 z-10 bg-[rgb(var(--overlay)/0.2)]"
+            className="fixed inset-0 top-24 z-10 bg-[rgb(var(--overlay)/0.2)]"
             onClick={() => setOpen(false)}
             type="button"
           />
