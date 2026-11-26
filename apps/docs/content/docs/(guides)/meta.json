@@ -3,9 +3,15 @@
   "root": true,
   "pages": [
     "index",
-    "---Connect---",
-    "mcp",
+    "---Start here---",
+    "introduction",
+    "quickstart",
+    "how-it-works",
+    "---Concepts---",
+    "...concepts",
     "---Deploy and operate---",
-    "...deploy-and-operate"
+    "...deploy-and-operate",
+    "---Connect---",
+    "mcp"
   ]
 }

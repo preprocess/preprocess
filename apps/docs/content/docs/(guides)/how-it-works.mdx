@@ -1,0 +1,228 @@
+---
+title: How it works
+description:
+  Why Preprocess separates the case runtime from your agent code, and what
+  happens to one case from start to finish.
+---
+
+Preprocess is a set of Cloudflare Workers built around two architectural
+choices: **each case owns a single Durable Object**, and **the model loop runs
+on the platform while your agent code runs only when called for tools or schema
+evaluation**. This page explains why the system is built that way and traces the
+invoice case from the [Quickstart](/quickstart) end to end.
+
+## Why the architecture is split this way
+
+**One Durable Object per case gives single-writer durability and isolation.** A
+case is not a stateless HTTP request: it accumulates thread messages, structured
+answers, dependency-tracked stale flags, pending approvals, and run state across
+hours or days of human-in-the-loop work. Putting all of that inside a
+single-threaded Durable Object keyed by organization, agent, and case means
+there is one authoritative writer per case. Concurrent operator edits, agent
+tool results, and approval decisions are serialized without distributed locks,
+and an isolate restart never loses in-flight state. Postgres only stores the
+cross-case index (status, waited-on team, assignees, cost) so the inbox and
+search stay fast without contending with live case execution.
+
+**Running the model loop on the platform keeps your agent code stateless and
+isolated.** Your deployed bundle does not ship a model client, a retry loop, or
+a state store. Instead, the case runtime loads your bundle from R2 into a
+short-lived Dynamic Worker isolate and invokes it only to read the manifest,
+execute a tool, or evaluate the output schema. That boundary buys three things:
+
+- **Code-only rollbacks.** Because runtime state lives in the Durable Object and
+  your code is stateless, rolling back a deployment only swaps which bundle hash
+  new cases load. Platform runtime improvements ship without requiring you to
+  redeploy agents.
+- **Hard security boundaries.** Secrets granted to the agent are injected into
+  the Dynamic Worker's `env` by the loader; the model never sees them. Every
+  outbound `fetch()` from your code passes through a gateway that enforces the
+  agent's `network` allowlist, and MCP connection tokens stay on the platform
+  side.
+- **Uniform governance.** Spending limits, tool retries, `sideEffects`
+  protection, approval gates, and full run capture happen in one place—the
+  runtime—regardless of how you wrote your tools.
+
+## The parts
+
+| Part            | What it is                                                                           | Holds                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| App             | The product people use: inbox, cases, case room, agents, and settings.               | Nothing of its own; serves sign-in and `/v1` on the app's own origin.                     |
+| API             | A Worker serving `/v1`: deploys, cases, groups, settings, webhooks, and audit logs.  | Postgres, through Hyperdrive: people, groups, grants, secrets, the case index, and audit. |
+| Case runtime    | One Durable Object per case that runs the model loop and holds live case state.      | The case's thread, answers, review events, approvals, and run state.                      |
+| Your agent code | Each deployment's bundle, loaded into its own isolate as a Dynamic Worker.           | Nothing; it is stateless and called only for manifest reads, tools, and schema hooks.     |
+| Storage         | R2 buckets and Queues.                                                               | Bundles, uploaded files, run capture, run logs, and signed daily audit manifests.         |
+| Model providers | Baseten (Kimi, DeepSeek, `decide`), Cloudflare Workers AI (Qwen), and Mistral (OCR). | Nothing; stateless inference per call (or your own serving URLs when self-hosted).        |
+
+<Flow caption="One case, from the call that opens it to the result going out.">
+  <Node id="in" kind="actor" icon="plug" at="0 0">
+    API call, schedule, app or MCP
+  </Node>
+  <Node id="api" icon="server" at="0 1">API Worker</Node>
+  <Node id="rt" icon="box" at="1 1" narrow="0 2"
+    detail="Durable Object">case runtime</Node>
+  <Node id="code" icon="code" at="2 1" narrow="0 3"
+    detail="Dynamic Worker">your agent code</Node>
+  <Node id="out" kind="end" icon="send" at="0 2" narrow="1 1">
+    webhooks, inbox, email
+  </Node>
+  <Node id="model" icon="cpu" at="1 2" narrow="1 2">model service</Node>
+
+  <Edge from="in" to="api" />
+  <Edge from="api" to="rt" label="queue" />
+  <Edge from="rt" to="api" label="status" />
+  <Edge from="rt" to="code" label="tool calls" />
+  <Edge from="rt" to="model" />
+  <Edge from="api" to="out" />
+</Flow>
+
+## 1. The call that opens the case
+
+`POST /v1/orgs/{org}/cases` names the agent and carries plain text, uploaded
+file ids, or both. Before queuing anything, the API checks entitlements and
+commits the case in one Postgres transaction:
+
+1. **Plan and spending gates.** On Preprocess Cloud, the API refuses the call
+   with `402` if the organization has not started a plan (`plan_required`), has
+   exhausted its monthly plan cases (`credit_exhausted`), or has reached its
+   monthly spending limit.
+2. **Idempotency.** If the request includes an `Idempotency-Key` header, the API
+   hashes the request body and caller. A matching retry within 24 hours returns
+   the original `202` response; a different body with the same key returns
+   `422`.
+3. **Deployment selection.** The API pins the case to the deployment named in
+   the call, or to the agent's current production deployment. A deployment still
+   `waiting` on a guardrail cannot take cases.
+4. **Commit and enqueue.** The API inserts the case into the index as `queued`,
+   attaches any uploaded files, writes an audit event, and pushes a start
+   message to the queue.
+
+It returns `202 Accepted` immediately with the case id and a status URL—it never
+blocks waiting for the model.
+
+A queue consumer picks up the message, gathers the snapshot the run needs (the
+pinned deployment, attached files, groups with access to the agent, accepted
+memory rules, and the agent's current effective settings), and starts the case
+on its Durable Object.
+
+## 2. The run starts
+
+The case's Durable Object is addressed by `(organization, agent, case)`. It
+fetches your deployment's bundle from R2, verifies its SHA-256 hash against the
+hash recorded at deploy, and loads it as a Dynamic Worker. Only the secrets the
+agent declared and an Admin granted are bound into `env`, and an outbound
+handler enforces the agent's `network` host allowlist.
+
+The runtime reads the code's manifest (instructions, tools, output schema,
+groups) and builds the opening prompt from the case's text and accepted memory
+rules. If `ocr: true` is enabled on the agent, Preprocess reads each uploaded
+PDF or image (PNG, JPEG, or WebP, up to 50 MB and 1,000 pages) from R2 and sends
+it to Mistral OCR (`mistral-ocr-4-1`) before the first model turn, converting
+each page to Markdown. Without OCR enabled, the agent only sees the files' names
+and content types.
+
+## 3. The agent works
+
+The Durable Object drives the model loop. Each agent model routes to its own
+provider:
+
+- `kimi-k3.1-pro`, `deepseek-v4.1-flash`, and `deepseek-v4.1-flash-fast` go to
+  Baseten's per-token Model APIs.
+- `qwen3.8-27b` runs on Cloudflare Workers AI through the `AI` binding.
+- `decide` calls Baseten's `groundhog-1` decision model.
+
+During the loop, the model can invoke two kinds of tools:
+
+- **Your tools.** The runtime calls `/tools/{name}` on your Dynamic Worker with
+  the validated Zod input. As a second line of defense, the SDK redacts bound
+  secret values from tool results, errors, and console output before returning.
+  If a tool throws, the runtime retries up to `toolRetries`—unless the tool sets
+  `sideEffects: true`, in which case it is never retried. If a tool declares an
+  `approval`, execution pauses before `run` is called until an eligible person
+  approves.
+- **Platform tools.** Reading and answering the output schema
+  (`schema_overview`, `schema_read`, `schema_answer`), searching or paging long
+  option sources (`options_search`, `options_page`), calling `decide`, listing
+  or tagging groups (`groups_list`, `tag_group`), and proposing a memory rule
+  (`memory_propose`). These execute inside the runtime, never in your code.
+
+Before every metered call (a model turn, an OCR request, or a `decide` call),
+the runtime checks the organization's spending limit and plan credit. If the
+limit is reached mid-run, the runtime stops the case as `halted` instead of
+making the call.
+
+## 4. The run ends
+
+When the model finishes (or hits a stopping condition), the runtime calls your
+Dynamic Worker to evaluate the output schema: which fields are visible, which
+require review, whether all named checks pass, and whether the success condition
+is met. The runtime then settles the case:
+
+- **`completed`**, when every check passes, the success condition is met, no
+  approval is pending, and no tool called `ctx.waitOn(...)`;
+- **`waiting`**, when any of those holds the case, recording the reason and the
+  group it waits on, if any;
+- **`failed`**, when the run itself fails—for example, by exceeding
+  `timeoutSeconds` or hitting an unrecoverable model error.
+
+The runtime seals the complete run record (every model turn, tool call and
+result, `decide` choice, token count, and timing) into R2 as the case's capture,
+and reports the new status to the API. The API updates the Postgres case index,
+surfaces the case in the inbox of any waited-on group, and sends immediate email
+notifications to group members who have not muted them.
+
+## 5. People step in
+
+Operators work a waiting case in the case room's Review tab, through the API, or
+through MCP (except approvals, which are always a person's act). They confirm or
+edit answers, approve or reject pending requests, and post messages in the
+thread. Every edit carries a version check so two operators cannot silently
+overwrite each other, and every action writes a review event.
+
+From there, an operator either **completes** the case (subject to the same
+checks, success condition, and approvals the agent must satisfy) or **reruns**
+the agent. A rerun starts a fresh turn on the same Durable Object with a prompt
+summarizing what people changed, which dependent fields went stale, and any new
+messages or files. Answers a person confirmed stay theirs: if the agent
+disagrees on a rerun, its value lands beside the person's as a suggestion. See
+[Review and approvals](/concepts/review-and-approvals).
+
+## 6. The result goes out
+
+When a case reaches `completed`, the API:
+
+- delivers `case.completed` (with the visible structured answers) to every
+  subscribed outbound webhook endpoint;
+- adds the case to the agent's automatic eval suite, using human-corrected
+  answers as the expected output;
+- retains the run capture, run logs, and audit events according to the
+  organization's retention policy (kept forever by default, or purged by a daily
+  sweep after a configured number of days).
+
+A failed case sends `case.failed`, and a case that begins waiting on a new group
+sends `case.needs_group`. Cancelled and halted cases send no webhooks.
+
+## Data locality: Cloud vs. self-hosted
+
+| Data                                                       | Where it lives                            |
+| ---------------------------------------------------------- | ----------------------------------------- |
+| People, organizations, groups, grants, API keys            | Postgres                                  |
+| Secrets                                                    | Postgres, envelope-encrypted per org      |
+| Case index: status, waited-on team, assignees, cost        | Postgres                                  |
+| Live case state: thread, answers, review events, approvals | The case's Durable Object                 |
+| Agent bundles, uploaded files, and run capture             | R2                                        |
+| Run logs                                                   | R2, with searchable summaries in Postgres |
+| Audit events                                               | Postgres, with signed daily copies in R2  |
+
+**On Preprocess Cloud:** Your Postgres database, R2 buckets, Workers, Durable
+Objects, and Baseten model inference all run in US regions (`us` at launch). The
+one exception is OCR: documents sent for OCR go to Mistral's global API
+endpoint, so OCR payloads may be processed outside the US.
+
+**On self-hosted:** Every Worker, Durable Object, Queue, Container, and R2
+bucket runs inside your own Cloudflare account (with optional `R2_LOCATION_HINT`
+for bucket placement), backed by your own Postgres database. Qwen 3.8 27B runs
+in your own account via Cloudflare Workers AI; for Kimi, DeepSeek, `decide`, and
+OCR, you can supply your own provider API keys or point any model at your own
+serving URLs with `MODEL_ENDPOINTS` so payloads never leave your chosen network
+boundary.

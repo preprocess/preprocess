@@ -7,25 +7,20 @@ import {
   patchCasesSearch,
   type CasesSearchParams,
 } from "../../../../features/agent-cases/case-inbox-search";
-import {
-  getCaseAccess,
-  getCaseAgent,
-  listOrgCases,
-} from "../../../../features/agent-cases/list-org-cases";
+import { loadCasesPage } from "../../../../features/agent-cases/list-org-cases";
 
 // Not nested under /agents/$agentId: seeded cases name agents the API
-// doesn't have, so this page loads its agent through getCaseAgent.
+// doesn't have, so this page loads its agent through loadCasesPage.
 export const Route = createFileRoute("/agents/$agentId_/cases/")({
   staticData: { ownsHeader: true },
   validateSearch: (search: Record<string, unknown>): CasesSearchParams =>
     casesSearchForUrl(parseCasesSearch(search)),
   loaderDeps: ({ search }) => ({ search: parseCasesSearch(search) }),
   loader: async ({ params, deps }) => {
-    const [agent, page, access] = await Promise.all([
-      getCaseAgent(params.agentId),
-      listOrgCases({ ...deps.search, agent: [params.agentId] }),
-      getCaseAccess(),
-    ]);
+    const { agent, page, access } = await loadCasesPage(
+      deps.search,
+      params.agentId,
+    );
     if (!agent) throw notFound();
     return { agent, page, access };
   },

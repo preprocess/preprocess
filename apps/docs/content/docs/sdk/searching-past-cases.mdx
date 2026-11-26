@@ -1,10 +1,23 @@
 ---
 title: Searching past cases
+description:
+  Opt in to the search_cases tool so an agent can look up how similar completed
+  cases were resolved.
 ---
 
-With `searchCases: true`, the agent gets a `search_cases` tool. It searches the
-agent's own completed cases to see how similar work was resolved. It's off
-unless you turn it on, in code or as an override in the agent's settings.
+`searchCases: true` gives an agent the built-in `search_cases` platform tool,
+allowing the model to search its own completed cases when it encounters an
+unfamiliar vendor, edge case, or formatting convention. It is off by default so
+agents only read historical cases when you explicitly opt in—either in code or
+as a temporary override in the agent's settings.
+
+## Why past-case search is separate from memory
+
+[Memory](/sdk/memory) injects a small set of human-approved rules (up to 100)
+into every case. Real operations also have thousands of long-tail precedents
+that would never fit in a prompt. `search_cases` lets the model query Postgres
+full-text search on demand for words, invoice numbers, or vendor names and see
+how operators actually corrected similar cases.
 
 ```ts
 import { agent } from "@preprocess/sdk";
@@ -16,15 +29,28 @@ export default agent({
 });
 ```
 
-- The search covers only this agent's completed cases in the same organization
-  and environment. Production and preview deployments each see their own
-  environment's cases, and every deployment of the agent shares them.
-- Each result has the case's title, completion date, input text (cut to a few
-  thousand characters, plus file names), the agent's final message, its answers
-  as people corrected them, and `changed`, the answer paths a person changed.
-- A deleted case, or one removed by a retention period, leaves the search.
-- In an eval run, the agent sees only cases completed before the case being
-  replayed started, with their answers as they stood then. It never sees that
-  case, or another case with the same input.
-- Search uses Postgres full-text matching on words and numbers. Each search, and
-  what it found, is kept in the case's run capture.
+## Scope, results, and eval safety
+
+- **Strict isolation by agent and environment.** Search covers only this agent's
+  completed cases in the same organization and environment. Production and
+  preview deployments see only their own environment's cases, shared across all
+  deployments of the agent.
+- **What each match returns.** Every result includes the case's title,
+  completion date, input text (truncated to a few thousand characters, plus file
+  names), the agent's final message, the final answers as corrected by
+  operators, and `changed`—the exact answer paths a person edited.
+- **Retention respected.** A case deleted by an Owner or purged by a retention
+  policy leaves the search index immediately.
+- **Zero leakage during evals.** When an eval suite replays a historical case,
+  `search_cases` only returns cases completed _before_ the replayed case started
+  (with their answers as they stood then), and never returns the replayed case
+  itself or another case with the same input.
+- **Full capture.** Every query and its matched results are recorded inside the
+  case's run capture.
+
+## Related
+
+- [Memory](/sdk/memory): human-approved rules injected into every case.
+- [Cases](/concepts/cases#rerun-complete-cancel-and-retention): how retention
+  and deletion work.
+- [Logs and evals (CLI)](/cli/logs-and-evals): replaying cases across models.

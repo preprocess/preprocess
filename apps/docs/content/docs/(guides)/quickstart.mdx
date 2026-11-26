@@ -1,0 +1,196 @@
+---
+title: Quickstart
+description: Write one agent, deploy it, and take a case from start to finished.
+---
+
+This guide builds an agent that codes supplier invoices. You deploy it, send it
+an invoice, review its answers in the app, and complete the case.
+
+<Callout title="Coming soon" type="warning">
+  `@preprocess/sdk` and `@preprocess/cli` are MIT licensed and versioned, but
+  npm publishing is coming soon, so the `npm install` commands below will not
+  resolve from the public registry yet. Today, both packages live in
+  `packages/sdk` and `packages/cli` of
+  [preprocess/preprocess](https://github.com/preprocess/preprocess).
+</Callout>
+
+## Before you start
+
+- Node 24 or later, and git.
+- An organization on Preprocess, and an organization API key. An Owner or Admin
+  creates one in Developers → Keys & webhooks.
+
+## Create the project
+
+```sh
+mkdir invoices && cd invoices
+git init -b main
+npm init -y
+npm install @preprocess/sdk zod
+npm install --save-dev @preprocess/cli
+```
+
+The agent takes its name from `package.json`, without any scope, so this one is
+called `invoices`. Agent names are lowercase letters, digits, and hyphens, and
+must start with a letter.
+
+## Write the agent
+
+```ts title="src/index.ts"
+import { agent, allReviewed, schema as s, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+const vendors = [
+  { id: "v_001", name: "Northwind Paper" },
+  { id: "v_002", name: "Globex Logistics" },
+];
+
+export default agent({
+  instructions:
+    "You code supplier invoices for the accounts payable team. Read the invoice, find the vendor with find_vendor, and fill in every field.",
+  ocr: true,
+  tools: {
+    find_vendor: tool({
+      description: "Find vendors whose name contains the text",
+      input: z.object({ name: z.string() }),
+      run: ({ name }) =>
+        vendors.filter((v) =>
+          v.name.toLowerCase().includes(name.toLowerCase()),
+        ),
+    }),
+  },
+  schema: s.group(
+    {
+      vendor: s.select({
+        options: vendors.map((v) => ({ id: v.id, label: v.name })),
+        review: "required",
+      }),
+      invoiceNumber: s.text(),
+      lines: s.list(s.group({ item: s.text(), amount: s.number() })),
+      total: s.number({ review: "required" }),
+    },
+    {
+      checks: {
+        totalsMatch: (a) =>
+          a.sum("lines[*].amount") === a.get("total") || {
+            field: "total",
+            message: "The lines do not add up to the total",
+          },
+      },
+      success: allReviewed,
+    },
+  ),
+});
+```
+
+What each part does:
+
+- `ocr: true` runs every attached PDF or image through OCR before the agent's
+  first model turn. Without it, the agent only sees the files' names and types.
+- `find_vendor` is a tool. The model sees its name, description, and Zod input
+  schema; your `run` function executes inside your agent's Dynamic Worker when
+  the model calls it.
+- `schema` defines the structured answer the case produces. The agent fills it
+  in; `vendor` and `total` require a person's review.
+- `totalsMatch` is a check over the answers, whoever entered them. A failing
+  check appears beside `total` in the case room and prevents completion.
+- `success: allReviewed` holds the case in `waiting` until a person has
+  confirmed every visible field that needs review.
+
+## Connect the CLI
+
+The CLI reads three environment variables:
+
+<Configured
+  lang="sh"
+  code={`export PREPROCESS_API_URL={origin}
+export PREPROCESS_ORG=org_...
+export PREPROCESS_API_KEY=...`}
+/>
+
+## Deploy
+
+```sh
+git add -A && git commit -m "Invoice agent"
+npx preprocess deploy
+```
+
+`deploy` bundles `src/index.ts` and uploads it with the current git branch and
+commit. The first deploy creates the `invoices` agent. Because you deployed from
+`main`, the agent's production branch, the deployment starts serving production
+right away. A deploy from any other branch—or outside a git repository—is a
+preview. See [Deployments](/concepts/deployments).
+
+## Start a case
+
+Send the agent an invoice:
+
+```sh
+npx preprocess cases create --text "Code this invoice." --file ./invoice.pdf
+```
+
+The CLI uploads the file, starts the case on the production deployment, and
+prints the case id and status URL. Over HTTP, the same flow is two calls: upload
+the file, then create the case with its id.
+
+<Configured
+  lang="sh"
+  code={`curl -X POST {api}/orgs/$PREPROCESS_ORG/files \\
+  -H "Authorization: Bearer $PREPROCESS_API_KEY" \\
+  -F file=@invoice.pdf`}
+/>
+
+<Configured
+  lang="sh"
+  code={`curl -X POST {api}/orgs/$PREPROCESS_ORG/cases \\
+  -H "Authorization: Bearer $PREPROCESS_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: invoice-4471" \\
+  -d '{ "agent": "invoices", "text": "Code this invoice.", "files": ["file_..."] }'`}
+/>
+
+The second call returns `202 Accepted` immediately with the case id and status
+URL. Retrying with the same `Idempotency-Key` within 24 hours returns the same
+case instead of starting a duplicate.
+
+## Review and complete
+
+The agent reads the OCR'd invoice, calls `find_vendor`, and fills in the output
+schema. When the run finishes, the case settles as `waiting` because `vendor`
+and `total` still require review.
+
+1. Open the case in the app, from Cases or the `url` returned by the status
+   endpoint.
+2. In the Review tab, check `vendor` and `total` against the invoice. Confirm
+   each field, or edit it. Changing a field marks dependent answers as stale.
+3. Select **Complete**. Preprocess runs the schema checks and `allReviewed`
+   again—the same rule the agent must meet—and completes the case only if they
+   pass.
+
+Read the finished result from the status URL:
+
+<Configured
+  lang="sh"
+  code={`curl {api}/orgs/$PREPROCESS_ORG/cases/case_... \\
+  -H "Authorization: Bearer $PREPROCESS_API_KEY"`}
+/>
+
+The case now has `"status": "completed"` and its structured `answers`. To push
+results to your own systems instead of polling, add an outbound webhook in
+Developers → Keys & webhooks; Preprocess delivers `case.completed` with the
+answers.
+
+## Next
+
+<Cards>
+  <Card
+    title="How it works"
+    href="/how-it-works"
+    description="Why the runtime is split this way, and what happens at each step."
+  />
+  <Card
+    title="Cases"
+    href="/concepts/cases"
+    description="Lifecycle statuses, waiting on a team, halts, and reruns."
+  />
+</Cards>

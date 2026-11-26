@@ -17,6 +17,11 @@ import type {
   WriteResult,
 } from "./case-room-state";
 import { staleAfterWrite } from "../../lib/data-changed";
+import {
+  orgAgent,
+  orgAgents,
+  type OrgAgentDetail,
+} from "../agents/list-org-agents";
 
 /**
  * The case list and the case room from /v1, as server functions. The data
@@ -209,187 +214,191 @@ function readCursor(raw: string | null): ListCursor {
  * filter for cases waiting on no one or needing assignment, so the live list
  * doesn't offer those filters.
  */
-export const liveCaseList = createServerFn({ method: "GET" })
-  .validator(
-    (input: {
-      search: CasesInboxSearch;
-      cursor: string | null;
-      collapsed: string[];
-      limit: number;
-    }) => input,
-  )
-  .handler(async ({ data }): Promise<LiveCaseListPage> => {
-    const { search, collapsed, limit } = data;
-    const { activeOrganizationId } = await server();
-    const [organizationId, orgGroups, agents, members] = await Promise.all([
-      activeOrganizationId(),
-      getJson<ApiGroup[]>("/groups"),
-      getJson<{ slug: string }[]>("/agents"),
-      getJson<ApiMember[]>("/members"),
-    ]);
-    const people = peopleById(members);
-    const environment = search.env === "previews" ? "preview" : "production";
+type CaseListInput = {
+  search: CasesInboxSearch;
+  cursor: string | null;
+  collapsed: string[];
+  limit: number;
+};
 
-    const list = (
-      query: ListQuery & { q?: string },
-      size: number,
-      cursor?: string | null,
-      facets: ("agent" | "waitingOn")[] = [],
-    ) => {
-      const params = new URLSearchParams({
-        environment,
-        sort: search.sort,
-        dir: search.dir,
-        limit: String(size),
-      });
-      if (query.q) params.set("q", query.q);
-      if (query.status?.length) params.set("status", query.status.join(","));
-      if (query.agent?.length) params.set("agent", query.agent.join(","));
-      if (query.waitingOn?.length)
-        params.set("waitingOn", query.waitingOn.join(","));
-      if (cursor) params.set("cursor", cursor);
-      if (facets.length) params.set("facets", facets.join(","));
-      return getJson<ApiCaseList>(`/cases?${params}`);
-    };
-    const q = search.q.trim() || undefined;
+async function caseList(data: CaseListInput): Promise<LiveCaseListPage> {
+  const { search, collapsed, limit } = data;
+  const { activeOrganizationId } = await server();
+  const [organizationId, orgGroups, agents, members] = await Promise.all([
+    activeOrganizationId(),
+    getJson<ApiGroup[]>("/groups"),
+    getJson<{ slug: string }[]>("/agents"),
+    getJson<ApiMember[]>("/members"),
+  ]);
+  const people = peopleById(members);
+  const environment = search.env === "previews" ? "preview" : "production";
 
-    const view = apiStatuses(viewStatuses(search));
-    const shown = shownStatuses(search);
-    const statuses = apiStatuses(shown);
-    const filters = {
-      q,
-      agent: search.agent,
-      waitingOn: orgGroups
-        .filter((group) => search.awaiting.includes(group.name))
-        .map((group) => group.slug),
-    };
-    const slugs = agents.map((agent) => agent.slug);
+  const list = (
+    query: ListQuery & { q?: string },
+    size: number,
+    cursor?: string | null,
+    facets: ("agent" | "waitingOn")[] = [],
+  ) => {
+    const params = new URLSearchParams({
+      environment,
+      sort: search.sort,
+      dir: search.dir,
+      limit: String(size),
+    });
+    if (query.q) params.set("q", query.q);
+    if (query.status?.length) params.set("status", query.status.join(","));
+    if (query.agent?.length) params.set("agent", query.agent.join(","));
+    if (query.waitingOn?.length)
+      params.set("waitingOn", query.waitingOn.join(","));
+    if (cursor) params.set("cursor", cursor);
+    if (facets.length) params.set("facets", facets.join(","));
+    return getJson<ApiCaseList>(`/cases?${params}`);
+  };
+  const q = search.q.trim() || undefined;
 
-    // Counts come from at most three requests, each with per-agent and
-    // per-group facets: everything, the search alone, and every filter.
-    const anyFilter = Boolean(
-      q || filters.agent.length || filters.waitingOn.length,
-    );
-    const everything = list({}, 1, null, q ? [] : ["agent", "waitingOn"]);
-    const [unfilteredPage, searched, filteredPage] = await Promise.all([
-      everything,
-      q ? list({ q }, 1, null, ["agent", "waitingOn"]) : everything,
-      anyFilter
-        ? list(filters, 1, null, search.group === "agent" ? ["agent"] : [])
-        : everything,
-    ]);
-    const unfiltered = unfilteredPage.counts;
-    const filtered = filteredPage.counts;
-    const none = Object.fromEntries(
-      Object.keys(unfiltered).map((status) => [status, 0]),
-    ) as ApiCaseList["counts"];
-    const byAgent = slugs.map((slug) => searched.facets?.agent?.[slug] ?? none);
-    const byGroup = orgGroups.map(
-      (group) => searched.facets?.waitingOn?.[group.slug] ?? none,
-    );
-    const agentTotals =
-      search.group === "agent"
-        ? (search.agent.length ? search.agent : slugs).map((slug) => ({
-            slug,
-            total: sum(filteredPage.facets?.agent?.[slug] ?? none, statuses),
+  const view = apiStatuses(viewStatuses(search));
+  const shown = shownStatuses(search);
+  const statuses = apiStatuses(shown);
+  const filters = {
+    q,
+    agent: search.agent,
+    waitingOn: orgGroups
+      .filter((group) => search.awaiting.includes(group.name))
+      .map((group) => group.slug),
+  };
+  const slugs = agents.map((agent) => agent.slug);
+
+  // Counts come from at most three requests, each with per-agent and
+  // per-group facets: everything, the search alone, and every filter.
+  const anyFilter = Boolean(
+    q || filters.agent.length || filters.waitingOn.length,
+  );
+  const everything = list({}, 1, null, q ? [] : ["agent", "waitingOn"]);
+  const [unfilteredPage, searched, filteredPage] = await Promise.all([
+    everything,
+    q ? list({ q }, 1, null, ["agent", "waitingOn"]) : everything,
+    anyFilter
+      ? list(filters, 1, null, search.group === "agent" ? ["agent"] : [])
+      : everything,
+  ]);
+  const unfiltered = unfilteredPage.counts;
+  const filtered = filteredPage.counts;
+  const none = Object.fromEntries(
+    Object.keys(unfiltered).map((status) => [status, 0]),
+  ) as ApiCaseList["counts"];
+  const byAgent = slugs.map((slug) => searched.facets?.agent?.[slug] ?? none);
+  const byGroup = orgGroups.map(
+    (group) => searched.facets?.waitingOn?.[group.slug] ?? none,
+  );
+  const agentTotals =
+    search.group === "agent"
+      ? (search.agent.length ? search.agent : slugs).map((slug) => ({
+          slug,
+          total: sum(filteredPage.facets?.agent?.[slug] ?? none, statuses),
+        }))
+      : [];
+
+  const groups: { key: string; total: number; query: ListQuery }[] =
+    search.group === "status"
+      ? shown.map((status) => ({
+          key: status,
+          total: sum(filtered, API_STATUSES[status]),
+          query: { ...filters, status: API_STATUSES[status] },
+        }))
+      : search.group === "agent"
+        ? agentTotals.map(({ slug, total }) => ({
+            key: slug,
+            total,
+            query: { ...filters, agent: [slug], status: statuses },
           }))
-        : [];
+        : [
+            {
+              key: "all",
+              total: sum(filtered, statuses),
+              query: { ...filters, status: statuses },
+            },
+          ];
+  const listed = groups.filter((group) => group.total > 0);
 
-    const groups: { key: string; total: number; query: ListQuery }[] =
-      search.group === "status"
-        ? shown.map((status) => ({
-            key: status,
-            total: sum(filtered, API_STATUSES[status]),
-            query: { ...filters, status: API_STATUSES[status] },
-          }))
-        : search.group === "agent"
-          ? agentTotals.map(({ slug, total }) => ({
-              key: slug,
-              total,
-              query: { ...filters, agent: [slug], status: statuses },
-            }))
-          : [
-              {
-                key: "all",
-                total: sum(filtered, statuses),
-                query: { ...filters, status: statuses },
-              },
-            ];
-    const listed = groups.filter((group) => group.total > 0);
-
-    const rows: Case[] = [];
-    let at = readCursor(data.cursor);
-    let nextCursor: string | null = null;
-    while (at.group < listed.length) {
-      const group = listed[at.group];
-      if (collapsed.includes(group.key)) {
-        at = { group: at.group + 1, cursor: null };
-        continue;
-      }
-      if (rows.length >= limit) {
-        nextCursor = btoa(JSON.stringify(at));
-        break;
-      }
-      const page = await list(group.query, limit - rows.length, at.cursor);
-      rows.push(
-        ...page.items.map((item) => toCase(organizationId, item, people)),
-      );
-      at = page.nextCursor
-        ? { group: at.group, cursor: page.nextCursor }
-        : { group: at.group + 1, cursor: null };
+  const rows: Case[] = [];
+  let at = readCursor(data.cursor);
+  let nextCursor: string | null = null;
+  while (at.group < listed.length) {
+    const group = listed[at.group];
+    if (collapsed.includes(group.key)) {
+      at = { group: at.group + 1, cursor: null };
+      continue;
     }
+    if (rows.length >= limit) {
+      nextCursor = btoa(JSON.stringify(at));
+      break;
+    }
+    const page = await list(group.query, limit - rows.length, at.cursor);
+    rows.push(
+      ...page.items.map((item) => toCase(organizationId, item, people)),
+    );
+    at = page.nextCursor
+      ? { group: at.group, cursor: page.nextCursor }
+      : { group: at.group + 1, cursor: null };
+  }
 
-    return {
-      rows,
-      groups: listed.map(({ key, total }) => ({ key, total })),
-      total: listed.reduce((total, group) => total + group.total, 0),
-      nextCursor,
-      agents: slugs.filter((_, index) =>
-        Object.values(byAgent[index]).some((n) => n > 0),
+  return {
+    rows,
+    groups: listed.map(({ key, total }) => ({ key, total })),
+    total: listed.reduce((total, group) => total + group.total, 0),
+    nextCursor,
+    agents: slugs.filter((_, index) =>
+      Object.values(byAgent[index]).some((n) => n > 0),
+    ),
+    counts: {
+      status: Object.fromEntries(
+        CASE_STATUSES.map((status) => [
+          status,
+          sum(filtered, API_STATUSES[status]),
+        ]),
       ),
-      counts: {
-        status: Object.fromEntries(
-          CASE_STATUSES.map((status) => [
-            status,
-            sum(filtered, API_STATUSES[status]),
-          ]),
-        ),
-        agent: Object.fromEntries(
-          slugs.map((slug, index) => [slug, sum(byAgent[index], view)]),
-        ),
-        awaiting: Object.fromEntries(
-          orgGroups.map((group, index) => [
-            group.name,
-            sum(byGroup[index], view),
-          ]),
-        ),
-        unassigned: {},
-      },
-      awaitingOptions: orgGroups.map((group) => group.name),
-      hasCases: Object.values(unfiltered).some((n) => n > 0),
-    };
-  });
+      agent: Object.fromEntries(
+        slugs.map((slug, index) => [slug, sum(byAgent[index], view)]),
+      ),
+      awaiting: Object.fromEntries(
+        orgGroups.map((group, index) => [
+          group.name,
+          sum(byGroup[index], view),
+        ]),
+      ),
+      unassigned: {},
+    },
+    awaitingOptions: orgGroups.map((group) => group.name),
+    hasCases: Object.values(unfiltered).some((n) => n > 0),
+  };
+}
+
+export const liveCaseList = createServerFn({ method: "GET" })
+  .validator((input: CaseListInput) => input)
+  .handler(({ data }) => caseList(data));
 
 /** One case as the list shows it, or null when the caller can't see it. */
+export async function caseById(caseId: string): Promise<Case | null> {
+  const { activeOrganizationId } = await server();
+  const find = (environment: string) =>
+    getJson<ApiCaseList>(
+      `/cases?${new URLSearchParams({ q: caseId, environment, limit: "1" })}`,
+    );
+  const [organizationId, members, production, preview] = await Promise.all([
+    activeOrganizationId(),
+    getJson<ApiMember[]>("/members"),
+    find("production"),
+    find("preview"),
+  ]);
+  const item = [...production.items, ...preview.items].find(
+    (candidate) => candidate.id === caseId,
+  );
+  return item ? toCase(organizationId, item, peopleById(members)) : null;
+}
+
 export const liveCase = createServerFn({ method: "GET" })
   .validator((caseId: string) => caseId)
-  .handler(async ({ data: caseId }): Promise<Case | null> => {
-    const { activeOrganizationId } = await server();
-    const find = (environment: string) =>
-      getJson<ApiCaseList>(
-        `/cases?${new URLSearchParams({ q: caseId, environment, limit: "1" })}`,
-      );
-    const [organizationId, members, production, preview] = await Promise.all([
-      activeOrganizationId(),
-      getJson<ApiMember[]>("/members"),
-      find("production"),
-      find("preview"),
-    ]);
-    const item = [...production.items, ...preview.items].find(
-      (candidate) => candidate.id === caseId,
-    );
-    return item ? toCase(organizationId, item, peopleById(members)) : null;
-  });
+  .handler(({ data: caseId }) => caseById(caseId));
 
 type ApiRoom = Partial<Omit<CaseRoomState, "approvals" | "memories">> & {
   status: CaseRoomState["status"];
@@ -459,24 +468,27 @@ async function roomOf(
   };
 }
 
+async function caseRoom(caseId: string): Promise<CaseRoomState> {
+  const path = `/cases/${encodeURIComponent(caseId)}`;
+  const [response, memories] = await Promise.all([
+    send(`${path}/room`),
+    getJson<{ memories: ApiMemory[] } | null>(`${path}/memories`, null),
+  ]);
+  const proposals = memories?.memories ?? [];
+  if (response.status === 404) return roomOf({ status: "queued" }, proposals);
+  if (!response.ok) throw new Error((await apiError(response)).message);
+  return roomOf(await response.json(), proposals);
+}
+
 /**
  * The case room's work as JSON text: answers and payloads are any JSON, which
  * server functions can't type, so the room crosses as text.
  */
 const caseRoomJson = createServerFn({ method: "GET" })
   .validator((caseId: string) => caseId)
-  .handler(async ({ data: caseId }): Promise<string> => {
-    const path = `/cases/${encodeURIComponent(caseId)}`;
-    const [response, memories] = await Promise.all([
-      send(`${path}/room`),
-      getJson<{ memories: ApiMemory[] } | null>(`${path}/memories`, null),
-    ]);
-    const proposals = memories?.memories ?? [];
-    if (response.status === 404)
-      return JSON.stringify(await roomOf({ status: "queued" }, proposals));
-    if (!response.ok) throw new Error((await apiError(response)).message);
-    return JSON.stringify(await roomOf(await response.json(), proposals));
-  });
+  .handler(async ({ data: caseId }): Promise<string> =>
+    JSON.stringify(await caseRoom(caseId)),
+  );
 
 /** The case room's work: fields, answers, checks, thread and approvals. */
 export async function liveCaseRoom(caseId: string): Promise<CaseRoomState> {
@@ -641,41 +653,43 @@ export type CaseAccess = {
   readonly startAgents: readonly string[];
 };
 
-export const liveCaseAccess = createServerFn({ method: "GET" }).handler(
-  async (): Promise<CaseAccess> => {
-    const { apiJson } = await server();
-    const [session, members, groups, agents] = await Promise.all([
-      apiJson<{ user: { id: string } } | null>("/api/auth/get-session"),
-      getJson<ApiOrgMember[]>("/members"),
-      getJson<ApiOrgGroup[]>("/groups"),
-      getJson<ApiAgentRef[]>("/agents"),
-    ]);
-    const me = members.find((member) => member.userId === session?.user.id);
-    if (!me) return { canAssign: false, startAgents: [] };
-    const canAssign = me.role === "owner" || me.role === "admin";
-    const open = agents.filter((agent) => !agent.archived);
-    const mine = new Set(me.groups.map((group) => group.id));
-    if (groups.some((group) => group.isDevelopers && mine.has(group.id)))
-      return { canAssign, startAgents: open.map((agent) => agent.slug) };
-    const grants = (
-      await Promise.all(
-        [...mine].map((id) =>
-          getJson<{ grants: ApiGrant[] }>(`/groups/${encodeURIComponent(id)}`),
-        ),
-      )
-    ).flatMap((detail) => detail.grants);
-    const operated = new Set(
-      grants
-        .filter((grant) => grant.access === "operator")
-        .map((grant) => grant.agentSlug),
-    );
-    return {
-      canAssign,
-      startAgents: open
-        .filter((agent) => operated.has(agent.slug))
-        .map((agent) => agent.slug),
-    };
-  },
+async function caseAccess(): Promise<CaseAccess> {
+  const { authSession } = await server();
+  const [session, members, groups, agents] = await Promise.all([
+    authSession(),
+    getJson<ApiOrgMember[]>("/members"),
+    getJson<ApiOrgGroup[]>("/groups"),
+    getJson<ApiAgentRef[]>("/agents"),
+  ]);
+  const me = members.find((member) => member.userId === session?.user.id);
+  if (!me) return { canAssign: false, startAgents: [] };
+  const canAssign = me.role === "owner" || me.role === "admin";
+  const open = agents.filter((agent) => !agent.archived);
+  const mine = new Set(me.groups.map((group) => group.id));
+  if (groups.some((group) => group.isDevelopers && mine.has(group.id)))
+    return { canAssign, startAgents: open.map((agent) => agent.slug) };
+  const grants = (
+    await Promise.all(
+      [...mine].map((id) =>
+        getJson<{ grants: ApiGrant[] }>(`/groups/${encodeURIComponent(id)}`),
+      ),
+    )
+  ).flatMap((detail) => detail.grants);
+  const operated = new Set(
+    grants
+      .filter((grant) => grant.access === "operator")
+      .map((grant) => grant.agentSlug),
+  );
+  return {
+    canAssign,
+    startAgents: open
+      .filter((agent) => operated.has(agent.slug))
+      .map((agent) => agent.slug),
+  };
+}
+
+export const liveCaseAccess = createServerFn({ method: "GET" }).handler(() =>
+  caseAccess(),
 );
 
 /** Someone a case can be assigned to. */
@@ -755,13 +769,15 @@ export type CaseFile = {
 };
 
 /** The case's files, oldest first. */
+async function caseFiles(caseId: string): Promise<CaseFile[]> {
+  const response = await send(`/cases/${encodeURIComponent(caseId)}/files`);
+  if (!response.ok) throw new Error((await apiError(response)).message);
+  return (await response.json<{ files: CaseFile[] }>()).files;
+}
+
 export const liveCaseFiles = createServerFn({ method: "GET" })
   .validator((caseId: string) => caseId)
-  .handler(async ({ data: caseId }): Promise<CaseFile[]> => {
-    const response = await send(`/cases/${encodeURIComponent(caseId)}/files`);
-    if (!response.ok) throw new Error((await apiError(response)).message);
-    return (await response.json<{ files: CaseFile[] }>()).files;
-  });
+  .handler(({ data: caseId }) => caseFiles(caseId));
 
 /**
  * Attaches uploaded files to the case. Refusals (a cancelled case, files that
@@ -847,4 +863,75 @@ export const liveSearchOptions = createServerFn({ method: "POST" })
       total: page.total ?? null,
       more: page.cursor !== undefined,
     };
+  });
+
+/**
+ * Pages whose loaders need several of the reads above get them from one
+ * server function, so serving the page reads the session and the
+ * organization's agents, groups and members once (`api.server.ts`).
+ */
+
+const firstBatch = (search: CasesInboxSearch, limit: number) =>
+  caseList({ search, cursor: null, collapsed: [], limit }).catch(() => null);
+
+/**
+ * The case list's first batch, with what the person may do to cases and, on
+ * an agent's case list, the agent. A null page means the list didn't load.
+ */
+export const liveCasesPage = createServerFn({ method: "GET" })
+  .validator(
+    (input: {
+      search: CasesInboxSearch;
+      agent: string | null;
+      limit: number;
+    }) => input,
+  )
+  .handler(async ({ data }) => {
+    const [agent, page, access] = await Promise.all([
+      data.agent ? orgAgent(data.agent) : null,
+      firstBatch(data.search, data.limit),
+      caseAccess(),
+    ]);
+    return { agent, page, access };
+  });
+
+/** The organization's agents, with what the person may do to cases. */
+export const liveAgentsPage = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const [agents, access] = await Promise.all([orgAgents(), caseAccess()]);
+    return { agents, access };
+  },
+);
+
+/** Everything the case room loads; `page` is the list its neighbors come from. */
+export type LiveCaseRoomPage = {
+  readonly agent: OrgAgentDetail | null;
+  readonly item: Case | null;
+  readonly page: LiveCaseListPage | null;
+  readonly room: CaseRoomState;
+  readonly access: CaseAccess;
+  readonly files: CaseFile[];
+};
+
+/** The case room as JSON text, since the room's answers are any JSON. */
+export const liveCaseRoomPage = createServerFn({ method: "GET" })
+  .validator(
+    (input: {
+      agent: string;
+      caseId: string;
+      search: CasesInboxSearch;
+      limit: number;
+    }) => input,
+  )
+  .handler(async ({ data }): Promise<string> => {
+    const [agent, item, page, room, access, files] = await Promise.all([
+      orgAgent(data.agent),
+      caseById(data.caseId),
+      firstBatch(data.search, data.limit),
+      caseRoom(data.caseId),
+      caseAccess(),
+      caseFiles(data.caseId),
+    ]);
+    const result: LiveCaseRoomPage = { agent, item, page, room, access, files };
+    return JSON.stringify(result);
   });

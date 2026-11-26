@@ -1,14 +1,74 @@
 ---
 title: Approvals
+description:
+  Declare synchronous approval gates in code on tools, schema fields, or case
+  completion.
 ---
 
-`approval` asks a person to approve before something happens:
+`approval` declares a hard human-in-the-loop gate in code that pauses execution
+until an eligible operator explicitly says yes. Unlike field `review` (checking
+and editing answers), an approval enforces organizational authority: a specific
+team—or any operator—must approve before a risky action or final result stands.
 
-- on `agent()`, before a case completes;
-- on a schema field, before its value stands;
-- on `tool()`, before the tool runs.
+## Three levels of approval
 
-`true` means any operator can approve. `{ group, when }` names the group that
-approves (it must be listed in `groups`) and decides per case or call. `when`
-receives the answers, or the tool's input, and must not be async. If it throws,
-the approval applies.
+You can attach `approval` at three points in your agent definition:
+
+| Level      | Where it is declared  | What waits                                     | `when` receives   |
+| ---------- | --------------------- | ---------------------------------------------- | ----------------- |
+| Tool       | `tool({ approval })`  | The tool call, _before_ `run` executes         | The tool's input  |
+| Field      | A schema field        | That field's value (or a group/list's subtree) | The answers (`a`) |
+| Completion | `agent({ approval })` | The case's transition to `completed`           | The final answers |
+
+## Syntax and failure modes
+
+- `approval: true` allows any operator of the agent (an operator group or
+  Developers) to approve.
+- `approval: { group, when }` restricts approval to members of `group` (which
+  must also be declared in `agent({ groups })` and hold operator access to the
+  agent) and decides per call or per case whether the gate applies.
+- **`when` must be synchronous and fails closed.** If `when` throws an error,
+  Preprocess treats the approval as required rather than bypassing the gate.
+- **Approving is always a human act.** API keys, MCP clients, and viewers can
+  never approve. Rejections always require a written reason, which is fed back
+  to the agent and recorded in the case thread.
+
+```ts
+import { agent, schema as s, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+declare function pay(
+  env: Record<string, string | undefined>,
+  invoiceId: string,
+  amount: number,
+): Promise<unknown>;
+
+export default agent({
+  instructions: "Pay approved supplier invoices.",
+  groups: ["finance-leads"],
+  approval: {
+    group: "finance-leads",
+    when: (a) => Number(a.get("total")) > 25_000,
+  },
+  schema: s.group({
+    total: s.number(),
+  }),
+  tools: {
+    pay_invoice: tool({
+      description: "Pay a supplier invoice",
+      input: z.object({ invoiceId: z.string(), amount: z.number() }),
+      sideEffects: true,
+      approval: { group: "finance-leads", when: (call) => call.amount > 5000 },
+      run: async ({ invoiceId, amount }, { env }) =>
+        pay(env, invoiceId, amount),
+    }),
+  },
+});
+```
+
+## Related
+
+- [Review and approvals](/concepts/review-and-approvals): lifecycle of tool,
+  field, and completion approvals, stale requests, and audit logging.
+- [Groups and access](/concepts/groups-and-access): why approving groups must
+  keep operator access while live code names them.

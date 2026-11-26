@@ -1,9 +1,8 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 
 import type { Case } from "../features/agent-cases/case";
-import { getOrgCase } from "../features/agent-cases/list-org-cases";
 import { Inbox, inboxCaseKey } from "../features/inbox/inbox";
-import { loadInbox, markInboxRead } from "../features/inbox/load-inbox";
+import { loadInboxPage, markInboxRead } from "../features/inbox/load-inbox";
 import {
   parseInboxSearch,
   type InboxSearch,
@@ -14,18 +13,10 @@ export const Route = createFileRoute("/inbox")({
   validateSearch: (search: Record<string, unknown>): InboxSearch =>
     parseInboxSearch(search),
   loader: async () => {
-    const page = await loadInbox();
-    const linked = await Promise.all(
-      page.items.flatMap((item) =>
-        item.link?.kind === "case"
-          ? [getOrgCase(item.link.agentId, item.link.caseId)]
-          : [],
-      ),
-    );
+    const page = await loadInboxPage();
     const cases: Record<string, Case> = {};
-    for (const item of linked) {
-      if (item) cases[inboxCaseKey(item.agentId, item.id)] = item;
-    }
+    for (const item of page.cases)
+      cases[inboxCaseKey(item.agentId, item.id)] = item;
     return { ...page, cases };
   },
   component: InboxPage,
