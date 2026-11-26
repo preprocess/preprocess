@@ -102,11 +102,12 @@ required.
 | `toolRetries`    | Whole-number retry count when a non-`sideEffects` tool throws. Defaults to `0`.                                                        |
 
 <Callout title="Coming soon">
-  Automatic evals on push (`evals: {onPush}`) are not wired yet—the SDK accepts
-  and stores the setting, but pushing code does not trigger eval runs
-  automatically. Today, run eval suites manually with `preprocess evals run`.
-  (Case sandboxes and custom environments built with `sandbox.setup` are live;
-  see [Sandbox](/sdk/sandbox).)
+  Automatic evals on each new deployment (`evals: {onPush}`) are not available
+  yet. A deploy whose code sets `onPush: true` still succeeds but carries a
+  warning that the setting has no effect, and the API refuses turning it on as a
+  default or override. Today, run eval suites manually with `preprocess evals
+  run`. (Case sandboxes and custom environments built with `sandbox.setup` are
+  live; see [Sandbox](/sdk/sandbox).)
 </Callout>
 
 ### Validation and setting precedence

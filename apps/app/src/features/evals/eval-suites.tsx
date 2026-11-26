@@ -4,7 +4,6 @@ import {
   AsyncActionAbortError,
   LoadingButton,
 } from "@preprocess/ui/components/loading-button";
-import { Switch } from "@preprocess/ui/components/switch";
 import { ChevronRight, Plus } from "@preprocess/ui/lib/icons";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
@@ -32,14 +31,9 @@ const countFormat = new Intl.NumberFormat();
 
 function suiteSummary(suite: EvalSuite) {
   const cases = `${countFormat.format(suite.cases)} ${suite.cases === 1 ? "case" : "cases"}`;
-  return [
-    suite.kind === "automatic"
-      ? `Automatic · ${cases}, keeps the newest ${countFormat.format(suite.cap ?? 0)}`
-      : `Manual · ${cases}`,
-    suite.runOnPush ? "Runs on each new deployment" : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  return suite.kind === "automatic"
+    ? `Automatic · ${cases}, keeps the newest ${countFormat.format(suite.cap ?? 0)}`
+    : `Manual · ${cases}`;
 }
 
 /** An agent's eval suites, the automatic one first. */
@@ -164,11 +158,10 @@ function NewSuiteForm({
   onCreate,
 }: Readonly<{
   close: () => void;
-  onCreate: (input: { name: string; runOnPush: boolean }) => Promise<void>;
+  onCreate: (input: { name: string }) => Promise<void>;
 }>) {
   const nameRef = useRef<ValidatedFieldHandle>(null);
   const [name, setName] = useState("");
-  const [runOnPush, setRunOnPush] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -176,7 +169,7 @@ function NewSuiteForm({
     setError(null);
     if (!nameRef.current?.commit()) throw new AsyncActionAbortError();
     try {
-      await onCreate({ name: name.trim(), runOnPush });
+      await onCreate({ name: name.trim() });
     } catch (cause) {
       setError(actionErrorMessage(cause, "Could not create the suite."));
       throw cause;
@@ -197,11 +190,6 @@ function NewSuiteForm({
         placeholder="Renewal packs"
         validate={validateName}
         value={name}
-      />
-      <Switch
-        checked={runOnPush}
-        label="Run on each new deployment"
-        onToggle={() => setRunOnPush((current) => !current)}
       />
       {error ? (
         <SettingsPanelMessage tone="danger">{error}</SettingsPanelMessage>

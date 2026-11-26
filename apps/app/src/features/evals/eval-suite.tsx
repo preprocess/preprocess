@@ -14,7 +14,6 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@preprocess/ui/components/select";
-import { Switch } from "@preprocess/ui/components/switch";
 import { ChevronRight, Play, XIcon } from "@preprocess/ui/lib/icons";
 import { MODELS } from "@preprocess/sdk/protocol";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -227,14 +226,12 @@ export function EvalSuiteView({
       <SettingsSection title="Settings">
         <SettingsRows>
           <SettingsRow
-            description="When a new deployment of this agent is ready, run this suite against it."
+            description="Runs this suite against each new deployment of this agent once it is ready."
             label="Run on each new deployment"
           >
-            <Switch
-              checked={suite.runOnPush}
-              label={suite.runOnPush ? "On" : "Off"}
-              onToggle={() => void patch({ runOnPush: !suite.runOnPush })}
-            />
+            <Badge color="gray" size="sm">
+              Coming soon
+            </Badge>
           </SettingsRow>
           <SettingsRow
             description={

@@ -18,7 +18,7 @@ import {
 import { currentModel } from "@preprocess/sdk/protocol";
 import { and, asc, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
 
-import { agentGroups } from "./cases.ts";
+import { agentGroups, ApiError } from "./cases.ts";
 import type { Manifest } from "./deploy.ts";
 import { acceptedMemories } from "./memories.ts";
 import { meterCharges, type Charges } from "./metering.ts";
@@ -226,6 +226,17 @@ export const trimSuite = async (tx: Tx, suiteId: string, cap: number) => {
         notInArray(evalSuiteCases.caseId, keep),
       ),
     );
+};
+
+// Runs on each new deployment (evals.onPush and a suite's runOnPush) are not
+// built yet, so turning them on is refused rather than stored with no effect.
+// Values already stored keep reading as they are.
+export const ON_PUSH_UNAVAILABLE =
+  "Running evals on each new deployment is not available yet.";
+
+export const refuseOnPush = (on: unknown) => {
+  if (on === true)
+    throw new ApiError(400, "not_available", ON_PUSH_UNAVAILABLE);
 };
 
 export const evalCaseId = (runId: string, caseId: string) =>
