@@ -1,5 +1,5 @@
 {
   "title": "Guides",
   "root": true,
-  "pages": ["index", "---Connect---", "mcp"]
+  "pages": ["index", "---Concepts---", "...concepts", "---Connect---", "mcp"]
 }

@@ -1,0 +1,132 @@
+---
+title: Models and OCR
+description:
+  The agent models, the decision model, document OCR and retired-model fallback.
+---
+
+Preprocess runs every agent on a fixed catalog of open-weight models, pairs them
+with a dedicated decision model for long option lists and provides document OCR
+as an API and pre-run step.
+
+## Why models are fixed
+
+Teams shouldn't have to manage provider accounts, map reasoning flags across
+vendors or debug silent model drift when a provider moves an unpinned alias.
+Preprocess pins every agent model to a specific serving route, gives every model
+the same tool-calling and reasoning contract and separates specialized tasks
+(picking from large option lists and reading PDFs) into fixed-purpose services
+built for those jobs.
+
+## Agent models
+
+An agent declares its `model` (and optional `reasoning` level: `low`, `medium`
+or `high`, defaulting to `medium`) in code. Every agent model runs with a
+262,144-token context window, 8,192 max output tokens and reasoning enabled.
+
+| Model ID                   | Provider              | Upstream model                              | Notes                                                                          |
+| -------------------------- | --------------------- | ------------------------------------------- | ------------------------------------------------------------------------------ |
+| `deepseek-v4.1-flash`      | Baseten               | `deepseek-ai/DeepSeek-V4.1-Flash-1017`      | Default model when none is set                                                 |
+| `deepseek-v4.1-flash-fast` | Baseten               | `deepseek-ai/DeepSeek-V4.1-Flash-1017-Fast` | Faster Baseten capacity; falls back to base capacity if Fast capacity is short |
+| `kimi-k3.1-pro`            | Baseten               | `moonshotai/Kimi-K3.1-Pro`                  | Heavier reasoning model on Baseten                                             |
+| `qwen3.8-27b`              | Cloudflare Workers AI | `@cf/qwen/qwen3.8-27b`                      | Served through the account's Workers AI binding                                |
+
+On `qwen3.8-27b`, Preprocess maps the SDK's `high` reasoning setting to Workers
+AI's `xhigh` reasoning effort automatically.
+
+On self-hosted installs, each model resolves in a strict order: an
+organization-registered endpoint if present, then the model's entry in
+`MODEL_ENDPOINTS`, then the default provider (`BASETEN_API_KEY`,
+`MISTRAL_API_KEY` or the Cloudflare `AI` binding), then `MODEL_SERVICE_URL` for
+local development or test stubs. If none of those is configured, the call fails
+with `model_unavailable`.
+
+### Retired-model fallback
+
+Deployments built against older SDKs can still reference retired model IDs.
+Instead of breaking running agents, Preprocess maps retired names to their
+replacement when loading deployments, resolving effective settings and running
+evals:
+
+- `inkling-2-mini` → `deepseek-v4.1-flash`
+- `inkling-2-small` → `deepseek-v4.1-flash`
+
+New deploys with the current SDK validate `model` against the active four-model
+catalog.
+
+## The `decide` tool (`groundhog-1`)
+
+When an output schema field has hundreds or thousands of valid options (such as
+a chart of accounts or vendor directory), loading every option into the agent's
+prompt wastes context and hurts accuracy. Preprocess gives the agent a built-in
+`decide` tool backed by `groundhog-1`
+(`decision-models/baseten-groundhog-latest` on Baseten's System One
+`/v1/systemone` API).
+
+When the agent calls `decide` for a schema field:
+
+1. The runtime loads the field's full option list on the platform side—the
+   options never enter the agent's context window.
+2. It sends the prompt, case context (input and current answers) and options to
+   `groundhog-1` as a choice question.
+3. Each single request handles up to 255 options. If the list is longer,
+   Preprocess splits it into chunks of 255, ranks them in parallel, keeps the
+   top `max(keep, 8)` survivors from each chunk and repeats until one request
+   holds all survivors.
+4. `decide` returns the top `keep` picks (default `1`) with probabilities. The
+   agent then writes the chosen answer with `schema_answer`.
+
+## Document OCR (`mistral-ocr-4-1`)
+
+OCR turns PDFs and page images into per-page Markdown—and optionally labeled
+bounding-box blocks normalized to a `0–1000` coordinate space—using
+`mistral-ocr-4-1` on Mistral's global API (`https://api.mistral.ai/v1/ocr`).
+
+- **Supported types:** `application/pdf`, `image/png`, `image/jpeg` and
+  `image/webp`.
+- **Limits:** Up to **50 MB** and **1,000 pages** per request, with a 300-second
+  upstream timeout. Files over 50 MB return `413 file_too_large`; unsupported
+  media types return `415 unsupported_file`.
+- **Two ways to run it:** Set `ocr: true` on an agent so Preprocess runs OCR on
+  uploaded case files before the agent loop starts, or call
+  `POST /v1/orgs/{org}/ocr` directly on an uploaded file ID (pass
+  `grounding: true` to include block bounding boxes).
+
+OCR is not exposed as a built-in tool inside the agent loop. Running it before
+the case starts keeps page extraction deterministic and recorded once in run
+capture.
+
+<Callout title="Coming soon">
+  Hosted fine-tuning runs (`POST /v1/orgs/{org}/training/runs`, `/agents/{agent}
+  /retrain` and `/training/tinker/*`) and hosted trained-model serving are not
+  yet live and return `501 coming_soon`. Run capture, human review events,
+  datasets and evals are live today so your organization can accumulate training
+  data from its first case.
+</Callout>
+
+## How to use it
+
+Declare the agent's model, reasoning level and pre-run OCR in your agent
+definition:
+
+```ts
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+export default agent({
+  instructions:
+    "Extract line items and code each invoice to the right account.",
+  model: "deepseek-v4.1-flash",
+  reasoning: "medium",
+  ocr: true,
+  tools: {
+    lookup_vendor: tool({
+      description: "Fetch a vendor record by name",
+      input: z.object({ name: z.string() }),
+      run: async ({ name }) => ({ name, active: true }),
+    }),
+  },
+});
+```
+
+See the [SDK reference](/sdk) for the full `agent()` option set and the
+[OCR API reference](/api/ocr) for direct file OCR calls.
