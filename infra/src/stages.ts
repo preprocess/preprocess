@@ -73,6 +73,19 @@ export const names = (stage: string) => ({
   branch: stage,
 });
 
+// The registry repositories the container images publish to, one per image
+// and shared by every stage in the account (PRE-90). Images are tagged by the
+// hash of their build inputs, so a stage whose inputs match another's reuses
+// its image instead of building and pushing a new one.
+export const imageRepositories = {
+  build: "preprocess-buildimage",
+  render: "preprocess-renderimage",
+  "sandbox-standard": "preprocess-sandbox-standard",
+  "sandbox-node": "preprocess-sandbox-node",
+  "sandbox-python": "preprocess-sandbox-python",
+  "sandbox-python-data": "preprocess-sandbox-python-data",
+} as const;
+
 // Model providers' keys (packages/models endpoints), optional on every stage:
 // the runtime calls Baseten for the agent models and decide, the API calls
 // Mistral for OCR. MODEL_ENDPOINTS is an install's own per-model endpoints,

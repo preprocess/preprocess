@@ -1,0 +1,3 @@
+# The image copies nothing from its context, so a change to the Worker's code
+# reuses the published image instead of rebuilding it.
+*

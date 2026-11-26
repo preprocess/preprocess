@@ -64,6 +64,7 @@ import {
   githubVars,
   googleSecrets,
   googleVars,
+  imageRepositories,
   licenseSecrets,
   compatibility,
   durableObjects,
@@ -551,6 +552,7 @@ export default Alchemy.Stack(
       schedulingPolicy: "durable_object",
       context: root,
       dockerfile: at("apps/builder/Dockerfile"),
+      publish: { repository: imageRepositories.build },
     });
     const builder = yield* Cloudflare.Worker("Builder", {
       ...worker,
@@ -571,6 +573,7 @@ export default Alchemy.Stack(
       schedulingPolicy: "durable_object",
       context: at("apps/pdf-render"),
       dockerfile: at("apps/pdf-render/Dockerfile"),
+      publish: { repository: imageRepositories.render },
     });
     const pdfRender = yield* Cloudflare.Worker("PdfRender", {
       ...worker,
@@ -594,6 +597,7 @@ export default Alchemy.Stack(
           context: at("apps/runtime/sandbox"),
           dockerfile: at("apps/runtime/sandbox/Dockerfile"),
           build: { args: { PRESET: preset } },
+          publish: { repository: imageRepositories[`sandbox-${preset}`] },
         }),
     );
     const sandboxes = Object.fromEntries(
