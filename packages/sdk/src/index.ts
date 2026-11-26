@@ -136,12 +136,19 @@ export type AgentDefinition<S extends string> = {
   sandboxImage?: string;
   // A Linux sandbox the case can run commands in, started on first use. The
   // size is required; the preset defaults to "standard" and the packages
-  // install each time the sandbox starts.
+  // install each time the sandbox starts. A setup (Team plan and above) is
+  // built once at deploy into a custom environment over the preset.
   sandbox?: {
     size: SandboxSize;
     preset?: SandboxPreset;
     packages?: Partial<SandboxPackages>;
     idleTimeoutMinutes?: number;
+    setup?: {
+      packages?: Partial<SandboxPackages>;
+      run?: string[];
+      files?: Record<string, string>;
+      env?: Record<string, string>;
+    };
   };
   evals?: { onPush?: boolean };
   // A person approves the case before it completes; `when` sees the final

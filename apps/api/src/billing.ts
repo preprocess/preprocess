@@ -215,6 +215,8 @@ export const storedBytes = async (tx: SystemTx) =>
         + coalesce((select sum(capture_bytes) from cases c where c.organization_id = o.id), 0)
         + coalesce((select sum(quantity) from usage_records u
             where u.organization_id = o.id and u.feature = 'log_bytes'), 0)
+        + coalesce((select sum(bytes) from sandbox_layers l
+            where l.organization_id = o.id), 0)
           as bytes
       from organization o`)
   ).rows.map((r) => ({ org: r.org, bytes: Number(r.bytes) }));

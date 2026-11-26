@@ -7,13 +7,19 @@
 
 import type { SandboxEvent } from "@preprocess/sandbox";
 import { SandboxMeter } from "@preprocess/sandbox";
-import { runInDurableObject } from "cloudflare:test";
+import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import { CAPTURE_FORMAT, CAPTURE_VERSION, captureKey } from "../src/capture.ts";
 import type { CaseView } from "../src/case-runtime.ts";
 import type { CaseKey, Settings, StartCase } from "../src/env.ts";
+import {
+  layerBuilderName,
+  layerKey,
+  ownsLayer,
+  type LayerJob,
+} from "../src/layers.ts";
 import { LIFETIME_MS, sandboxName } from "../src/sandbox.ts";
 import { deploy } from "./deploy.ts";
 // Bundled by vitest.config.ts, as the deploy command uploads it.
@@ -22,9 +28,17 @@ import sandboxAgent from "./dist/sandbox-agent.js?raw";
 const runtime = (exports as unknown as { default: unknown }).default as {
   startCase(start: StartCase): Promise<CaseView>;
   getCase(c: CaseKey): Promise<CaseView>;
+  queueSandboxLayer(
+    job: LayerJob,
+    d: { organizationId: string; agentId: string; deploymentId: string },
+  ): Promise<void>;
+  deleteSandboxLayer(organizationId: string, key: string): Promise<boolean>;
 };
 const platform = env.PLATFORM as unknown as {
   sandboxEvents(): Promise<SandboxEvent[]>;
+  layerResults(): Promise<
+    { deployment: { deploymentId: string }; result: { error?: string } }[]
+  >;
 };
 
 const reported = async (key: CaseKey) =>
@@ -285,5 +299,69 @@ describe("sandbox tools in a case", () => {
         "Sandboxes are not available here",
       ) as string,
     });
+  });
+});
+
+describe("custom environment layers", () => {
+  const setup = {
+    packages: { apt: ["jq"], pip: [], npm: [] },
+    run: ["echo ok"],
+    files: { "a.txt": "a" },
+    env: { A: "1" },
+  };
+
+  it("are keyed by organization, preset image and setup, in any key order", async () => {
+    const key = await layerKey("org_a", "img@sha256:1", setup);
+    expect(key).toMatch(/^org\/org_a\/layers\/[0-9a-f]{64}$/);
+    expect(ownsLayer("org_a", key)).toBe(true);
+    expect(ownsLayer("org_b", key)).toBe(false);
+    expect(
+      await layerKey("org_a", "img@sha256:1", {
+        env: { A: "1" },
+        files: { "a.txt": "a" },
+        run: ["echo ok"],
+        packages: { npm: [], pip: [], apt: ["jq"] },
+      }),
+    ).toBe(key);
+    expect(await layerKey("org_b", "img@sha256:1", setup)).toMatch(
+      /^org\/org_b\/layers\//,
+    );
+    expect(await layerKey("org_a", "img@sha256:2", setup)).not.toBe(key);
+  });
+
+  it("are only deleted under the organization's own prefix", async () => {
+    const mine = await layerKey("org_a", "img", setup);
+    await env.BUNDLES.put(mine, "layer");
+    expect(await runtime.deleteSandboxLayer("org_b", mine)).toBe(false);
+    expect(await env.BUNDLES.head(mine)).not.toBeNull();
+    expect(await runtime.deleteSandboxLayer("org_a", mine)).toBe(true);
+    expect(await env.BUNDLES.head(mine)).toBeNull();
+  });
+
+  it("report a build that cannot run to every deployment waiting on it", async () => {
+    const job: LayerJob = {
+      organizationId: "org_layer",
+      agentId: "agt_layer",
+      preset: "python",
+      setup,
+      network: { allow: [], block: [] },
+    };
+    const d = { organizationId: "org_layer", agentId: "agt_layer" };
+    await runtime.queueSandboxLayer(job, { ...d, deploymentId: "dep_1" });
+    await runtime.queueSandboxLayer(job, { ...d, deploymentId: "dep_2" });
+    const builder = env.SANDBOX_LARGE.getByName(await layerBuilderName(job));
+    await runDurableObjectAlarm(builder);
+    const reported = async () =>
+      (await platform.layerResults()).filter((r) =>
+        ["dep_1", "dep_2"].includes(r.deployment.deploymentId),
+      );
+    for (let i = 0; i < 40 && (await reported()).length < 2; i++)
+      await new Promise((r) => setTimeout(r, 50));
+    const results = await reported();
+    expect(results.map((r) => r.deployment.deploymentId).sort()).toEqual([
+      "dep_1",
+      "dep_2",
+    ]);
+    expect(results[0]!.result.error).toMatch(/Sandboxes are not available/);
   });
 });

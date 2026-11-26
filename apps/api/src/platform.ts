@@ -12,7 +12,8 @@ import { searchCases, type SearchRequest } from "./case-search.ts";
 import { recordCaseEvent } from "./cases.ts";
 import { secretsVersion, secretValues, type DeploymentRef } from "./deploy.ts";
 import type { CaseEvent } from "./cases.ts";
-import type { Env } from "./env.ts";
+import type { Env, SandboxLayerResult } from "./env.ts";
+import { deploymentLayer, layerBuilt } from "./sandbox-layers.ts";
 import { recordEvalEvent } from "./evals.ts";
 import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
@@ -75,6 +76,19 @@ export class Platform extends WorkerEntrypoint<Env> {
     const cap = await withOrg(this.env, orgId(organizationId), sandboxMaxSize);
     if (!sizeAllowed(cap, size)) return "sandbox_size_not_allowed";
     return this.spendGate(organizationId);
+  }
+
+  // Custom environments (spec 3): the layer a deployment's row names, and a
+  // build's result for the row.
+  sandboxLayer(deployment: DeploymentRef) {
+    return deploymentLayer(this.env, deployment);
+  }
+
+  sandboxLayerBuilt(built: {
+    deployment: DeploymentRef;
+    result: SandboxLayerResult;
+  }) {
+    return layerBuilt(this.env, built);
   }
 
   // Run-log records from the runtime and the Tail Worker (design doc 09).

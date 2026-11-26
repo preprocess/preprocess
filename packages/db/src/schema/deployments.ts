@@ -5,6 +5,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   foreignKey,
@@ -19,6 +20,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { agents, groups } from "./access.ts";
+import { organization } from "./auth.ts";
 import { secrets } from "./secrets.ts";
 
 // Deploys from the agent's production branch are production; any other
@@ -29,11 +31,13 @@ export const deploymentEnvironment = pgEnum("deployment_environment", [
 ]);
 
 // waiting: built, but it asks for more than a guardrail allows (spec 5), so
-// it cannot serve until an Admin approves.
+// it cannot serve until an Admin approves. building: its sandbox's custom
+// environment is being built.
 export const deploymentStatus = pgEnum("deployment_status", [
   "ready",
   "waiting",
   "failed",
+  "building",
 ]);
 
 export const deploymentSource = pgEnum("deployment_source", ["cli", "github"]);
@@ -48,6 +52,20 @@ export type WaitingFor = {
   // A sandbox larger than the organization's largest allowed size.
   sandboxSize?: "small" | "medium" | "large";
 };
+
+// A deployment's custom sandbox environment (spec 3): the layer built from its
+// sandbox setup over the preset image, stored in R2 under the organization.
+// Only this row names the layer a case's sandbox mounts.
+export type DeploymentLayer =
+  | { status: "building" }
+  | {
+      status: "ready";
+      key: string;
+      image: string;
+      bytes: number;
+      warning?: string;
+    }
+  | { status: "failed"; error: string; log?: string };
 
 export const deployments = pgTable(
   "deployments",
@@ -67,6 +85,7 @@ export const deployments = pgTable(
       .default({ allow: [], block: [] }),
     manifest: jsonb().notNull(),
     waitingFor: jsonb().$type<WaitingFor>().notNull().default({}),
+    sandboxLayer: jsonb().$type<DeploymentLayer>(),
     gitBranch: text(),
     gitCommit: text(),
     source: deploymentSource().notNull(),
@@ -142,5 +161,30 @@ export const secretGrants = pgTable(
       columns: [t.organizationId, t.agentId],
       foreignColumns: [agents.organizationId, agents.id],
     }).onDelete("cascade"),
+  ],
+);
+
+// Custom environment layers in R2 (spec 3), one row per object: its key is
+// org/<org>/layers/<sha256 of the preset image and the setup>, so deployments
+// with the same setup share one. They count toward the organization's storage
+// until garbage collection deletes a layer no live deployment names.
+export const sandboxLayers = pgTable(
+  "sandbox_layers",
+  {
+    organizationId: text()
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    key: text().notNull(),
+    image: text().notNull(),
+    bytes: bigint({ mode: "number" }).notNull(),
+    unpackedBytes: bigint({ mode: "number" }).notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.key] }),
+    check(
+      "sandbox_layers_key_in_org",
+      sql`${t.key} LIKE 'org/' || ${t.organizationId} || '/layers/%'`,
+    ),
   ],
 );

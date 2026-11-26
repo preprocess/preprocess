@@ -86,7 +86,8 @@ export const getPlan = async (env: Env, org: OrgId): Promise<Plan> => {
   );
 };
 
-// Whether the organization's agents may use their own sandbox images (Team and
-// above). Not called yet: custom images are Coming soon.
-export const customSandboxImages = async (env: Env, org: OrgId) =>
+// Whether the organization's agents may build custom sandbox environments
+// (sandbox.setup; Team, Enterprise and Internal). Presets and a plain package
+// list work on every plan.
+export const customImagesAllowed = async (env: Env, org: OrgId) =>
   (await getPlan(env, org)).has("custom_sandbox_images");

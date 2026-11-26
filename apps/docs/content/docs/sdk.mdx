@@ -227,10 +227,47 @@ override the size for one agent from its settings, up to that cap.
 Sandbox calls are captured with the case. When an eval replays a case, it reuses
 the captured results and never starts a sandbox.
 
-<Callout>
-  Custom sandbox images are coming soon. Until then, use a preset and
-  `packages`.
-</Callout>
+### Custom environments
+
+On Team and Enterprise plans, `setup` builds a custom environment over the
+preset once, when you deploy, so a sandbox doesn't reinstall it every time it
+starts:
+
+```ts
+sandbox: {
+  size: "medium",
+  preset: "python",
+  setup: {
+    packages: { apt: ["poppler-utils"], pip: ["pdfplumber==0.11.4"] },
+    run: ["mkdir -p /opt/models && curl -fsSL https://example.com/model.bin -o /opt/models/model.bin"],
+    files: { "/etc/parser.toml": "mode = 'strict'" },
+    env: { PARSER_CONFIG: "/etc/parser.toml" },
+  },
+},
+```
+
+- `packages` takes the same `apt`, `pip` and `npm` lists as `sandbox.packages`.
+- `run` lists up to 50 shell commands, run in order as root in `/workspace`. The
+  build stops at the first one that fails. Files they leave in `/workspace`
+  belong to the sandbox user afterwards.
+- `files` writes up to 100 text files (1 MB in all) before the commands run. A
+  relative path is under `/workspace`.
+- `env` sets variables for the build and for every command the sandbox runs.
+
+The build follows the agent's network rules, and the deployment shows
+**Building** until it finishes. Then it serves, or fails with the build's log.
+`preprocess deploy` waits for it. Deploys with the same preset and setup share
+one build. When a preset is updated, the environment rebuilds the next time a
+sandbox starts.
+
+A custom environment is stored and billed as storage, at the same GB-month rate
+as files and logs, while a live deployment uses it. There's no cap on its size,
+but it has to fit on the sandbox's disk along with the preset. A deploy fails
+when it doesn't, and names the size that would fit. An environment over 1 GB
+deploys with a warning: the sandbox downloads it every time it starts or wakes,
+at about 25 MB a second.
+
+On other plans, use a preset and `packages`.
 
 ## Memory
 

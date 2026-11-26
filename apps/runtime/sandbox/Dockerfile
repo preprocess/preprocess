@@ -15,8 +15,12 @@ COPY --from=shim /usr/local/bin/sandbox-shim /usr/local/bin/sandbox-shim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     bash ca-certificates curl git jq less procps unzip xz-utils zip \
+    attr e2fsprogs fuse-overlayfs fuse3 squashfs-tools squashfuse \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 1000 --home-dir /workspace --create-home --shell /bin/bash sandbox
+# Custom environments (layer/): build.sh captures one, mount.sh lays it over
+# the preset at start.
+COPY layer/ /opt/preprocess/layer/
 WORKDIR /workspace
 CMD ["sleep", "infinity"]
 
