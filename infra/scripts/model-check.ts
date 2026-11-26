@@ -1,12 +1,21 @@
-// Small real calls on a deployed stage's model providers, run by hand from the
-// "Staging model check" workflow (spec v1.7): one case per agent model, the
-// first with a file so it is OCR'd, each able to call decide. For every case
-// it prints the id, model, status, answers, and the tokens and charges its run
-// capture recorded, read from the stage's runs bucket. It signs in as the
-// smoke-test user the way scripts/smoke.ts does. It never prints a key.
+// One case per agent model on a deployed stage, each with the sample invoice
+// attached so it is OCR'd, and each able to call decide (spec v1.7). For every
+// case it prints the id, model, status, answers, and the tokens and charges
+// its run capture recorded, read from the stage's runs bucket when Cloudflare
+// credentials are set. It signs in as the smoke-test user the way
+// scripts/smoke.ts does, after it. It never prints a key.
+//
+// MODELS=stub (the default) is the staging smoke test's model step: the stage
+// calls no real provider, so the stub answers every agent model in its
+// provider's chat-completions shape, decide in Baseten's System One shape and
+// OCR in Mistral's. Every case must then follow the stub's ocr-invoice fixture
+// (apps/model-stub/fixtures/chat.json), which only OCR'd invoice text
+// triggers, get decide's picks back, fill the schema and be charged.
+// MODELS=real is the full real-model pass the "Deploy" workflow runs only when
+// started by hand with real_models; there each case only has to complete.
 
 import { createHmac } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { buildSync } from "esbuild";
@@ -17,10 +26,11 @@ const authSecret = process.env.BETTER_AUTH_SECRET;
 const emailFrom = process.env.EMAIL_FROM;
 const account = process.env.CLOUDFLARE_ACCOUNT_ID;
 const token = process.env.CLOUDFLARE_API_TOKEN;
-if (!app || !authSecret || !emailFrom || !account || !token)
-  throw new Error(
-    "OUTPUTS, BETTER_AUTH_SECRET, EMAIL_FROM, CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN must be set",
-  );
+const real = process.env.MODELS === "real";
+if (!["stub", "real", undefined].includes(process.env.MODELS))
+  throw new Error(`MODELS must be stub or real, not ${process.env.MODELS}`);
+if (!app || !authSecret || !emailFrom)
+  throw new Error("OUTPUTS, BETTER_AUTH_SECRET and EMAIL_FROM must be set");
 const domain = /@([^>\s]+)>?\s*$/.exec(emailFrom)?.[1];
 const email = `smoke-test+${stage}@${domain}`;
 const tokenFor = (minute: number) =>
@@ -160,16 +170,25 @@ const invoice = readFileSync(
     "../../apps/model-stub/fixtures/ocr/samples/acme-invoice.png",
   ),
 );
-const form = new FormData();
-form.set(
-  "file",
-  new Blob([invoice], { type: "image/png" }),
-  "acme-invoice.png",
-);
-const file = await call<{ id: string }>("POST", `/v1/orgs/${org}/files`, form);
-if (file.status !== 201) fail(`uploading the invoice: ${file.text}`);
+// A case takes its files, so each case gets its own upload.
+const upload = async () => {
+  const form = new FormData();
+  form.set(
+    "file",
+    new Blob([invoice], { type: "image/png" }),
+    "acme-invoice.png",
+  );
+  const file = await call<{ id: string }>(
+    "POST",
+    `/v1/orgs/${org}/files`,
+    form,
+  );
+  if (file.status !== 201) fail(`uploading the invoice: ${file.text}`);
+  return file.body.id;
+};
 
 const capture = async (agentId: string, caseId: string) => {
+  if (!account || !token) return null;
   const key = `${org}/agents/${agentId}/cases/${caseId}/run.v1.json`;
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${account}/r2/buckets/preprocess-runs-${stage}/objects/${encodeURIComponent(key)}`,
@@ -183,15 +202,13 @@ const capture = async (agentId: string, caseId: string) => {
 };
 
 let failed = false;
-for (const [index, model] of models.entries()) {
+const rows: string[][] = [];
+for (const model of models) {
   const { slug, agentId } = await deploy(model);
   const started = await call<{ id: string }>("POST", `/v1/orgs/${org}/cases`, {
     agent: slug,
-    text:
-      index === 0
-        ? "Model check: the invoice is attached."
-        : "Model check: Invoice 1042 from Acme Corporation, total 1,240.00 USD.",
-    ...(index === 0 && { files: [file.body.id] }),
+    text: `Model check of ${model}: the invoice is attached.`,
+    files: [await upload()],
   });
   if (started.status !== 202) fail(`starting ${slug}: ${started.text}`);
   const id = started.body.id;
@@ -207,10 +224,10 @@ for (const [index, model] of models.entries()) {
       break;
     await sleep(2000);
   }
-  const room = await call<{ answers: unknown }>(
-    "GET",
-    `/v1/orgs/${org}/cases/${id}/room`,
-  );
+  const room = await call<{
+    answers: Record<string, unknown> | null;
+    thread: { kind: string; text: string }[];
+  }>("GET", `/v1/orgs/${org}/cases/${id}/room`);
   const run = await capture(agentId, id);
   const responses = (run?.events ?? []).filter(
     (e) => e.kind === "model.response",
@@ -254,7 +271,43 @@ for (const [index, model] of models.entries()) {
       2,
     ),
   );
-  if (state.status !== "completed") failed = true;
+  const reply = (room.body?.thread ?? [])
+    .filter((m) => m.kind === "agent")
+    .map((m) => m.text)
+    .join("\n");
+  const problems = [
+    state.status !== "completed" && `ended ${state.status ?? "unknown"}`,
+    !real &&
+      !reply.includes("Read invoice 1042 from its OCR text.") &&
+      "the stub did not answer from the OCR'd invoice",
+    !real && !reply.includes('"picks"') && "decide returned no picks",
+    !real &&
+      room.body?.answers?.vendor !== "acme" &&
+      "the schema has no vendor answer",
+    !real && !(Number(state.costUsd) > 0) && "the case was not charged",
+  ].filter((p): p is string => typeof p === "string");
+  rows.push([
+    model,
+    `\`${id}\``,
+    state.status ?? "unknown",
+    String(state.costUsd ?? "n/a"),
+    problems.length ? `FAIL: ${problems.join("; ")}` : "PASS",
+  ]);
+  if (problems.length) {
+    console.error(`${model}: ${problems.join("; ")}`);
+    failed = true;
+  }
 }
-if (failed) fail("a case did not complete; see above");
+const table = [
+  ["Model", "Case", "Status", "Charged (USD)", "Check"],
+  Array(5).fill("---"),
+  ...rows,
+]
+  .map((row) => `| ${row.join(" | ")} |`)
+  .join("\n");
+const report = `### ${real ? "Real-model pass" : "Models on the stub"} on ${stage}: ${failed ? "FAIL" : "PASS"}\n\n${real ? "Every agent model, decide and OCR on the real providers." : "Zero real provider calls: this stage binds no provider key and no Workers AI, so the stub served every agent model, decide and OCR call below."}\n\n${table}\n`;
+console.log(report);
+if (process.env.GITHUB_STEP_SUMMARY)
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
+if (failed) fail("a case failed its check; see above");
 console.log("model check passed");

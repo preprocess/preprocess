@@ -17,7 +17,10 @@ Every `/v1` route requires a bearer token (any non-empty value).
   its `turns` in order, one per assistant message so far. A turn either calls
   tools or answers; `{{results}}` in an answer is replaced with the tool results
   the conversation holds. Without a matching fixture the stub answers with a
-  fixed sentence and calls nothing. Usage is reported with zero cost.
+  fixed sentence and calls nothing. Usage is reported with zero cost, and the
+  conversation up to the last assistant message counts as cached prompt tokens,
+  as the providers report them. Previews and staging send every model here
+  (infra/src/stages.ts `callsRealModels`).
 
 Tests and seeded failure states can send `x-stub-fail: 429 | 500 | 503` or
 `x-stub-latency-ms`. Platform code never sends them.
