@@ -425,3 +425,54 @@ describe("checkout", () => {
     expect(again.status).toBe(409);
   });
 });
+
+describe("Free's seats", () => {
+  it("hold Free to its included seats once billing is enforced, never before and never for our own organizations", async () => {
+    const owner = await signUp("Seat Owner", environment);
+    const id = await createOrganization(owner.client, "Seatco");
+    const first = await addMember(owner.client, id, "Seat One");
+    const second = await addMember(owner.client, id, "Seat Two");
+    const third = await addMember(owner.client, id, "Seat Three");
+    const groups = await owner.client.call<
+      { id: string; isDevelopers: boolean }[]
+    >(`/v1/orgs/${id}/groups`);
+    const developers = groups.body.find((g) => g.isDevelopers)!.id;
+    const join = (env: Env, userId: string) => {
+      const client = new Client(env);
+      client.cookie = owner.client.cookie;
+      return client.call<{ error?: { code: string; message: string } }>(
+        `/v1/orgs/${id}/groups/${developers}/members/${userId}`,
+        { method: "PUT" },
+      );
+    };
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "free", status: "active" }],
+      flags: {},
+      balances: {
+        seats: { granted: 1, remaining: 1, usage: 0, unlimited: false },
+      },
+    };
+    const enforced = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      BILLING_REQUIRED_FROM: new Date(Date.now() - 60_000).toISOString(),
+    });
+
+    expect((await join(environment, first.userId)).status).toBe(204);
+    expect((await join(environment, second.userId)).status).toBe(204);
+    const ours = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      BILLING_REQUIRED_FROM: new Date(Date.now() - 60_000).toISOString(),
+      BILLING_INTERNAL_ORGS: id,
+    });
+    expect((await getPlan(ours, orgId(id))).limits.seats).toBeNull();
+
+    const refused = await join(enforced, third.userId);
+    expect(refused.status).toBe(402);
+    expect(refused.body.error).toEqual({
+      code: "seat_limit_reached",
+      message:
+        "This would make 3 developer and operator seats, and the free plan includes 1. Free a seat or upgrade first.",
+    });
+  });
+});
