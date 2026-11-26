@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  anchorAll,
   anchorDay,
+  anchorOrganization,
   dayOf,
   manifestKey,
 } from "../src/audit-anchor.ts";
@@ -111,12 +111,13 @@ describe("audit log", () => {
   it("anchors empty days too, so the cron job covers every organization", async () => {
     const { owner, org } = await setup();
     const environment = owner.client.environment;
-    const tomorrow = new Date(Date.now() + 2 * 86_400_000);
-    await anchorAll(environment, tomorrow);
+    const tomorrow = dayOf(new Date(Date.now() + 86_400_000));
+    expect(await anchorOrganization(environment, org, tomorrow)).toEqual([
+      dayOf(new Date()),
+      tomorrow,
+    ]);
     const empty = await (
-      await environment.AUDIT.get(
-        manifestKey(org, dayOf(new Date(Date.now() + 86_400_000))),
-      )
+      await environment.AUDIT.get(manifestKey(org, tomorrow))
     )?.json<AuditManifest>();
     expect(empty).toMatchObject({ firstSeq: null, count: 0, lastSeq: 5 });
     const verified = await owner.client.call<Verification>(
