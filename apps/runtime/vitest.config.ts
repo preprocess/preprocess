@@ -86,6 +86,7 @@ export default defineConfig({
             script: `import { WorkerEntrypoint } from "cloudflare:workers";
 const allowed = new Map();
 const events = [];
+const layers = [];
 // What \`deploy\` in test/deploy.ts gives each deployment, under a version that
 // moves on every change, as the API's secrets version does.
 const secrets = new Map();
@@ -113,6 +114,10 @@ export class Platform extends WorkerEntrypoint {
   }
   async sandboxEvent(event) { events.push(event); }
   async sandboxEvents() { return events; }
+  // Custom environment builds, which tests read back with layerResults().
+  async sandboxLayer() { return null; }
+  async sandboxLayerBuilt(built) { layers.push(built); return { ok: true }; }
+  async layerResults() { return layers; }
 }
 export default { fetch: () => new Response("platform") };`,
           },

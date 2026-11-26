@@ -94,4 +94,49 @@ describe("sandbox", () => {
       }).manifest.sandbox?.packages.npm,
     ).toEqual(["@scope/pkg@1.2.3"]);
   });
+  it("keeps a setup, with its lists and maps filled in", () => {
+    const { manifest } = build({
+      size: "medium",
+      preset: "python",
+      setup: {
+        packages: { pip: ["pandas==2.2.3"] },
+        run: ["mkdir -p /opt/tools"],
+        files: { "/etc/tool.conf": "x=1", "notes/readme.txt": "hi" },
+        env: { TOOL_HOME: "/opt/tools" },
+      },
+    });
+    expect(manifest.sandbox?.setup).toEqual({
+      packages: { apt: [], pip: ["pandas==2.2.3"], npm: [] },
+      run: ["mkdir -p /opt/tools"],
+      files: { "/etc/tool.conf": "x=1", "notes/readme.txt": "hi" },
+      env: { TOOL_HOME: "/opt/tools" },
+    });
+    expect(build({ size: "small", setup: {} }).manifest.sandbox?.setup).toEqual(
+      { packages: { apt: [], pip: [], npm: [] }, run: [], files: {}, env: {} },
+    );
+  });
+
+  it("refuses setup files, variables and steps it cannot apply", () => {
+    expect(() =>
+      build({ size: "small", setup: { files: { "../etc/passwd": "x" } } }),
+    ).toThrow(/sandbox\.setup\.files has a path it cannot write/);
+    expect(() =>
+      build({ size: "small", setup: { files: { "/proc/self/x": "x" } } }),
+    ).toThrow(/cannot write/);
+    expect(() =>
+      build({ size: "small", setup: { env: { HOME: "/root" } } }),
+    ).toThrow(/sandbox\.setup\.env has a name it cannot set/);
+    expect(() =>
+      build({ size: "small", setup: { env: { PREPROCESS_KEY: "x" } } }),
+    ).toThrow(/cannot set/);
+    expect(() => build({ size: "small", setup: { run: [""] } })).toThrow(
+      /each sandbox\.setup\.run command must be 1 to 4000 characters/,
+    );
+    expect(() =>
+      build({ size: "small", setup: { packages: { pip: ["pandas"] } } }),
+    ).toThrow(/sandbox\.setup\.packages\.pip needs the "python"/);
+    expect(() => build({ size: "small", setup: { image: "x" } })).toThrow(
+      /sandbox\.setup\.image is not packages, run, files or env/,
+    );
+  });
 });

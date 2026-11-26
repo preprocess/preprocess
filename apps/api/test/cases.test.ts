@@ -66,6 +66,8 @@ const runtime: Runtime = {
   manifest: () => Promise.reject(new Error("unused")),
   getCase: () => Promise.reject(new Error("unused")),
   putBundle: () => Promise.reject(new Error("unused")),
+  queueSandboxLayer: () => Promise.reject(new Error("unused")),
+  deleteSandboxLayer: () => Promise.reject(new Error("unused")),
   startCase: (start) => {
     started.push(start);
     return Promise.resolve({});

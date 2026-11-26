@@ -1,5 +1,7 @@
 import type { LogRecord } from "@preprocess/logs";
 import type { SandboxOwner } from "@preprocess/sandbox";
+import type { NetworkRules } from "@preprocess/db/schema/deployments";
+import type { SandboxPreset, SandboxSetup } from "@preprocess/sdk/protocol";
 import type { Pipeline } from "cloudflare:pipelines";
 
 import type { BuildQueue } from "./builds.ts";
@@ -122,7 +124,35 @@ export type Runtime = {
     bundle: { mainModule: string; modules: Record<string, string> },
   ): Promise<string>;
   getCase(c: CaseKey): Promise<unknown>;
+  // Custom environments (spec 3): a deploy's layer build, whose result comes
+  // back through Platform.sandboxLayerBuilt, and a collected layer's delete.
+  queueSandboxLayer(
+    job: SandboxLayerJob,
+    deployment: {
+      organizationId: string;
+      agentId: string;
+      deploymentId: string;
+    },
+  ): Promise<void>;
+  deleteSandboxLayer(organizationId: string, key: string): Promise<boolean>;
 };
+
+export type SandboxLayerJob = {
+  organizationId: string;
+  agentId: string;
+  preset: SandboxPreset;
+  setup: SandboxSetup;
+  network: NetworkRules;
+};
+
+export type SandboxLayer = {
+  key: string;
+  image: string;
+  bytes: number;
+  unpackedBytes: number;
+};
+
+export type SandboxLayerResult = SandboxLayer | { error: string; log?: string };
 
 // apps/builder's Builder entrypoint: builds a commit's tarball in a sandbox
 // with the project's own package manager and the CLI's bundle(). It never

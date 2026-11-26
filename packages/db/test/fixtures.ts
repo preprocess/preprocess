@@ -35,6 +35,7 @@ import {
 import {
   deploymentGroups,
   deployments,
+  sandboxLayers,
   secretGrants,
 } from "../src/schema/deployments.ts";
 import {
@@ -493,6 +494,13 @@ export const seedOrganization = async (name: string) =>
       startedAt: new Date("2026-11-26T03:00:00Z"),
       lastSeenAt: new Date("2026-11-26T03:00:30Z"),
     });
+    await tx.insert(sandboxLayers).values({
+      organizationId: org,
+      key: `org/${org}/layers/${"0".repeat(64)}`,
+      image: "preset@sha256:0",
+      bytes: 1,
+      unpackedBytes: 1,
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -537,6 +545,7 @@ export const tenantTables = {
   usage_reports: "organization_id",
   seat_activity: "organization_id",
   sandbox_intervals: "organization_id",
+  sandbox_layers: "organization_id",
   inbox_reads: "organization_id",
   outbox: "organization_id",
   webhook_endpoints: "organization_id",

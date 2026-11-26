@@ -757,6 +757,7 @@ export class CaseRuntime extends DurableObject<Env> {
       const output = await run({
         organizationId: meta.organizationId,
         agentId: meta.agentId,
+        deploymentId: meta.deploymentId,
         caseId: meta.caseId,
         network: meta.network,
         sandbox,
