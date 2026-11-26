@@ -423,6 +423,31 @@ const planWithoutCard = async (env: Env, org: OrgId) => {
 const FREE_CREDITS = 500;
 const FREE_CREDITS_ID = "free_credit";
 
+// Autumn grants Free's included credits on every attach, and perhaps again
+// when a scheduled Free starts, whatever the attach removed. Any such grant
+// on top of the $5 this organization already had, or to a card that had it
+// elsewhere, is taken back; what was used from it stays owed. An
+// organization that got its $5 from Free before PRE-96 keeps that one grant.
+const takeBackFreeGrants = async (
+  billing: Autumn,
+  org: OrgId,
+  customer: AutumnCustomer,
+  keepOne: boolean,
+) => {
+  const grants =
+    customer.balances[CREDITS]?.breakdown?.filter(
+      (b) => b.plan_id === "free" && b.included_grant > 0,
+    ) ?? [];
+  for (const grant of keepOne ? grants.slice(1) : grants) {
+    await billing.revoke(org, {
+      featureId: CREDITS,
+      id: grant.id,
+      usage: grant.usage,
+    });
+    console.log("billing: took back a repeated Free grant", org, grant.id);
+  }
+};
+
 const grantFreeCredits = async (
   billing: Autumn,
   env: Env,
@@ -431,11 +456,19 @@ const grantFreeCredits = async (
 ) => {
   const [done] = await withoutOrg(env, "billing: free credits", (tx) =>
     tx
-      .select({ org: freeCreditGrants.organizationId })
+      .select({ granted: freeCreditGrants.granted })
       .from(freeCreditGrants)
       .where(eq(freeCreditGrants.organizationId, org)),
   );
-  if (done) return;
+  const ours = Boolean(
+    customer.balances[CREDITS]?.breakdown?.some(
+      (b) => b.id === FREE_CREDITS_ID,
+    ),
+  );
+  if (done) {
+    await takeBackFreeGrants(billing, org, customer, done.granted && !ours);
+    return;
+  }
   // Before PRE-96, attaching Free carried the $5 itself.
   const had = Boolean(
     customer.balances[CREDITS]?.breakdown?.some(
@@ -464,9 +497,13 @@ const grantFreeCredits = async (
         .onConflictDoNothing(),
     );
     console.log("billing: free credits already used on this card", org);
+    await takeBackFreeGrants(billing, org, customer, false);
     return;
   }
-  if (had) return;
+  if (had) {
+    await takeBackFreeGrants(billing, org, customer, !ours);
+    return;
+  }
   try {
     await billing.grant(org, {
       featureId: CREDITS,
@@ -474,14 +511,26 @@ const grantFreeCredits = async (
       id: FREE_CREDITS_ID,
     });
   } catch (error) {
-    if (error instanceof AutumnError && error.status === 409) return;
-    await withoutOrg(env, "billing: release free credits", (tx) =>
-      tx
-        .delete(freeCreditGrants)
-        .where(eq(freeCreditGrants.organizationId, org)),
-    );
-    throw error;
+    if (!(error instanceof AutumnError && error.status === 409)) {
+      await withoutOrg(env, "billing: release free credits", (tx) =>
+        tx
+          .delete(freeCreditGrants)
+          .where(eq(freeCreditGrants.organizationId, org)),
+      );
+      throw error;
+    }
   }
+  await takeBackFreeGrants(billing, org, customer, false);
+};
+
+// After any move to Free, outside a request: grants or takes back the $5.
+export const settleFreeCredits = async (env: Env, org: string) => {
+  const billing = autumn(env);
+  if (!billing) return;
+  const customer = await billing.customer(org);
+  const plan = readPlan(customer);
+  if (plan.started && plan.name === "free")
+    await grantFreeCredits(billing, env, orgId(org), customer);
 };
 
 const loadPlan = async (billing: Autumn, env: Env, org: OrgId) => {

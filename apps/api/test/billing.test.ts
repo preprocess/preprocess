@@ -1451,12 +1451,93 @@ describe("Free's $5", () => {
     customer = free(`fp_${legacy.org}`, {
       model_credit: {
         ...balance(120, 500, 380),
-        breakdown: [{ id: "cus_ent_1", plan_id: "free", included_grant: 500 }],
+        breakdown: [
+          { id: "cus_ent_1", plan_id: "free", included_grant: 500, usage: 380 },
+        ],
       },
     });
     await getPlan(environment, orgId(legacy.org));
     expect(grants()).toEqual([]);
     expect(await recorded(legacy.org)).toEqual([{ card: null, granted: true }]);
+  });
+
+  it("takes back any Free grant Autumn gives again, keeping what was used owed, and keeps a legacy organization's first", async () => {
+    const ours = await organizationWithAgent("Regrantco");
+    const refused = await organizationWithAgent("Refusedco");
+    const legacy = await organizationWithAgent("Oldfreeco");
+    await withoutOrg(environment, "test: free credits", (tx) =>
+      tx.insert(freeCreditGrants).values([
+        {
+          organizationId: ours.org,
+          cardFingerprint: `fp_${ours.org}`,
+          granted: true,
+        },
+        { organizationId: refused.org, cardFingerprint: null, granted: false },
+        { organizationId: legacy.org, cardFingerprint: null, granted: true },
+      ]),
+    );
+    const planGrant = (id: string, usage: number) => ({
+      id,
+      plan_id: "free",
+      included_grant: 500,
+      usage,
+    });
+    const revoked = () =>
+      calls.filter((c) => c.route === "balances.update").map((c) => c.body);
+    stubAutumn();
+
+    // Our $5 is its own balance; a Free grant beside it is a repeat.
+    customer = free("fp_x", {
+      model_credit: {
+        ...balance(900, 1_000, 100),
+        breakdown: [
+          { id: "free_credit", plan_id: null, included_grant: 500, usage: 70 },
+          planGrant("cus_ent_again", 30),
+        ],
+      },
+    });
+    await getPlan(environment, orgId(ours.org));
+    expect(revoked()).toEqual([
+      {
+        customer_id: ours.org,
+        feature_id: "model_credit",
+        balance_id: "cus_ent_again",
+        included_grant: 0,
+        remaining: -30,
+      },
+    ]);
+
+    calls = [];
+    customer = free("fp_y", {
+      model_credit: {
+        ...balance(500),
+        breakdown: [planGrant("cus_ent_card", 0)],
+      },
+    });
+    await getPlan(environment, orgId(refused.org));
+    expect(revoked()).toEqual([
+      {
+        customer_id: refused.org,
+        feature_id: "model_credit",
+        balance_id: "cus_ent_card",
+        included_grant: 0,
+        remaining: 0,
+      },
+    ]);
+
+    calls = [];
+    customer = free("fp_z", {
+      model_credit: {
+        ...balance(1_000, 1_000),
+        breakdown: [
+          planGrant("cus_ent_first", 0),
+          planGrant("cus_ent_second", 0),
+        ],
+      },
+    });
+    await getPlan(environment, orgId(legacy.org));
+    expect(revoked().map((b) => b.balance_id)).toEqual(["cus_ent_second"]);
+    expect(grants()).toEqual([]);
   });
 });
 
