@@ -162,6 +162,9 @@ describe("sandbox tools in a case", () => {
     await awake(key);
     const view = await run(key, "Say hello.");
     expect(view.status).toBe("completed");
+    // The close is reported just after the case settles.
+    for (let i = 0; i < 40 && (await reported(key)).length < 2; i++)
+      await new Promise((r) => setTimeout(r, 50));
     expect((await reported(key)).map((e) => [e.seq, e.type])).toEqual([
       [1, "start"],
       [1, "crash"],
