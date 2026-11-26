@@ -239,6 +239,13 @@
       "when": 1795734880548,
       "tag": "0038_eval_runs_one_push",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795735320219,
+      "tag": "0039_mcp_transport",
+      "breakpoints": true
     }
   ]
 }

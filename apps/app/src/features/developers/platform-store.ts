@@ -61,20 +61,27 @@ export type NetworkRule = {
 /** How a remote MCP server authenticates our calls. */
 export type McpAuthKind = "none" | "oauth" | "token";
 
+/**
+ * How we reach a server, detected when it's saved: streamable HTTP, or the
+ * deprecated HTTP+SSE transport when that's all the server speaks.
+ */
+export type McpTransport = "streamable_http" | "sse";
+
 export type McpTool = {
   readonly name: string;
   readonly description: string;
 };
 
 /**
- * A remote MCP server, reached over streamable HTTP. A bearer token is
- * write-only once saved, like a secret.
+ * A remote MCP server over https. A bearer token is write-only once saved,
+ * like a secret.
  */
 export type McpServer = {
   readonly id: string;
   readonly name: string;
   readonly url: string;
   readonly auth: McpAuthKind;
+  readonly transport: McpTransport;
   readonly token: string | null;
   /** What the server last reported; empty until it's been reached. */
   readonly tools: readonly McpTool[];
@@ -90,6 +97,7 @@ export function summarizeMcpServer(server: McpServer): McpServerSummary {
     name: server.name,
     url: server.url,
     auth: server.auth,
+    transport: server.transport,
     tools: server.tools,
     addedAt: server.addedAt,
   };
@@ -113,6 +121,9 @@ export function mcpServerFrom(
     name: input.name,
     url: input.url,
     auth: input.auth,
+    // Seeded: a real backend detects it when it first reaches the server.
+    transport:
+      previous?.url === input.url ? previous.transport : "streamable_http",
     token:
       input.auth === "token" ? input.token || (previous?.token ?? null) : null,
     // Seeded: a real backend lists tools when it first reaches the server.
@@ -216,6 +227,7 @@ function seed(): PlatformState {
         name: "Document store",
         url: "https://mcp.acme.com/documents",
         auth: "oauth",
+        transport: "streamable_http",
         token: null,
         tools: [
           { name: "search_documents", description: "Full-text search." },
@@ -229,6 +241,7 @@ function seed(): PlatformState {
         name: "Inventory",
         url: "https://mcp.acme.com/inventory",
         auth: "token",
+        transport: "streamable_http",
         token: "seeded-demo-token",
         tools: [
           { name: "lookup_part", description: "Find a part by number." },
@@ -243,6 +256,7 @@ function seed(): PlatformState {
         name: "Ticketing",
         url: "https://tickets.acme.com/mcp",
         auth: "token",
+        transport: "sse",
         token: "tkt_4b8e1f07",
         tools: [
           { name: "list_tickets", description: "Open tickets by queue." },

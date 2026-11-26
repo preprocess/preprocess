@@ -252,6 +252,7 @@ const SEED_AGENT_MCP: Readonly<Record<string, readonly McpServer[]>> = {
       name: "Lab fixtures",
       url: "https://lab.acme.com/mcp",
       auth: "none",
+      transport: "streamable_http",
       token: null,
       tools: [
         { name: "load_fixture", description: "Load a saved test case." },

@@ -23,6 +23,10 @@ import { bytea } from "./columns.ts";
 
 export const mcpAuth = pgEnum("mcp_auth", ["none", "oauth"]);
 
+// How the API talks to the server. Registration detects it; `sse` is the
+// deprecated HTTP+SSE transport, used only when streamable HTTP is refused.
+export const mcpTransport = pgEnum("mcp_transport", ["streamable_http", "sse"]);
+
 // The OAuth client the platform registered with the server's authorization
 // server (dynamic client registration), and where to send people.
 export type McpOAuthClient = {
@@ -44,6 +48,7 @@ export const mcpServers = pgTable(
     slug: text().notNull(),
     url: text().notNull(),
     auth: mcpAuth().notNull(),
+    transport: mcpTransport().notNull().default("streamable_http"),
     oauthClient: jsonb().$type<McpOAuthClient>(),
     createdBy: text().notNull(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

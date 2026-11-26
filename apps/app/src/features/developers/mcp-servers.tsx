@@ -103,6 +103,14 @@ function AuthBadge({ auth }: Readonly<{ auth: McpAuthKind }>) {
   );
 }
 
+function TransportBadge({ server }: Readonly<{ server: McpServerSummary }>) {
+  return server.transport === "sse" ? (
+    <Badge className="shrink-0" size="sm">
+      Legacy SSE
+    </Badge>
+  ) : null;
+}
+
 function OrganizationBadge() {
   return (
     <Badge className="shrink-0" size="sm">
@@ -205,7 +213,7 @@ function McpServerDialog({
           value={name}
         />
         <ValidatedField
-          hint="A remote server over streamable HTTP."
+          hint="A remote server over https. Servers that only speak the older SSE transport are detected when you save."
           id="mcp-url"
           label="URL"
           onChange={setUrl}
@@ -467,6 +475,7 @@ export function OrgMcpSection({
                       ? "1 agent"
                       : `${agents} agents`}
                 </span>
+                <TransportBadge server={server} />
                 <AuthBadge auth={server.auth} />
                 <SettingsRowMenu
                   actions={serverActions(server, dialogs)}
@@ -571,6 +580,7 @@ export function AgentMcpSection({
               key={`agent:${server.id}`}
               label={<ServerName name={server.name} />}
             >
+              <TransportBadge server={server} />
               <AuthBadge auth={server.auth} />
               <SettingsRowMenu
                 actions={serverActions(server, dialogs)}
