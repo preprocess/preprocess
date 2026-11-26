@@ -96,6 +96,7 @@ required.
 | `network`        | Outbound host patterns the code is allowed to `fetch()`.                                                                         |
 | `schedules`      | Cron schedules (`name`, 5-field `cron`, optional `timezone` and `previews`) that start cases automatically.                      |
 | `ocr`            | When `true`, runs OCR on uploaded files before the first model turn.                                                             |
+| `searchCases`    | When `true`, enables `search_cases` over this agent's completed cases in the same environment. Off by default.                   |
 | `timeoutSeconds` | Positive integer wall-clock limit per run. Passing it marks the case `failed`.                                                   |
 | `toolRetries`    | Whole-number retry count when a non-`sideEffects` tool throws. Defaults to `0`.                                                  |
 
@@ -162,14 +163,15 @@ systems or in the case's output schema answers.
 Beside the tools you write, the runtime automatically exposes a built-in set of
 platform tools to the model:
 
-| Tool                             | What it does                                                                        |
-| -------------------------------- | ----------------------------------------------------------------------------------- |
-| `schema_overview`, `schema_read` | Inspect the output schema tree, field descriptions, conditions, values, and status. |
-| `schema_answer`                  | Write answers to visible schema fields (validated against field types and options). |
-| `options_search`, `options_page` | Search and paginate a `s.source()` option list without loading it into context.     |
-| `decide`                         | Pick from a field's full option list using the `groundhog-1` decision model.        |
-| `groups_list`, `tag_group`       | List groups with access to the agent and tag a group in the case thread.            |
-| `memory_propose`                 | Propose a reusable rule across cases for a person to accept or dismiss.             |
+| Tool                             | What it does                                                                            |
+| -------------------------------- | --------------------------------------------------------------------------------------- |
+| `schema_overview`, `schema_read` | Inspect the output schema tree, field descriptions, conditions, values, and status.     |
+| `schema_answer`                  | Write answers to visible schema fields (validated against field types and options).     |
+| `options_search`, `options_page` | Search and paginate a `s.source()` option list without loading it into context.         |
+| `decide`                         | Pick from a field's full option list using the `groundhog-1` decision model.            |
+| `groups_list`, `tag_group`       | List groups with access to the agent and tag a group in the case thread.                |
+| `memory_propose`                 | Propose a reusable rule across cases for a person to accept or dismiss.                 |
+| `search_cases`                   | Search this agent's completed cases in the same environment (when `searchCases: true`). |
 
 ## Archiving
 

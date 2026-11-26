@@ -33,6 +33,7 @@ type Defaults = {
   model?: string;
   reasoning?: string;
   ocr?: boolean;
+  searchCases?: boolean;
   timeoutSeconds?: number;
   toolRetries?: number;
   sandboxImage?: string;
@@ -83,6 +84,13 @@ export const FIELDS: readonly Field[] = [
   {
     key: "ocr",
     label: "OCR files before a case runs",
+    description: "Platform default: off",
+    kind: "choice",
+    options: BOOLEAN,
+  },
+  {
+    key: "searchCases",
+    label: "Search past cases",
     description: "Platform default: off",
     kind: "choice",
     options: BOOLEAN,

@@ -58,6 +58,7 @@ import {
   apiModelSecrets,
   apiSecrets,
   billingSecrets,
+  billingOrgs,
   billingVars,
   githubSecrets,
   githubVars,
@@ -704,6 +705,11 @@ export default Alchemy.Stack(
                 ] as const,
             ),
           )),
+        ...(region &&
+          billingOrgs[stage] && {
+            BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),
+            BILLING_ENFORCED_ORGS: billingOrgs[stage].enforced.join(","),
+          }),
         ...Object.fromEntries(
           (selfHost ? licenseSecrets : []).map(
             (name) =>

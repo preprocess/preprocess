@@ -165,6 +165,9 @@ export type Env = {
   BILLING_REQUIRED_FROM?: string;
   // Preprocess's own organizations, comma-separated ids: the internal plan.
   BILLING_INTERNAL_ORGS?: string;
+  // Organizations billed like customers now, whatever BILLING_REQUIRED_FROM
+  // says, comma-separated ids: a test organization before go-live.
+  BILLING_ENFORCED_ORGS?: string;
   // Self-hosted only: the signed license key (license.ts). Without a valid
   // one the install runs the free plan.
   PREPROCESS_LICENSE_KEY?: string;

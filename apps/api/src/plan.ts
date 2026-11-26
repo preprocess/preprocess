@@ -22,6 +22,7 @@ export const paidFeatures = [
   "scim",
   "synced_groups",
   "custom_roles",
+  "custom_sandbox_images",
 ] as const;
 export type Feature = (typeof paidFeatures)[number];
 // Seats are developers plus operators (seats.ts); null is no limit.
@@ -84,3 +85,8 @@ export const getPlan = async (env: Env, org: OrgId): Promise<Plan> => {
     license,
   );
 };
+
+// Whether the organization's agents may use their own sandbox images (Team and
+// above). Not called yet: custom images are Coming soon.
+export const customSandboxImages = async (env: Env, org: OrgId) =>
+  (await getPlan(env, org)).has("custom_sandbox_images");

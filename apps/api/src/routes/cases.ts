@@ -40,6 +40,7 @@ import {
 } from "../access.ts";
 import { eventBase, requireAdmin } from "../caller.ts";
 import type { OrgRole, OrgVariables } from "../caller.ts";
+import { applyCorrection } from "../case-search.ts";
 import { ApiError, createCase, type Approval } from "../cases.ts";
 import type { Env, WriteResult } from "../env.ts";
 import { acceptedMemories } from "../memories.ts";
@@ -283,15 +284,21 @@ const answerChange = async (
     );
   if (result.result === "refused")
     throw new ApiError(422, "refused", `${result.path}: ${result.reason}`);
-  await withOrg(c.env, c.var.org, (tx) =>
-    recordReview(tx, c, caseId, {
+  await withOrg(c.env, c.var.org, async (tx) => {
+    await recordReview(tx, c, caseId, {
       kind,
       path: result.path,
       before: result.before,
       after: result.after,
       checks: change.checks,
-    }),
-  );
+    });
+    if (result.result === "ok")
+      await applyCorrection(tx, caseId, {
+        kind,
+        path: result.path,
+        after: result.after,
+      });
+  });
   const response: z.infer<typeof Change> = {
     result: { ...result },
     checks: change.checks as z.infer<typeof Change>["checks"],
