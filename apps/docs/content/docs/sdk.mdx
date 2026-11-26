@@ -30,7 +30,7 @@ import { z } from "zod";
 
 export default agent({
   instructions: "You answer stock questions for Acme.",
-  model: "inkling-2-small",
+  model: "deepseek-v4.1-flash",
   secrets: ["ERP_TOKEN"],
   tools: {
     lookup_stock: tool({
@@ -46,6 +46,9 @@ export default agent({
   },
 });
 ```
+
+`model` is one of `kimi-k3.1-pro`, `deepseek-v4.1-flash` (the default),
+`deepseek-v4.1-flash-fast` and `qwen3.8-27b`.
 
 Deploy it with `preprocess deploy` (see [CLI](/cli)). The agent's name is your
 package.json name without its scope, unless you pass `--agent`.

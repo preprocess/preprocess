@@ -22,7 +22,7 @@ const settle = async (c: CaseKey) => {
 };
 
 const settings = (overrides: Partial<Settings>): Settings => ({
-  model: "inkling-2-small",
+  model: "deepseek-v4.1-flash",
   reasoning: "low",
   ocr: false,
   timeoutSeconds: null,

@@ -36,7 +36,7 @@ MODEL_SERVICE_KEY: Secret            // the stub accepts any non-empty bearer to
 type ModelPurpose = "decide" | "ocr";
 function modelEndpoint(env: Env, org: OrgId, purpose: ModelPurpose): Promise<{ url: string; key: string; model: string }>;
 // 1. If the organization registered its own endpoint for this model, use it.
-// 2. Otherwise use MODEL_SERVICE_URL and MODEL_SERVICE_KEY, with model "groundhog-1" or "lightonai/LightOnOCR-3-4B".
+// 2. Otherwise use MODEL_SERVICE_URL and MODEL_SERVICE_KEY, with model "decision-models/baseten-groundhog-latest" or "lightonai/LightOnOCR-3-4B".
 ```
 
 - In local and preview stages the service binding is replaced by a plain URL so that the code path is identical to production, where the service is outside Cloudflare.
@@ -49,7 +49,7 @@ The request and response follow Baseten's System One reference (docs.baseten.co/
 
 ```ts
 type SystemOneRequest = {
-  model: string;                                         // "groundhog-1"
+  model: string;                                         // "decision-models/baseten-groundhog-latest"
   state: string | Record<string, unknown> | unknown[] | { messages: Array<{ role: "user" | "assistant"; content: unknown }> };
   questions: Record<string, (
     | { type: "choice"; instructions?: string; criteria: Record<string, string | null> }   // 1–255 options

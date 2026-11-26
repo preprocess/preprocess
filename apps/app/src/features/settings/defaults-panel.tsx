@@ -11,6 +11,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@preprocess/ui/components/select";
+import { MODEL_CATALOG, MODELS } from "@preprocess/sdk/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
@@ -61,13 +62,12 @@ export const FIELDS: readonly Field[] = [
   {
     key: "model",
     label: "Model",
-    description: "Platform default: Inkling 2 Small",
+    description: "Platform default: DeepSeek V4.1 Flash",
     kind: "choice",
-    options: [
-      { value: "inkling-2-mini", label: "Inkling 2 Mini" },
-      { value: "inkling-2-small", label: "Inkling 2 Small" },
-      { value: "kimi-k3.1-pro", label: "Kimi K3.1 Pro" },
-    ],
+    options: MODELS.map((model) => ({
+      value: model,
+      label: MODEL_CATALOG[model].label,
+    })),
   },
   {
     key: "reasoning",

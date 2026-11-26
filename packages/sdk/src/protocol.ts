@@ -6,12 +6,51 @@
 
 export const PROTOCOL = 1;
 
-export const MODELS = [
-  "inkling-2-mini",
-  "inkling-2-small",
-  "kimi-k3.1-pro",
-] as const;
-export type Model = (typeof MODELS)[number];
+// The base models an agent runs on (spec 12a), every call billed per token.
+// `serving` is how the untrained model is served: Baseten's per-token model
+// APIs, or the shared dedicated deployment for its base model, which also
+// serves every organization's trained adapters. `trainable` gates training
+// per model; turn it on when Baseten Loops supports one. The fast variant of
+// DeepSeek V4.1 Flash is for untrained use only.
+export const MODEL_CATALOG = {
+  "kimi-k3.1-pro": {
+    label: "Kimi K3.1 Pro",
+    serving: "per-token",
+    trainable: false,
+  },
+  "deepseek-v4.1-flash": {
+    label: "DeepSeek V4.1 Flash",
+    serving: "per-token",
+    trainable: true,
+  },
+  "deepseek-v4.1-flash-fast": {
+    label: "DeepSeek V4.1 Flash (fast)",
+    serving: "per-token",
+    trainable: false,
+  },
+  "qwen3.8-27b": {
+    label: "Qwen 3.8 27B",
+    serving: "dedicated",
+    trainable: true,
+  },
+} as const satisfies Record<
+  string,
+  { label: string; serving: "per-token" | "dedicated"; trainable: boolean }
+>;
+export type Model = keyof typeof MODEL_CATALOG;
+export const MODELS = Object.keys(MODEL_CATALOG) as [Model, ...Model[]];
+
+export const DEFAULT_MODEL: Model = "deepseek-v4.1-flash";
+
+// Models spec 1.5 retired, which deployments built with an older SDK still
+// name, and the model each now runs on.
+export const RETIRED_MODELS: Readonly<Record<string, Model>> = {
+  "inkling-2-mini": "deepseek-v4.1-flash",
+  "inkling-2-small": "deepseek-v4.1-flash",
+};
+
+export const currentModel = (model: string): string =>
+  RETIRED_MODELS[model] ?? model;
 
 export const REASONING = ["low", "medium", "high"] as const;
 export type Reasoning = (typeof REASONING)[number];
