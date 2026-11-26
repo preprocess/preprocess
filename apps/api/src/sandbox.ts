@@ -8,14 +8,19 @@
 // size they chose. Builds and PDF renders are recorded the same way and never
 // billed. Only our cloud meters (spec 16).
 
+import { audit } from "@preprocess/db/audit";
 import { orgId, withOrg, withoutOrg } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { sandboxIntervals } from "@preprocess/db/schema/billing";
+import { organizationGuardrails } from "@preprocess/db/schema/guardrails";
 import { runMode } from "@preprocess/runmode";
 import type { SandboxEvent } from "@preprocess/sandbox";
+import { SANDBOX_SIZES } from "@preprocess/sdk/protocol";
 import { and, eq, isNull, lt } from "drizzle-orm";
 
+import { actor, eventBase } from "./caller.ts";
+import type { OrgVariables } from "./caller.ts";
 import type { Env } from "./env.ts";
 import { meter } from "./metering.ts";
 
@@ -187,4 +192,49 @@ export const closeSilentSandboxes = async (env: Env, now = new Date()) => {
     ).catch((error: unknown) =>
       console.error("sandboxes: close silent", interval.sandboxId, error),
     );
+};
+
+// The largest case sandbox size an Owner or Admin allows (spec 5).
+export const sizeRank = (size: CaseSandboxSize) => SANDBOX_SIZES.indexOf(size);
+
+// Whether an organization whose largest allowed size is `cap` (null: every
+// size) lets an agent use `size`.
+export const sizeAllowed = (
+  cap: CaseSandboxSize | null,
+  size: CaseSandboxSize,
+) => cap === null || sizeRank(size) <= sizeRank(cap);
+
+// Runs in the organization's transaction.
+export const sandboxMaxSize = async (tx: Tx): Promise<CaseSandboxSize | null> =>
+  (
+    await tx
+      .select({ size: organizationGuardrails.sandboxMaxSize })
+      .from(organizationGuardrails)
+  )[0]?.size ?? null;
+
+// An Owner or Admin's change is the approval (spec 5). Returns whether the cap
+// changed, so callers resync the agents' deployments.
+export const setSandboxMaxSize = async (
+  tx: Tx,
+  vars: OrgVariables,
+  size: CaseSandboxSize | null,
+) => {
+  const before = await sandboxMaxSize(tx);
+  if (before === size) return false;
+  const updatedBy = actor(vars.caller).actorId;
+  await tx
+    .insert(organizationGuardrails)
+    .values({ organizationId: vars.org, sandboxMaxSize: size, updatedBy })
+    .onConflictDoUpdate({
+      target: organizationGuardrails.organizationId,
+      set: { sandboxMaxSize: size, updatedBy, updatedAt: new Date() },
+    });
+  await audit(tx, {
+    ...eventBase(vars),
+    action: "guardrail.updated",
+    targetType: "organization",
+    targetId: vars.org,
+    data: { guardrail: "sandbox_size", before, after: size },
+  });
+  return true;
 };

@@ -1,8 +1,10 @@
 import type { LogRecord } from "@preprocess/logs";
+import type { SandboxReporter } from "@preprocess/sandbox";
 
 import type { Approval } from "./approvals.ts";
 import type { Charges } from "./capture.ts";
 import type { CaseRuntime } from "./case-runtime.ts";
+import type { SandboxLarge, SandboxMedium, SandboxSmall } from "./sandbox.ts";
 
 export type Env = {
   STAGE: string;
@@ -18,6 +20,10 @@ export type Env = {
   MODEL_SERVICE_URL?: string;
   MODEL_SERVICE_KEY?: string;
   CASE_RUNTIME: DurableObjectNamespace<CaseRuntime>;
+  // Case sandboxes (spec 3), one class per size (sandbox.ts).
+  SANDBOX_SMALL: DurableObjectNamespace<SandboxSmall>;
+  SANDBOX_MEDIUM: DurableObjectNamespace<SandboxMedium>;
+  SANDBOX_LARGE: DurableObjectNamespace<SandboxLarge>;
   RUNS: R2Bucket;
   // Agent code (design doc 03): each deployment's bundle in BUNDLES, loaded
   // as a Dynamic Worker. TAIL (apps/tail) turns its console output and
@@ -148,6 +154,8 @@ export type Settings = {
   timeoutSeconds: number | null;
   toolRetries: number | null;
   sandboxImage: string | null;
+  // The sandbox size with a dashboard override applied; null without one.
+  sandboxSize?: string | null;
   evals: { onPush: boolean };
   schedules: Record<string, { previews: boolean }>;
 };
@@ -211,6 +219,15 @@ export type Platform = {
     organizationId: string;
     fileId: string;
   }): Promise<{ markdown: string; pages: number; costMicroUsd: number }>;
+  // Before a case's sandbox starts or wakes: the size guardrail as it is now,
+  // then the spending limit and plan credit (spec 5 and 16a).
+  sandboxGate(
+    organizationId: string,
+    size: string,
+  ): Promise<SpendVerdict | "sandbox_size_not_allowed">;
+  // Each sandbox's start, wake, heartbeat, sleep, destroy and crash, which
+  // the API times and bills (spec 16a).
+  sandboxEvent: SandboxReporter["sandboxEvent"];
   // Run-log records (design doc 09), queued for the API's consumer.
   logs(records: LogRecord[]): Promise<void>;
   // The memory_propose tool (spec 10); the answer is the tool's result.

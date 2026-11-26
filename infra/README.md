@@ -206,13 +206,16 @@ To run a stage by hand with the same values exported:
 ## Container registry
 
 Cloudflare's container registry holds at most 50 GB per account, counts every
-stage's images, and reports no usage. The build sandbox and PDF renderer images
-publish to one repository each, shared by every stage (`imageRepositories` in
-`src/stages.ts`), tagged by the hash of their build inputs.
-`apps/builder/Dockerfile.dockerignore` and
-`apps/pdf-render/Dockerfile.dockerignore` keep each hash to the files its image
-copies, so a stage whose image inputs are unchanged reuses the published image
-without building or pushing anything.
+stage's images, and reports no usage. The build sandbox, PDF renderer and case
+sandbox preset images publish to one repository each, shared by every stage
+(`imageRepositories` in `src/stages.ts`), tagged by the hash of their build
+inputs. `apps/builder/Dockerfile.dockerignore`,
+`apps/pdf-render/Dockerfile.dockerignore` and
+`apps/runtime/sandbox/Dockerfile.dockerignore` keep each hash to the files its
+image copies, so a stage whose image inputs are unchanged reuses the published
+image without building or pushing anything. The four presets share one
+Dockerfile, so each gets its own repository rather than relying on the build
+argument to tell their tags apart.
 
 - **Preview teardown** deletes the destroyed stage's images: its old per-PR
   repositories, and, unless the pull request merged, the shared images only it

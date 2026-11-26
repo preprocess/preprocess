@@ -45,6 +45,8 @@ export type WaitingFor = {
   mcp?: string[];
   network?: string[];
   groups?: string[];
+  // A sandbox larger than the organization's largest allowed size.
+  sandboxSize?: "small" | "medium" | "large";
 };
 
 export const deployments = pgTable(

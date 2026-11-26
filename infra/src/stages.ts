@@ -80,6 +80,10 @@ export const names = (stage: string) => ({
 export const imageRepositories = {
   build: "preprocess-buildimage",
   render: "preprocess-renderimage",
+  "sandbox-standard": "preprocess-sandbox-standard",
+  "sandbox-node": "preprocess-sandbox-node",
+  "sandbox-python": "preprocess-sandbox-python",
+  "sandbox-python-data": "preprocess-sandbox-python-data",
 } as const;
 
 // Model providers' keys (packages/models endpoints), optional on every stage:
@@ -166,6 +170,24 @@ export const durableObjects = {
 // Durable Object classes the runtime Worker exports: one Pi Durable case
 // runtime per organization, agent and case.
 export const runtimeDurableObjects = { CASE_RUNTIME: "CaseRuntime" } as const;
+
+// Case sandboxes (spec 3): one class per size, each starting its own instance
+// type (apps/runtime/src/sandbox.ts), all from the same preset images.
+export const sandboxDurableObjects = {
+  SANDBOX_SMALL: "SandboxSmall",
+  SANDBOX_MEDIUM: "SandboxMedium",
+  SANDBOX_LARGE: "SandboxLarge",
+} as const;
+
+// The sandbox images: each preset builds from apps/runtime/sandbox/Dockerfile
+// with PRESET naming its stage. The keys are the images' names in
+// ctx.container.images.
+export const sandboxImages = {
+  SandboxStandard: "standard",
+  SandboxNode: "node",
+  SandboxPython: "python",
+  SandboxPythonData: "python-data",
+} as const;
 
 // Locally the API calls apps/model-stub through its portless URL, the same
 // code path as a real model service. The stub accepts any bearer token.

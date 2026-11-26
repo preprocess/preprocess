@@ -17,6 +17,7 @@ export { CaseRuntime } from "./case-runtime.ts";
 export { McpBroker } from "./mcp.ts";
 export type { Approval } from "./approvals.ts";
 export { Outbound } from "./outbound.ts";
+export { SandboxLarge, SandboxMedium, SandboxSmall } from "./sandbox.ts";
 export type { CaseState, CaseView, ReviewNote, WriteResult };
 
 type Edit = { path: string; version: number; userId: string };

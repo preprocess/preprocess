@@ -22,6 +22,7 @@ import {
   localSecretsMasterKey,
   names,
   runtimeDurableObjects,
+  sandboxDurableObjects,
 } from "../src/stages.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -169,13 +170,18 @@ const configs: Record<string, object> = {
       MODEL_SERVICE_URL: localModelService.url,
       MODEL_SERVICE_KEY: localModelService.key,
     },
+    // Locally the sandbox classes run without containers, like the build
+    // sandbox (wrangler's container runtime needs a kernel module some hosts
+    // lack), so their tools answer that sandboxes are unavailable.
     durable_objects: {
-      bindings: Object.entries(runtimeDurableObjects).map(
-        ([name, class_name]) => ({ name, class_name }),
-      ),
+      bindings: Object.entries({
+        ...runtimeDurableObjects,
+        ...sandboxDurableObjects,
+      }).map(([name, class_name]) => ({ name, class_name })),
     },
     migrations: [
       { tag: "v1", new_sqlite_classes: Object.values(runtimeDurableObjects) },
+      { tag: "v2", new_sqlite_classes: Object.values(sandboxDurableObjects) },
     ],
     r2_buckets: [
       { binding: "RUNS", bucket_name: local.runs },

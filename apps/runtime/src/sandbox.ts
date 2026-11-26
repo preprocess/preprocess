@@ -1,0 +1,334 @@
+// Case sandboxes (spec 3): one Linux container per case, started on the
+// agent's first sandbox call and destroyed when the case closes. A sandbox is
+// a Durable Object named like its case runtime, "<org>:<agent>:<case>", in the
+// class for its size; each class starts one Cloudflare instance type. The
+// image is a platform preset from the Worker's images map, never anything a
+// case supplies. Every HTTP and HTTPS request the container makes goes through
+// the Outbound entrypoint with the deployment's network rules, the same
+// gateway agent code uses; nothing else leaves it.
+//
+// Files go through the Sandbox SDK's Files, which runs the image's
+// sandbox-shim. The container's awake time is reported through SandboxMeter
+// (@preprocess/sandbox) to the API, which times and bills it.
+
+import { Files } from "@cloudflare/sandbox";
+import { SandboxMeter } from "@preprocess/sandbox";
+import type {
+  SandboxManifest,
+  SandboxPreset,
+  SandboxSize,
+} from "@preprocess/sdk/protocol";
+import { DurableObject } from "cloudflare:workers";
+
+import type { Env, NetworkRules } from "./env.ts";
+import type { OutboundProps } from "./outbound.ts";
+
+// Each size's Cloudflare instance type (PRE-87; developers.cloudflare.com/
+// containers/pricing, 2026-11-26).
+export const SANDBOX_INSTANCE = {
+  small: "standard-1",
+  medium: "standard-2",
+  large: "standard-4",
+} as const satisfies Record<SandboxSize, string>;
+
+// Each preset's key in ctx.container.images: the Container ids in
+// infra/alchemy.run.ts.
+export const SANDBOX_IMAGE = {
+  standard: "SandboxStandard",
+  node: "SandboxNode",
+  python: "SandboxPython",
+  "python-data": "SandboxPythonData",
+} as const satisfies Record<SandboxPreset, string>;
+
+export const SANDBOX_BINDING = {
+  small: "SANDBOX_SMALL",
+  medium: "SANDBOX_MEDIUM",
+  large: "SANDBOX_LARGE",
+} as const satisfies Record<SandboxSize, string>;
+
+// The longest one start of a sandbox stays up, whatever runs in it.
+export const LIFETIME_MS = 2 * 60 * 60 * 1000;
+
+export const WORKSPACE = "/workspace";
+const USER = "sandbox";
+const UID = "1000:1000";
+const CA = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
+const BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
+
+// exec() passes no image environment but PATH, so every process gets these.
+const PROCESS_ENV = {
+  HOME: WORKSPACE,
+  LANG: "C.UTF-8",
+  SSL_CERT_FILE: BUNDLE,
+  REQUESTS_CA_BUNDLE: BUNDLE,
+  PIP_CERT: BUNDLE,
+  NODE_EXTRA_CA_CERTS: CA,
+  PIP_DISABLE_PIP_VERSION_CHECK: "1",
+  DEBIAN_FRONTEND: "noninteractive",
+};
+
+export const EXEC_SECONDS = { default: 120, max: 600 } as const;
+// Characters of each stream an exec returns: the end, where errors are.
+export const OUTPUT_CHARS = 32_000;
+// Bytes of a file a read returns.
+export const READ_BYTES = 256_000;
+
+export type SandboxConfig = {
+  organizationId: string;
+  agentId: string;
+  caseId: string;
+  network: NetworkRules;
+  sandbox: SandboxManifest;
+};
+
+export type ExecResult = {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut?: true;
+  truncated?: true;
+};
+
+const tail = (text: string) =>
+  text.length > OUTPUT_CHARS
+    ? { text: text.slice(-OUTPUT_CHARS), cut: true }
+    : { text, cut: false };
+
+const decoder = new TextDecoder();
+
+export const sandboxName = (c: {
+  organizationId: string;
+  agentId: string;
+  caseId: string;
+}) => `${c.organizationId}:${c.agentId}:${c.caseId}`;
+
+type Exports = { Outbound(options: { props: OutboundProps }): Fetcher };
+
+export abstract class CaseSandbox extends DurableObject<Env> {
+  protected abstract readonly size: SandboxSize;
+  private readonly meter: SandboxMeter;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.meter = new SandboxMeter(ctx, env.PLATFORM);
+    // An evicted object that comes back to a running container watches it
+    // again; the heartbeat alarm covers a stop nobody saw.
+    if (ctx.container?.running) this.watch();
+  }
+
+  private container() {
+    const container = this.ctx.container;
+    if (!container)
+      throw new Error(
+        "Sandboxes are not available here: this runtime has no container binding.",
+      );
+    return container;
+  }
+
+  private watch() {
+    const container = this.container();
+    this.ctx.waitUntil(
+      container.monitor().then(
+        () => this.stopped("sleep"),
+        () => this.stopped("crash"),
+      ),
+    );
+  }
+
+  private async stopped(type: "sleep" | "crash") {
+    await this.ctx.storage.delete("sandbox:startedAt");
+    await this.meter.end(type);
+  }
+
+  // Starts or wakes the container when it is not running, and returns what
+  // installing the agent's packages printed when that failed.
+  private async ensure(config: SandboxConfig): Promise<string | null> {
+    if (config.sandbox.size !== this.size)
+      throw new Error(
+        `a ${config.sandbox.size} sandbox asked a ${this.size} one`,
+      );
+    const container = this.container();
+    if (container.running) return null;
+    const image = container.images[SANDBOX_IMAGE[config.sandbox.preset]];
+    if (!image)
+      throw new Error(`no image for the ${config.sandbox.preset} preset`);
+    const outbound = (this.ctx.exports as unknown as Exports).Outbound({
+      props: { organizationId: config.organizationId, network: config.network },
+    });
+    try {
+      await container.interceptAllOutboundHttp(outbound);
+      await container.interceptOutboundHttps("*", outbound);
+      container.start({
+        image,
+        instance: SANDBOX_INSTANCE[this.size],
+        enableInternet: false,
+        entrypoint: ["sleep", "infinity"],
+        labels: {
+          org: config.organizationId,
+          agent: config.agentId,
+          case: config.caseId,
+          kind: "sandbox",
+          size: this.size,
+        },
+      });
+      await container.setInactivityTimeout(
+        config.sandbox.idleTimeoutMinutes * 60_000,
+      );
+    } catch (error) {
+      if (container.running) await container.destroy();
+      throw error;
+    }
+    const woken =
+      (await this.ctx.storage.get<number>("sandbox:seq")) !== undefined;
+    await this.ctx.storage.put("sandbox:startedAt", Date.now());
+    await this.meter.begin(
+      {
+        organizationId: config.organizationId,
+        agent: config.agentId,
+        caseId: config.caseId,
+      },
+      "case",
+      this.size,
+      woken ? "wake" : "start",
+    );
+    this.watch();
+    return this.install(container, config.sandbox);
+  }
+
+  // Trusts the outbound gateway's certificate, then installs the agent's
+  // packages over the preset. Names were checked at deploy and go as argv.
+  private async install(container: Container, sandbox: SandboxManifest) {
+    const steps: { cmd: string[]; user?: string; cwd?: string }[] = [
+      { cmd: ["sh", "-c", `cat ${CA} >> ${BUNDLE}`] },
+    ];
+    const { apt, pip, npm } = sandbox.packages;
+    if (apt.length)
+      steps.push(
+        { cmd: ["apt-get", "update", "-qq"] },
+        {
+          cmd: [
+            "apt-get",
+            "install",
+            "-y",
+            "-qq",
+            "--no-install-recommends",
+            ...apt,
+          ],
+        },
+      );
+    if (pip.length)
+      steps.push({
+        cmd: ["pip", "install", "--quiet", "--no-input", ...pip],
+        user: USER,
+      });
+    if (npm.length)
+      steps.push({
+        cmd: ["npm", "install", "--no-audit", "--no-fund", "--silent", ...npm],
+        user: USER,
+        cwd: WORKSPACE,
+      });
+    for (const step of steps) {
+      const process = await container.exec(step.cmd, {
+        env: PROCESS_ENV,
+        stderr: "combined",
+        ...(step.user && { user: step.user }),
+        ...(step.cwd && { cwd: step.cwd }),
+      });
+      const output = await process.output();
+      if (output.exitCode !== 0)
+        return `${step.cmd.join(" ")} exited ${output.exitCode}:\n${tail(decoder.decode(output.stdout)).text}`;
+    }
+    return null;
+  }
+
+  async exec(
+    config: SandboxConfig,
+    input: { command: string; cwd?: string; timeoutSeconds?: number },
+  ): Promise<ExecResult & { installFailed?: string }> {
+    const installFailed = await this.ensure(config);
+    const container = this.container();
+    const seconds = Math.min(
+      input.timeoutSeconds ?? EXEC_SECONDS.default,
+      EXEC_SECONDS.max,
+    );
+    const process = await container.exec(["bash", "-lc", input.command], {
+      env: PROCESS_ENV,
+      user: USER,
+      cwd: input.cwd ?? WORKSPACE,
+    });
+    const killed = { timedOut: false };
+    const timer = setTimeout(() => {
+      killed.timedOut = true;
+      process.kill(9);
+    }, seconds * 1000);
+    try {
+      const output = await process.output();
+      const { timedOut } = killed;
+      const stdout = tail(decoder.decode(output.stdout));
+      const stderr = tail(decoder.decode(output.stderr));
+      return {
+        exitCode: timedOut ? null : output.exitCode,
+        stdout: stdout.text,
+        stderr: stderr.text,
+        ...(timedOut && { timedOut: true as const }),
+        ...((stdout.cut || stderr.cut) && { truncated: true as const }),
+        ...(installFailed !== null && { installFailed }),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async readFile(config: SandboxConfig, path: string) {
+    await this.ensure(config);
+    const response = await new Files(this.container()).readFile(path, {
+      cwd: WORKSPACE,
+      user: UID,
+    });
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return {
+      content: decoder.decode(bytes.slice(0, READ_BYTES)),
+      bytes: bytes.byteLength,
+      ...(bytes.byteLength > READ_BYTES && { truncated: true as const }),
+    };
+  }
+
+  async writeFile(config: SandboxConfig, path: string, content: string) {
+    await this.ensure(config);
+    await new Files(this.container()).writeFile(path, content, {
+      cwd: WORKSPACE,
+      user: UID,
+    });
+    return { bytes: new TextEncoder().encode(content).byteLength };
+  }
+
+  // The case closed: the container goes, and its interval closes now.
+  async destroy() {
+    await this.ctx.storage.delete("sandbox:startedAt");
+    if (!this.ctx.container?.running) return this.meter.end("crash");
+    await this.ctx.container.destroy();
+    await this.meter.end("destroy");
+  }
+
+  // Every heartbeat: a container past its lifetime is destroyed; otherwise
+  // the meter heartbeats, or closes a container found gone at its last
+  // heartbeat.
+  override async alarm() {
+    const startedAt = await this.ctx.storage.get<number>("sandbox:startedAt");
+    if (startedAt !== undefined && Date.now() - startedAt >= LIFETIME_MS)
+      return this.destroy();
+    await this.meter.heartbeat(this.ctx.container?.running ?? false);
+  }
+}
+
+export class SandboxSmall extends CaseSandbox {
+  protected readonly size = "small";
+}
+
+export class SandboxMedium extends CaseSandbox {
+  protected readonly size = "medium";
+}
+
+export class SandboxLarge extends CaseSandbox {
+  protected readonly size = "large";
+}

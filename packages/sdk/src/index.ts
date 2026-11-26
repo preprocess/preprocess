@@ -7,6 +7,8 @@ import {
   REASONING,
   RESERVED_BINDINGS,
   RESERVED_PREFIX,
+  sandboxManifest,
+  sandboxProblems,
   SECRET_NAME,
   type Approvals,
   type Effect,
@@ -18,6 +20,9 @@ import {
   type ProjectConfig,
   type ProjectSettings,
   type Reasoning,
+  type SandboxPackages,
+  type SandboxPreset,
+  type SandboxSize,
   type Schedule,
   type ToolCall,
   type ToolResult,
@@ -43,7 +48,11 @@ export type {
   ProjectConfig,
   ProjectSettings,
   Reasoning,
+  SandboxPackages,
+  SandboxPreset,
+  SandboxSize,
 } from "./protocol.ts";
+export { SANDBOX_PRESETS, SANDBOX_SIZES } from "./protocol.ts";
 export { allReviewed, schema } from "./schema.ts";
 export type {
   Answers,
@@ -125,6 +134,15 @@ export type AgentDefinition<S extends string> = {
   timeoutSeconds?: number;
   toolRetries?: number;
   sandboxImage?: string;
+  // A Linux sandbox the case can run commands in, started on first use. The
+  // size is required; the preset defaults to "standard" and the packages
+  // install each time the sandbox starts.
+  sandbox?: {
+    size: SandboxSize;
+    preset?: SandboxPreset;
+    packages?: Partial<SandboxPackages>;
+    idleTimeoutMinutes?: number;
+  };
   evals?: { onPush?: boolean };
   // A person approves the case before it completes; `when` sees the final
   // answers and needs a schema.
@@ -212,6 +230,8 @@ const check = (definition: AgentDefinition<string>) => {
     problems.push("toolRetries must be a whole number");
   if (definition.sandboxImage !== undefined && !definition.sandboxImage.trim())
     problems.push("sandboxImage must not be empty");
+  if (definition.sandbox !== undefined)
+    problems.push(...sandboxProblems(definition.sandbox));
   if (!problems.length) problems.push(...approvalProblems(definition));
   if (problems.length) throw new Error(`Invalid agent: ${problems.join("; ")}`);
 };
@@ -414,9 +434,12 @@ export const agent = <const S extends string = never>(
     ...(definition.sandboxImage !== undefined && {
       sandboxImage: definition.sandboxImage,
     }),
+    ...(definition.sandbox && {
+      sandbox: sandboxManifest(definition.sandbox),
+    }),
     ...(definition.evals && { evals: { ...definition.evals } }),
     ...(approvals && { approvals }),
-    declared,
+    declared: definition.sandbox ? [...declared, "sandbox.size"] : declared,
     ...(warnings.length && { warnings }),
   };
 

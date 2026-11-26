@@ -23,6 +23,9 @@ import { deployments } from "./deployments.ts";
 // and the allow list is empty or one of its patterns matches.
 export type NetworkRules = { allow: string[]; block: string[] };
 
+// Case sandbox sizes (spec 3), smallest first.
+export const sandboxSize = pgEnum("sandbox_size", ["small", "medium", "large"]);
+
 export const organizationGuardrails = pgTable("organization_guardrails", {
   organizationId: text()
     .primaryKey()
@@ -34,6 +37,8 @@ export const organizationGuardrails = pgTable("organization_guardrails", {
     .$type<NetworkRules>()
     .notNull()
     .default({ allow: [], block: [] }),
+  // The largest case sandbox an agent may use; null allows every size.
+  sandboxMaxSize: sandboxSize(),
   updatedBy: text().notNull(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
@@ -62,6 +67,7 @@ export const guardrailKind = pgEnum("guardrail_kind", [
   "secret",
   "mcp",
   "spending_limit",
+  "sandbox_size",
 ]);
 
 export const guardrailRequestStatus = pgEnum("guardrail_request_status", [
@@ -76,7 +82,8 @@ export type GuardrailChange =
   | { kind: "network"; hosts: string[] }
   | { kind: "secret"; secret: string }
   | { kind: "mcp"; server: string }
-  | { kind: "spending_limit"; limitUsd: number | null };
+  | { kind: "spending_limit"; limitUsd: number | null }
+  | { kind: "sandbox_size"; size: "small" | "medium" | "large" };
 
 export const guardrailRequests = pgTable(
   "guardrail_requests",

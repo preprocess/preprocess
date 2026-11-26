@@ -18,9 +18,10 @@ import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
 import { proposeMemory, type MemoryProposal } from "./memories.ts";
 import { ocrFile } from "./ocr.ts";
-import { recordSandboxEvent } from "./sandbox.ts";
+import { recordSandboxEvent, sandboxMaxSize, sizeAllowed } from "./sandbox.ts";
 import { entitlement } from "./billing.ts";
 import { spendGate, type SpendVerdict } from "./spend.ts";
+import type { SandboxSize } from "@preprocess/sdk/protocol";
 
 export class Platform extends WorkerEntrypoint<Env> {
   caseEvent(event: CaseEvent) {
@@ -62,6 +63,18 @@ export class Platform extends WorkerEntrypoint<Env> {
   // timed here.
   sandboxEvent(event: SandboxEvent) {
     return recordSandboxEvent(this.env, event);
+  }
+
+  // Asked before a case's sandbox starts or wakes: the organization's size
+  // guardrail as it is now (spec 5), then the spending limit and plan credit,
+  // which sandbox time counts toward (spec 16a).
+  async sandboxGate(
+    organizationId: string,
+    size: SandboxSize,
+  ): Promise<SpendVerdict | "sandbox_size_not_allowed"> {
+    const cap = await withOrg(this.env, orgId(organizationId), sandboxMaxSize);
+    if (!sizeAllowed(cap, size)) return "sandbox_size_not_allowed";
+    return this.spendGate(organizationId);
   }
 
   // Run-log records from the runtime and the Tail Worker (design doc 09).
