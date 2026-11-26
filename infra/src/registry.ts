@@ -266,7 +266,8 @@ export const usage = async (c: Credentials) => {
 
 // Every image a Worker version references, as "<repository>@<digest>". Every
 // version counts, not only the deployed one, so a rollback to any version
-// Cloudflare keeps still finds its images.
+// Cloudflare keeps still finds its images: the newest 10 of every Worker
+// always, and the older ones of every Worker whose newest 10 use containers.
 const referencedImages = async (c: Credentials, scripts?: string[]) => {
   const base = `/accounts/${c.account}/workers/scripts`;
   type Version = {
@@ -295,18 +296,20 @@ const referencedImages = async (c: Credentials, scripts?: string[]) => {
       if (scripts && error.message.includes(": 404 ")) return { items: [] };
       throw error;
     });
-    const [latest, ...older] = versions.items;
-    if (!latest) return;
-    const read = async (id: string) =>
-      images(await cloudflare<Version>(c, `${base}/${name}/versions/${id}`));
-    const first = await read(latest.id);
-    // A Worker without containers in its newest version is not read further.
-    if (first.length === 0 && !scripts) return;
-    for (const image of first) referenced.add(image);
-    for (const versionImages of await inParallel(older, (version) =>
-      read(version.id),
-    )) {
-      for (const image of versionImages) referenced.add(image);
+    const read = (items: { id: string }[]) =>
+      inParallel(items, async (version) =>
+        images(
+          await cloudflare<Version>(
+            c,
+            `${base}/${name}/versions/${version.id}`,
+          ),
+        ),
+      ).then((lists) => lists.flat());
+    const newest = await read(versions.items.slice(0, 10));
+    for (const image of newest) referenced.add(image);
+    if (newest.length === 0 && !scripts) return;
+    for (const image of await read(versions.items.slice(10))) {
+      referenced.add(image);
     }
   });
   return referenced;
@@ -476,9 +479,9 @@ export const cleanStage = async (
 };
 
 // Everything no Worker version references: the per-PR repositories of pull
-// requests that are neither open nor deployed, and the shared repositories'
-// images older than two days. Never staging's or production's own
-// repositories, and never a repository this stack does not own.
+// requests that are neither open nor deployed, and images older than two days
+// in the shared repositories and in staging's and production's own ones from
+// before they were shared. Never a repository this stack does not own.
 export const sweep = async (c: Credentials, openPullRequests: Set<number>) => {
   const all = await repositories(c);
   const live = await referencedImages(c);
@@ -509,8 +512,15 @@ export const sweep = async (c: Credentials, openPullRequests: Set<number>) => {
       ...(await deleteImages(c, repository, doomed)),
     });
   }
-  for (const name of Object.values(imageRepositories)) {
-    if (!all.includes(name)) continue;
+  const shared = Object.values(imageRepositories);
+  const aged = all.filter(
+    (name) =>
+      shared.includes(name as (typeof shared)[number]) ||
+      shared.some((repository) =>
+        new RegExp(`^${repository}-(staging|production)-[a-z0-9]+$`).test(name),
+      ),
+  );
+  for (const name of aged) {
     const repository = await walk(c, name);
     const doomed = new Set<string>();
     for (const [tag, digest] of repository.tags) {

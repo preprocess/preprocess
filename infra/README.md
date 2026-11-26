@@ -218,10 +218,11 @@ without building or pushing anything.
   repositories, and, unless the pull request merged, the shared images only it
   referenced.
 - **`.github/workflows/registry.yml`** runs daily: it deletes every image no
-  Worker version references (closed previews' repositories, and shared images
-  older than two days), then estimates usage. Staging's and production's own
-  repositories are never swept, and an image any Worker version references is
-  never deleted.
+  Worker version references (closed previews' repositories, and images older
+  than two days in the shared repositories and in staging's and production's
+  repositories from before they were shared), then estimates usage. An image any
+  Worker version references is never deleted, and every Worker's newest 10
+  versions are always read, so rollback keeps its images.
 - **Usage**: `pnpm --filter @preprocess/infra registry usage` walks every
   repository, tag and manifest and adds up the blobs, each counted once. In CI
   it adds a warning annotation at 35 GB; the staging deploy runs it too.
