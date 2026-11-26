@@ -197,7 +197,12 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     kind: "sandbox.start" | "sandbox.stop" | "sandbox.mount",
     at: Date,
     reason: string,
-    fields: { mountMs?: number; layerBytes?: number } = {},
+    fields: {
+      mountMs?: number;
+      layerBytes?: number;
+      mountMode?: string;
+      mountLog?: string;
+    } = {},
   ) {
     initLogs("runtime", (records) =>
       this.env.PLATFORM ? this.env.PLATFORM.logs(records) : Promise.resolve(),
@@ -289,10 +294,12 @@ export abstract class CaseSandbox extends DurableObject<Env> {
     }
     if (layer) {
       const mounting = Date.now();
-      await this.mount(container, layer);
+      const printed = await this.mount(container, layer);
       this.log(owner, "sandbox.mount", new Date(), "mount", {
         mountMs: Date.now() - mounting,
         layerBytes: layer.bytes,
+        mountMode: /^MOUNT=(\w+)$/m.exec(printed)?.[1] ?? "unknown",
+        mountLog: tail(printed).text,
       });
     }
     return this.install(container, config.sandbox);
@@ -337,8 +344,8 @@ export abstract class CaseSandbox extends DurableObject<Env> {
   }
 
   // Streams the layer from R2 into mount.sh, which mounts it over the preset;
-  // no command runs before it is in place.
-  private async mount(container: Container, layer: Layer) {
+  // no command runs before it is in place. Returns what mount.sh printed.
+  private async mount(container: Container, layer: Layer): Promise<string> {
     const object = await this.env.BUNDLES.get(layer.key);
     if (!object) throw new Error("the custom environment's layer is missing");
     const process = await execWhenUp(
@@ -347,10 +354,11 @@ export abstract class CaseSandbox extends DurableObject<Env> {
       { stdin: object.body, stderr: "combined" },
     );
     const output = await process.output();
-    if (output.exitCode === 0) return;
+    const printed = decoder.decode(output.stdout);
+    if (output.exitCode === 0) return printed;
     await this.destroy();
     throw new Error(
-      `the custom environment did not mount: ${tail(decoder.decode(output.stdout)).text}`,
+      `the custom environment did not mount: ${tail(printed).text}`,
     );
   }
 
