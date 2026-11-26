@@ -21,6 +21,7 @@ import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 import { agentRole, canSeeCase, canWorkCase } from "./access.ts";
+import { assertModelAllowed } from "./allowed-models.ts";
 import type { Caller } from "./caller.ts";
 import type { Manifest } from "./deploy.ts";
 import { acceptedMemories } from "./memories.ts";
@@ -196,7 +197,11 @@ export const createCase = async (
     if (!agent) throw new ApiError(404, "not_found", "No such agent.");
 
     const [deployment] = await tx
-      .select({ id: deployments.id, layer: deployments.sandboxLayer })
+      .select({
+        id: deployments.id,
+        layer: deployments.sandboxLayer,
+        manifest: deployments.manifest,
+      })
       .from(deployments)
       .where(
         and(
@@ -225,6 +230,11 @@ export const createCase = async (
         `${agent.slug} is paused because it uses a custom environment, which requires the Team plan. Upgrade to Team to resume automatically, or remove the custom setup in code.`,
       );
 
+    await assertModelAllowed(
+      tx,
+      (await effectiveSettings(tx, agent.id, deployment.manifest as Manifest))
+        .model,
+    );
     await refuseOverLimit(tx);
     const caseId = newId("case");
     if (input.files.length) {

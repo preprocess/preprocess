@@ -17,6 +17,7 @@ import {
 } from "@preprocess/db/schema/evals";
 import { and, asc, count, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
+import { assertModelAllowed } from "../allowed-models.ts";
 import { actor, eventBase, requireDeveloper } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
@@ -601,6 +602,7 @@ export const evalRoutes = new OpenAPIHono<{
             )
           ).model,
         ];
+        for (const model of models) await assertModelAllowed(tx, model);
         const created = await createRuns(tx, {
           organizationId: org,
           suiteId: id,

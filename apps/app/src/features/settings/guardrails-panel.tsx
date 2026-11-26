@@ -11,8 +11,13 @@ import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { XIcon } from "@preprocess/ui/lib/icons";
 import {
+  CheckboxGroup,
+  CheckboxItem,
+} from "@preprocess/ui/components/checkbox-group";
+import {
   MODEL_CATALOG,
   MODELS,
+  type Model,
   type SandboxSize,
 } from "@preprocess/sdk/protocol";
 import {
@@ -130,20 +135,7 @@ export function GuardrailsPanel({ request }: { request?: string }) {
         <SandboxSizeLimit />
       </Anchor>
       <Anchor id="models">
-        <SettingsSection
-          description="Where agents' model calls go."
-          title={sectionTitle("models")}
-        >
-          <SettingsRows>
-            <SettingsRow
-              description="Self-hosted serving URLs arrive with self-hosted installs."
-              label={MODELS.map((model) => MODEL_CATALOG[model].label).join(
-                ", ",
-              )}
-              value="Hosted service only"
-            />
-          </SettingsRows>
-        </SettingsSection>
+        <Models />
       </Anchor>
     </SettingsStacked>
   );
@@ -618,6 +610,110 @@ function SpendingLimit() {
         </SettingsRows>
       )}
       <ErrorLine error={error} fallback="Could not change the limit." />
+    </SettingsSection>
+  );
+}
+
+function Models() {
+  const organizationId = useOrganizationId();
+  const queryClient = useQueryClient();
+  const canEdit = useCanAdminister();
+  const guardrails = useQuery({
+    queryKey: ["guardrails", organizationId],
+    queryFn: () =>
+      orgApi<{ allowedModels: Model[] | null }>(organizationId, "/guardrails"),
+  });
+  const saved = guardrails.data?.allowedModels ?? MODELS;
+  const [draft, setDraft] = useState<readonly Model[]>(MODELS);
+  const [error, setError] = useState<unknown>(null);
+  useEffect(() => setDraft(saved), [saved]);
+  const dirty =
+    draft.length !== saved.length || draft.some((m) => !saved.includes(m));
+
+  return (
+    <SettingsSection
+      description="Which models agents may run on, and where their calls go. A deploy, setting, case or eval run that needs another model is refused and names it."
+      title={sectionTitle("models")}
+    >
+      {guardrails.isError ? (
+        <SettingsError error={guardrails.error} />
+      ) : !guardrails.data ? (
+        <SettingsSkeletonRows count={2} />
+      ) : (
+        <SettingsRows>
+          <SettingsRow
+            description={
+              guardrails.data.allowedModels === null
+                ? "Every model, the default"
+                : `${saved.length} of ${MODELS.length} models`
+            }
+            label="Allowed models"
+            value={
+              <CheckboxGroup
+                checkedIndices={
+                  new Set(
+                    MODELS.flatMap((model, index) =>
+                      draft.includes(model) ? [index] : [],
+                    ),
+                  )
+                }
+              >
+                {MODELS.map((model, index) => (
+                  <CheckboxItem
+                    aria-disabled={!canEdit}
+                    checked={draft.includes(model)}
+                    index={index}
+                    key={model}
+                    label={MODEL_CATALOG[model].label}
+                    onToggle={() =>
+                      canEdit &&
+                      setDraft(
+                        draft.includes(model)
+                          ? draft.filter((m) => m !== model)
+                          : MODELS.filter(
+                              (m) => m === model || draft.includes(m),
+                            ),
+                      )
+                    }
+                  />
+                ))}
+              </CheckboxGroup>
+            }
+          >
+            {canEdit ? (
+              <LoadingButton
+                disabled={!dirty}
+                onAction={async () => {
+                  setError(null);
+                  if (draft.length === 0)
+                    throw new Error("Allow at least one model.");
+                  await orgApi(organizationId, "/guardrails/allowed-models", {
+                    method: "PUT",
+                    body: JSON.stringify({
+                      models: draft.length === MODELS.length ? null : draft,
+                    }),
+                  });
+                  await queryClient.invalidateQueries({
+                    queryKey: ["guardrails", organizationId],
+                  });
+                }}
+                onError={setError}
+              >
+                Save
+              </LoadingButton>
+            ) : null}
+          </SettingsRow>
+          <SettingsRow
+            description="Self-hosted serving URLs arrive with self-hosted installs."
+            label="Model endpoints"
+            value="Hosted service only"
+          />
+        </SettingsRows>
+      )}
+      <ErrorLine
+        error={error}
+        fallback="Could not change the allowed models."
+      />
     </SettingsSection>
   );
 }

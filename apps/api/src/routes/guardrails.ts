@@ -19,9 +19,10 @@ import {
 import type { GuardrailChange } from "@preprocess/db/schema/guardrails";
 import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { secrets } from "@preprocess/db/schema/secrets";
-import { SANDBOX_SIZES } from "@preprocess/sdk/protocol";
+import { MODELS, SANDBOX_SIZES } from "@preprocess/sdk/protocol";
 import { desc, eq } from "drizzle-orm";
 
+import { allowedModels, setAllowedModels } from "../allowed-models.ts";
 import { actor, eventBase, requireAdmin, requireDeveloper } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
@@ -79,6 +80,15 @@ const SandboxMaxSize = z
   .openapi("SandboxMaxSize", {
     description:
       "The largest case sandbox an agent may use; null allows every size",
+  });
+
+const AllowedModels = z
+  .array(z.enum(MODELS))
+  .min(1)
+  .nullable()
+  .openapi("AllowedModels", {
+    description:
+      "The catalogue models agents may run on; null allows every model. Deploys, settings, case starts, reruns, approvals and eval runs that resolve to another model are refused with model_not_allowed (409).",
   });
 
 export const Change = z
@@ -391,13 +401,14 @@ export const guardrailRoutes = new OpenAPIHono<{
       path: "/guardrails",
       tags: ["Guardrails"],
       summary:
-        "The organization's network rules, largest sandbox size and model endpoints",
+        "The organization's network rules, largest sandbox size, allowed models and model endpoints",
       request: { params: OrgParam },
       responses: {
         200: json(
           z.object({
             network: Rules,
             sandboxMaxSize: SandboxMaxSize,
+            allowedModels: AllowedModels,
             modelEndpoints: z.literal("hosted").openapi({
               description:
                 "Hosted service only; self-hosted endpoints arrive with build step 9",
@@ -408,18 +419,20 @@ export const guardrailRoutes = new OpenAPIHono<{
       },
     }),
     async (c) => {
-      const { network, sandboxSize } = await withOrg(
+      const { network, sandboxSize, models } = await withOrg(
         c.env,
         c.var.org,
         async (tx) => ({
           network: await organizationNetwork(tx),
           sandboxSize: await sandboxMaxSize(tx),
+          models: await allowedModels(tx),
         }),
       );
       return c.json(
         {
           network,
           sandboxMaxSize: sandboxSize,
+          allowedModels: models,
           modelEndpoints: "hosted" as const,
         },
         200,
@@ -455,6 +468,37 @@ export const guardrailRoutes = new OpenAPIHono<{
           await syncAgents(tx, c.var.org, await allAgents(tx));
       });
       return c.json({ size }, 200);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "put",
+      path: "/guardrails/allowed-models",
+      tags: ["Guardrails"],
+      summary:
+        "Set the models agents may run on (Owner or Admin); null allows every model",
+      request: {
+        params: OrgParam,
+        body: {
+          content: {
+            "application/json": {
+              schema: z.object({ models: AllowedModels }),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(z.object({ models: AllowedModels }), "The allowed models"),
+      },
+    }),
+    async (c) => {
+      requireAdmin(c.var.caller);
+      const { models } = c.req.valid("json");
+      const saved = await withOrg(c.env, c.var.org, async (tx) => {
+        await setAllowedModels(tx, c.var, models);
+        return allowedModels(tx);
+      });
+      return c.json({ models: saved }, 200);
     },
   )
   .openapi(

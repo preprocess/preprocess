@@ -17,6 +17,7 @@ import type { SettingValues } from "@preprocess/db/schema/settings";
 import type { SandboxSize } from "@preprocess/sdk/protocol";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 
+import { assertModelAllowed } from "../allowed-models.ts";
 import { actor, eventBase, requireAdmin, requireDeveloper } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
@@ -138,6 +139,8 @@ const setOverride = async (
 ) => {
   await requireDeveloper(tx, vars.caller);
   const agent = await findAgent(tx, slug);
+  if (key === "model" && value !== undefined)
+    await assertModelAllowed(tx, value as string);
   if (key === SANDBOX_SIZE_KEY && value !== undefined) {
     const manifest = (await currentDeployment(tx, agent.id))?.manifest as
       Manifest | undefined;
@@ -221,6 +224,8 @@ export const settingsRoutes = new OpenAPIHono<{
         string | number | boolean | null | undefined
       >;
       const body = await withOrg(c.env, c.var.org, async (tx) => {
+        if (typeof patch.model === "string")
+          await assertModelAllowed(tx, patch.model);
         const before = await organizationDefaultValues(tx);
         const next: SettingValues = { ...before };
         for (const [key, value] of Object.entries(patch)) {
