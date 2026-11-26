@@ -32,7 +32,19 @@ const billedAs = {
   decide: { featureId: "decide_credits", per: MICRO_USD_PER_CREDIT },
   ocr: { featureId: "ocr_credits", per: MICRO_USD_PER_CREDIT },
   sandbox: { featureId: "sandbox_credits", per: MICRO_USD_PER_CREDIT },
+  case_fees: { featureId: "case_fee_credits", per: MICRO_USD_PER_CREDIT },
 } as const;
+
+// The prepaid balance Free and Team pay a case's usage from (PRE-96). The id
+// predates prepaid credits.
+export const CREDITS = "model_credit";
+
+// The add-on plan credits are bought through, at $0.01 each.
+export const CREDITS_PLAN = "credits";
+
+// The smallest purchase, by hand or by auto-reload: $10, so Stripe's fee is
+// a small share of it. Credits never expire; refunds go through support.
+export const MIN_TOP_UP_CREDITS = 1_000;
 
 // Adds the next report of a feature: the remainder the last one carried plus
 // these ledger units, sent as whole billed units with the rest carried on.
@@ -376,7 +388,7 @@ const loadPlan = async (billing: Autumn, env: Env, org: OrgId) => {
   if (current.started) return current;
   const given = await planWithoutCard(env, org);
   if (!given) return current;
-  await billing.attach(org, given);
+  await billing.attach(org, { planId: given });
   console.log("billing: attached without a card", org, given);
   return readPlan(await billing.customer(org));
 };
@@ -414,7 +426,7 @@ export const seatLimitApplies = (env: Env, org: OrgId, now = new Date()) =>
 
 // Whether the organization may use a feature: once cards are required it
 // needs a started plan (every plan, Free included, starts at checkout with a
-// card), and Free caps its monthly cases and its one-time model credit. Where
+// card), and Free caps its monthly cases. Where
 // billing is off everything is allowed, and an Autumn outage fails open.
 export const entitlement = async (
   env: Env,
@@ -441,6 +453,48 @@ export const entitlement = async (
     console.error("billing: check", org, featureId, error);
     return "ok";
   }
+};
+
+// The credit stop (PRE-96): Free and Team pay a case's usage from prepaid
+// credits, and new cases and metered calls stop once none remain. Autumn
+// keeps usage reported past the balance as debt and its check still allows
+// it, so this reads the remaining balance itself. Enterprise draws on its
+// commit and Internal has no limits. Where billing is off everything is
+// allowed, and an Autumn outage fails open.
+export const creditStop = async (
+  env: Env,
+  org: OrgId,
+): Promise<"ok" | "plan_required" | "used_up"> => {
+  const billing = autumn(env);
+  if (!billing) return "ok";
+  const plan = await cloudPlan(env, org);
+  if (!plan) return "ok";
+  if (!plan.started)
+    return planRequired(env, org, plan.started) ? "plan_required" : "ok";
+  if (plan.name !== "free" && plan.name !== "team") return "ok";
+  try {
+    const remaining = await remember(
+      `credits:${org}`,
+      15_000,
+      async () =>
+        (await billing.customer(org)).balances[CREDITS]?.remaining ?? 0,
+    );
+    return remaining > 0 ? "ok" : "used_up";
+  } catch (error) {
+    console.error("billing: credits", org, error);
+    return "ok";
+  }
+};
+
+// The prepaid balance as the Billing page shows it: credits left, and what
+// was used past them, which the next purchase pays first.
+export const readCredits = (customer: AutumnCustomer) => {
+  const balance = customer.balances[CREDITS];
+  if (!balance || balance.unlimited) return { remaining: 0, owed: 0 };
+  return {
+    remaining: balance.remaining,
+    owed: Math.max(0, balance.usage - balance.granted),
+  };
 };
 
 // The organization's name, for its Autumn customer.

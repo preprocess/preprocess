@@ -27,7 +27,56 @@ export type AutumnCustomer = {
     string,
     { granted: number; remaining: number; usage: number; unlimited: boolean }
   >;
+  billing_controls?: { auto_topups?: AutoTopUp[] };
+  payment_method?: { card?: { brand: string; last4: string } } | null;
 };
+
+// Autumn's auto top-up: below threshold credits, buy quantity more, at most
+// limit dollars a month.
+export type AutoTopUp = {
+  feature_id: string;
+  enabled: boolean;
+  threshold: number;
+  quantity: number;
+  purchase_limit?: {
+    limit_type: "amount";
+    interval: "month";
+    limit: number;
+  };
+};
+
+// A purchase either charges the card on file or needs the Owner on Stripe's
+// page (no card yet, 3-D Secure, a declined card): then payment_url is set.
+export type AutumnAttached = {
+  payment_url?: string | null;
+  required_action?: { code: string; reason: string } | null;
+  invoice?: { status: string; total: number; currency: string } | null;
+};
+
+export type AutumnPreview = {
+  line_items: { description: string; total: number }[];
+  total: number;
+  currency: string;
+  next_cycle?: { starts_at: number; total: number } | null;
+};
+
+type Purchase = {
+  planId: string;
+  // Prepaid quantities by feature, such as credits bought.
+  quantities?: Record<string, number>;
+  successUrl?: string;
+};
+
+const purchase = (organizationId: string, p: Purchase) => ({
+  customer_id: organizationId,
+  plan_id: p.planId,
+  ...(p.quantities && {
+    feature_quantities: Object.entries(p.quantities).map(
+      ([feature_id, quantity]) => ({ feature_id, quantity }),
+    ),
+  }),
+  ...(p.successUrl && { success_url: p.successUrl }),
+});
 
 export type Autumn = ReturnType<typeof client>;
 
@@ -61,10 +110,15 @@ const client = (key: string) => {
   };
   return {
     // Organizations are Autumn customers under their own id.
-    customer: (organizationId: string, name?: string) =>
+    customer: (
+      organizationId: string,
+      name?: string,
+      expand?: "payment_method",
+    ) =>
       call<AutumnCustomer>("customers.get_or_create", {
         customer_id: organizationId,
         ...(name && { name }),
+        ...(expand && { expand: [expand] }),
       }),
     // Starts a plan once the customer adds a card in a Stripe setup session,
     // since every plan needs one (Free included; Chip, 2026-11-26). Attach's
@@ -75,12 +129,22 @@ const client = (key: string) => {
         plan_id: planId,
         success_url: successUrl,
       }),
-    // Starts a plan without checkout or a card: only for organizations that
-    // existed before cards were required, and our own (billing.ts).
-    attach: (organizationId: string, planId: string) =>
-      call<{ payment_url: string | null }>("billing.attach", {
+    // A plan change or a credit purchase, charged to the card on file. Also
+    // starts a plan that costs nothing without checkout or a card: only for
+    // organizations that existed before cards were required, and our own
+    // (billing.ts).
+    attach: (organizationId: string, p: Purchase) =>
+      call<AutumnAttached>("billing.attach", purchase(organizationId, p)),
+    // What buy() would charge, without charging.
+    preview: (organizationId: string, p: Purchase) =>
+      call<AutumnPreview>(
+        "billing.preview_attach",
+        purchase(organizationId, p),
+      ),
+    setAutoTopUp: (organizationId: string, topUp: AutoTopUp) =>
+      call<AutumnCustomer>("customers.update", {
         customer_id: organizationId,
-        plan_id: planId,
+        billing_controls: { auto_topups: [topUp] },
       }),
     // Records usage at the time it happened. A repeated idempotency key is
     // answered 409, which means Autumn already has it.
