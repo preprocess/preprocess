@@ -1,12 +1,54 @@
 ---
 title: Settings
+description:
+  Pull dashboard overrides and organization group slugs into
+  preprocess.config.json before deploying.
 ---
 
-People can change an agent's settings in the app. `config pull` writes those
-overrides into `preprocess.config.json`, so the next deploy keeps them.
-`groups pull` writes the organization's groups into the same file.
+`config pull` and `groups pull` keep your local git repository in sync with
+changes made in the Preprocess app by writing them into `preprocess.config.json`
+beside your `package.json`.
+
+## Why pull before deploying
+
+Between releases, operators and developers can override operational settings
+(`model`, `reasoning`, `ocr`, `searchCases`, `timeoutSeconds`, `toolRetries`,
+and `sandbox.size` up to the org cap) directly in the app. Because **code is the
+truth at deploy**, promoting a new deployment clears every temporary dashboard
+override so production never silently drifts away from git.
+
+When an override performed well and should stay in production, pull it into
+`preprocess.config.json` and commit it before running `preprocess deploy`:
 
 ```sh
 npx preprocess config pull
+git diff preprocess.config.json
+git commit -am "chore: keep agent setting overrides"
+npx preprocess deploy
+```
+
+Where both your TypeScript `agent()` definition and `preprocess.config.json` set
+the same option, `preprocess.config.json` wins and `deploy` prints a warning so
+the precedence is explicit.
+
+## Keeping group slugs in sync
+
+Agent code references organization teams by group slug (`groups: [...]`). Run
+`groups pull` to record the organization's current group slugs in
+`preprocess.config.json`:
+
+```sh
 npx preprocess groups pull
 ```
+
+With the group list saved locally, `preprocess deploy` warns you immediately if
+your code references a slug that does not exist in the file before the API
+rejects it.
+
+## Related
+
+- [Deployments](/concepts/deployments#code-is-truth-over-overrides): why
+  promoting clears dashboard overrides.
+- [Groups and access](/concepts/groups-and-access#how-code-and-guardrails-stay-in-sync):
+  the three-way contract between code, `preprocess.config.json`, and grants.
+- [Deploy](/cli/deploy): shipping `preprocess.config.json` with your bundle.

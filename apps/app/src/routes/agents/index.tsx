@@ -6,21 +6,14 @@ import {
   parseAgentSearch,
   type AgentListSearchParams,
 } from "../../features/agents/agent-list-search";
-import { listOrgAgents } from "../../features/agents/list-org-agents";
 import { AddCaseButton } from "../../features/agent-cases/case-start-dialog";
-import { getCaseAccess } from "../../features/agent-cases/list-org-cases";
+import { loadAgentsPage } from "../../features/agent-cases/list-org-cases";
 
 export const Route = createFileRoute("/agents/")({
   staticData: { ownsHeader: true },
   validateSearch: (search: Record<string, unknown>): AgentListSearchParams =>
     agentSearchForUrl(parseAgentSearch(search)),
-  loader: async () => {
-    const [agents, access] = await Promise.all([
-      listOrgAgents(),
-      getCaseAccess(),
-    ]);
-    return { agents, access };
-  },
+  loader: () => loadAgentsPage(),
   component: AgentsPage,
 });
 

@@ -1,13 +1,29 @@
 ---
 title: CLI
-description: The preprocess command.
+description:
+  Install and authenticate @preprocess/cli to deploy agents, pull settings,
+  stream logs, run evals, and install self-hosted stacks.
 ---
+
+`@preprocess/cli` is the command-line bridge between your local git repository
+and your Preprocess organization. Use it to bundle and deploy agents from a
+laptop or CI, pull dashboard overrides and group slugs back into
+`preprocess.config.json`, start cases against production or preview deployments,
+stream run logs, compare models with eval suites, and install or upgrade a
+self-hosted stack in your own Cloudflare account (`preprocess install`).
 
 Hand this prompt to your coding agent to set up the CLI and deploy.
 
 <AgentPrompt name="cli" />
 
 Or follow the steps yourself.
+
+<Callout title="Coming soon" type="warning">
+  `@preprocess/cli` is MIT licensed and versioned, but npm publishing is coming
+  soon, so `npm install --save-dev @preprocess/cli` will not resolve from the
+  public registry yet. Today, the package lives in `packages/cli` of
+  [preprocess/preprocess](https://github.com/preprocess/preprocess).
+</Callout>
 
 ## Install
 
@@ -17,7 +33,7 @@ npm install --save-dev @preprocess/cli
 
 ## Sign in
 
-The CLI reads three environment variables:
+The CLI reads three environment variables on every command:
 
 <Configured
   lang="sh"
@@ -29,10 +45,19 @@ export PREPROCESS_API_KEY=...`}
 - `PREPROCESS_API_URL` is the origin your organization's app is served from.
 - `PREPROCESS_ORG` is your organization's id.
 - `PREPROCESS_API_KEY` is an organization API key. An Owner or Admin creates one
-  in Developers → Keys & webhooks. The key acts with an Admin's rights, so it
-  can deploy and promote; a person needs to be an Owner, an Admin or in the
-  Developers group to do the same. The key is shown once, so copy it then. The
-  CLI reads the key only from the environment, so it never lands in your shell
-  history or CI logs.
+  in Developers → Keys & webhooks. The key acts with Admin rights, so it can
+  deploy, promote, and work cases (it cannot approve—approving always requires a
+  person). Each key is shown once at creation, and the CLI reads it only from
+  the environment so it never lands in shell history or CI logs.
 
-`--api` and `--org` override the first two for one command.
+Pass `--api` and `--org` to override the first two for a single invocation.
+
+## What to read next
+
+- [Deploy](/cli/deploy): bundling, production vs. previews, and waiting
+  deployments.
+- [Settings](/cli/settings): pulling dashboard overrides and group slugs into
+  git.
+- [Logs and evals](/cli/logs-and-evals): inspecting run logs and benchmarking
+  models.
+- [Command reference](/cli/reference): complete CLI usage and flags.
