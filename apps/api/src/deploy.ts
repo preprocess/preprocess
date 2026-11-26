@@ -28,6 +28,9 @@ import {
   MODELS,
   PROTOCOL,
   REASONING,
+  sandboxManifest,
+  sandboxProblems,
+  type SandboxManifest,
 } from "@preprocess/sdk/protocol";
 import {
   and,
@@ -47,6 +50,9 @@ import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
 import { markSeat } from "./metering.ts";
 import { effectiveNetwork, permits } from "./network.ts";
+import { customImagesAllowed } from "./plan.ts";
+import { sandboxMaxSize, sizeAllowed } from "./sandbox.ts";
+import { layerBuilt } from "./sandbox-layers.ts";
 import { nextFire, schedulerName } from "./scheduler.ts";
 import {
   agentOverrideValues,
@@ -137,6 +143,21 @@ const manifestSchema = z
     timeoutSeconds: z.number().int().positive().optional(),
     toolRetries: z.number().int().nonnegative().optional(),
     sandboxImage: z.string().optional(),
+    // Checked with the SDK's own rules, so a manifest from another bundler or
+    // an older SDK that asks for a sandbox without a size fails the deploy.
+    sandbox: z
+      .unknown()
+      .superRefine((value, ctx) => {
+        if (value === undefined) return;
+        for (const message of sandboxProblems(value))
+          ctx.addIssue({ code: "custom", message });
+      })
+      .transform((value) =>
+        value === undefined
+          ? undefined
+          : sandboxManifest(value as SandboxManifest),
+      )
+      .optional(),
     evals: z.object({ onPush: z.boolean().optional() }).optional(),
     // Approvals the code requires (spec §9); a null group is any operator.
     approvals: z
@@ -379,6 +400,11 @@ export const syncDeployment = async (
     deployment.agentId,
     manifest,
   );
+  const sandboxCap = manifest.sandbox ? await sandboxMaxSize(tx) : null;
+  const waitingSandbox =
+    manifest.sandbox && !sizeAllowed(sandboxCap, manifest.sandbox.size)
+      ? manifest.sandbox.size
+      : null;
   await tx
     .delete(deploymentGroups)
     .where(eq(deploymentGroups.deploymentId, deploymentId));
@@ -391,20 +417,25 @@ export const syncDeployment = async (
         approves: g.approves,
       })),
     );
+  const layer = deployment.sandboxLayer?.status;
   const status =
-    deployment.status === "failed"
+    deployment.status === "failed" || layer === "failed"
       ? "failed"
-      : waiting.length ||
-          waitingMcp.length ||
-          waitingNetwork.length ||
-          waitingGroups.length
-        ? "waiting"
-        : "ready";
+      : layer === "building"
+        ? "building"
+        : waiting.length ||
+            waitingMcp.length ||
+            waitingNetwork.length ||
+            waitingGroups.length ||
+            waitingSandbox
+          ? "waiting"
+          : "ready";
   const waitingFor: WaitingFor = {
     ...(waiting.length && { secrets: waiting }),
     ...(waitingMcp.length && { mcp: waitingMcp }),
     ...(waitingNetwork.length && { network: waitingNetwork }),
     ...(waitingGroups.length && { groups: waitingGroups }),
+    ...(waitingSandbox && { sandboxSize: waitingSandbox }),
   };
   await tx
     .update(deployments)
@@ -432,12 +463,20 @@ export const syncDeployment = async (
       secret: s.name,
     })),
     ...existingMcp.map((m) => ({ kind: "mcp" as const, server: m.slug })),
+    ...(waitingSandbox
+      ? [{ kind: "sandbox_size" as const, size: waitingSandbox }]
+      : []),
   ]);
   return [
     ...waiting,
     ...waitingMcp.map((slug) => `MCP server ${slug}`),
     ...waitingNetwork.map((host) => `network access to ${host}`),
     ...waitingGroups.map((slug) => `access for group ${slug}`),
+    ...(waitingSandbox
+      ? [
+          `a ${waitingSandbox} sandbox (the organization allows up to ${sandboxCap})`,
+        ]
+      : []),
   ];
 };
 
@@ -452,6 +491,8 @@ const covers = (asked: GuardrailChange, needed: GuardrailChange) => {
       return asked.kind === "secret" && asked.secret === needed.secret;
     case "mcp":
       return asked.kind === "mcp" && asked.server === needed.server;
+    case "sandbox_size":
+      return asked.kind === "sandbox_size" && asked.size === needed.size;
     case "spending_limit":
       return false;
   }
@@ -670,6 +711,13 @@ export const deploy = async (
     }
   }
 
+  const setup = manifest.sandbox?.setup;
+  if (setup && !(await customImagesAllowed(env, org)))
+    throw new HTTPException(403, {
+      message:
+        "custom sandbox environments (sandbox.setup) need the Team plan or above; presets and sandbox.packages work on every plan",
+    });
+
   await withOrg(env, org, async (tx) => {
     const slugs = manifest.groups ?? [];
     const known = slugs.length
@@ -690,6 +738,10 @@ export const deploy = async (
       status: "ready",
       bundleSha256,
       sdkVersion: manifest.sdk.version,
+      ...(setup && {
+        status: "building" as const,
+        sandboxLayer: { status: "building" as const },
+      }),
       environment:
         input.git.branch === agent.productionBranch ? "production" : "preview",
       manifest,
@@ -716,6 +768,30 @@ export const deploy = async (
   });
   const waiting = await withOrg(env, org, (tx) => syncDeployment(tx, org, id));
   const production = input.git.branch === agent.productionBranch;
+  // The build reports back through Platform.sandboxLayerBuilt, which
+  // promotes a production deployment once nothing else holds it.
+  if (setup)
+    await env.RUNTIME.queueSandboxLayer(
+      {
+        organizationId: org,
+        agentId: agent.id,
+        preset: manifest.sandbox!.preset,
+        setup,
+        network: await withOrg(env, org, (tx) =>
+          effectiveNetwork(tx, agent.id),
+        ),
+      },
+      { organizationId: org, agentId: agent.id, deploymentId: id },
+    ).catch((error: unknown) =>
+      layerBuilt(env, {
+        deployment: {
+          organizationId: org,
+          agentId: agent.id,
+          deploymentId: id,
+        },
+        result: { error: `the build could not start: ${String(error)}` },
+      }),
+    );
   // A preview runs its own scheduler; each fire checks the deployment is
   // still live and the schedule may run on previews.
   if (!production && manifest.schedules?.length)
@@ -726,7 +802,7 @@ export const deploy = async (
       schedules: manifest.schedules,
     });
   const cleared =
-    waiting.length === 0 && production
+    waiting.length === 0 && production && !setup
       ? await promote(env, org, agent.id, id, actor)
       : [];
   const deployed = await getDeployment(env, org, agent.id, id);
@@ -748,6 +824,7 @@ export const promote = async (
       .select({
         environment: deployments.environment,
         manifest: deployments.manifest,
+        sandboxLayer: deployments.sandboxLayer,
       })
       .from(deployments)
       .where(
@@ -759,6 +836,13 @@ export const promote = async (
   if (target.environment !== "production")
     throw new HTTPException(409, {
       message: "only a deployment from the production branch can be promoted",
+    });
+  if (target.sandboxLayer && target.sandboxLayer.status !== "ready")
+    throw new HTTPException(409, {
+      message:
+        target.sandboxLayer.status === "building"
+          ? "the deployment's custom sandbox environment is still building"
+          : "the deployment's custom sandbox environment failed to build",
     });
   // An older deployment never brings back a revoked grant or an old value.
   const waiting = await withOrg(env, org, (tx) =>
@@ -824,7 +908,23 @@ const view = (
   source: d.source,
   tools: (d.manifest as Manifest).tools.map((t) => t.name),
   secrets: (d.manifest as Manifest).secrets,
-  warnings: (d.manifest as Manifest).warnings ?? [],
+  warnings: [
+    ...((d.manifest as Manifest).warnings ?? []),
+    ...(d.sandboxLayer?.status === "ready" && d.sandboxLayer.warning
+      ? [d.sandboxLayer.warning]
+      : []),
+  ],
+  sandboxEnvironment: d.sandboxLayer
+    ? d.sandboxLayer.status === "ready"
+      ? { status: "ready" as const, bytes: d.sandboxLayer.bytes }
+      : d.sandboxLayer.status === "failed"
+        ? {
+            status: "failed" as const,
+            error: d.sandboxLayer.error,
+            log: d.sandboxLayer.log ?? null,
+          }
+        : { status: "building" as const }
+    : null,
   createdAt: d.createdAt.toISOString(),
   promotedAt: d.promotedAt?.toISOString() ?? null,
 });

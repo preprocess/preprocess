@@ -29,6 +29,7 @@ bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/invoice-agent.ts", "invoice-agent.js");
 bundle("test/fixtures/failing-agent.ts", "failing-agent.js");
 bundle("test/fixtures/approval-agent.ts", "approval-agent.js");
+bundle("test/fixtures/sandbox-agent.ts", "sandbox-agent.js");
 bundle("test/fixtures/mcp-service.ts", "mcp-service.js");
 
 const worker = (name: string, extra: object = {}) => ({
@@ -84,6 +85,8 @@ export default defineConfig({
             compatibilityDate: "2026-07-26",
             script: `import { WorkerEntrypoint } from "cloudflare:workers";
 const allowed = new Map();
+const events = [];
+const layers = [];
 // What \`deploy\` in test/deploy.ts gives each deployment, under a version that
 // moves on every change, as the API's secrets version does.
 const secrets = new Map();
@@ -104,6 +107,17 @@ export class Platform extends WorkerEntrypoint {
     return "ok";
   }
   async ocrFile() { throw new Error("no OCR in the runtime tests"); }
+  async evalEvent() {}
+  // Sandbox lifecycle events, which tests read back with sandboxEvents().
+  async sandboxGate(organizationId, size) {
+    return organizationId === "org_capped" && size !== "small" ? "sandbox_size_not_allowed" : "ok";
+  }
+  async sandboxEvent(event) { events.push(event); }
+  async sandboxEvents() { return events; }
+  // Custom environment builds, which tests read back with layerResults().
+  async sandboxLayer() { return null; }
+  async sandboxLayerBuilt(built) { layers.push(built); return { ok: true }; }
+  async layerResults() { return layers; }
 }
 export default { fetch: () => new Response("platform") };`,
           },
@@ -116,7 +130,8 @@ export default { fetch: () => new Response("platform") };`,
       },
     }),
   ],
-  resolve: { alias: { zod: require.resolve("zod") } },
+  // Exactly "zod": @cloudflare/sandbox imports "zod/mini", its own copy.
+  resolve: { alias: [{ find: /^zod$/, replacement: require.resolve("zod") }] },
   // The first test pays for loading Pi into a fresh isolate.
   test: { testTimeout: 30_000 },
 });

@@ -75,15 +75,24 @@ them on the next rerun.
 
 ## Lifecycle statuses and failure modes
 
-```text
-  queued ──► running ──┬──► completed
-                       ├──► waiting ──► completed
-                       ├──► failed
-                       └──► halted
+<StateMachine label="Case statuses">
+  <State id="queued" initial />
+  <State id="running" />
+  <State id="completed" />
+  <State id="waiting" />
+  <State id="failed" />
+  <State id="halted" />
+  <State id="cancelled" final />
 
-  Rerun:  waiting, completed, failed, or halted ──► running
-  Cancel: anything except completed ──► cancelled
-```
+  <Transition from="queued" to="running" />
+  <Transition from="running"
+    to={["completed", "waiting", "failed", "halted"]} />
+  <Transition from="waiting" to="completed" />
+  <Transition from={["waiting", "completed", "failed", "halted"]}
+    to="running" label="rerun" />
+  <Transition from="*" except="completed"
+    to="cancelled" label="cancel" />
+</StateMachine>
 
 | Status      | Meaning                                                                                                                          |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------- |

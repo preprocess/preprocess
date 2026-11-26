@@ -1,0 +1,4 @@
+# The image copies only layer/ from its context, so changes elsewhere beside
+# the Dockerfile (such as test/) reuse the published images.
+*
+!layer/

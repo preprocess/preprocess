@@ -117,6 +117,8 @@ jobs:
       - name: Destroy stage
         id: destroy
         if: steps.credentials.outputs.ready == 'true' && env.DESTROY == 'true'
+        env:
+          PR_MERGED: ${{ github.event.pull_request.merged }}
         run: pnpm --filter @preprocess/infra preview:destroy "$STAGE"
 
       - name: Comment on the pull request

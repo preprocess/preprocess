@@ -73,6 +73,19 @@ export const names = (stage: string) => ({
   branch: stage,
 });
 
+// The registry repositories the container images publish to, one per image
+// and shared by every stage in the account (PRE-90). Images are tagged by the
+// hash of their build inputs, so a stage whose inputs match another's reuses
+// its image instead of building and pushing a new one.
+export const imageRepositories = {
+  build: "preprocess-buildimage",
+  render: "preprocess-renderimage",
+  "sandbox-standard": "preprocess-sandbox-standard",
+  "sandbox-node": "preprocess-sandbox-node",
+  "sandbox-python": "preprocess-sandbox-python",
+  "sandbox-python-data": "preprocess-sandbox-python-data",
+} as const;
+
 // Model providers' keys (packages/models endpoints), optional on every stage:
 // the runtime calls Baseten for the agent models and decide, the API calls
 // Mistral for OCR. MODEL_ENDPOINTS is an install's own per-model endpoints,
@@ -135,6 +148,12 @@ export const billingOrgs: Partial<
     ],
     enforced: [],
   },
+  // The smoke-test organization, so the smoke test can deploy a custom
+  // sandbox environment (custom_sandbox_images) on every staging deploy.
+  staging: {
+    internal: ["org_01m88msncpeczr044nncg2gr1j"],
+    enforced: [],
+  },
 };
 // The license key (spec 16), optional and on selfhost stages only: without a
 // valid one the install runs the free plan. Our cloud never binds it.
@@ -157,6 +176,24 @@ export const durableObjects = {
 // Durable Object classes the runtime Worker exports: one Pi Durable case
 // runtime per organization, agent and case.
 export const runtimeDurableObjects = { CASE_RUNTIME: "CaseRuntime" } as const;
+
+// Case sandboxes (spec 3): one class per size, each starting its own instance
+// type (apps/runtime/src/sandbox.ts), all from the same preset images.
+export const sandboxDurableObjects = {
+  SANDBOX_SMALL: "SandboxSmall",
+  SANDBOX_MEDIUM: "SandboxMedium",
+  SANDBOX_LARGE: "SandboxLarge",
+} as const;
+
+// The sandbox images: each preset builds from apps/runtime/sandbox/Dockerfile
+// with PRESET naming its stage. The keys are the images' names in
+// ctx.container.images.
+export const sandboxImages = {
+  SandboxStandard: "standard",
+  SandboxNode: "node",
+  SandboxPython: "python",
+  SandboxPythonData: "python-data",
+} as const;
 
 // Locally the API calls apps/model-stub through its portless URL, the same
 // code path as a real model service. The stub accepts any bearer token.

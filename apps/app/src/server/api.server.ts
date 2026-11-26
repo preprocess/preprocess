@@ -28,13 +28,24 @@ export async function apiJson<T>(path: string, init?: RequestInit) {
   return (await response.json()) as T;
 }
 
+// One session lookup per incoming request, however many /v1 calls a server
+// function makes. The API still checks membership on every call.
+const organizationIds = new WeakMap<Request, Promise<string>>();
+
 /** The session's active organization. */
-export async function activeOrganizationId() {
-  const session = await apiJson<{
-    session: { activeOrganizationId?: string | null };
-  } | null>("/api/auth/get-session");
-  const organizationId = session?.session.activeOrganizationId;
-  if (!organizationId) throw new Error("No active organization.");
+export function activeOrganizationId() {
+  const request = getRequest();
+  let organizationId = organizationIds.get(request);
+  if (!organizationId) {
+    organizationId = apiJson<{
+      session: { activeOrganizationId?: string | null };
+    } | null>("/api/auth/get-session").then((session) => {
+      const id = session?.session.activeOrganizationId;
+      if (!id) throw new Error("No active organization.");
+      return id;
+    });
+    organizationIds.set(request, organizationId);
+  }
   return organizationId;
 }
 

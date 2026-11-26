@@ -12,15 +12,17 @@ import { searchCases, type SearchRequest } from "./case-search.ts";
 import { recordCaseEvent } from "./cases.ts";
 import { secretsVersion, secretValues, type DeploymentRef } from "./deploy.ts";
 import type { CaseEvent } from "./cases.ts";
-import type { Env } from "./env.ts";
+import type { Env, SandboxLayerResult } from "./env.ts";
+import { deploymentLayer, layerBuilt } from "./sandbox-layers.ts";
 import { recordEvalEvent } from "./evals.ts";
 import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
 import { proposeMemory, type MemoryProposal } from "./memories.ts";
 import { ocrFile } from "./ocr.ts";
-import { recordSandboxEvent } from "./sandbox.ts";
+import { recordSandboxEvent, sandboxMaxSize, sizeAllowed } from "./sandbox.ts";
 import { entitlement } from "./billing.ts";
 import { spendGate, type SpendVerdict } from "./spend.ts";
+import type { SandboxSize } from "@preprocess/sdk/protocol";
 
 export class Platform extends WorkerEntrypoint<Env> {
   caseEvent(event: CaseEvent) {
@@ -59,9 +61,34 @@ export class Platform extends WorkerEntrypoint<Env> {
   }
 
   // A sandbox's start, wake, heartbeat, sleep, destroy or crash (spec 16a),
-  // timed here.
+  // timed by the sandbox's Durable Object.
   sandboxEvent(event: SandboxEvent) {
     return recordSandboxEvent(this.env, event);
+  }
+
+  // Asked before a case's sandbox starts or wakes: the organization's size
+  // guardrail as it is now (spec 5), then the spending limit and plan credit,
+  // which sandbox time counts toward (spec 16a).
+  async sandboxGate(
+    organizationId: string,
+    size: SandboxSize,
+  ): Promise<SpendVerdict | "sandbox_size_not_allowed"> {
+    const cap = await withOrg(this.env, orgId(organizationId), sandboxMaxSize);
+    if (!sizeAllowed(cap, size)) return "sandbox_size_not_allowed";
+    return this.spendGate(organizationId);
+  }
+
+  // Custom environments (spec 3): the layer a deployment's row names, and a
+  // build's result for the row.
+  sandboxLayer(deployment: DeploymentRef) {
+    return deploymentLayer(this.env, deployment);
+  }
+
+  sandboxLayerBuilt(built: {
+    deployment: DeploymentRef;
+    result: SandboxLayerResult;
+  }) {
+    return layerBuilt(this.env, built);
   }
 
   // Run-log records from the runtime and the Tail Worker (design doc 09).

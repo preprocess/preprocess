@@ -59,6 +59,279 @@ export const RESERVED_BINDINGS = ["MCP", "MODELS"] as const;
 export const RESERVED_PREFIX = "PREPROCESS_";
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
 
+// Case sandboxes (spec 3): a Linux container an agent's case can run code in.
+// Opt-in, and the size is required. Each size is one Cloudflare instance type,
+// fixed for the life of the sandbox.
+export const SANDBOX_SIZES = ["small", "medium", "large"] as const;
+export type SandboxSize = (typeof SANDBOX_SIZES)[number];
+
+// Images the platform builds; an agent picks one. "standard" is the base every
+// preset is built on.
+export const SANDBOX_PRESETS = [
+  "standard",
+  "node",
+  "python",
+  "python-data",
+] as const;
+export type SandboxPreset = (typeof SANDBOX_PRESETS)[number];
+
+export const SANDBOX_IDLE_MINUTES = { default: 5, max: 60 } as const;
+
+// Package names install with argv, never a shell; a leading dash is refused
+// so a name cannot pass a flag.
+export const SANDBOX_PACKAGE = {
+  apt: /^[a-z0-9][a-z0-9+.-]{0,99}(=[A-Za-z0-9.:~+-]{1,64})?$/,
+  pip: /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}(\[[A-Za-z0-9,._-]{1,64}\])?((==|>=|<=|~=|!=|<|>)[A-Za-z0-9.*+!-]{1,64})?$/,
+  npm: /^(@[a-z0-9~][a-z0-9._~-]{0,99}\/)?[a-z0-9~][a-z0-9._~-]{0,99}(@[A-Za-z0-9.^~*+-]{1,64})?$/,
+} as const;
+export const SANDBOX_PACKAGE_LIMIT = 50;
+
+export type SandboxPackages = { apt: string[]; pip: string[]; npm: string[] };
+
+// A custom environment (spec 3): build steps over the preset, run once at
+// deploy and captured as a layer the sandbox mounts at every start, so a
+// start does not reinstall them. Run commands run as root in /workspace.
+export type SandboxSetup = {
+  packages: SandboxPackages;
+  run: string[];
+  files: Record<string, string>;
+  env: Record<string, string>;
+};
+
+export const SANDBOX_SETUP_LIMITS = {
+  run: 50,
+  runChars: 4_000,
+  files: 100,
+  fileBytes: 1_000_000,
+  env: 50,
+  envChars: 4_000,
+} as const;
+
+export const SANDBOX_ENV_NAME = /^[A-Z_][A-Z0-9_]{0,63}$/;
+const RESERVED_SANDBOX_ENV = ["HOME", "USER"];
+const RESERVED_SANDBOX_PATHS = [
+  "/proc",
+  "/sys",
+  "/dev",
+  "/tmp",
+  "/run",
+  "/.preprocess",
+];
+
+export type SandboxManifest = {
+  size: SandboxSize;
+  preset: SandboxPreset;
+  packages: SandboxPackages;
+  idleTimeoutMinutes: number;
+  setup?: SandboxSetup;
+};
+
+// What is wrong with a package list, in words a deploy prints.
+const packageProblems = (
+  where: string,
+  packages: unknown,
+  preset: string,
+): string[] => {
+  if (packages === undefined) return [];
+  if (typeof packages !== "object" || packages === null)
+    return [`${where} must be an object of apt, pip and npm lists`];
+  const problems: string[] = [];
+  for (const [kind, list] of Object.entries(packages)) {
+    if (!(kind in SANDBOX_PACKAGE)) {
+      problems.push(`${where}.${kind} is not apt, pip or npm`);
+      continue;
+    }
+    if (!Array.isArray(list)) {
+      problems.push(`${where}.${kind} must be a list of names`);
+      continue;
+    }
+    if (list.length > SANDBOX_PACKAGE_LIMIT)
+      problems.push(
+        `${where}.${kind} lists more than ${SANDBOX_PACKAGE_LIMIT} packages`,
+      );
+    const pattern = SANDBOX_PACKAGE[kind as keyof SandboxPackages];
+    for (const name of list)
+      if (typeof name !== "string" || !pattern.test(name))
+        problems.push(
+          `${where}.${kind} has an invalid package ${JSON.stringify(name)}`,
+        );
+  }
+  const listed = (kind: string) =>
+    ((packages as Record<string, unknown[]>)[kind]?.length ?? 0) > 0;
+  if (listed("pip") && !preset.startsWith("python"))
+    problems.push(`${where}.pip needs the "python" or "python-data" preset`);
+  if (listed("npm") && preset !== "node")
+    problems.push(`${where}.npm needs the "node" preset`);
+  return problems;
+};
+
+const record = (value: unknown) =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+// The absolute path a setup file is written to: relative paths are under
+// /workspace.
+export const sandboxFilePath = (path: string) =>
+  path.startsWith("/") ? path : `/workspace/${path}`;
+
+const setupProblems = (setup: unknown, preset: string): string[] => {
+  if (!record(setup))
+    return ["sandbox.setup must be an object of packages, run, files and env"];
+  const s = setup as Record<string, unknown>;
+  const problems: string[] = [];
+  for (const key of Object.keys(s))
+    if (!["packages", "run", "files", "env"].includes(key))
+      problems.push(`sandbox.setup.${key} is not packages, run, files or env`);
+  problems.push(
+    ...packageProblems("sandbox.setup.packages", s.packages, preset),
+  );
+  const L = SANDBOX_SETUP_LIMITS;
+  if (s.run !== undefined) {
+    if (!Array.isArray(s.run) || s.run.some((c) => typeof c !== "string"))
+      problems.push("sandbox.setup.run must be a list of shell commands");
+    else {
+      if (s.run.length > L.run)
+        problems.push(`sandbox.setup.run lists more than ${L.run} commands`);
+      if ((s.run as string[]).some((c) => !c.trim() || c.length > L.runChars))
+        problems.push(
+          `each sandbox.setup.run command must be 1 to ${L.runChars} characters`,
+        );
+    }
+  }
+  if (s.files !== undefined) {
+    if (!record(s.files))
+      problems.push("sandbox.setup.files must map paths to text contents");
+    else {
+      const entries = Object.entries(s.files as Record<string, unknown>);
+      if (entries.length > L.files)
+        problems.push(`sandbox.setup.files lists more than ${L.files} files`);
+      let bytes = 0;
+      for (const [path, content] of entries) {
+        if (typeof content !== "string") {
+          problems.push(`sandbox.setup.files["${path}"] must be text`);
+          continue;
+        }
+        bytes += new TextEncoder().encode(content).byteLength;
+        const full = sandboxFilePath(path);
+        if (
+          !path ||
+          path.split("/").some((part) => part === "..") ||
+          full.endsWith("/") ||
+          RESERVED_SANDBOX_PATHS.some(
+            (r) => full === r || full.startsWith(`${r}/`),
+          )
+        )
+          problems.push(
+            `sandbox.setup.files has a path it cannot write: ${JSON.stringify(path)}`,
+          );
+      }
+      if (bytes > L.fileBytes)
+        problems.push(
+          `sandbox.setup.files holds more than ${L.fileBytes / 1_000_000} MB`,
+        );
+    }
+  }
+  if (s.env !== undefined) {
+    if (!record(s.env))
+      problems.push("sandbox.setup.env must map names to text values");
+    else {
+      const entries = Object.entries(s.env as Record<string, unknown>);
+      if (entries.length > L.env)
+        problems.push(`sandbox.setup.env lists more than ${L.env} variables`);
+      for (const [name, value] of entries) {
+        if (
+          !SANDBOX_ENV_NAME.test(name) ||
+          RESERVED_SANDBOX_ENV.includes(name) ||
+          name.startsWith(RESERVED_PREFIX)
+        )
+          problems.push(
+            `sandbox.setup.env has a name it cannot set: ${JSON.stringify(name)}`,
+          );
+        if (typeof value !== "string" || value.length > L.envChars)
+          problems.push(
+            `sandbox.setup.env.${name} must be text of at most ${L.envChars} characters`,
+          );
+      }
+    }
+  }
+  return problems;
+};
+
+// What is wrong with an agent's sandbox setting, in words a deploy prints.
+// The SDK checks it when the agent is built and the platform again at deploy,
+// for manifests another bundler or an older SDK produced.
+export const sandboxProblems = (sandbox: unknown): string[] => {
+  if (typeof sandbox !== "object" || sandbox === null || Array.isArray(sandbox))
+    return [`sandbox must be an object like { size: "small" }`];
+  const s = sandbox as Record<string, unknown>;
+  const problems: string[] = [];
+  if (s.size === undefined)
+    problems.push(
+      `sandbox.size is required: pick one of ${SANDBOX_SIZES.join(", ")}`,
+    );
+  else if (!(SANDBOX_SIZES as readonly unknown[]).includes(s.size))
+    problems.push(`sandbox.size must be one of ${SANDBOX_SIZES.join(", ")}`);
+  if (
+    s.preset !== undefined &&
+    !(SANDBOX_PRESETS as readonly unknown[]).includes(s.preset)
+  )
+    problems.push(
+      `sandbox.preset must be one of ${SANDBOX_PRESETS.join(", ")}`,
+    );
+  const idle = s.idleTimeoutMinutes;
+  if (
+    idle !== undefined &&
+    !(
+      typeof idle === "number" &&
+      Number.isInteger(idle) &&
+      idle >= 1 &&
+      idle <= SANDBOX_IDLE_MINUTES.max
+    )
+  )
+    problems.push(
+      `sandbox.idleTimeoutMinutes must be a whole number from 1 to ${SANDBOX_IDLE_MINUTES.max}`,
+    );
+  const preset = typeof s.preset === "string" ? s.preset : "standard";
+  problems.push(...packageProblems("sandbox.packages", s.packages, preset));
+  if (s.setup !== undefined) problems.push(...setupProblems(s.setup, preset));
+  return problems;
+};
+
+// The manifest's form of a valid sandbox setting, with defaults filled in.
+export const sandboxManifest = (sandbox: {
+  size: SandboxSize;
+  preset?: SandboxPreset;
+  packages?: Partial<SandboxPackages>;
+  idleTimeoutMinutes?: number;
+  setup?: {
+    packages?: Partial<SandboxPackages>;
+    run?: string[];
+    files?: Record<string, string>;
+    env?: Record<string, string>;
+  };
+}): SandboxManifest => ({
+  size: sandbox.size,
+  preset: sandbox.preset ?? "standard",
+  packages: {
+    apt: [...(sandbox.packages?.apt ?? [])],
+    pip: [...(sandbox.packages?.pip ?? [])],
+    npm: [...(sandbox.packages?.npm ?? [])],
+  },
+  idleTimeoutMinutes:
+    sandbox.idleTimeoutMinutes ?? SANDBOX_IDLE_MINUTES.default,
+  ...(sandbox.setup && {
+    setup: {
+      packages: {
+        apt: [...(sandbox.setup.packages?.apt ?? [])],
+        pip: [...(sandbox.setup.packages?.pip ?? [])],
+        npm: [...(sandbox.setup.packages?.npm ?? [])],
+      },
+      run: [...(sandbox.setup.run ?? [])],
+      files: { ...sandbox.setup.files },
+      env: { ...sandbox.setup.env },
+    },
+  }),
+});
+
 export type ToolManifest = {
   name: string;
   description: string;
@@ -191,6 +464,7 @@ export type Manifest = ManifestV1 & {
   timeoutSeconds?: number;
   toolRetries?: number;
   sandboxImage?: string;
+  sandbox?: SandboxManifest;
   evals?: { onPush?: boolean };
   approvals?: Approvals;
   // The setting keys the code or preprocess.config.json set; every other

@@ -22,7 +22,7 @@ catalogs:
       specifier: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051
       version: 0.1.0
     '@preprocess/ui':
-      specifier: https://pkg.pr.new/preprocess/kit/@preprocess/ui@5e489f2
+      specifier: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d1c4e3a
       version: 0.1.0
     '@tailwindcss/vite':
       specifier: ^4.3.3
@@ -227,7 +227,7 @@ importers:
         version: link:../../packages/sdk
       '@preprocess/ui':
         specifier: 'catalog:'
-        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@5e489f2(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
+        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d1c4e3a(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
       '@streamdown/code':
         specifier: ^1.1.1
         version: 1.1.1(react@19.2.8)
@@ -343,7 +343,7 @@ importers:
         version: link:../../packages/cli
       '@preprocess/ui':
         specifier: 'catalog:'
-        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@5e489f2(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
+        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d1c4e3a(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
       '@tanstack/react-router':
         specifier: 'catalog:'
         version: 1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -464,6 +464,9 @@ importers:
 
   apps/runtime:
     dependencies:
+      '@cloudflare/sandbox':
+        specifier: 1.0.3
+        version: 1.0.3
       '@earendil-works/pi-ai':
         specifier: 1.6.0
         version: 1.6.0(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.23.0)(zod@4.4.3)
@@ -482,6 +485,9 @@ importers:
       '@preprocess/runmode':
         specifier: 'catalog:'
         version: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051
+      '@preprocess/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@preprocess/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -1296,6 +1302,9 @@ packages:
   '@cloudflare/kv-asset-handler@0.5.0':
     resolution: {integrity: sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg==}
     engines: {node: '>=22.0.0'}
+
+  '@cloudflare/sandbox@1.0.3':
+    resolution: {integrity: sha512-QbpiKDVztiRSG3CETxsocYc16CviM0tV2DzPU9MIcAX09Ee+j7MDS5ec6gJfMCv+rDd1hOGvOJOQ4ztCTuZj2Q==}
 
   '@cloudflare/unenv-preset@2.16.1':
     resolution: {integrity: sha512-ECxObrMfyTl5bhQf/lZCXwo5G6xX9IAUo+nDMKK4SZ8m4Jvvxp52vilxyySSWh2YTZz8+HQ07qGH/2rEom1vDw==}
@@ -2814,8 +2823,8 @@ packages:
     resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051}
     version: 0.1.0
 
-  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@5e489f2':
-    resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/ui@5e489f2}
+  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@d1c4e3a':
+    resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d1c4e3a}
     version: 0.1.0
     peerDependencies:
       react: ^19.2.0
@@ -4155,6 +4164,9 @@ packages:
     resolution: {integrity: sha512-BNp8kzU8kkkTw6umABOna4qWtDiT3yLWKDbDou7PqAg25YuYrHTu20ORYhgdPXFRjXDxv3GFtKZHKptJkQ2OGw==}
     engines: {node: '>=20'}
     hasBin: true
+
+  aws4fetch@1.0.20:
+    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
 
   babel-dead-code-elimination@1.0.12:
     resolution: {integrity: sha512-GERT7L2TiYcYDtYk1IpD+ASAYXjKbLTDPhBtYj7X1NuRMDTMtAx9kyBenub1Ev41lo91OHCKdmP+egTDmfQ7Ig==}
@@ -7665,7 +7677,7 @@ snapshots:
       jose: 6.2.4
       kysely: 0.29.9
       nanostores: 1.5.5
-      zod: 4.6.6
+      zod: 4.6.7
     optionalDependencies:
       '@opentelemetry/api': 1.10.0
 
@@ -7717,6 +7729,11 @@ snapshots:
   '@chevrotain/types@11.1.2': {}
 
   '@cloudflare/kv-asset-handler@0.5.0': {}
+
+  '@cloudflare/sandbox@1.0.3':
+    dependencies:
+      aws4fetch: 1.0.20
+      zod: 4.6.7
 
   '@cloudflare/unenv-preset@2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260722.1)':
     dependencies:
@@ -8884,7 +8901,7 @@ snapshots:
 
   '@preprocess/runmode@https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051': {}
 
-  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@5e489f2(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)':
+  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@d1c4e3a(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)':
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       boring-avatars: 2.0.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -9584,7 +9601,7 @@ snapshots:
       jiti: 2.7.0
       magic-string: 0.30.21
       prettier: 3.9.6
-      zod: 4.6.6
+      zod: 4.6.7
     transitivePeerDependencies:
       - supports-color
 
@@ -9598,7 +9615,7 @@ snapshots:
       '@tanstack/router-utils': 1.162.2
       chokidar: 5.0.0
       unplugin: 3.3.0(esbuild@0.25.12)(rolldown@1.2.16)(rollup@4.62.2)(vite@8.1.5(@types/node@24.19.2)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1))
-      zod: 4.6.6
+      zod: 4.6.7
     optionalDependencies:
       '@tanstack/react-router': 1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       vite: 8.1.5(@types/node@24.19.2)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1)
@@ -9623,7 +9640,7 @@ snapshots:
       '@tanstack/router-utils': 1.162.2
       chokidar: 5.0.0
       unplugin: 3.3.0(esbuild@0.28.2)(rolldown@1.2.16)(rollup@4.62.2)(vite@8.1.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1))
-      zod: 4.6.6
+      zod: 4.6.7
     optionalDependencies:
       '@tanstack/react-router': 1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       vite: 8.1.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1)
@@ -9680,7 +9697,7 @@ snapshots:
       ufo: 1.6.4
       vitefu: 1.1.3(vite@8.1.5(@types/node@24.19.2)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1))
       xmlbuilder2: 4.0.3
-      zod: 4.6.6
+      zod: 4.6.7
     optionalDependencies:
       vite: 8.1.5(@types/node@24.19.2)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1)
     transitivePeerDependencies:
@@ -9719,7 +9736,7 @@ snapshots:
       ufo: 1.6.4
       vitefu: 1.1.3(vite@8.1.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1))
       xmlbuilder2: 4.0.3
-      zod: 4.6.6
+      zod: 4.6.7
     optionalDependencies:
       vite: 8.1.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1)
     transitivePeerDependencies:
@@ -10291,6 +10308,8 @@ snapshots:
       jiti: 2.7.0
       open: 10.2.0
       yaml: 2.9.0
+
+  aws4fetch@1.0.20: {}
 
   babel-dead-code-elimination@1.0.12:
     dependencies:

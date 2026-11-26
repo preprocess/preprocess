@@ -1,0 +1,102 @@
+---
+title: Tools
+description:
+  Declare typed capabilities the model can call, with Zod input validation,
+  side-effect protection, and retries.
+---
+
+A tool is a typed function declared inside `agent({ tools })` that the model can
+call during a case. The model sees each tool's name, `description`, and Zod
+`input` schema; your `run` handler executes inside your agent's stateless
+Dynamic Worker when the model invokes it.
+
+## Why tools run in your Dynamic Worker
+
+Keeping tool execution inside your deployed bundle—rather than in the model
+loop—lets Preprocess enforce strict boundaries on every call:
+
+- **Input validation before execution.** The runtime parses the model's
+  arguments against your Zod schema before invoking `run`. Invalid inputs return
+  a structured error to the model without calling your code.
+- **Secret and network isolation.** Only secrets granted to the agent are bound
+  into `ctx.env`, and every outbound `fetch()` passes through the agent's
+  `network` allowlist.
+- **Controlled retries and replay.** The runtime decides whether a failed call
+  may be retried and captures every tool result so evals can replay cases
+  deterministically.
+
+## How `tool()` works
+
+Tool names must be `snake_case` (`^[a-z][a-z0-9_]{0,63}$`). `run` receives the
+parsed input as its first argument and `ctx` (`ToolContext`) as its second:
+
+- `ctx.env`: read-only map of the secrets declared in `secrets` and granted by
+  an Admin (`undefined` if ungranted).
+- `ctx.case`: `{ id }` for the case currently running.
+- `ctx.mcp(server)`: client for a registered MCP server declared in `mcp`.
+- `ctx.waitOn(group, { reason })`: parks the case in `waiting` on that group
+  when the run ends.
+- `ctx.tag(group, message)`: posts a group mention in the case thread.
+
+```ts
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+export default agent({
+  instructions: "Look up and update invoice status in the ERP.",
+  secrets: ["ERP_TOKEN"],
+  groups: ["accounts-payable"],
+  toolRetries: 2,
+  tools: {
+    get_invoice: tool({
+      description: "Fetch an invoice by id from the ERP",
+      input: z.object({ invoiceId: z.string() }),
+      run: async ({ invoiceId }, { env }) => {
+        const res = await fetch(
+          `https://erp.example.com/invoices/${invoiceId}`,
+          { headers: { authorization: `Bearer ${env.ERP_TOKEN}` } },
+        );
+        if (!res.ok) throw new Error(`ERP returned ${res.status}`);
+        return res.json();
+      },
+    }),
+    mark_paid: tool({
+      description: "Mark an invoice paid in the ERP",
+      input: z.object({ invoiceId: z.string(), amount: z.number() }),
+      sideEffects: true,
+      approval: {
+        group: "accounts-payable",
+        when: (call) => call.amount > 1000,
+      },
+      run: async ({ invoiceId }, { env }) => {
+        const res = await fetch(
+          `https://erp.example.com/invoices/${invoiceId}/pay`,
+          {
+            method: "POST",
+            headers: { authorization: `Bearer ${env.ERP_TOKEN}` },
+          },
+        );
+        return res.json();
+      },
+    }),
+  },
+});
+```
+
+## Side effects, retries, and failure modes
+
+- **Thrown errors vs. retries.** If a read-only tool throws, the runtime retries
+  it up to `agent({ toolRetries })` times (default `0`).
+- **Always mark writes `sideEffects: true`.** Any tool that sends an email,
+  moves money, or writes to an external API must set `sideEffects: true`. The
+  runtime **never** retries a side-effecting tool (preventing duplicate writes
+  after transient timeouts), and eval replays reuse its captured output instead
+  of calling the external system again.
+- **Approval gates.** Adding `approval` to a tool pauses the case _before_ `run`
+  executes until an eligible operator approves. See [Approvals](/sdk/approvals).
+
+## Related
+
+- [Secrets](/sdk/secrets): how `ctx.env` is populated and redacted.
+- [MCP servers](/sdk/mcp-servers): calling external MCP tools via `ctx.mcp()`.
+- [Agents](/concepts/agents): Dynamic Worker isolation and platform tools.

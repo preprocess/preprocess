@@ -1,0 +1,87 @@
+---
+title: SDK
+description:
+  Write a declarative TypeScript agent with @preprocess/sdk and deploy it to the
+  Preprocess runtime.
+---
+
+`@preprocess/sdk` is the TypeScript contract between your git repository and the
+Preprocess runtime. Instead of importing a model client or writing a retry loop,
+you export one declarative `agent()` module—its instructions, model, tools,
+output schema, groups, sandbox, and approvals. Preprocess bundles that module at
+deploy time, runs the model loop inside each case's Durable Object, and invokes
+your code inside a stateless Dynamic Worker only when the model calls a tool or
+the output schema needs evaluation.
+
+Hand this prompt to your coding agent to write an agent and deploy it.
+
+<AgentPrompt name="sdk" />
+
+Or follow the steps yourself.
+
+<Callout title="Coming soon" type="warning">
+  `@preprocess/sdk` is MIT licensed and versioned, but npm publishing is coming
+  soon, so `npm install @preprocess/sdk` will not resolve from the public
+  registry yet. Today, the package lives in `packages/sdk` of
+  [preprocess/preprocess](https://github.com/preprocess/preprocess).
+</Callout>
+
+## Install
+
+```sh
+npm install @preprocess/sdk zod
+```
+
+The SDK is MIT licensed and uses [Zod](https://zod.dev) 4 to validate tool
+inputs and generate the JSON Schema the model sees.
+
+## Defining an agent
+
+An agent is the default export of a TypeScript module. Preprocess bundles that
+module, verifies its manifest, stores the immutable bundle in R2 for each
+deployment, and loads it into an isolated Dynamic Worker on demand. Because the
+Worker is stateless, keep durable state in your own external systems or in the
+case's [output schema](/sdk/output-schema).
+
+```ts title="src/index.ts"
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+export default agent({
+  instructions: "You answer stock questions for Acme.",
+  model: "deepseek-v4.1-flash",
+  secrets: ["ERP_TOKEN"],
+  tools: {
+    lookup_stock: tool({
+      description: "Look up stock for a SKU",
+      input: z.object({ sku: z.string() }),
+      run: async ({ sku }, { env }) => {
+        const response = await fetch(`https://erp.example.com/stock/${sku}`, {
+          headers: { authorization: `Bearer ${env.ERP_TOKEN}` },
+        });
+        return response.json();
+      },
+    }),
+  },
+});
+```
+
+`model` is one of `deepseek-v4.1-flash` (the default),
+`deepseek-v4.1-flash-fast`, `kimi-k3.1-pro` (served on Baseten), or
+`qwen3.8-27b` (served on Cloudflare Workers AI). `reasoning` defaults to
+`"medium"` (`"low"`, `"medium"`, or `"high"`). See
+[Agents](/concepts/agents#models-routing-ocr-and-decide) for model trade-offs,
+OCR, and `decide`.
+
+Deploy with `preprocess deploy` (see [Deploy](/cli/deploy)). The agent's slug
+comes from your `package.json` name without its scope unless you pass `--agent`.
+
+## What to read next
+
+- [Tools](/sdk/tools): Zod inputs, `ToolContext`, `sideEffects`, and retries.
+- [Output schema](/sdk/output-schema): structured answers, checks, and
+  dependency tracking.
+- [Sandbox](/sdk/sandbox): per-case Linux containers, presets, and custom
+  environments.
+- [Approvals](/sdk/approvals): tool, field, and completion gates.
+- [Agents](/concepts/agents): how the runtime executes and isolates your code.

@@ -16,7 +16,7 @@ export type OrgAgent = {
 
 export type AgentDeploymentSummary = {
   readonly id: string;
-  readonly status: "ready" | "waiting" | "failed";
+  readonly status: "ready" | "waiting" | "failed" | "building";
   readonly model: string;
   readonly reasoning: string;
   readonly branch: string | null;

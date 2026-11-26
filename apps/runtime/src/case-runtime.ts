@@ -13,7 +13,12 @@ import { decide } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
 import { decideCostMicroUsd, microUsd } from "@preprocess/models/prices";
 import { runMode } from "@preprocess/runmode";
-import type { Effect, Manifest, ToolResult } from "@preprocess/sdk/protocol";
+import type {
+  Effect,
+  Manifest,
+  SandboxSize,
+  ToolResult,
+} from "@preprocess/sdk/protocol";
 import { PROTOCOL } from "@preprocess/sdk/protocol";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
@@ -46,6 +51,12 @@ import type {
 } from "./env.ts";
 import { openModels, PROVIDER } from "./models.ts";
 import { runLogEntry } from "./run-log.ts";
+import {
+  EXEC_SECONDS,
+  SANDBOX_BINDING,
+  sandboxName,
+  type SandboxConfig,
+} from "./sandbox.ts";
 import { COMPACTION, largeSummaries } from "./summaries.ts";
 import {
   type FieldView,
@@ -168,6 +179,14 @@ const replayFrom = (
 
 const MAX_TURNS = 24;
 
+// The built-in sandbox tools (spec 3). Their calls and results are captured,
+// and an eval case gets the source case's results, never a sandbox.
+const SANDBOX_TOOLS = [
+  "sandbox_exec",
+  "sandbox_read_file",
+  "sandbox_write_file",
+];
+
 const subject = (a: Approval) =>
   a.level === "completion"
     ? "completing the case"
@@ -191,10 +210,17 @@ const withSettings = (manifest: Manifest, settings?: Settings): Manifest => {
     ...(settings.toolRetries !== null && {
       toolRetries: settings.toolRetries,
     }),
-    // TODO: nothing reads sandboxImage until tools run in a sandbox.
+    // Custom images are Coming soon: nothing starts sandboxImage.
     ...(settings.sandboxImage !== null && {
       sandboxImage: settings.sandboxImage,
     }),
+    ...(manifest.sandbox &&
+      settings.sandboxSize && {
+        sandbox: {
+          ...manifest.sandbox,
+          size: settings.sandboxSize as SandboxSize,
+        },
+      }),
     evals: { ...manifest.evals, onPush: settings.evals.onPush },
     ...(manifest.schedules && {
       schedules: manifest.schedules.map((s) => ({
@@ -685,6 +711,173 @@ export class CaseRuntime extends DurableObject<Env> {
     return replay[index]!.result;
   }
 
+  private sandbox(meta: Meta) {
+    const size = meta.manifest.sandbox!.size;
+    return this.env[SANDBOX_BINDING[size]].getByName(sandboxName(meta));
+  }
+
+  // One sandbox tool call, captured like an agent tool's. An eval case gets
+  // the source case's result for the same input and never starts a sandbox.
+  private async sandboxCall(
+    name: string,
+    input: Record<string, unknown>,
+    callId: string,
+    run: (config: SandboxConfig) => Promise<unknown>,
+  ): Promise<ToolResult> {
+    const meta = this.meta()!;
+    this.record("tool.call", { callId, name, input });
+    const started = Date.now();
+    const settle = (result: ToolResult, replayed = false) => {
+      this.record("tool.result", {
+        callId,
+        name,
+        ms: replayed ? 0 : Date.now() - started,
+        ...(replayed && { replayed }),
+        ...result,
+      });
+      return result;
+    };
+    if (meta.eval) return settle(this.replay(name, input), true);
+    const sandbox = meta.manifest.sandbox!;
+    const gate = this.env.PLATFORM
+      ? await this.env.PLATFORM.sandboxGate(meta.organizationId, sandbox.size)
+      : "ok";
+    if (gate === "sandbox_size_not_allowed")
+      return settle({
+        output: `The sandbox did not start: this agent uses a ${sandbox.size} sandbox, which is larger than the organization allows.`,
+        isError: true,
+      });
+    if (gate !== "ok" && (await this.overLimit()))
+      return settle({
+        output:
+          "The sandbox did not start: the case halted on its organization's spending limit or plan credit.",
+        isError: true,
+      });
+    try {
+      const output = await run({
+        organizationId: meta.organizationId,
+        agentId: meta.agentId,
+        deploymentId: meta.deploymentId,
+        caseId: meta.caseId,
+        network: meta.network,
+        sandbox,
+      });
+      return settle({ output, isError: false });
+    } catch (error) {
+      return settle({
+        output: `${name} failed: ${error instanceof Error ? error.message : String(error)}`,
+        isError: true,
+      });
+    }
+  }
+
+  // The case closed (spec 3): its sandbox goes with it. Eval cases never had
+  // one.
+  private async destroySandbox(meta: Meta) {
+    if (!meta.manifest.sandbox || meta.eval) return;
+    await this.sandbox(meta)
+      .destroy()
+      .catch((error: unknown) =>
+        this.record("platform.error", {
+          event: "sandbox.destroy",
+          error: String(error),
+        }),
+      );
+  }
+
+  private sandboxTools(meta: Meta) {
+    const sandbox = meta.manifest.sandbox;
+    if (!sandbox) return [];
+    const result = (r: ToolResult) => ({
+      output: [{ type: "text" as const, text: text(r.output) }],
+      isError: r.isError,
+    });
+    const lifetime = `It starts on first use with the ${sandbox.preset} image${
+      Object.values(sandbox.packages).some((l) => l.length)
+        ? " and this agent's packages"
+        : ""
+    }, sleeps after ${sandbox.idleTimeoutMinutes} idle minutes and loses its files when it sleeps, so keep work short and read results back before ending your turn.`;
+    return [
+      defineTool({
+        name: "sandbox_exec",
+        description: `Run a bash command in this case's Linux sandbox, in /workspace. ${lifetime} Returns the exit code and the end of stdout and stderr.`,
+        parameters: {
+          type: "object",
+          properties: {
+            command: { type: "string" },
+            cwd: { type: "string", description: "Defaults to /workspace" },
+            timeoutSeconds: {
+              type: "integer",
+              minimum: 1,
+              maximum: EXEC_SECONDS.max,
+              description: `Defaults to ${EXEC_SECONDS.default}`,
+            },
+          },
+          required: ["command"],
+          additionalProperties: false,
+        },
+        replay: "unsafe",
+        execute: async (
+          input: { command: string; cwd?: string; timeoutSeconds?: number },
+          api,
+        ) =>
+          result(
+            await this.sandboxCall(
+              "sandbox_exec",
+              input,
+              String(api.taskId),
+              (c) => this.sandbox(this.meta()!).exec(c, input),
+            ),
+          ),
+      }),
+      defineTool({
+        name: "sandbox_read_file",
+        description: `Read a text file from this case's sandbox; relative paths are in /workspace. ${lifetime}`,
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" } },
+          required: ["path"],
+          additionalProperties: false,
+        },
+        replay: "unsafe",
+        execute: async (input: { path: string }, api) =>
+          result(
+            await this.sandboxCall(
+              "sandbox_read_file",
+              input,
+              String(api.taskId),
+              (c) => this.sandbox(this.meta()!).readFile(c, input.path),
+            ),
+          ),
+      }),
+      defineTool({
+        name: "sandbox_write_file",
+        description: `Write a text file in this case's sandbox, replacing it; relative paths are in /workspace. ${lifetime}`,
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" }, content: { type: "string" } },
+          required: ["path", "content"],
+          additionalProperties: false,
+        },
+        replay: "unsafe",
+        execute: async (input: { path: string; content: string }, api) =>
+          result(
+            await this.sandboxCall(
+              "sandbox_write_file",
+              input,
+              String(api.taskId),
+              (c) =>
+                this.sandbox(this.meta()!).writeFile(
+                  c,
+                  input.path,
+                  input.content,
+                ),
+            ),
+          ),
+      }),
+    ];
+  }
+
   // search_cases (spec 10): the agent's own completed cases in its
   // environment, searched on the platform side. Each search and what it found
   // goes into run capture.
@@ -837,7 +1030,8 @@ export class CaseRuntime extends DurableObject<Env> {
       }),
       ...(meta.manifest.searchCases ? [this.searchTool()] : []),
     ];
-    if (!schema.enabled) return groupTools;
+    const sandboxTools = this.sandboxTools(meta);
+    if (!schema.enabled) return [...groupTools, ...sandboxTools];
 
     const pathsParam = {
       type: "object",
@@ -847,6 +1041,7 @@ export class CaseRuntime extends DurableObject<Env> {
     };
     return [
       ...groupTools,
+      ...sandboxTools,
       defineTool({
         name: "schema_overview",
         description:
@@ -1201,7 +1396,10 @@ export class CaseRuntime extends DurableObject<Env> {
     if (!object) return [];
     return replayFrom(
       await object.json<RunCapture>(),
-      new Set(manifest.tools.filter((t) => t.sideEffects).map((t) => t.name)),
+      new Set([
+        ...manifest.tools.filter((t) => t.sideEffects).map((t) => t.name),
+        ...(manifest.sandbox ? SANDBOX_TOOLS : []),
+      ]),
     );
   }
 
@@ -1305,6 +1503,7 @@ export class CaseRuntime extends DurableObject<Env> {
     };
     this.save(next);
     this.record("case.failed", { reason: next.reason });
+    await this.destroySandbox(next);
     await this.seal(next);
     await this.report(next, {
       type: "status",
@@ -1328,6 +1527,7 @@ export class CaseRuntime extends DurableObject<Env> {
     if (status === "completed") delete next.reason;
     this.save(next);
     this.record("case.completed", { answer: next.answer ?? "", status });
+    if (status === "completed") await this.destroySandbox(next);
     await this.seal(next);
     const first = blocking[0];
     await this.report(next, {
@@ -1655,6 +1855,7 @@ export class CaseRuntime extends DurableObject<Env> {
     this.record("case.failed", { reason: "timeout" });
     this.post(next, "platform", "event", `Timed out after ${seconds}s`);
     await this.harness.abort().catch(() => false);
+    await this.destroySandbox(next);
     await this.seal(next);
     await this.report(next, {
       type: "status",
@@ -1820,6 +2021,7 @@ export class CaseRuntime extends DurableObject<Env> {
     const next: Meta = { ...meta, status: "cancelled", waitingOn: null };
     this.save(next);
     this.post(next, "platform", "event", "Cancelled");
+    await this.destroySandbox(next);
     const approvals = this.approvals();
     for (const open of approvals.pending())
       await this.report(next, {
@@ -1844,6 +2046,13 @@ export class CaseRuntime extends DurableObject<Env> {
   }
 
   async wipe() {
+    const started = this.ctx.storage.sql
+      .exec(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'case_meta'",
+      )
+      .toArray().length;
+    const meta = started ? this.meta() : null;
+    if (meta) await this.destroySandbox(meta);
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
   }

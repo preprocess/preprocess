@@ -1,0 +1,62 @@
+---
+title: MCP servers
+description:
+  Call organization-registered MCP servers from your agent tools without ever
+  handling connection tokens in code.
+---
+
+`mcp` declares the registered organization MCP servers your agent's tools can
+call through `ctx.mcp(server)`. Preprocess proxies every MCP request on the
+platform side and attaches the organization's connection token automatically, so
+credentials never enter your agent's bundle or Dynamic Worker.
+
+## Why MCP calls proxy through Preprocess
+
+Many third-party integrations use OAuth tokens or org-scoped API credentials
+that rotate centrally. Proxying MCP calls through Preprocess gives you two
+guarantees:
+
+- **Zero token exposure.** Your agent code never sees, stores, or refreshes the
+  MCP server's connection token—only the server slug (`"crm"`, `"erp"`).
+- **Guardrail enforcement.** Just like `secrets`, declaring an MCP server slug
+  that an Admin has not granted to the agent holds the deployment in `waiting`
+  and opens a guardrail request until approved.
+
+## How `ctx.mcp(server)` works
+
+List the server slugs in `agent({ mcp: [...] })`, then call `ctx.mcp(slug)`
+inside any tool's `run` function:
+
+- `ctx.mcp(slug).listTools()` returns the remote server's available tools with
+  their names, descriptions, and input schemas.
+- `ctx.mcp(slug).call(tool, args)` invokes a remote tool and returns its result,
+  automatically tagging the call with the current `case.id`.
+
+```ts
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+export default agent({
+  instructions: "You keep CRM contacts current.",
+  mcp: ["crm"],
+  tools: {
+    find_contact: tool({
+      description: "Find a CRM contact",
+      input: z.object({ q: z.string() }),
+      run: ({ q }, ctx) => ctx.mcp("crm").call("search_contacts", { q }),
+    }),
+  },
+});
+```
+
+Wrapping remote MCP calls inside your own `tool()` definitions lets you narrow
+inputs with Zod, attach `sideEffects: true` or `approval` gates to destructive
+CRM/ERP writes, and shape the response before returning it to the model.
+
+## Related
+
+- [Tools](/sdk/tools): adding `sideEffects` and `approval` around MCP writes.
+- [MCP](/mcp): connecting external MCP clients (like Claude Code or Cursor) _to_
+  your Preprocess organization.
+- [Deployments](/concepts/deployments#waiting-deployments-vs-failed-deploys):
+  how ungranted MCP servers hold a deployment in `waiting`.

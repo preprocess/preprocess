@@ -1,0 +1,89 @@
+---
+title: Output schema
+description:
+  Declare the structured answer tree a case produces, with tracked dependencies,
+  live option sources, fetched fields, checks, and completion rules.
+---
+
+`schema` declares the structured answer a case produces: a root `s.group` of
+typed fields, nested groups, and repeatable lists. Preprocess renders the case
+room's Review tab directly from this tree, evaluates your schema hooks inside
+your Dynamic Worker whenever answers change, and delivers the visible JSON
+object on `case.completed`.
+
+## Why schema functions run with a tracked accessor
+
+In real operational workflows, fields depend on each other: changing a vendor
+invalidates line-item GL accounts and re-fetches payment terms; changing a
+currency toggles whether a VAT number is visible. Every schema function receives
+`a`, a tracked accessor over the current answers. Whenever your function calls
+`a.get(...)`, `a.all(...)`, `a.sum(...)`, `a.fetched(...)`, or `a.sibling(...)`,
+Preprocess records which paths it read—so it automatically knows which answers
+turn `stale` when an upstream value changes, without you maintaining a separate
+dependency graph.
+
+## Example
+
+```ts
+import { agent, allReviewed, schema as s } from "@preprocess/sdk";
+
+export default agent({
+  instructions: "Code invoices.",
+  schema: s.group(
+    {
+      vendor: s.select({ options: ["Acme", "Globex"], review: "required" }),
+      lines: s.list(
+        s.group({
+          sku: s.text(),
+          amount: s.number(),
+        }),
+      ),
+      total: s.number({ review: "required" }),
+    },
+    {
+      checks: {
+        totalsMatch: (a) =>
+          a.sum("lines[*].amount") === a.get("total") || {
+            field: "total",
+            message: "Lines do not add up",
+          },
+      },
+      success: allReviewed,
+    },
+  ),
+  tools: {},
+});
+```
+
+## Builders, accessor, and options
+
+- **Scalar and container builders:** `s.text`, `s.number`, `s.boolean`,
+  `s.date`, `s.select`, `s.multiselect`, `s.fetched`, `s.group`, and `s.list`.
+  Each accepts `description`, `visible(a)`, `review` (`"required"`, `"none"`, or
+  a function of `a`), `approval`, and `invalidates` (explicit paths to mark
+  stale when a field changes).
+- **Accessor (`a`):**
+  - `a.get(path)`: reads one field (`null` if empty or hidden).
+  - `a.all("lines[*].amount")` and `a.sum("lines[*].amount")`: read or sum
+    across list wildcards.
+  - `a.fetched(path)`: reads the resolved value of an `s.fetched` field.
+  - `a.sibling(name)`: reads a sibling field inside the same list item.
+- **Select options:** Pass a static array, a function `(a) => ...`, or
+  `s.source({ search, get, page })` for large catalogs searched on demand via
+  `options_search` / `options_page` (or picked on the platform side with
+  `decide`) without loading the full list into model context.
+- **Fetched fields (`s.fetched`):** Declare `inputs(a)` and `fetch(inputs, ctx)`
+  (plus optional `transform`). The fetch re-runs automatically only when
+  `inputs` changes.
+- **Checks and `success`:** Declared on the root `s.group`. Any failing check
+  blocks completion and renders beside its `field`. Set `success: allReviewed`
+  when unconfirmed `review: "required"` fields should hold the case in
+  `waiting`—without a `success` function, passing checks allow immediate
+  completion.
+
+## Related
+
+- [Output schema (concept)](/concepts/output-schema): staleness rules,
+  non-overwriting suggestions, and final JSON shape.
+- [Review and approvals](/concepts/review-and-approvals): how operators confirm
+  and edit answers.

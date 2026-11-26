@@ -28,6 +28,8 @@ import { createContext, use, useId, useState, type ReactNode } from "react";
 
 import { Pre } from "./code-block";
 import { Configured } from "./configured";
+import { Edge, Flow, Node } from "./diagram/flow";
+import { State, StateMachine, Transition } from "./diagram/state-machine";
 import {
   ArtCard,
   ArtCards,
@@ -42,7 +44,7 @@ import {
   firstPage,
   folderPages,
   PageLink,
-  splitTree,
+  sectionsOf,
   textOf,
   TreeContext,
 } from "./page-tree";
@@ -245,7 +247,7 @@ function AgentPrompt({ name }: { name: keyof typeof agentPrompts }) {
 function EndpointTags() {
   const tree = use(TreeContext);
   const root = tree
-    ? splitTree(tree).reference.find((folder) => contains(folder, "/api"))
+    ? sectionsOf(tree).find((folder) => contains(folder, "/api"))
     : undefined;
   if (!root) return null;
   return (
@@ -344,12 +346,18 @@ export const getMDXComponents = (components?: MDXComponents) =>
     Tab,
     Tabs,
     Configured,
+    Edge,
     EndpointTags,
+    Flow,
     Hero,
     Highlight,
+    Node,
     PromptBlock,
+    State,
+    StateMachine,
     Step,
     Steps,
+    Transition,
     ...components,
   }) satisfies MDXComponents;
 

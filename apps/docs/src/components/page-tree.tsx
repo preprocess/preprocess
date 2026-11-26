@@ -81,45 +81,45 @@ export function PageLink({
   return <Link {...props} params={{ _splat: url.slice(1) }} to="/$" />;
 }
 
-// The two halves of the docs: prose guides at the top level of the tree,
-// and the reference folder (the API) beneath them.
-export function splitTree(tree: PageTree.Root) {
-  return {
-    guides: tree.children.filter((node) => node.type !== "folder"),
-    reference: tree.children.filter(
-      (node): node is PageTree.Folder => node.type === "folder",
-    ),
-  };
+// The docs' sections (Guides, SDK, CLI, API reference): the root folders of
+// the tree, each with its own sidebar list.
+export function sectionsOf(tree: PageTree.Root) {
+  return tree.children.filter(
+    (node): node is PageTree.Folder => node.type === "folder" && !!node.root,
+  );
 }
 
-// The sidebar calls the tree's first page "Overview"; its title is the
-// product's name, which the page itself shows.
-export function guideLabel(page: PageTree.Item) {
-  return page.url === "/" ? "Overview" : textOf(page.name);
+export function sectionFor(tree: PageTree.Root, url: string) {
+  const sections = sectionsOf(tree);
+  return sections.find((section) => contains(section, url)) ?? sections[0];
 }
 
-// Where a page sits, ending with the page: Guides and the guide, or
-// Reference, the tag and the operation.
+// A section's first page is its Overview; the API reference calls it
+// Introduction. Other pages go by their own names.
+export function pageLabel(section: PageTree.Folder, page: PageTree.Item) {
+  if (page.url === firstPage(section))
+    return page.url === "/api" ? "Introduction" : "Overview";
+  return rowLabel(page.name).label;
+}
+
+// Where a page sits, ending with the page: the section, any folders (an API
+// tag), then the page.
 export function crumbsFor(tree: PageTree.Root, url: string) {
-  const { guides, reference } = splitTree(tree);
-  const crumbs: { label: string; url?: string }[] = [];
-  const root = reference.find((folder) => contains(folder, url));
-  if (!root) {
-    crumbs.push({ label: "Guides", url: "/" });
-    const page = guides.find(
-      (node): node is PageTree.Item => node.type === "page" && node.url === url,
-    );
-    if (page) crumbs.push({ label: guideLabel(page) });
-    return crumbs;
-  }
-  crumbs.push({ label: "Reference", url: firstPage(root) });
-  let folder: PageTree.Folder | undefined = root;
+  const section = sectionFor(tree, url);
+  if (!section) return [];
+  const crumbs: { label: string; url?: string }[] = [
+    { label: textOf(section.name), url: firstPage(section) },
+  ];
+  let folder: PageTree.Folder | undefined = section;
   while (folder) {
-    const page = folder.children.find(
-      (child): child is PageTree.Item =>
-        child.type === "page" && child.url === url,
-    );
-    if (page) crumbs.push({ label: rowLabel(page.name).label });
+    const page =
+      folder.index?.url === url
+        ? folder.index
+        : folder.children.find(
+            (child): child is PageTree.Item =>
+              child.type === "page" && child.url === url,
+          );
+    if (page) crumbs.push({ label: pageLabel(section, page) });
     const next: PageTree.Folder | undefined = folder.children.find(
       (child): child is PageTree.Folder =>
         child.type === "folder" && contains(child, url),

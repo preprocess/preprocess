@@ -258,6 +258,22 @@ describe("the inbox", () => {
     expect(mail[0]!.text).not.toContain("Lee");
   });
 
+  it("names the person who tagged a group", async () => {
+    const key = await newCase("Invoice 1046");
+    await recordCaseEvent(environment, {
+      ...key,
+      type: "mention",
+      group: "legal",
+      messageId: "msg_3",
+      by: `person:${admin.userId}`,
+      message: "@legal please confirm the vendor.",
+    });
+    const mail = await deliver();
+    expect(mail.map((m) => m.to)).toEqual([lee.email]);
+    expect(mail[0]!.text).toMatch(/^Ada\b[^\n]* tagged Legal on Invoice 1046:/);
+    expect(mail[0]!.html).toMatch(/>Ada\b[^<]* tagged Legal<\/h1>/);
+  });
+
   it("marks items read for that person only", async () => {
     const key = await newCase("Invoice 1045");
     await waitOn(key, "legal");

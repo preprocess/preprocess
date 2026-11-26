@@ -48,6 +48,8 @@ bundle("test/fixtures/network-agent.ts", "network-agent.js");
 bundle("test/fixtures/groups-agent.ts", "groups-agent.js");
 bundle("test/fixtures/approvals-agent.ts", "approvals-agent.js");
 bundle("test/fixtures/scheduled-agent.ts", "scheduled-agent.js");
+bundle("test/fixtures/sandbox-agent.ts", "sandbox-agent.js");
+bundle("test/fixtures/setup-agent.ts", "setup-agent.js");
 
 const worker = (name: string, extra: object = {}) => ({
   name,

@@ -54,17 +54,27 @@ execute a tool, or evaluate the output schema. That boundary buys three things:
 | Storage         | R2 buckets and Queues.                                                               | Bundles, uploaded files, run capture, run logs, and signed daily audit manifests.         |
 | Model providers | Baseten (Kimi, DeepSeek, `decide`), Cloudflare Workers AI (Qwen), and Mistral (OCR). | Nothing; stateless inference per call (or your own serving URLs when self-hosted).        |
 
-```text
-API call, schedule, app, or MCP
-   │
-   ▼
-API Worker ───queue───► case runtime ───hooks/tools───► your agent code
-   │      ◄───status───  (Durable Object)                (Dynamic Worker)
-   │                          │
-   │                          └───► Baseten / Workers AI / Mistral OCR
-   ▼
-webhooks, inbox, email
-```
+<Flow caption="One case, from the call that opens it to the result going out.">
+  <Node id="in" kind="actor" icon="plug" at="0 0">
+    API call, schedule, app or MCP
+  </Node>
+  <Node id="api" icon="server" at="0 1">API Worker</Node>
+  <Node id="rt" icon="box" at="1 1" narrow="0 2"
+    detail="Durable Object">case runtime</Node>
+  <Node id="code" icon="code" at="2 1" narrow="0 3"
+    detail="Dynamic Worker">your agent code</Node>
+  <Node id="out" kind="end" icon="send" at="0 2" narrow="1 1">
+    webhooks, inbox, email
+  </Node>
+  <Node id="model" icon="cpu" at="1 2" narrow="1 2">model service</Node>
+
+  <Edge from="in" to="api" />
+  <Edge from="api" to="rt" label="queue" />
+  <Edge from="rt" to="api" label="status" />
+  <Edge from="rt" to="code" label="tool calls" />
+  <Edge from="rt" to="model" />
+  <Edge from="api" to="out" />
+</Flow>
 
 ## 1. The call that opens the case
 

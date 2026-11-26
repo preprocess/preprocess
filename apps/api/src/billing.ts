@@ -215,6 +215,8 @@ export const storedBytes = async (tx: SystemTx) =>
         + coalesce((select sum(capture_bytes) from cases c where c.organization_id = o.id), 0)
         + coalesce((select sum(quantity) from usage_records u
             where u.organization_id = o.id and u.feature = 'log_bytes'), 0)
+        + coalesce((select sum(bytes) from sandbox_layers l
+            where l.organization_id = o.id), 0)
           as bytes
       from organization o`)
   ).rows.map((r) => ({ org: r.org, bytes: Number(r.bytes) }));
@@ -425,6 +427,9 @@ export const entitlement = async (
   if (!plan) return "ok";
   if (!plan.started)
     return planRequired(env, org, plan.started) ? "plan_required" : "ok";
+  // Internal has no limits, and its customers keep the features they were
+  // attached with, which a renamed feature leaves out.
+  if (plan.name === "internal") return "ok";
   try {
     const allowed = await remember(
       `check:${org}:${featureId}`,

@@ -14,7 +14,7 @@ export type Git = { branch?: string; commit?: string };
 
 export type Deployment = {
   id: string;
-  status: "ready" | "waiting" | "failed";
+  status: "ready" | "waiting" | "failed" | "building";
   environment: "production" | "preview";
   production: boolean;
   waitingFor: {
@@ -26,6 +26,11 @@ export type Deployment = {
   sdkVersion: string;
   tools: string[];
   warnings?: string[];
+  sandboxEnvironment?: {
+    status: "building" | "ready" | "failed";
+    error?: string;
+    log?: string | null;
+  } | null;
 };
 
 export const CONFIG_FILE = "preprocess.config.json";
@@ -107,6 +112,11 @@ export type DeployOptions = {
   bundle: Bundle;
   git: Git;
   fetch?: typeof fetch;
+  // While a custom sandbox environment builds: how often to ask, and for how
+  // long, and where to say it is building.
+  pollMs?: number;
+  waitMs?: number;
+  onBuilding?: () => void;
 };
 
 export const deploy = async (options: DeployOptions): Promise<Deployment> => {
@@ -132,11 +142,37 @@ export const deploy = async (options: DeployOptions): Promise<Deployment> => {
     }
     throw new Error(`deploy failed (${response.status}): ${message}`);
   }
-  return JSON.parse(text) as Deployment;
+  const created = JSON.parse(text) as Deployment;
+  if (created.status !== "building") return created;
+  options.onBuilding?.();
+  const deadline = Date.now() + (options.waitMs ?? 20 * 60_000);
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? 5000));
+    const read = await (options.fetch ?? fetch)(
+      new URL(created.id, `${url.href}/`),
+      {
+        headers: { authorization: `Bearer ${options.key}` },
+      },
+    );
+    if (read.ok) {
+      const current = (await read.json()) as Deployment;
+      if (current.status !== "building") return current;
+    }
+    if (Date.now() > deadline)
+      throw new Error(
+        `deployment ${created.id} is still building its custom sandbox environment; check it with the dashboard`,
+      );
+  }
 };
 
 const status = (agent: string, d: Deployment) => {
-  if (d.status === "failed") return `${agent}: deployment ${d.id} failed`;
+  if (d.status === "failed")
+    return d.sandboxEnvironment?.status === "failed"
+      ? [
+          `${agent}: deployment ${d.id} failed: its custom sandbox environment did not build: ${d.sandboxEnvironment.error}`,
+          ...(d.sandboxEnvironment.log ? [d.sandboxEnvironment.log] : []),
+        ].join("\n")
+      : `${agent}: deployment ${d.id} failed`;
   if (d.status === "waiting") {
     const grants = [
       ...(d.waitingFor.secrets ?? []).map((s) => `secret ${s}`),

@@ -1,0 +1,86 @@
+---
+title: Groups and schedules
+description:
+  Route cases to teams with groups, and trigger recurring cases on a cron
+  schedule.
+---
+
+Agent code interacts with people only through **groups** (`groups`) and starts
+recurring work through **schedules** (`schedules`). Both are declared in
+`agent()` and validated at deploy time so broken team references or invalid cron
+expressions never reach production.
+
+## Groups
+
+`groups` lists every organization group slug (`^[a-z0-9][a-z0-9-]{0,47}$`) that
+your agent waits on, tags, or names as an approver. Routing to groups rather
+than individuals ensures cases never stall when one person is out of office or
+changes roles.
+
+Inside any tool's `run` handler:
+
+- `ctx.waitOn(slug, { reason })` parks the case in `waiting` on that group when
+  the run ends, surfacing it in every member's inbox, sending email
+  notifications, and emitting `case.needs_group`.
+- `ctx.tag(slug, message)` posts a `@slug` notification in the case thread.
+
+At deploy time, Preprocess checks every declared slug against the organization:
+an unknown slug fails the deploy immediately; a group without access to the
+agent holds the deployment in `waiting` until an Admin grants access. Run
+`npx preprocess groups pull` to sync the organization's current slugs into
+`preprocess.config.json`.
+
+## Schedules
+
+`schedules` triggers cases automatically on a standard 5-field cron expression.
+Each entry takes:
+
+- `name`: unique schedule identifier (`^[a-z0-9][a-z0-9-]{0,63}$`).
+- `cron`: 5-field cron expression.
+- `text`: opening prompt text passed to each scheduled case.
+- `timezone` (optional): IANA timezone such as `"America/New_York"` (defaults to
+  `"UTC"`).
+- `previews` (optional): set `true` to also fire on preview deployments
+  (defaults to `false`, production only).
+
+Pausing a schedule in the app or API persists across deploys and promotions
+until someone resumes it, and each fire carries its own idempotency key so
+retries never create duplicate cases.
+
+```ts
+import { agent, tool } from "@preprocess/sdk";
+import { z } from "zod";
+
+export default agent({
+  instructions: "Reconcile daily payouts and escalate mismatches.",
+  groups: ["finance-ops"],
+  schedules: [
+    {
+      name: "nightly-reconcile",
+      cron: "0 2 * * *",
+      timezone: "America/New_York",
+      text: "Reconcile yesterday's payouts and flag any discrepancy.",
+    },
+  ],
+  tools: {
+    escalate_mismatch: tool({
+      description: "Hand a payout mismatch to finance ops",
+      input: z.object({ reason: z.string() }),
+      run: ({ reason }, ctx) => {
+        ctx.waitOn("finance-ops", { reason });
+        ctx.tag("finance-ops", `Escalated: ${reason}`);
+        return { escalated: true };
+      },
+    }),
+  },
+});
+```
+
+## Related
+
+- [Groups and access](/concepts/groups-and-access): roles vs. groups, operator
+  grants, and live deployment locks.
+- [Cases](/concepts/cases#starting-a-case): how schedules and `waitOn` fit into
+  the case lifecycle.
+- [Settings (CLI)](/cli/settings): keeping `preprocess.config.json` in step with
+  `groups pull`.

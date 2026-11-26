@@ -95,3 +95,17 @@ jobs:
 
       - name: Test in the Workers runtime
         run: pnpm test
+
+  # Custom environment layers (apps/runtime/sandbox/layer): builds one in a
+  # preset container and checks it mounts back faithfully, on the kernel and
+  # the FUSE path, for the standard and python presets.
+  sandbox-layer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Test sandbox layers
+        run: apps/runtime/sandbox/test/layer.sh

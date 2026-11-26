@@ -118,6 +118,14 @@ jobs:
           done
           pnpm --filter @preprocess/infra staging:deploy
 
+      # The account's container registry has a fixed 50 GB cap (PRE-90). A
+      # warning annotation here from 35 GB and a failed step from 42 GB; it
+      # never blocks the deploy.
+      - name: Estimate container registry usage
+        if: steps.deploy.outcome == 'success'
+        continue-on-error: true
+        run: pnpm --filter @preprocess/infra registry usage
+
       # The stage's URLs contain the account's workers.dev subdomain, which
       # matches a secret's value, so GitHub drops them as a job output. They
       # reach the smoke test as an artifact instead.
@@ -140,7 +148,7 @@ jobs:
     needs: staging
     if: needs.staging.outputs.deployed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -161,6 +169,35 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra smoke
+
+      # One case runs a command in a small sandbox, and the job summary shows
+      # the container's start and stop beside the interval the API billed.
+      # It does not gate production until it has passed reliably (PRE-87).
+      - name: Smoke test a case sandbox
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          STAGE: staging
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run:
+          OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra
+          smoke:sandbox
+
+      # One case on an agent with a custom sandbox environment (one apt
+      # package and one file): the layer builds, goes to R2 and mounts in a
+      # real container. The job summary shows its size, build wait and mount
+      # time. It does not gate production until it has passed reliably.
+      - name: Smoke test a custom environment
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          STAGE: staging
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run:
+          OUTPUTS="$(cat outputs.json)" pnpm --filter @preprocess/infra
+          smoke:layer
 
   production:
     name: Promote to production

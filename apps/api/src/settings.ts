@@ -16,6 +16,8 @@ import {
   DEFAULT_MODEL,
   MODELS,
   REASONING,
+  SANDBOX_SIZES,
+  type SandboxSize,
 } from "@preprocess/sdk/protocol";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -40,6 +42,11 @@ export const DEFAULT_KEYS = Object.keys(DEFAULTS) as DefaultKey[];
 
 const SCHEDULE_PREVIEWS = /^schedules\.([^.]+)\.previews$/;
 
+// The sandbox size: set by code that asks for a sandbox, overridable from the
+// dashboard, and never an organization default, since a sandbox is opt-in and
+// has no default size (spec 3).
+export const SANDBOX_SIZE_KEY = "sandbox.size";
+
 export type Source = "override" | "code" | "organization" | "default";
 
 // The schema for a key an agent can override, or undefined for an unknown key.
@@ -48,13 +55,16 @@ export const settingSchema = (key: string): z.ZodType | undefined =>
     ? DEFAULTS[key as DefaultKey].schema
     : SCHEDULE_PREVIEWS.test(key)
       ? z.boolean()
-      : undefined;
+      : key === SANDBOX_SIZE_KEY
+        ? z.enum(SANDBOX_SIZES)
+        : undefined;
 
 const codeValue = (manifest: Manifest, key: string): unknown => {
   const schedule = SCHEDULE_PREVIEWS.exec(key)?.[1];
   if (schedule)
     return manifest.schedules?.find((s) => s.name === schedule)?.previews;
   if (key === "evals.onPush") return manifest.evals?.onPush;
+  if (key === SANDBOX_SIZE_KEY) return manifest.sandbox?.size;
   return manifest[key];
 };
 
@@ -70,7 +80,8 @@ const declares = (manifest: Manifest, key: string) => {
     );
   return (
     declared.includes(key) ||
-    (key === "evals.onPush" && declared.includes("evals"))
+    (key === "evals.onPush" && declared.includes("evals")) ||
+    (key === SANDBOX_SIZE_KEY && manifest.sandbox !== undefined)
   );
 };
 
@@ -110,6 +121,7 @@ export const resolveSettings = async (
   const keys = [
     ...DEFAULT_KEYS,
     ...(manifest?.schedules ?? []).map((s) => `schedules.${s.name}.previews`),
+    ...(manifest?.sandbox ? [SANDBOX_SIZE_KEY] : []),
   ];
   return keys.map((key) => {
     const code =
@@ -118,7 +130,11 @@ export const resolveSettings = async (
         : undefined;
     const org = key in DEFAULTS ? organization[key] : undefined;
     const fallback =
-      key in DEFAULTS ? DEFAULTS[key as DefaultKey].fallback : false;
+      key in DEFAULTS
+        ? DEFAULTS[key as DefaultKey].fallback
+        : key === SANDBOX_SIZE_KEY
+          ? null
+          : false;
     const [stored, source]: [unknown, Source] =
       overrides[key] !== undefined
         ? [overrides[key], "override"]
@@ -151,6 +167,8 @@ export type EffectiveSettings = {
   timeoutSeconds: number | null;
   toolRetries: number | null;
   sandboxImage: string | null;
+  // Null when the code asks for no sandbox.
+  sandboxSize: SandboxSize | null;
   evals: { onPush: boolean };
   schedules: Record<string, { previews: boolean }>;
 };
@@ -171,6 +189,9 @@ export const effectiveSettings = async (
     timeoutSeconds: values.get("timeoutSeconds") as number | null,
     toolRetries: values.get("toolRetries") as number | null,
     sandboxImage: values.get("sandboxImage") as string | null,
+    sandboxSize: manifest.sandbox
+      ? (values.get(SANDBOX_SIZE_KEY) as SandboxSize)
+      : null,
     evals: { onPush: values.get("evals.onPush") as boolean },
     schedules: Object.fromEntries(
       (manifest.schedules ?? []).map((s) => [

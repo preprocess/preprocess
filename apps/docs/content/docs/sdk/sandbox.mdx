@@ -1,0 +1,142 @@
+---
+title: Sandbox
+description:
+  Give each case an isolated Linux container with presets, per-start packages,
+  or prebuilt custom environments.
+---
+
+`sandbox` gives each case its own isolated Linux container on Cloudflare
+Containers. When an agent declares `sandbox`, the runtime automatically exposes
+three platform tools to the model—`sandbox_exec`, `sandbox_read_file`, and
+`sandbox_write_file`—so the agent can run scripts, inspect or transform files,
+and process data inside a real Linux environment. An agent without `sandbox` has
+none of these tools.
+
+## Why sandboxes are opt-in and sized in code
+
+Most agents only need HTTP tool calls inside a stateless Dynamic Worker, which
+start in milliseconds and carry no container cost. Giving a case a full Linux
+machine is opt-in so you pay for container time only on agents that actually
+need shell execution, Python data libraries, or custom binaries—and so
+organization guardrails can cap container sizes before a deployment serves
+traffic.
+
+```ts
+import { agent } from "@preprocess/sdk";
+
+export default agent({
+  instructions: "Extract tables from attached PDFs and summarize totals.",
+  sandbox: {
+    size: "small",
+    preset: "python-data",
+    packages: { apt: ["poppler-utils"], pip: ["pdfplumber"] },
+  },
+  tools: {},
+});
+```
+
+## Sizes, presets, and packages
+
+`size` is required—a deploy without it fails validation. On Preprocess Cloud,
+each size maps to a Cloudflare Container instance type and bills per second
+while awake:
+
+| Size     | Machine                           | Price per second                  |
+| -------- | --------------------------------- | --------------------------------- |
+| `small`  | ½ vCPU, 4 GiB memory, 8 GB disk   | $0.00003084 (about $0.11 an hour) |
+| `medium` | 1 vCPU, 6 GiB memory, 12 GB disk  | $0.00005376 (about $0.19 an hour) |
+| `large`  | 4 vCPU, 12 GiB memory, 20 GB disk | $0.00016710 (about $0.60 an hour) |
+
+Sandbox cost counts toward your organization's monthly spending limit and Free
+plan credit. Self-hosted installs run sandboxes directly in their own Cloudflare
+account and are not billed by Preprocess.
+
+`preset` picks the base Linux image:
+
+- `standard` (default): Debian with `bash`, `curl`, and `git`;
+- `node`: Node.js 24 and `npm`;
+- `python`: Python 3 and `pip`;
+- `python-data`: `python` plus `pandas`, `NumPy`, `Polars`, `DuckDB`, `PyArrow`,
+  `SciPy`, `Matplotlib`, and `openpyxl`.
+
+`packages` installs up to 50 `apt`, `pip`, and `npm` packages each time the
+sandbox starts. `pip` requires a `python` or `python-data` preset, and `npm`
+requires `node`.
+
+## Lifecycle, limits, and network isolation
+
+- **Lazy start and idle sleep.** A sandbox starts on the case's first sandbox
+  tool call. It sleeps after `idleTimeoutMinutes` without activity (default `5`,
+  maximum `60`), and **loses its container filesystem when it sleeps**. Keep
+  durable results in the case's output schema or external systems.
+- **Max lifetime and destruction.** A single sandbox start lasts at most 2
+  hours, and the container is destroyed when the case closes.
+- **Command and output limits.** Each `sandbox_exec` defaults to a 120-second
+  timeout (max 600 seconds) and returns up to 32,000 trailing characters per
+  stream (`stdout`/`stderr`); `sandbox_read_file` returns up to 256 KB.
+- **Network egress.** Every HTTP and HTTPS request from inside the container
+  passes through the same outbound gateway as your agent code, obeying the
+  agent's `network` allowlist. Every other outbound connection is blocked.
+- **Guardrails and overrides.** Owners and Admins can set a maximum allowed
+  sandbox size in Settings → Guardrails. A deployment requesting a larger size
+  enters `waiting` until approved. You can override an agent's sandbox size in
+  the app up to that cap.
+- **Deterministic evals.** Every sandbox call and output is captured with the
+  case; eval replays reuse captured results and never boot a container.
+
+## Custom environments (`setup`)
+
+On Team and Enterprise plans, `sandbox.setup` builds a custom environment layer
+over your chosen preset once at deploy time and stores it in R2, so sandboxes
+mount it on start instead of reinstalling packages or downloading assets on
+every case:
+
+```ts
+import { agent } from "@preprocess/sdk";
+
+export default agent({
+  instructions: "Parse engineering drawings using the prebuilt parser.",
+  network: ["example.com"],
+  sandbox: {
+    size: "medium",
+    preset: "python",
+    setup: {
+      packages: { apt: ["poppler-utils"], pip: ["pdfplumber==0.11.4"] },
+      run: [
+        "mkdir -p /opt/models && curl -fsSL https://example.com/model.bin -o /opt/models/model.bin",
+      ],
+      files: { "/etc/parser.toml": "mode = 'strict'" },
+      env: { PARSER_CONFIG: "/etc/parser.toml" },
+    },
+  },
+  tools: {},
+});
+```
+
+- `packages`: same `apt`, `pip`, and `npm` lists as `sandbox.packages` (up to 50
+  each).
+- `run`: up to 50 shell commands (max 4,000 characters each), executed in order
+  as `root` in `/workspace`. The build stops on the first failing command; files
+  created in `/workspace` are owned by the `sandbox` user afterwards.
+- `files`: up to 100 text files (1 MB total) written before `run` commands
+  execute. Relative paths resolve under `/workspace`.
+- `env`: up to 50 environment variables (max 4,000 characters each), available
+  during the build and to every command the sandbox runs.
+
+The build obeys the agent's `network` rules, and the deployment shows
+**Building** until it finishes (`preprocess deploy` waits for the build).
+Deploys with the same preset and `setup` share one cached layer; when a platform
+preset updates, the layer rebuilds automatically on the next sandbox start.
+
+Custom environment layers are billed at the standard storage GB-month rate while
+at least one live deployment references them. The layer plus preset must fit on
+the chosen sandbox size's disk (deploy fails and names a fitting size if not).
+Layers over 1 GB deploy with a warning because each start or wake downloads the
+layer at roughly 25 MB/s. On Free plans, use a preset with `sandbox.packages`.
+
+## Related
+
+- [Agents](/concepts/agents): how sandboxes fit alongside Dynamic Workers and
+  other platform tools.
+- [Deployments](/concepts/deployments): waiting deployments and guardrail
+  checks.

@@ -183,6 +183,10 @@ export const main = async (argv: string[], env = process.env) => {
     key,
     bundle: await bundle(path.resolve(cwd, entry)),
     git: gitInfo(cwd, env),
+    onBuilding: () =>
+      console.error(
+        `${agent}: building the sandbox's custom environment; this can take a few minutes`,
+      ),
   });
   return {
     code: deployment.status === "failed" ? 1 : 0,

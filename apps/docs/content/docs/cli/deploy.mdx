@@ -1,0 +1,52 @@
+---
+title: Deploy
+description:
+  Bundle your TypeScript agent and publish a production or preview deployment
+  with preprocess deploy.
+---
+
+`preprocess deploy` bundles your agent module locally, validates its manifest,
+and uploads an immutable deployment to Preprocess. Every deploy records the
+current git branch and commit SHA, along with any operational settings in
+`preprocess.config.json` beside your `package.json`.
+
+## How a deploy behaves
+
+```sh
+npx preprocess deploy
+```
+
+- **First deploy creates the agent.** There is no "new agent" button in the app;
+  deploying under a new slug (taken from `package.json` without any scope, or
+  overridden with `--agent`) creates it.
+- **Branch decides production vs. preview.** Deploying from `main` creates a
+  production deployment and promotes it immediately unless it is `waiting` on a
+  guardrail. Deploying from any other branch—or outside a git repository—creates
+  an isolated preview that only serves cases targeting its `dep_...` id.
+- **Custom sandbox layers build before serving.** If your agent declares
+  `sandbox.setup`, `preprocess deploy` waits for the custom environment layer to
+  finish building and prints the build log if a setup command fails.
+- **Cleared overrides and warnings.** Because code is the truth at deploy,
+  promoting a deployment clears temporary dashboard overrides on the agent; the
+  CLI prints every cleared override and any config warnings (such as an inline
+  setting shadowed by `preprocess.config.json`).
+
+If a deployment asks for an ungranted secret, MCP server, network host, group
+access, or sandbox size above your organization's cap, `deploy` still succeeds
+with status **`waiting`** and opens a guardrail request for an Admin.
+
+## Deploying from CI
+
+You can run `preprocess deploy` in any CI pipeline with `PREPROCESS_API_URL`,
+`PREPROCESS_ORG`, and `PREPROCESS_API_KEY` set as secrets, or use the bundled
+GitHub Action (`preprocess/preprocess/packages/cli`). Teams that want automatic
+builds on every push without maintaining CI can connect the GitHub App instead.
+
+## Related
+
+- [Deployments](/concepts/deployments): immutability, waiting deployments,
+  promote, and rollback.
+- [Settings](/cli/settings): preserving dashboard overrides with `config pull`
+  before deploying.
+- [Command reference](/cli/reference): all `deploy` flags (`--entry`, `--agent`,
+  `--api`, `--org`).

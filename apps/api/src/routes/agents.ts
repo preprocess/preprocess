@@ -30,7 +30,10 @@ const Deployment = z
   .object({
     id: z.string(),
     agentId: z.string(),
-    status: z.enum(["ready", "waiting", "failed"]),
+    status: z.enum(["ready", "waiting", "failed", "building"]).openapi({
+      description:
+        "building: the sandbox's custom environment is being built; the deployment settles to ready, waiting or failed",
+    }),
     production: z.boolean(),
     waitingFor: z.object({
       secrets: z.array(z.string()).optional(),
@@ -50,6 +53,18 @@ const Deployment = z
       description:
         "Build warnings from the agent's code and preprocess.config.json",
     }),
+    sandboxEnvironment: z
+      .object({
+        status: z.enum(["building", "ready", "failed"]),
+        bytes: z.number().optional(),
+        error: z.string().optional(),
+        log: z.string().nullable().optional(),
+      })
+      .nullable()
+      .openapi({
+        description:
+          "The sandbox's custom environment (sandbox.setup): its build, its size in bytes once built, or why the build failed",
+      }),
     createdAt: z.string(),
     promotedAt: z.string().nullable(),
   })

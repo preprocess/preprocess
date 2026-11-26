@@ -82,31 +82,31 @@ your own serving URLs via `MODEL_ENDPOINTS`.
 `agent()` takes one configuration object. Only `instructions` and `tools` are
 required.
 
-| Option           | What it declares                                                                                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `instructions`   | Plain-language instructions read by the model at the start of every case.                                                        |
-| `model`          | `deepseek-v4.1-flash` (default), `deepseek-v4.1-flash-fast`, `kimi-k3.1-pro`, or `qwen3.8-27b`.                                  |
-| `reasoning`      | `low`, `medium` (default), or `high`.                                                                                            |
-| `tools`          | Tools the model can call, each with a `description`, Zod `input` schema, `run` handler, and optional `sideEffects` / `approval`. |
-| `schema`         | The [output schema](/concepts/output-schema): structured answers, checks, and success condition.                                 |
-| `groups`         | Group slugs the code may wait on, tag, or name as approvers. See [Groups and access](/concepts/groups-and-access).               |
-| `approval`       | Whether a person must approve the case before it completes. Tools and fields take their own `approval`.                          |
-| `secrets`        | Organization secret names the code needs. Only secrets an Admin grants are bound into `env`.                                     |
-| `mcp`            | Registered organization MCP server slugs the code can call through `ctx.mcp(server)`.                                            |
-| `network`        | Outbound host patterns the code is allowed to `fetch()`.                                                                         |
-| `schedules`      | Cron schedules (`name`, 5-field `cron`, optional `timezone` and `previews`) that start cases automatically.                      |
-| `ocr`            | When `true`, runs OCR on uploaded files before the first model turn.                                                             |
-| `searchCases`    | When `true`, enables `search_cases` over this agent's completed cases in the same environment. Off by default.                   |
-| `timeoutSeconds` | Positive integer wall-clock limit per run. Passing it marks the case `failed`.                                                   |
-| `toolRetries`    | Whole-number retry count when a non-`sideEffects` tool throws. Defaults to `0`.                                                  |
+| Option           | What it declares                                                                                                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `instructions`   | Plain-language instructions read by the model at the start of every case.                                                              |
+| `model`          | `deepseek-v4.1-flash` (default), `deepseek-v4.1-flash-fast`, `kimi-k3.1-pro`, or `qwen3.8-27b`.                                        |
+| `reasoning`      | `low`, `medium` (default), or `high`.                                                                                                  |
+| `tools`          | Tools the model can call, each with a `description`, Zod `input` schema, `run` handler, and optional `sideEffects` / `approval`.       |
+| `schema`         | The [output schema](/concepts/output-schema): structured answers, checks, and success condition.                                       |
+| `groups`         | Group slugs the code may wait on, tag, or name as approvers. See [Groups and access](/concepts/groups-and-access).                     |
+| `approval`       | Whether a person must approve the case before it completes. Tools and fields take their own `approval`.                                |
+| `secrets`        | Organization secret names the code needs. Only secrets an Admin grants are bound into `env`.                                           |
+| `mcp`            | Registered organization MCP server slugs the code can call through `ctx.mcp(server)`.                                                  |
+| `network`        | Outbound host patterns the code is allowed to `fetch()`.                                                                               |
+| `schedules`      | Cron schedules (`name`, 5-field `cron`, optional `timezone` and `previews`) that start cases automatically.                            |
+| `ocr`            | When `true`, runs OCR on uploaded files before the first model turn.                                                                   |
+| `searchCases`    | When `true`, enables `search_cases` over this agent's completed cases in the same environment. Off by default.                         |
+| `sandbox`        | Opt-in Linux container per case (`size`, `preset`, `packages`, `idleTimeoutMinutes`, and `setup` layers). See [Sandbox](/sdk/sandbox). |
+| `timeoutSeconds` | Positive integer wall-clock limit per run. Passing it marks the case `failed`.                                                         |
+| `toolRetries`    | Whole-number retry count when a non-`sideEffects` tool throws. Defaults to `0`.                                                        |
 
 <Callout title="Coming soon">
-  Case sandboxes and automatic evals on push are not wired yet. The SDK accepts
-  `sandboxImage` and `evals: {onPush}` and stores them as settings, and the
-  platform already meters sandbox lifecycle events for internal containers, but
-  agent tools do not execute inside a custom sandbox image yet and pushing code
-  does not trigger eval runs. Today, tools run in Dynamic Workers and you run
-  eval suites manually with `preprocess evals run`.
+  Automatic evals on push (`evals: {onPush}`) are not wired yet—the SDK accepts
+  and stores the setting, but pushing code does not trigger eval runs
+  automatically. Today, run eval suites manually with `preprocess evals run`.
+  (Case sandboxes and custom environments built with `sandbox.setup` are live;
+  see [Sandbox](/sdk/sandbox).)
 </Callout>
 
 ### Validation and setting precedence
@@ -163,15 +163,16 @@ systems or in the case's output schema answers.
 Beside the tools you write, the runtime automatically exposes a built-in set of
 platform tools to the model:
 
-| Tool                             | What it does                                                                            |
-| -------------------------------- | --------------------------------------------------------------------------------------- |
-| `schema_overview`, `schema_read` | Inspect the output schema tree, field descriptions, conditions, values, and status.     |
-| `schema_answer`                  | Write answers to visible schema fields (validated against field types and options).     |
-| `options_search`, `options_page` | Search and paginate a `s.source()` option list without loading it into context.         |
-| `decide`                         | Pick from a field's full option list using the `groundhog-1` decision model.            |
-| `groups_list`, `tag_group`       | List groups with access to the agent and tag a group in the case thread.                |
-| `memory_propose`                 | Propose a reusable rule across cases for a person to accept or dismiss.                 |
-| `search_cases`                   | Search this agent's completed cases in the same environment (when `searchCases: true`). |
+| Tool                                                      | What it does                                                                                          |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `schema_overview`, `schema_read`                          | Inspect the output schema tree, field descriptions, conditions, values, and status.                   |
+| `schema_answer`                                           | Write answers to visible schema fields (validated against field types and options).                   |
+| `options_search`, `options_page`                          | Search and paginate a `s.source()` option list without loading it into context.                       |
+| `decide`                                                  | Pick from a field's full option list using the `groundhog-1` decision model.                          |
+| `groups_list`, `tag_group`                                | List groups with access to the agent and tag a group in the case thread.                              |
+| `memory_propose`                                          | Propose a reusable rule across cases for a person to accept or dismiss.                               |
+| `search_cases`                                            | Search this agent's completed cases in the same environment (when `searchCases: true`).               |
+| `sandbox_exec`, `sandbox_read_file`, `sandbox_write_file` | Run shell commands and read/write files in the case's Linux container (when `sandbox` is configured). |
 
 ## Archiving
 

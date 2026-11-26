@@ -10,7 +10,17 @@ import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { XIcon } from "@preprocess/ui/lib/icons";
-import { MODEL_CATALOG, MODELS } from "@preprocess/sdk/protocol";
+import {
+  MODEL_CATALOG,
+  MODELS,
+  type SandboxSize,
+} from "@preprocess/sdk/protocol";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@preprocess/ui/components/select";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -28,6 +38,7 @@ import {
   SettingsSkeletonRows,
 } from "./kit";
 import { shortDeploymentId } from "../agents/agent-store";
+import { SANDBOX_SIZE_OPTIONS } from "./sandbox-sizes";
 import { GUARDRAIL_SECTIONS } from "./settings-nav";
 import { SettingsStacked } from "./settings-widgets";
 import { useCanAdminister } from "./use-role";
@@ -37,7 +48,8 @@ export type Change =
   | { kind: "network"; hosts: string[] }
   | { kind: "secret"; secret: string }
   | { kind: "mcp"; server: string }
-  | { kind: "spending_limit"; limitUsd: number | null };
+  | { kind: "spending_limit"; limitUsd: number | null }
+  | { kind: "sandbox_size"; size: SandboxSize };
 type Status = "pending" | "approved" | "rejected";
 
 const STATUSES: readonly { value: Status; label: string }[] = [
@@ -80,6 +92,8 @@ export const describeChange = (change: Change) => {
       return change.limitUsd === null
         ? "Remove the spending limit"
         : `Set the spending limit to ${usd(change.limitUsd)}`;
+    case "sandbox_size":
+      return `Allow sandboxes up to ${change.size}`;
   }
 };
 
@@ -111,6 +125,9 @@ export function GuardrailsPanel({ request }: { request?: string }) {
       </Anchor>
       <Anchor id="spending">
         <SpendingLimit />
+      </Anchor>
+      <Anchor id="sandbox">
+        <SandboxSizeLimit />
       </Anchor>
       <Anchor id="models">
         <SettingsSection
@@ -601,6 +618,101 @@ function SpendingLimit() {
         </SettingsRows>
       )}
       <ErrorLine error={error} fallback="Could not change the limit." />
+    </SettingsSection>
+  );
+}
+
+const ANY_SIZE = "any";
+
+function SandboxSizeLimit() {
+  const organizationId = useOrganizationId();
+  const queryClient = useQueryClient();
+  const canEdit = useCanAdminister();
+  const guardrails = useQuery({
+    queryKey: ["guardrails", organizationId],
+    queryFn: () =>
+      orgApi<{ sandboxMaxSize: SandboxSize | null }>(
+        organizationId,
+        "/guardrails",
+      ),
+  });
+  const saved = guardrails.data?.sandboxMaxSize ?? ANY_SIZE;
+  const [draft, setDraft] = useState<string>(ANY_SIZE);
+  const [error, setError] = useState<unknown>(null);
+  useEffect(() => setDraft(saved), [saved]);
+
+  return (
+    <SettingsSection
+      description="The largest sandbox an agent's cases may start. A deployment that asks for a larger one waits for an Owner or Admin, and a running case can't start one."
+      title={sectionTitle("sandbox")}
+    >
+      {guardrails.isError ? (
+        <SettingsError error={guardrails.error} />
+      ) : !guardrails.data ? (
+        <SettingsSkeletonRows count={1} />
+      ) : (
+        <SettingsRows>
+          <SettingsRow
+            description={
+              saved === ANY_SIZE ? "Every size, the default" : undefined
+            }
+            label="Largest size"
+            value={
+              <Select
+                disabled={!canEdit}
+                onValueChange={(next) => setDraft(next)}
+                value={draft}
+              >
+                <SelectTrigger
+                  aria-label="Largest sandbox size"
+                  className="w-72"
+                />
+                <SelectContent>
+                  <SelectItem index={0} value={ANY_SIZE}>
+                    Any size
+                  </SelectItem>
+                  {SANDBOX_SIZE_OPTIONS.map((option, index) => (
+                    <SelectItem
+                      index={index + 1}
+                      key={option.value}
+                      value={option.value}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            }
+          >
+            {canEdit ? (
+              <LoadingButton
+                disabled={draft === saved}
+                onAction={async () => {
+                  setError(null);
+                  await orgApi(organizationId, "/guardrails/sandbox-size", {
+                    method: "PUT",
+                    body: JSON.stringify({
+                      size: draft === ANY_SIZE ? null : draft,
+                    }),
+                  });
+                  await Promise.all(
+                    ["guardrails", "deployments", "guardrail-requests"].map(
+                      (key) =>
+                        queryClient.invalidateQueries({
+                          queryKey: [key, organizationId],
+                        }),
+                    ),
+                  );
+                }}
+                onError={setError}
+              >
+                Save
+              </LoadingButton>
+            ) : null}
+          </SettingsRow>
+        </SettingsRows>
+      )}
+      <ErrorLine error={error} fallback="Could not change the largest size." />
     </SettingsSection>
   );
 }

@@ -143,5 +143,62 @@
         "content": "Read the term dates from the order form. {{results}}"
       }
     ]
+  },
+  {
+    "name": "sandbox-sum",
+    "match": "Add two and two in the sandbox",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "sandbox_exec",
+            "arguments": {
+              "command": "python3 -c 'print(2 + 2)'"
+            }
+          }
+        ]
+      },
+      {
+        "content": "The sandbox said: {{results}}"
+      }
+    ]
+  },
+  {
+    "name": "sandbox-smoke",
+    "match": "Smoke test of the sandbox",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "sandbox_exec",
+            "arguments": {
+              "command": "read up _ < /proc/uptime; t=$(cut -d' ' -f22 /proc/1/stat); hz=$(getconf CLK_TCK); now=$(date +%s%3N); s=$(awk -v n=\"$now\" -v u=\"$up\" -v t=\"$t\" -v hz=\"$hz\" 'BEGIN { printf \"%d\", n - (u - t / hz) * 1000 }'); echo \"sandbox ok now_ms=$now pid1_start_ms=$s\""
+            }
+          }
+        ]
+      },
+      {
+        "content": "The sandbox said: {{results}}"
+      }
+    ]
+  },
+  {
+    "name": "sandbox-layer-smoke",
+    "match": "Smoke test of a custom environment",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "sandbox_exec",
+            "arguments": {
+              "command": "tree --version; cat /opt/smoke/layer.txt"
+            }
+          }
+        ]
+      },
+      {
+        "content": "The sandbox said: {{results}}"
+      }
+    ]
   }
 ]

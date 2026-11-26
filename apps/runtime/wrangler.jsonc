@@ -15,9 +15,20 @@
     "MODEL_SERVICE_KEY": "development",
   },
   "durable_objects": {
-    "bindings": [{ "name": "CASE_RUNTIME", "class_name": "CaseRuntime" }],
+    "bindings": [
+      { "name": "CASE_RUNTIME", "class_name": "CaseRuntime" },
+      { "name": "SANDBOX_SMALL", "class_name": "SandboxSmall" },
+      { "name": "SANDBOX_MEDIUM", "class_name": "SandboxMedium" },
+      { "name": "SANDBOX_LARGE", "class_name": "SandboxLarge" },
+    ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CaseRuntime"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["CaseRuntime"] },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["SandboxSmall", "SandboxMedium", "SandboxLarge"],
+    },
+  ],
   "r2_buckets": [
     { "binding": "RUNS", "bucket_name": "preprocess-runs-development" },
     { "binding": "BUNDLES", "bucket_name": "preprocess-bundles-development" },

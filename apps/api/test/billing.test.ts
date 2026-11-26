@@ -21,6 +21,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   activeSeats,
+  entitlement,
   planRequired,
   readPlan,
   reportUsage,
@@ -28,7 +29,7 @@ import {
 } from "../src/billing.ts";
 import type { Env } from "../src/env.ts";
 import { monthOf } from "../src/metering.ts";
-import { customSandboxImages, getPlan } from "../src/plan.ts";
+import { customImagesAllowed, getPlan } from "../src/plan.ts";
 import { Platform } from "../src/platform.ts";
 import {
   addMember,
@@ -304,13 +305,13 @@ describe("the plan", () => {
       flags: { training: {}, custom_sandbox_images: {} },
       balances: {},
     };
-    expect(await customSandboxImages(environment, orgId(team.org))).toBe(true);
+    expect(await customImagesAllowed(environment, orgId(team.org))).toBe(true);
     customer = {
       subscriptions: [{ plan_id: "free", status: "active" }],
       flags: {},
       balances: {},
     };
-    expect(await customSandboxImages(environment, orgId(free.org))).toBe(false);
+    expect(await customImagesAllowed(environment, orgId(free.org))).toBe(false);
   });
 
   it("is free and unlimited where billing is off", async () => {
@@ -465,6 +466,24 @@ describe("starting a plan", () => {
     expect(plan.name).toBe("internal");
     expect(plan.features).toHaveLength(5);
     expect(attached()).toEqual(["internal"]);
+  });
+
+  it("never limits our own organizations, whatever Autumn's check says", async () => {
+    const ours = await organizationWithAgent("Unlimited");
+    stubAutumn();
+    allowed = false;
+    customer = {
+      subscriptions: [{ plan_id: "internal", status: "active" }],
+      flags: {},
+      balances: {},
+    };
+    const env = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      BILLING_INTERNAL_ORGS: ours.org,
+    });
+    for (const feature of ["cases", "model_usage_credits"])
+      expect(await entitlement(env, orgId(ours.org), feature)).toBe("ok");
+    expect(calls.filter((c) => c.route === "check")).toEqual([]);
   });
 });
 

@@ -64,6 +64,7 @@ import {
   githubVars,
   googleSecrets,
   googleVars,
+  imageRepositories,
   licenseSecrets,
   compatibility,
   durableObjects,
@@ -72,6 +73,8 @@ import {
   isStage,
   names,
   runtimeDurableObjects,
+  sandboxDurableObjects,
+  sandboxImages,
   runtimeModelSecrets,
   type SelfHostStage,
   type Stage,
@@ -290,6 +293,9 @@ export default Alchemy.Stack(
           Config.withDefault(undefined),
         )) as Cloudflare.R2.Bucket.Location | undefined);
     const placement = r2LocationHint ? { locationHint: r2LocationHint } : {};
+    const apiPlacement = region
+      ? { placement: { region: regionConfig(region).databaseRegion } }
+      : {};
     const runMode = region ? { PREPROCESS_REGION: region } : {};
     const keep = RemovalPolicy.protect(!preview);
 
@@ -546,6 +552,7 @@ export default Alchemy.Stack(
       schedulingPolicy: "durable_object",
       context: root,
       dockerfile: at("apps/builder/Dockerfile"),
+      publish: { repository: imageRepositories.build },
     });
     const builder = yield* Cloudflare.Worker("Builder", {
       ...worker,
@@ -566,6 +573,7 @@ export default Alchemy.Stack(
       schedulingPolicy: "durable_object",
       context: at("apps/pdf-render"),
       dockerfile: at("apps/pdf-render/Dockerfile"),
+      publish: { repository: imageRepositories.render },
     });
     const pdfRender = yield* Cloudflare.Worker("PdfRender", {
       ...worker,
@@ -579,6 +587,27 @@ export default Alchemy.Stack(
         PLATFORM: Cloudflare.WorkerEntrypoint(apiRef, "Platform"),
       },
     });
+
+    // Case sandboxes (spec 3): the platform's preset images, which the
+    // sandbox classes start by name. Never a customer's image.
+    const sandboxContainers = Object.entries(sandboxImages).map(
+      ([id, preset]) =>
+        Cloudflare.Container(id, {
+          schedulingPolicy: "durable_object",
+          context: at("apps/runtime/sandbox"),
+          dockerfile: at("apps/runtime/sandbox/Dockerfile"),
+          build: { args: { PRESET: preset } },
+          publish: { repository: imageRepositories[`sandbox-${preset}`] },
+        }),
+    );
+    const sandboxes = Object.fromEntries(
+      Object.entries(sandboxDurableObjects).map(([binding, className]) => [
+        binding,
+        Cloudflare.DurableObject(className, {
+          containers: sandboxContainers,
+        }),
+      ]),
+    );
 
     // Tail Worker of agent code: console output and exceptions become run
     // logs (design doc 09). The runtime attaches it to each Dynamic Worker.
@@ -613,6 +642,7 @@ export default Alchemy.Stack(
         CASE_RUNTIME: Cloudflare.DurableObject(
           runtimeDurableObjects.CASE_RUNTIME,
         ),
+        ...sandboxes,
         RUNS: runs,
         BUNDLES: bundles,
         LOADER: Cloudflare.WorkerLoader("LOADER"),
@@ -626,6 +656,7 @@ export default Alchemy.Stack(
       ...worker,
       name: n.api,
       main: at("apps/api/src/index.ts"),
+      ...apiPlacement,
       workersDev: true,
       crons: apiCrons,
       env: {

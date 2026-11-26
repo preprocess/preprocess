@@ -1,5 +1,11 @@
 import { Button } from "@preprocess/ui/components/button";
 import {
+  DropdownContent,
+  DropdownMenu,
+  DropdownTrigger,
+} from "@preprocess/ui/components/dropdown";
+import { MenuItem } from "@preprocess/ui/components/menu-item";
+import {
   CommandMenu,
   CommandMenuDialog,
   CommandMenuEmpty,
@@ -34,7 +40,6 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@preprocess/ui/components/sidebar-menu";
-import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { useTouchPrimary } from "@preprocess/ui/hooks/use-touch-primary";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
@@ -43,6 +48,7 @@ import {
   Braces,
   Check,
   ChevronRight,
+  ChevronsUpDown,
   Code,
   Copy,
   FileText,
@@ -70,6 +76,7 @@ import { useTheme } from "next-themes";
 import {
   Fragment,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -83,10 +90,11 @@ import {
   crumbsFor,
   firstPage,
   folderPages,
-  guideLabel,
   PageLink,
+  pageLabel,
   rowLabel,
-  splitTree,
+  sectionFor,
+  sectionsOf,
   textOf,
 } from "./page-tree";
 import { MobileContents, OnThisPagePopover } from "./docs-toc";
@@ -96,10 +104,37 @@ import { Wordmark } from "./wordmark";
 // page on an inset surface-2 panel. Fumadocs supplies the page tree and the
 // search index.
 
-const guideIcons: Record<string, typeof Home> = {
-  "/": Home,
+// Each section by its first page's URL.
+const sectionIcons: Record<string, typeof Home> = {
+  "/": BookOpen,
   "/sdk": Code,
   "/cli": Terminal,
+  "/api": Braces,
+};
+
+const sectionIcon = (section: PageTree.Folder) =>
+  sectionIcons[firstPage(section) ?? ""] ?? BookOpen;
+
+// Sections whose anchors became pages of their own. The server never sees a
+// hash, so the page redirects old links once it loads.
+const movedAnchors: Record<string, Record<string, string>> = {
+  "/sdk": {
+    tools: "/sdk/tools",
+    secrets: "/sdk/secrets",
+    "mcp-servers": "/sdk/mcp-servers",
+    "output-schema": "/sdk/output-schema",
+    approvals: "/sdk/approvals",
+    "groups-and-schedules": "/sdk/groups-and-schedules",
+    sandbox: "/sdk/sandbox",
+    memory: "/sdk/memory",
+    "searching-past-cases": "/sdk/searching-past-cases",
+  },
+  "/cli": {
+    deploy: "/cli/deploy",
+    "keep-settings-in-step": "/cli/settings",
+    "logs-and-evals": "/cli/logs-and-evals",
+    reference: "/cli/reference",
+  },
 };
 
 // HTTP methods take the status hues, the docs' only use of them.
@@ -192,83 +227,76 @@ function FolderRow({
   );
 }
 
-function GuideRows({
-  nodes,
-  pathname,
-}: {
-  nodes: PageTree.Node[];
-  pathname: string;
-}) {
-  // Separators in the tree's meta.json split the guides into labelled
-  // sections, the way Endpoints sits under Reference.
-  const sections: { label?: string; pages: PageTree.Item[] }[] = [];
-  for (const node of nodes) {
-    if (node.type === "separator")
-      sections.push({ label: textOf(node.name), pages: [] });
-    else if (node.type === "page") {
-      if (sections.length === 0) sections.push({ pages: [] });
-      sections[sections.length - 1].pages.push(node);
-    }
-  }
-  return sections.map((section, index) => (
-    <SidebarGroup
-      className={cn("px-0", index > 0 ? "pt-4" : "pt-0")}
-      key={index}
-    >
-      {section.label ? (
-        <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
-      ) : null}
-      <SidebarMenu aria-label={section.label ?? "Guides"} className="gap-0.5">
-        {section.pages.map((page) => (
-          <SidebarMenuItem key={page.url}>
-            <SidebarMenuButton
-              icon={guideIcons[page.url]}
-              isActive={page.url === pathname}
-              render={<PageLink url={page.url} />}
-            >
-              {guideLabel(page)}
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ))}
-      </SidebarMenu>
-    </SidebarGroup>
-  ));
+// A deep-dive page has no icon; the empty column keeps its label in line
+// with the section's Overview.
+function NoIcon({ size }: { size?: number | string }) {
+  return (
+    <span
+      aria-hidden
+      className="shrink-0"
+      style={{ width: size, height: size }}
+    />
+  );
 }
 
-function ReferenceRows({
-  folder,
+// One section's pages: its first page with the section's icon, then its
+// pages and folders, in groups under the labels the section's separators
+// name.
+function SectionRows({
   pathname,
+  section,
 }: {
-  folder: PageTree.Folder;
   pathname: string;
+  section: PageTree.Folder;
 }) {
-  return (
-    <>
-      {folder.index ? (
-        <SidebarMenu aria-label="Reference" className="gap-0.5">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              icon={Braces}
-              isActive={folder.index.url === pathname}
-              render={<PageLink url={folder.index.url} />}
-            >
-              Introduction
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      ) : null}
-      <SidebarGroup className="px-0 pt-4">
-        <SidebarGroupLabel>Endpoints</SidebarGroupLabel>
-        <SidebarMenu aria-label="Endpoints" className="gap-0.5">
-          {folder.children.map((node, index) =>
-            node.type === "folder" ? (
-              <FolderRow folder={node} key={index} pathname={pathname} />
-            ) : null,
-          )}
-        </SidebarMenu>
+  const first = firstPage(section);
+  const groups: { label?: string; nodes: PageTree.Node[] }[] = [
+    { nodes: section.index ? [section.index] : [] },
+  ];
+  for (const node of section.children)
+    if (node.type === "separator")
+      groups.push({ label: textOf(node.name), nodes: [] });
+    else groups[groups.length - 1]?.nodes.push(node);
+
+  return groups.map((group, index) => {
+    if (group.nodes.length === 0) return null;
+    const menu = (
+      <SidebarMenu
+        aria-label={group.label ?? textOf(section.name)}
+        className="gap-0.5"
+      >
+        {group.nodes.map((node, key) =>
+          node.type === "page" ? (
+            <SidebarMenuItem key={node.url}>
+              <SidebarMenuButton
+                icon={
+                  node.url === first
+                    ? first === "/api"
+                      ? Braces
+                      : Home
+                    : NoIcon
+                }
+                isActive={node.url === pathname}
+                render={<PageLink url={node.url} />}
+              >
+                {pageLabel(section, node)}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : node.type === "folder" ? (
+            <FolderRow folder={node} key={key} pathname={pathname} />
+          ) : null,
+        )}
+      </SidebarMenu>
+    );
+    return group.label ? (
+      <SidebarGroup className="px-0 pt-4" key={index}>
+        <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+        {menu}
       </SidebarGroup>
-    </>
-  );
+    ) : (
+      <Fragment key={index}>{menu}</Fragment>
+    );
+  });
 }
 
 function useShortcutLabel() {
@@ -306,30 +334,69 @@ function SearchTrigger({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-// Guides or Reference: tabs whose items are links.
+// The docs' sections as one menu under search. The trigger names the
+// section you are in; picking another opens its first page. In the mobile
+// menu the trigger and rows take the 44px touch height.
 function SectionSwitch({
-  inReference,
-  referenceUrl,
+  touch = false,
+  tree,
 }: {
-  inReference: boolean;
-  referenceUrl?: string;
+  touch?: boolean;
+  tree: PageTree.Root;
 }) {
   const router = useRouter();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const labelId = useId();
+  const sections = sectionsOf(tree);
+  const current = sectionFor(tree, pathname);
+  if (!current) return null;
+  const Icon = sectionIcon(current);
   return (
-    <Tabs
-      aria-label="Section"
-      onSelect={(index) => {
-        const url = index === 1 ? referenceUrl : "/";
-        if (url) void router.navigate({ href: url });
-      }}
-      selectedIndex={inReference ? 1 : 0}
-      size="compact"
-    >
-      <TabsItem icon={BookOpen} index={0} label="Guides" />
-      {referenceUrl ? (
-        <TabsItem icon={Code} index={1} label="Reference" />
-      ) : null}
-    </Tabs>
+    <DropdownMenu>
+      <DropdownTrigger
+        aria-labelledby={`${labelId}-name ${labelId}-value`}
+        className={cn(
+          typeClass("body"),
+          "flex w-full shrink-0 items-center gap-2 rounded-[10px] px-2.5 text-foreground shadow-[inset_0_0_0_1px_var(--input)] outline-none transition-colors focus-visible:shadow-[inset_0_0_0_1px_var(--input),0_0_0_2px_var(--focus-ring,#6B97FF)] data-[popup-open]:bg-active",
+          touch ? "h-11 text-[15px]" : "h-9",
+        )}
+      >
+        <span className="sr-only" id={`${labelId}-name`}>
+          Docs section
+        </span>
+        <Icon className="shrink-0" size={16} />
+        <span
+          className="min-w-0 flex-1 truncate text-left"
+          id={`${labelId}-value`}
+          style={{ fontVariationSettings: fontWeights.medium }}
+        >
+          {textOf(current.name)}
+        </span>
+        <ChevronsUpDown className="shrink-0 text-muted-foreground" size={14} />
+      </DropdownTrigger>
+      <DropdownContent
+        checkedIndex={sections.indexOf(current)}
+        className={cn(
+          "w-[var(--anchor-width)]",
+          touch &&
+            "[&_[data-fluid-hover-index]]:h-11 [&_[data-fluid-hover-index]]:text-[15px]",
+        )}
+      >
+        {sections.map((section, index) => (
+          <MenuItem
+            checked={section === current}
+            icon={sectionIcon(section)}
+            index={index}
+            key={index}
+            label={textOf(section.name)}
+            onSelect={() => {
+              const url = firstPage(section);
+              if (url) void router.navigate({ href: url });
+            }}
+          />
+        ))}
+      </DropdownContent>
+    </DropdownMenu>
   );
 }
 
@@ -419,10 +486,7 @@ function SidebarBody({
   tree: PageTree.Root;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { guides, reference } = splitTree(tree);
-  const root = reference[0];
-  const inReference = reference.some((folder) => contains(folder, pathname));
-  const referenceUrl = root ? firstPage(root) : undefined;
+  const section = sectionFor(tree, pathname);
 
   return (
     <>
@@ -437,18 +501,16 @@ function SidebarBody({
           </span>
         </PageLink>
         <SearchTrigger onOpen={onSearch} />
-        <SectionSwitch inReference={inReference} referenceUrl={referenceUrl} />
+        <SectionSwitch tree={tree} />
       </SidebarHeader>
       <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
         <nav
-          aria-label={inReference ? "Reference" : "Guides"}
+          aria-label={section ? textOf(section.name) : "Documentation"}
           className="w-64 pt-2 pr-4 pb-6 pl-3"
         >
-          {inReference && root ? (
-            <ReferenceRows folder={root} pathname={pathname} />
-          ) : (
-            <GuideRows nodes={guides} pathname={pathname} />
-          )}
+          {section ? (
+            <SectionRows pathname={pathname} section={section} />
+          ) : null}
         </nav>
       </ScrollArea>
       <SidebarFooter className="flex-row items-center gap-1 px-4 pt-3 pb-4">
@@ -461,37 +523,32 @@ function SidebarBody({
 
 type SearchItem = CommandMenuItemData & { url: string };
 
-// Where each page sits, for the line under a search hit.
+// Where each page sits, for the line under a search hit: its section, or
+// for an API operation its tag and method.
 function pageIndex(tree: PageTree.Root) {
-  const { guides, reference } = splitTree(tree);
   const pages = new Map<
     string,
-    { label: string; group: string; path: string }
+    { label: string; group: string; path: string; api: boolean }
   >();
-  for (const node of guides)
-    if (node.type === "page")
-      pages.set(node.url, {
-        label: guideLabel(node),
-        group: "Guides",
-        path: "Guides",
-      });
-  for (const root of reference) {
-    if (root.index)
-      pages.set(root.index.url, {
-        label: "Introduction",
-        group: "Reference",
-        path: "Reference",
-      });
-    for (const tag of root.children)
-      if (tag.type === "folder")
-        for (const page of folderPages(tag)) {
-          const { label, method } = rowLabel(page.name);
-          pages.set(page.url, {
-            label,
-            group: "Reference",
-            path: method ? `${textOf(tag.name)} · ${method}` : textOf(tag.name),
-          });
-        }
+  for (const section of sectionsOf(tree)) {
+    const group = textOf(section.name);
+    const api = firstPage(section) === "/api";
+    const visit = (folder: PageTree.Folder, path: string) => {
+      const items = folder.index ? [folder.index] : [];
+      for (const child of folder.children)
+        if (child.type === "page") items.push(child);
+        else if (child.type === "folder") visit(child, textOf(child.name));
+      for (const page of items) {
+        const { method } = rowLabel(page.name);
+        pages.set(page.url, {
+          label: pageLabel(section, page),
+          group,
+          path: method ? `${path} · ${method}` : path,
+          api,
+        });
+      }
+    };
+    visit(section, group);
   }
   return pages;
 }
@@ -514,22 +571,19 @@ function DocsSearch({
     };
     if (search === "" || query.data === "empty")
       return [...pages]
-        .filter(
-          ([, page]) => page.group === "Guides" || page.path === "Reference",
-        )
+        .filter(([, page]) => page.path === page.group)
         .map(([url, page]) => ({
           url,
           value: url,
           label: page.label,
           description: page.path,
           group: page.group,
-          icon: page.group === "Reference" ? Braces : FileText,
+          icon: page.api ? Braces : FileText,
           onSelect: go(url),
         }));
     return (query.data ?? []).map((result) => {
       const url = result.url.split("#")[0] ?? result.url;
       const page = pages.get(url);
-      const reference = page?.group === "Reference";
       const heading = result.type !== "page";
       return {
         url: result.url,
@@ -539,7 +593,7 @@ function DocsSearch({
           : (page?.label ?? textOf(result.content)),
         description: heading ? (page?.label ?? "") : (page?.path ?? ""),
         group: page?.group ?? "Guides",
-        icon: heading ? Hash : reference ? Braces : FileText,
+        icon: heading ? Hash : page?.api ? Braces : FileText,
         onSelect: go(result.url),
       };
     });
@@ -711,39 +765,8 @@ function MobileBar({
   );
 }
 
-// Guides or Reference in the menu: a row that swaps the list below it.
-function SectionRow({
-  active,
-  icon,
-  label,
-  onSelect,
-}: {
-  active: boolean;
-  icon: typeof Home;
-  label: string;
-  onSelect: () => void;
-}) {
-  return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        aria-pressed={active}
-        icon={icon}
-        isActive={active}
-        onClick={onSelect}
-      >
-        {label}
-      </SidebarMenuButton>
-      {active ? null : (
-        <SidebarMenuBadge>
-          <ChevronRight size={14} />
-        </SidebarMenuBadge>
-      )}
-    </SidebarMenuItem>
-  );
-}
-
-// Below lg the menu fills the screen under the same bar: the two halves of
-// the docs as rows, the section's pages below a divider, then one row at the
+// Below lg the menu fills the screen under the same bar: the section menu,
+// the section's pages below a divider, then one row at the
 // end of the list: the way into the app, the theme and GitHub.
 function MobileMenu({
   appUrl,
@@ -757,11 +780,7 @@ function MobileMenu({
   tree: PageTree.Root;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { guides, reference } = splitTree(tree);
-  const root = reference[0];
-  const [inReference, setInReference] = useState(() =>
-    reference.some((folder) => contains(folder, pathname)),
-  );
+  const section = sectionFor(tree, pathname);
 
   return (
     <>
@@ -795,28 +814,11 @@ function MobileMenu({
                 onClose();
             }}
           >
-            <SidebarMenu aria-label="Sections" className="gap-0.5">
-              <SectionRow
-                active={!inReference}
-                icon={BookOpen}
-                label="Guides"
-                onSelect={() => setInReference(false)}
-              />
-              {root ? (
-                <SectionRow
-                  active={inReference}
-                  icon={Code}
-                  label="Reference"
-                  onSelect={() => setInReference(true)}
-                />
-              ) : null}
-            </SidebarMenu>
+            <SectionSwitch touch tree={tree} />
             <hr className="mx-2 my-3 h-px border-0 bg-border" />
-            {inReference && root ? (
-              <ReferenceRows folder={root} pathname={pathname} />
-            ) : (
-              <GuideRows nodes={guides} pathname={pathname} />
-            )}
+            {section ? (
+              <SectionRows pathname={pathname} section={section} />
+            ) : null}
             <hr className="mx-2 my-3 h-px border-0 bg-border" />
             <ShapeProvider defaultShape="pill">
               <div className="flex items-center gap-2 px-2 pt-3">
@@ -963,6 +965,12 @@ export function DocsShell({
   children: ReactNode;
 }) {
   const panel = useRef<HTMLElement>(null);
+  const router = useRouter();
+  const location = useRouterState({ select: (s) => s.location });
+  useEffect(() => {
+    const target = movedAnchors[location.pathname]?.[location.hash];
+    if (target) void router.navigate({ href: target, replace: true });
+  }, [location.hash, location.pathname, router]);
   const touch = useTouchPrimary();
   const headings = useMemo(() => (touch ? [...toc] : toc), [toc, touch]);
   const [searchOpen, setSearchOpen] = useState(false);

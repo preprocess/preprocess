@@ -1,16 +1,3 @@
 {
-  "pages": [
-    "index",
-    "---Start here---",
-    "introduction",
-    "quickstart",
-    "how-it-works",
-    "---Concepts---",
-    "...concepts",
-    "---Tools---",
-    "sdk",
-    "cli",
-    "mcp",
-    "api"
-  ]
+  "pages": ["(guides)", "sdk", "cli", "api"]
 }
