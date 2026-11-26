@@ -181,5 +181,24 @@
         "content": "The sandbox said: {{results}}"
       }
     ]
+  },
+  {
+    "name": "sandbox-layer-smoke",
+    "match": "Smoke test of a custom environment",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "sandbox_exec",
+            "arguments": {
+              "command": "tree --version; cat /opt/smoke/layer.txt"
+            }
+          }
+        ]
+      },
+      {
+        "content": "The sandbox said: {{results}}"
+      }
+    ]
   }
 ]

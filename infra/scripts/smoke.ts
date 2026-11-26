@@ -14,6 +14,12 @@
 // interval the API timed and billed, and writes that table to the GitHub job
 // summary when there is one.
 //
+// With SMOKE=layer, step 3 deploys smoke-agent/layer.ts, whose sandbox has a
+// custom environment (one apt package and one file). It waits for the layer
+// to build, runs a case whose first command uses both, and reports the
+// layer's size, how long the deploy took to become ready, how long the mount
+// took (from the run log), and whether the command saw the package and file.
+//
 // The user is reused across runs. Sign-in is by emailed link, and the smoke
 // test has no mailbox: for its address only, the API derives the link's token
 // from the stage's BETTER_AUTH_SECRET and the current minute, so the token is
@@ -32,8 +38,10 @@ const { app, api } = JSON.parse(process.env.OUTPUTS ?? "{}") as {
 };
 if (!app || !api) throw new Error("OUTPUTS must carry app and api URLs");
 const stage = process.env.STAGE ?? "staging";
-const sandboxed = process.env.SMOKE === "sandbox";
-const slug = sandboxed ? "smoke-sandbox" : "smoke";
+const mode = process.env.SMOKE ?? "";
+if (!["", "sandbox", "layer"].includes(mode))
+  throw new Error(`SMOKE must be sandbox or layer, not ${mode}`);
+const slug = mode ? `smoke-${mode}` : "smoke";
 const authSecret = process.env.BETTER_AUTH_SECRET;
 const emailFrom = process.env.EMAIL_FROM;
 if (!authSecret || !emailFrom) {
@@ -149,11 +157,13 @@ if (!org) {
 
 const built = buildSync({
   entryPoints: [
-    path.join(
-      import.meta.dirname,
-      `../smoke-agent/${sandboxed ? "sandbox" : "agent"}.ts`,
-    ),
+    path.join(import.meta.dirname, `../smoke-agent/${mode || "agent"}.ts`),
   ],
+  define: {
+    __SMOKE_RUN__: JSON.stringify(
+      process.env.GITHUB_RUN_ID ?? String(Date.now()),
+    ),
+  },
   bundle: true,
   write: false,
   format: "esm",
@@ -164,7 +174,18 @@ const built = buildSync({
   external: ["cloudflare:*", "node:*"],
   logLevel: "warning",
 });
-const deployed = await call<{ id: string; production: boolean }>(
+type Deployment = {
+  id: string;
+  production: boolean;
+  sandboxEnvironment: {
+    status: "building" | "ready" | "failed";
+    bytes?: number;
+    error?: string;
+    log?: string | null;
+  } | null;
+};
+const deployStarted = Date.now();
+let deployed = await call<Deployment>(
   "POST",
   `/v1/orgs/${org}/agents/${slug}/deployments`,
   {
@@ -179,6 +200,24 @@ const deployed = await call<{ id: string; production: boolean }>(
   },
 );
 if (deployed.status !== 201) fail(`deploying the agent: ${deployed.text}`);
+// A custom environment builds after the deploy answers; the deployment
+// promotes itself once it is ready.
+for (let attempt = 0; mode === "layer"; attempt++) {
+  const layer = deployed.body.sandboxEnvironment;
+  if (!layer)
+    fail(`the deployment has no custom environment: ${deployed.text}`);
+  if (layer!.status === "failed")
+    fail(`the custom environment failed: ${layer!.error}\n${layer!.log ?? ""}`);
+  if (layer!.status === "ready") break;
+  if (attempt > 360) fail("the custom environment never finished building");
+  await sleep(2000);
+  deployed = await call<Deployment>(
+    "GET",
+    `/v1/orgs/${org}/agents/${slug}/deployments/${deployed.body.id}`,
+  );
+  if (deployed.status !== 200) fail(`reading the deployment: ${deployed.text}`);
+}
+const readySeconds = (Date.now() - deployStarted) / 1000;
 if (!deployed.body.production) {
   const promoted = await call(
     "POST",
@@ -220,9 +259,12 @@ if (grant.status !== 200) fail(`granting operator access: ${grant.text}`);
 
 const started = await call<{ id: string }>("POST", `/v1/orgs/${org}/cases`, {
   agent: slug,
-  text: sandboxed
-    ? `Smoke test of the sandbox on ${stage}.`
-    : `Smoke test of ${stage}.`,
+  text:
+    mode === "sandbox"
+      ? `Smoke test of the sandbox on ${stage}.`
+      : mode === "layer"
+        ? `Smoke test of a custom environment on ${stage}.`
+        : `Smoke test of ${stage}.`,
 });
 if (started.status !== 202) fail(`starting the case: ${started.text}`);
 for (let attempt = 0; ; attempt++) {
@@ -239,7 +281,15 @@ for (let attempt = 0; ; attempt++) {
   await sleep(2000);
 }
 
-if (sandboxed) await measureSandbox(org, started.body.id);
+if (mode === "sandbox") await measureSandbox(org, started.body.id);
+if (mode === "layer")
+  await reportLayer(
+    org,
+    started.body.id,
+    deployed.body.id,
+    deployed.body.sandboxEnvironment?.bytes ?? 0,
+    readySeconds,
+  );
 console.log("smoke test passed");
 
 // The case's sandbox intervals as the API timed and billed them, beside the
@@ -336,4 +386,58 @@ async function measureSandbox(org: string, caseId: string) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
   if (!starts.length || !stops.length)
     fail("the sandbox's start and stop never reached the run log");
+}
+
+// The custom environment as this run saw it: its size, the deploy's wait for
+// the build, the mount the sandbox logged, and whether the case's first
+// command found the package and the file the setup put there.
+async function reportLayer(
+  org: string,
+  caseId: string,
+  deploymentId: string,
+  bytes: number,
+  readySeconds: number,
+) {
+  type Log = { kind: string; data: { mountMs?: number } };
+  let mountMs: number | undefined;
+  for (let attempt = 0; attempt <= 24; attempt++) {
+    const read = await call<{ logs: Log[] }>(
+      "GET",
+      `/v1/orgs/${org}/cases/${caseId}/logs?limit=500`,
+    );
+    mountMs = (read.body?.logs ?? []).find((l) => l.kind === "sandbox.mount")
+      ?.data.mountMs;
+    if (mountMs !== undefined) break;
+    await sleep(5000);
+  }
+  const room = await call("GET", `/v1/orgs/${org}/cases/${caseId}/room`);
+  if (room.status !== 200) fail(`reading the case room: ${room.text}`);
+  const sawPackage = /tree v\d/.test(room.text);
+  const sawFile = room.text.includes("layer file present");
+  const header = [
+    "Deployment",
+    "Layer (KB)",
+    "Deploy to ready (s)",
+    "Mount (s)",
+    "Package (tree)",
+    "File",
+  ];
+  const row = [
+    `\`${deploymentId}\``,
+    (bytes / 1024).toFixed(1),
+    readySeconds.toFixed(1),
+    mountMs === undefined ? "not logged" : (mountMs / 1000).toFixed(3),
+    sawPackage ? "found" : "missing",
+    sawFile ? "found" : "missing",
+  ];
+  const table = [header, header.map(() => "---"), row]
+    .map((cells) => `| ${cells.join(" | ")} |`)
+    .join("\n");
+  const report = `### Custom environment on ${stage}\n\nCase \`${caseId}\`. Deploy to ready is the deploy request to the layer's build finishing, polled every 2 s. Mount is R2 download plus mount, as the sandbox logged it.\n\n${table}\n`;
+  console.log(report);
+  if (process.env.GITHUB_STEP_SUMMARY)
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
+  if (mountMs === undefined) fail("the mount never reached the run log");
+  if (!sawPackage || !sawFile)
+    fail("the case's command did not see the custom environment");
 }

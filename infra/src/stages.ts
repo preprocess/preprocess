@@ -148,6 +148,12 @@ export const billingOrgs: Partial<
     ],
     enforced: [],
   },
+  // The smoke-test organization, so the smoke test can deploy a custom
+  // sandbox environment (custom_sandbox_images) on every staging deploy.
+  staging: {
+    internal: ["org_01m88msncpeczr044nncg2gr1j"],
+    enforced: [],
+  },
 };
 // The license key (spec 16), optional and on selfhost stages only: without a
 // valid one the install runs the free plan. Our cloud never binds it.
