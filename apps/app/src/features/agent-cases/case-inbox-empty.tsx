@@ -6,7 +6,7 @@ import {
   EmptyTitle,
 } from "@preprocess/ui/components/empty";
 
-import { BriefcaseArt, NoMatchArt } from "../../components/empty-art";
+import { CasesEmptyArt, NoMatchArt } from "../../components/empty-art";
 
 export type CaseInboxEmptyKind = "unavailable" | "empty" | "no-match";
 
@@ -22,7 +22,7 @@ export function CaseInboxEmpty({
   let description: string;
   switch (kind) {
     case "unavailable":
-      title = "Cases are unavailable.";
+      title = "Cases are unavailable";
       description = "Try again in a moment.";
       break;
     case "empty":
@@ -49,7 +49,7 @@ export function CaseInboxEmpty({
     >
       <EmptyHeader className="pointer-events-auto group max-w-md">
         <EmptyMedia variant="graphic">
-          {kind === "no-match" ? <NoMatchArt /> : <BriefcaseArt />}
+          {kind === "no-match" ? <NoMatchArt /> : <CasesEmptyArt />}
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>

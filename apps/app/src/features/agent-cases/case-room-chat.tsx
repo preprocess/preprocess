@@ -1,6 +1,7 @@
 "use client";
 
 import { ChatMessage } from "@preprocess/ui/components/chat-message";
+import { EmptyPresence } from "@preprocess/ui/components/empty";
 import { InputMessage } from "@preprocess/ui/components/input-message";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { ThinkingIndicator } from "@preprocess/ui/components/thinking-indicator";
@@ -17,6 +18,7 @@ import type { UIMessage } from "ai";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Markdown } from "../../components/agent-elements/markdown";
+import { ChatEmpty } from "../../components/chat-empty";
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { RoomMessage } from "./case-room-state";
 import { caseRoomTranscript, seededReply } from "./case-room-transcripts";
@@ -196,17 +198,22 @@ function LiveCaseRoomChat({
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col", className)}>
-      <ScrollArea
-        className="min-h-0 flex-1"
-        ref={scrollRef}
-        viewportClassName="scroll-fade"
-      >
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
-          {thread.map((message) => (
-            <ThreadEntry key={message.id} message={message} />
-          ))}
-        </div>
-      </ScrollArea>
+      <div className="relative min-h-0 flex-1">
+        <EmptyPresence>
+          {thread.length === 0 ? <ChatEmpty /> : null}
+        </EmptyPresence>
+        <ScrollArea
+          className="h-full min-h-0"
+          ref={scrollRef}
+          viewportClassName="scroll-fade"
+        >
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
+            {thread.map((message) => (
+              <ThreadEntry key={message.id} message={message} />
+            ))}
+          </div>
+        </ScrollArea>
+      </div>
       <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-1 px-3 pb-3">
         {error ? (
           <span className="px-1 text-body text-destructive" role="alert">
@@ -276,24 +283,29 @@ function SeededCaseRoomChat({ className }: Readonly<{ className?: string }>) {
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col", className)}>
-      <ScrollArea
-        className="min-h-0 flex-1"
-        ref={scrollRef}
-        viewportClassName="scroll-fade"
-      >
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
-          {messages.map((message) =>
-            message.role === "user" ? (
-              <ChatMessage from="user" key={message.id}>
-                {textOf(message)}
-              </ChatMessage>
-            ) : (
-              <AssistantMessage key={message.id} message={message} />
-            ),
-          )}
-          {streaming ? <ThinkingIndicator className="px-0" /> : null}
-        </div>
-      </ScrollArea>
+      <div className="relative min-h-0 flex-1">
+        <EmptyPresence>
+          {messages.length === 0 && !streaming ? <ChatEmpty /> : null}
+        </EmptyPresence>
+        <ScrollArea
+          className="h-full min-h-0"
+          ref={scrollRef}
+          viewportClassName="scroll-fade"
+        >
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
+            {messages.map((message) =>
+              message.role === "user" ? (
+                <ChatMessage from="user" key={message.id}>
+                  {textOf(message)}
+                </ChatMessage>
+              ) : (
+                <AssistantMessage key={message.id} message={message} />
+              ),
+            )}
+            {streaming ? <ThinkingIndicator className="px-0" /> : null}
+          </div>
+        </ScrollArea>
+      </div>
       <div className="mx-auto w-full max-w-3xl shrink-0 px-3 pb-3">
         <InputMessage
           onSend={(value) => send(value)}
