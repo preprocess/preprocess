@@ -1,0 +1,1 @@
+ALTER TYPE "public"."metered_feature" ADD VALUE 'case_fees';

@@ -204,6 +204,13 @@
       "when": 1795676382084,
       "tag": "0032_sandbox_layers",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1795714666971,
+      "tag": "0033_case_fees",
+      "breakpoints": true
     }
   ]
 }

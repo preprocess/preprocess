@@ -20,7 +20,7 @@ import { sendLogs } from "./logs.ts";
 import { proposeMemory, type MemoryProposal } from "./memories.ts";
 import { ocrFile } from "./ocr.ts";
 import { recordSandboxEvent, sandboxMaxSize, sizeAllowed } from "./sandbox.ts";
-import { entitlement } from "./billing.ts";
+import { creditStop } from "./billing.ts";
 import { spendGate, type SpendVerdict } from "./spend.ts";
 import type { SandboxSize } from "@preprocess/sdk/protocol";
 
@@ -52,10 +52,10 @@ export class Platform extends WorkerEntrypoint<Env> {
     const org = orgId(organizationId);
     const verdict = await withOrg(this.env, org, (tx) => spendGate(tx));
     if (verdict !== "ok") return verdict;
-    // Free's one-time model credit (spec 16a): model usage stops when it is
-    // used up, until the organization upgrades. Without a started plan there
-    // is no credit at all.
-    return (await entitlement(this.env, org, "model_usage_credits")) === "ok"
+    // The credit stop (PRE-96): metered calls stop once Free or Team has no
+    // credits left, until the Owner buys more. Without a started plan there
+    // are no credits at all.
+    return (await creditStop(this.env, org)) === "ok"
       ? "ok"
       : "credit_exhausted";
   }

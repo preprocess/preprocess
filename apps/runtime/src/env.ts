@@ -168,7 +168,7 @@ export type CaseKey = Pick<Deployment, "organizationId" | "agentId"> & {
 export type CaseStatus =
   "running" | "waiting" | "halted" | "completed" | "failed" | "cancelled";
 
-// credit_exhausted: a plan's one-time model credit is used up (spec 16a).
+// credit_exhausted: Free or Team has no prepaid credits left (PRE-96).
 export type SpendVerdict = "ok" | "spending_limit_reached" | "credit_exhausted";
 
 export type CaseEvent = CaseKey &

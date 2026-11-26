@@ -20,7 +20,8 @@ export const monthStart = (now: Date) =>
 
 // Metered use of our hosted service this month, in micro-USD: the cost of the
 // organization's cases and eval runs created this month, every deployment
-// included, the OCR API's calls, which have no case, and case sandbox time. A self-hosted
+// included, the OCR API's calls, which have no case, case sandbox time and
+// case fees. A self-hosted
 // install's own serving URLs never add cost.
 export const monthSpendParts = async (tx: Tx, now = new Date()) => {
   const [caseRow] = await tx
@@ -41,20 +42,24 @@ export const monthSpendParts = async (tx: Tx, now = new Date()) => {
         gte(usageRecords.at, monthStart(now)),
       ),
     );
-  const [sandboxRow] = await tx
-    .select({ total: sum(usageRecords.quantity) })
-    .from(usageRecords)
-    .where(
-      and(
-        eq(usageRecords.feature, "sandbox"),
-        gte(usageRecords.at, monthStart(now)),
-      ),
-    );
+  const ledger = (feature: "sandbox" | "case_fees") =>
+    tx
+      .select({ total: sum(usageRecords.quantity) })
+      .from(usageRecords)
+      .where(
+        and(
+          eq(usageRecords.feature, feature),
+          gte(usageRecords.at, monthStart(now)),
+        ),
+      );
+  const [sandboxRow] = await ledger("sandbox");
+  const [caseFeeRow] = await ledger("case_fees");
   return {
     cases: Number(caseRow?.total ?? 0),
     evals: Number(evalRow?.total ?? 0),
     ocr: Number(ocrRow?.total ?? 0),
     sandbox: Number(sandboxRow?.total ?? 0),
+    caseFees: Number(caseFeeRow?.total ?? 0),
   };
 };
 
@@ -62,7 +67,7 @@ export type SpendParts = Awaited<ReturnType<typeof monthSpendParts>>;
 
 // The one total the limit enforces and the spending page shows.
 export const totalSpend = (parts: SpendParts) =>
-  parts.cases + parts.evals + parts.ocr + parts.sandbox;
+  parts.cases + parts.evals + parts.ocr + parts.sandbox + parts.caseFees;
 
 export const limitReached = (spent: number, limit: number | null) =>
   limit !== null && spent >= limit;
