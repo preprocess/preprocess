@@ -24,7 +24,7 @@ import {
 } from "../src/billing.ts";
 import type { Env } from "../src/env.ts";
 import { monthOf } from "../src/metering.ts";
-import { getPlan } from "../src/plan.ts";
+import { customSandboxImages, getPlan } from "../src/plan.ts";
 import { Platform } from "../src/platform.ts";
 import {
   addMember,
@@ -271,6 +271,24 @@ describe("the plan", () => {
     expect(plan.name).toBe("enterprise");
     expect(plan.features).toEqual(["audit_export", "sso"]);
     expect(plan.limits.seats).toBeNull();
+  });
+
+  it("allows custom sandbox images on Team and not on Free", async () => {
+    const team = await organizationWithAgent("Imageco");
+    const free = await organizationWithAgent("Presetco");
+    stubAutumn();
+    customer = {
+      subscriptions: [{ plan_id: "team", status: "active" }],
+      flags: { training: {}, custom_sandbox_images: {} },
+      balances: {},
+    };
+    expect(await customSandboxImages(environment, orgId(team.org))).toBe(true);
+    customer = {
+      subscriptions: [{ plan_id: "free", status: "active" }],
+      flags: {},
+      balances: {},
+    };
+    expect(await customSandboxImages(environment, orgId(free.org))).toBe(false);
   });
 
   it("is free and unlimited where billing is off", async () => {
