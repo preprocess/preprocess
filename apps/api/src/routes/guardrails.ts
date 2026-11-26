@@ -19,6 +19,7 @@ import {
 import type { GuardrailChange } from "@preprocess/db/schema/guardrails";
 import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { secrets } from "@preprocess/db/schema/secrets";
+import { SANDBOX_SIZES } from "@preprocess/sdk/protocol";
 import { desc, eq } from "drizzle-orm";
 
 import { actor, eventBase, requireAdmin, requireDeveloper } from "../caller.ts";
@@ -37,6 +38,7 @@ import {
   permits,
 } from "../network.ts";
 import type { NetworkRules } from "../network.ts";
+import { sandboxMaxSize, setSandboxMaxSize, sizeAllowed } from "../sandbox.ts";
 import { setSpendingLimit, toMicro } from "./spending.ts";
 
 const OrgParam = z.object({ org: z.string() });
@@ -71,6 +73,14 @@ const AgentRules = z
   })
   .openapi("AgentNetworkRules");
 
+const SandboxMaxSize = z
+  .enum(SANDBOX_SIZES)
+  .nullable()
+  .openapi("SandboxMaxSize", {
+    description:
+      "The largest case sandbox an agent may use; null allows every size",
+  });
+
 export const Change = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("network"), hosts: z.array(Pattern).min(1) }),
@@ -80,6 +90,7 @@ export const Change = z
       kind: z.literal("spending_limit"),
       limitUsd: z.number().nonnegative().max(1e9).nullable(),
     }),
+    z.object({ kind: z.literal("sandbox_size"), size: z.enum(SANDBOX_SIZES) }),
   ])
   .openapi("GuardrailChange");
 
@@ -280,6 +291,11 @@ const applyChange = async (
         change.limitUsd === null ? null : toMicro(change.limitUsd),
       );
       return [];
+    case "sandbox_size": {
+      if (sizeAllowed(await sandboxMaxSize(tx), change.size)) return [];
+      await setSandboxMaxSize(tx, vars, change.size);
+      return allAgents(tx);
+    }
   }
 };
 
@@ -374,12 +390,14 @@ export const guardrailRoutes = new OpenAPIHono<{
       method: "get",
       path: "/guardrails",
       tags: ["Guardrails"],
-      summary: "The organization's network rules and model endpoints",
+      summary:
+        "The organization's network rules, largest sandbox size and model endpoints",
       request: { params: OrgParam },
       responses: {
         200: json(
           z.object({
             network: Rules,
+            sandboxMaxSize: SandboxMaxSize,
             modelEndpoints: z.literal("hosted").openapi({
               description:
                 "Hosted service only; self-hosted endpoints arrive with build step 9",
@@ -389,14 +407,55 @@ export const guardrailRoutes = new OpenAPIHono<{
         ),
       },
     }),
-    async (c) =>
-      c.json(
+    async (c) => {
+      const { network, sandboxSize } = await withOrg(
+        c.env,
+        c.var.org,
+        async (tx) => ({
+          network: await organizationNetwork(tx),
+          sandboxSize: await sandboxMaxSize(tx),
+        }),
+      );
+      return c.json(
         {
-          network: await withOrg(c.env, c.var.org, organizationNetwork),
+          network,
+          sandboxMaxSize: sandboxSize,
           modelEndpoints: "hosted" as const,
         },
         200,
-      ),
+      );
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "put",
+      path: "/guardrails/sandbox-size",
+      tags: ["Guardrails"],
+      summary:
+        "Set the largest case sandbox an agent may use (Owner or Admin; raising it is approved by making the change)",
+      request: {
+        params: OrgParam,
+        body: {
+          content: {
+            "application/json": {
+              schema: z.object({ size: SandboxMaxSize }),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(z.object({ size: SandboxMaxSize }), "The new largest size"),
+      },
+    }),
+    async (c) => {
+      requireAdmin(c.var.caller);
+      const { size } = c.req.valid("json");
+      await withOrg(c.env, c.var.org, async (tx) => {
+        if (await setSandboxMaxSize(tx, c.var, size))
+          await syncAgents(tx, c.var.org, await allAgents(tx));
+      });
+      return c.json({ size }, 200);
+    },
   )
   .openapi(
     createRoute({

@@ -28,6 +28,9 @@ import {
   MODELS,
   PROTOCOL,
   REASONING,
+  sandboxManifest,
+  sandboxProblems,
+  type SandboxManifest,
 } from "@preprocess/sdk/protocol";
 import {
   and,
@@ -47,6 +50,7 @@ import { decrypt, orgKeyVersion } from "./crypto.ts";
 import type { Env } from "./env.ts";
 import { markSeat } from "./metering.ts";
 import { effectiveNetwork, permits } from "./network.ts";
+import { sandboxMaxSize, sizeAllowed } from "./sandbox.ts";
 import { nextFire, schedulerName } from "./scheduler.ts";
 import {
   agentOverrideValues,
@@ -136,6 +140,21 @@ const manifestSchema = z
     timeoutSeconds: z.number().int().positive().optional(),
     toolRetries: z.number().int().nonnegative().optional(),
     sandboxImage: z.string().optional(),
+    // Checked with the SDK's own rules, so a manifest from another bundler or
+    // an older SDK that asks for a sandbox without a size fails the deploy.
+    sandbox: z
+      .unknown()
+      .superRefine((value, ctx) => {
+        if (value === undefined) return;
+        for (const message of sandboxProblems(value))
+          ctx.addIssue({ code: "custom", message });
+      })
+      .transform((value) =>
+        value === undefined
+          ? undefined
+          : sandboxManifest(value as SandboxManifest),
+      )
+      .optional(),
     evals: z.object({ onPush: z.boolean().optional() }).optional(),
     // Approvals the code requires (spec §9); a null group is any operator.
     approvals: z
@@ -378,6 +397,11 @@ export const syncDeployment = async (
     deployment.agentId,
     manifest,
   );
+  const sandboxCap = manifest.sandbox ? await sandboxMaxSize(tx) : null;
+  const waitingSandbox =
+    manifest.sandbox && !sizeAllowed(sandboxCap, manifest.sandbox.size)
+      ? manifest.sandbox.size
+      : null;
   await tx
     .delete(deploymentGroups)
     .where(eq(deploymentGroups.deploymentId, deploymentId));
@@ -396,7 +420,8 @@ export const syncDeployment = async (
       : waiting.length ||
           waitingMcp.length ||
           waitingNetwork.length ||
-          waitingGroups.length
+          waitingGroups.length ||
+          waitingSandbox
         ? "waiting"
         : "ready";
   const waitingFor: WaitingFor = {
@@ -404,6 +429,7 @@ export const syncDeployment = async (
     ...(waitingMcp.length && { mcp: waitingMcp }),
     ...(waitingNetwork.length && { network: waitingNetwork }),
     ...(waitingGroups.length && { groups: waitingGroups }),
+    ...(waitingSandbox && { sandboxSize: waitingSandbox }),
   };
   await tx
     .update(deployments)
@@ -431,12 +457,20 @@ export const syncDeployment = async (
       secret: s.name,
     })),
     ...existingMcp.map((m) => ({ kind: "mcp" as const, server: m.slug })),
+    ...(waitingSandbox
+      ? [{ kind: "sandbox_size" as const, size: waitingSandbox }]
+      : []),
   ]);
   return [
     ...waiting,
     ...waitingMcp.map((slug) => `MCP server ${slug}`),
     ...waitingNetwork.map((host) => `network access to ${host}`),
     ...waitingGroups.map((slug) => `access for group ${slug}`),
+    ...(waitingSandbox
+      ? [
+          `a ${waitingSandbox} sandbox (the organization allows up to ${sandboxCap})`,
+        ]
+      : []),
   ];
 };
 
@@ -451,6 +485,8 @@ const covers = (asked: GuardrailChange, needed: GuardrailChange) => {
       return asked.kind === "secret" && asked.secret === needed.secret;
     case "mcp":
       return asked.kind === "mcp" && asked.server === needed.server;
+    case "sandbox_size":
+      return asked.kind === "sandbox_size" && asked.size === needed.size;
     case "spending_limit":
       return false;
   }

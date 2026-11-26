@@ -143,5 +143,24 @@
         "content": "Read the term dates from the order form. {{results}}"
       }
     ]
+  },
+  {
+    "name": "sandbox-sum",
+    "match": "Add two and two in the sandbox",
+    "turns": [
+      {
+        "toolCalls": [
+          {
+            "name": "sandbox_exec",
+            "arguments": {
+              "command": "python3 -c 'print(2 + 2)'"
+            }
+          }
+        ]
+      },
+      {
+        "content": "The sandbox said: {{results}}"
+      }
+    ]
   }
 ]

@@ -71,6 +71,8 @@ import {
   isStage,
   names,
   runtimeDurableObjects,
+  sandboxDurableObjects,
+  sandboxImages,
   runtimeModelSecrets,
   type SelfHostStage,
   type Stage,
@@ -579,6 +581,26 @@ export default Alchemy.Stack(
       },
     });
 
+    // Case sandboxes (spec 3): the platform's preset images, which the
+    // sandbox classes start by name. Never a customer's image.
+    const sandboxContainers = Object.entries(sandboxImages).map(
+      ([id, preset]) =>
+        Cloudflare.Container(id, {
+          schedulingPolicy: "durable_object",
+          context: at("apps/runtime/sandbox"),
+          dockerfile: at("apps/runtime/sandbox/Dockerfile"),
+          build: { args: { PRESET: preset } },
+        }),
+    );
+    const sandboxes = Object.fromEntries(
+      Object.entries(sandboxDurableObjects).map(([binding, className]) => [
+        binding,
+        Cloudflare.DurableObject(className, {
+          containers: sandboxContainers,
+        }),
+      ]),
+    );
+
     // Tail Worker of agent code: console output and exceptions become run
     // logs (design doc 09). The runtime attaches it to each Dynamic Worker.
     const tail = yield* Cloudflare.Worker("Tail", {
@@ -612,6 +634,7 @@ export default Alchemy.Stack(
         CASE_RUNTIME: Cloudflare.DurableObject(
           runtimeDurableObjects.CASE_RUNTIME,
         ),
+        ...sandboxes,
         RUNS: runs,
         BUNDLES: bundles,
         LOADER: Cloudflare.WorkerLoader("LOADER"),

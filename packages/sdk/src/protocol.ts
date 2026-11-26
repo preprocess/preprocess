@@ -59,6 +59,134 @@ export const RESERVED_BINDINGS = ["MCP", "MODELS"] as const;
 export const RESERVED_PREFIX = "PREPROCESS_";
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
 
+// Case sandboxes (spec 3): a Linux container an agent's case can run code in.
+// Opt-in, and the size is required. Each size is one Cloudflare instance type,
+// fixed for the life of the sandbox.
+export const SANDBOX_SIZES = ["small", "medium", "large"] as const;
+export type SandboxSize = (typeof SANDBOX_SIZES)[number];
+
+// Images the platform builds; an agent picks one. "standard" is the base every
+// preset is built on.
+export const SANDBOX_PRESETS = [
+  "standard",
+  "node",
+  "python",
+  "python-data",
+] as const;
+export type SandboxPreset = (typeof SANDBOX_PRESETS)[number];
+
+export const SANDBOX_IDLE_MINUTES = { default: 5, max: 60 } as const;
+
+// Package names install with argv, never a shell; a leading dash is refused
+// so a name cannot pass a flag.
+export const SANDBOX_PACKAGE = {
+  apt: /^[a-z0-9][a-z0-9+.-]{0,99}(=[A-Za-z0-9.:~+-]{1,64})?$/,
+  pip: /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}(\[[A-Za-z0-9,._-]{1,64}\])?((==|>=|<=|~=|!=|<|>)[A-Za-z0-9.*+!-]{1,64})?$/,
+  npm: /^(@[a-z0-9~][a-z0-9._~-]{0,99}\/)?[a-z0-9~][a-z0-9._~-]{0,99}(@[A-Za-z0-9.^~*+-]{1,64})?$/,
+} as const;
+export const SANDBOX_PACKAGE_LIMIT = 50;
+
+export type SandboxPackages = { apt: string[]; pip: string[]; npm: string[] };
+
+export type SandboxManifest = {
+  size: SandboxSize;
+  preset: SandboxPreset;
+  packages: SandboxPackages;
+  idleTimeoutMinutes: number;
+};
+
+// What is wrong with an agent's sandbox setting, in words a deploy prints.
+// The SDK checks it when the agent is built and the platform again at deploy,
+// for manifests another bundler or an older SDK produced.
+export const sandboxProblems = (sandbox: unknown): string[] => {
+  if (typeof sandbox !== "object" || sandbox === null || Array.isArray(sandbox))
+    return [`sandbox must be an object like { size: "small" }`];
+  const s = sandbox as Record<string, unknown>;
+  const problems: string[] = [];
+  if (s.size === undefined)
+    problems.push(
+      `sandbox.size is required: pick one of ${SANDBOX_SIZES.join(", ")}`,
+    );
+  else if (!(SANDBOX_SIZES as readonly unknown[]).includes(s.size))
+    problems.push(`sandbox.size must be one of ${SANDBOX_SIZES.join(", ")}`);
+  if (
+    s.preset !== undefined &&
+    !(SANDBOX_PRESETS as readonly unknown[]).includes(s.preset)
+  )
+    problems.push(
+      `sandbox.preset must be one of ${SANDBOX_PRESETS.join(", ")}`,
+    );
+  const idle = s.idleTimeoutMinutes;
+  if (
+    idle !== undefined &&
+    !(
+      typeof idle === "number" &&
+      Number.isInteger(idle) &&
+      idle >= 1 &&
+      idle <= SANDBOX_IDLE_MINUTES.max
+    )
+  )
+    problems.push(
+      `sandbox.idleTimeoutMinutes must be a whole number from 1 to ${SANDBOX_IDLE_MINUTES.max}`,
+    );
+  const packages = s.packages;
+  if (packages === undefined) return problems;
+  if (typeof packages !== "object" || packages === null) {
+    problems.push(
+      "sandbox.packages must be an object of apt, pip and npm lists",
+    );
+    return problems;
+  }
+  for (const [kind, list] of Object.entries(packages)) {
+    if (!(kind in SANDBOX_PACKAGE)) {
+      problems.push(`sandbox.packages.${kind} is not apt, pip or npm`);
+      continue;
+    }
+    if (!Array.isArray(list)) {
+      problems.push(`sandbox.packages.${kind} must be a list of names`);
+      continue;
+    }
+    if (list.length > SANDBOX_PACKAGE_LIMIT)
+      problems.push(
+        `sandbox.packages.${kind} lists more than ${SANDBOX_PACKAGE_LIMIT} packages`,
+      );
+    const pattern = SANDBOX_PACKAGE[kind as keyof SandboxPackages];
+    for (const name of list)
+      if (typeof name !== "string" || !pattern.test(name))
+        problems.push(
+          `sandbox.packages.${kind} has an invalid package ${JSON.stringify(name)}`,
+        );
+  }
+  const preset = (s.preset ?? "standard") as string;
+  const listed = (kind: string) =>
+    ((packages as Record<string, unknown[]>)[kind]?.length ?? 0) > 0;
+  if (listed("pip") && !preset.startsWith("python"))
+    problems.push(
+      'sandbox.packages.pip needs the "python" or "python-data" preset',
+    );
+  if (listed("npm") && preset !== "node")
+    problems.push('sandbox.packages.npm needs the "node" preset');
+  return problems;
+};
+
+// The manifest's form of a valid sandbox setting, with defaults filled in.
+export const sandboxManifest = (sandbox: {
+  size: SandboxSize;
+  preset?: SandboxPreset;
+  packages?: Partial<SandboxPackages>;
+  idleTimeoutMinutes?: number;
+}): SandboxManifest => ({
+  size: sandbox.size,
+  preset: sandbox.preset ?? "standard",
+  packages: {
+    apt: [...(sandbox.packages?.apt ?? [])],
+    pip: [...(sandbox.packages?.pip ?? [])],
+    npm: [...(sandbox.packages?.npm ?? [])],
+  },
+  idleTimeoutMinutes:
+    sandbox.idleTimeoutMinutes ?? SANDBOX_IDLE_MINUTES.default,
+});
+
 export type ToolManifest = {
   name: string;
   description: string;
@@ -189,6 +317,7 @@ export type Manifest = ManifestV1 & {
   timeoutSeconds?: number;
   toolRetries?: number;
   sandboxImage?: string;
+  sandbox?: SandboxManifest;
   evals?: { onPush?: boolean };
   approvals?: Approvals;
   // The setting keys the code or preprocess.config.json set; every other
