@@ -190,13 +190,14 @@ export abstract class CaseSandbox extends DurableObject<Env> {
   }
 
   // The container's start and stop as this object saw them, in the case's run
-  // log beside the interval the API timed; the staging smoke test compares
-  // the two.
+  // log beside the interval the API timed, and how long a custom environment
+  // took to mount; the staging smoke test reads both.
   private log(
     owner: SandboxOwner,
-    kind: "sandbox.start" | "sandbox.stop",
+    kind: "sandbox.start" | "sandbox.stop" | "sandbox.mount",
     at: Date,
     reason: string,
+    fields: { mountMs?: number; layerBytes?: number } = {},
   ) {
     initLogs("runtime", (records) =>
       this.env.PLATFORM ? this.env.PLATFORM.logs(records) : Promise.resolve(),
@@ -214,10 +215,13 @@ export abstract class CaseSandbox extends DurableObject<Env> {
       message:
         kind === "sandbox.start"
           ? `Sandbox ${reason === "wake" ? "woke" : "started"} (${this.size})`
-          : `Sandbox stopped (${reason})`,
+          : kind === "sandbox.stop"
+            ? `Sandbox stopped (${reason})`
+            : `Custom environment mounted in ${fields.mountMs ?? 0} ms`,
       size: this.size,
       reason,
       containerAt: at.toISOString(),
+      ...fields,
     });
     log.emit();
   }
@@ -283,7 +287,14 @@ export abstract class CaseSandbox extends DurableObject<Env> {
       await this.destroy();
       throw error;
     }
-    if (layer) await this.mount(container, layer);
+    if (layer) {
+      const mounting = Date.now();
+      await this.mount(container, layer);
+      this.log(owner, "sandbox.mount", new Date(), "mount", {
+        mountMs: Date.now() - mounting,
+        layerBytes: layer.bytes,
+      });
+    }
     return this.install(container, config.sandbox);
   }
 

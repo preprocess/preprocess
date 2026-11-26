@@ -17,6 +17,7 @@
     "staging:deploy": "pnpm --filter @preprocess/app build:staging && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts deploy staging",
     "smoke": "tsx scripts/smoke.ts",
     "smoke:sandbox": "SMOKE=sandbox tsx scripts/smoke.ts",
+    "smoke:layer": "SMOKE=layer tsx scripts/smoke.ts",
     "registry": "tsx scripts/registry.ts",
     "model-check": "tsx scripts/model-check.ts",
     "selfhost:plan": "pnpm --filter @preprocess/app build:production && pnpm --filter @preprocess/docs build && tsx scripts/stage.ts plan",
