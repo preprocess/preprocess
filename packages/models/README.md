@@ -1,24 +1,26 @@
 # @preprocess/models
 
 The platform's model client (design doc 07). The API and runtime Workers call
-the decision model (Groundhog-1, Baseten's System One API at `/v1/systemone`)
-and the OCR model (LightOn OCR 3 4B, OpenAI chat completions as vLLM serves it)
-through this package, whatever is behind the URL: `apps/model-stub` locally and
-on previews, our model service later, or a self-hoster's own endpoint.
+the decision model (groundhog-1, Baseten's System One API at `/v1/systemone`)
+and OCR (Mistral OCR 4.1, Mistral's `/v1/ocr`) through this package, and the
+runtime routes the agent models with the same resolver.
 
-- `./endpoints`: `modelEndpoint` picks the URL, key and model for a purpose. An
-  organization's registered endpoint wins; otherwise `MODEL_SERVICE_URL` and
-  `MODEL_SERVICE_KEY`. With neither it throws `model_unavailable` (503) and
-  never falls back to a stub.
+- `./endpoints`: `ROUTES` names each model's provider and the provider's own
+  model name; `modelRoute` resolves where a model is served. An organization's
+  registered endpoint wins, then the install's `MODEL_ENDPOINTS` entry for the
+  model, then its provider (`BASETEN_API_KEY`, `MISTRAL_API_KEY`, or the Workers
+  AI `AI` binding for Qwen), then `MODEL_SERVICE_URL` (the stub in development,
+  previews and tests). With none of them it throws `model_unavailable` (503).
 - `./decide`: `decide` asks one `choice` question and returns the top `keep`
   options with probabilities. Lists over 255 options run in parallel rounds.
-- `./ocr`: `ocrPage` reads one page image as Markdown, with labelled blocks in
-  grounding mode.
+- `./ocr`: `ocrDocument` reads a PDF or page image, sent inline as a base64 data
+  URL, as Markdown per page, with labelled blocks in grounding mode.
 - `./contract`: the Zod schemas for both wire formats, shared with the stub so
   it validates exactly what the client sends.
 - `./client`: the HTTP call, timeouts and `ModelError`.
+- `./prices`: what our cloud charges for decide and OCR.
 
-Every result carries `usage` (the model that answered and its input tokens) for
-metering. The grounding output format of LightOn OCR 3 4B has not been checked
-against a real response yet; `parseGrounding` and the stub's fixtures follow the
-format documented in `src/ocr.ts`.
+Every result carries `usage` for metering: input tokens for decide, pages
+processed for OCR. Mistral's block coordinates are read as pixels of the page's
+`dimensions` and normalized to 0–1000; that has not been checked against a real
+response yet.

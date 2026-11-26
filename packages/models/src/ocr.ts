@@ -1,5 +1,5 @@
 import { callModel, type CallOptions, type ModelEndpoint } from "./client.ts";
-import { chatCompletion, type OcrRequest } from "./contract.ts";
+import { type OcrRequest, ocrResponse } from "./contract.ts";
 
 export type OcrBlock = {
   label: string;
@@ -8,96 +8,63 @@ export type OcrBlock = {
   text: string;
 };
 
-export type OcrPageResult = {
-  markdown: string;
-  blocks?: OcrBlock[];
-  usage: { model: string; inputTokens: number; outputTokens: number };
+export type OcrResult = {
+  pages: { index: number; markdown: string; blocks?: OcrBlock[] }[];
+  usage: { model: string; pages: number };
 };
 
-// Grounding output, one block after another:
-//
-//   <|block|>{"label":"title","bbox":[40,32,610,88]}
-//   # Invoice 1042
-//
-// Each marker line carries the block's label and box; the text up to the next
-// marker is the block's Markdown. This follows our reading of the model card
-// and has not been checked against a real LightOn OCR 3 4B response;
-// apps/model-stub emits the same format.
-const marker = "<|block|>";
+// A long document takes Mistral well past the default model timeout.
+const OCR_TIMEOUT_MS = 300_000;
 
-export function parseGrounding(content: string): {
-  markdown: string;
-  blocks: OcrBlock[];
-} {
-  const blocks: OcrBlock[] = [];
-  for (const chunk of content.split(marker).slice(1)) {
-    const newline = chunk.indexOf("\n");
-    const head = newline === -1 ? chunk : chunk.slice(0, newline);
-    const text = newline === -1 ? "" : chunk.slice(newline + 1).trim();
-    try {
-      const { label, bbox } = JSON.parse(head) as {
-        label?: unknown;
-        bbox?: unknown;
-      };
-      if (
-        typeof label === "string" &&
-        Array.isArray(bbox) &&
-        bbox.length === 4 &&
-        bbox.every((n) => typeof n === "number")
-      )
-        blocks.push({
-          label,
-          bbox: bbox as OcrBlock["bbox"],
-          text,
-        });
-    } catch {
-      // A malformed marker line is skipped; its text stays out of the blocks.
-    }
-  }
-  if (blocks.length === 0) return { markdown: content.trim(), blocks };
-  return { markdown: blocks.map((b) => b.text).join("\n\n"), blocks };
-}
+const scale = (value: number, size: number | undefined) =>
+  size ? Math.round((value / size) * 1000) : Math.round(value);
 
-export const renderGrounding = (blocks: OcrBlock[]) =>
-  blocks
-    .map(
-      (block) =>
-        `${marker}${JSON.stringify({ label: block.label, bbox: block.bbox })}\n${block.text}`,
-    )
-    .join("\n\n");
-
-// One page image (a PNG, JPEG or WebP data URL) to Markdown, and to labelled
-// blocks with grounding.
-export async function ocrPage(
+// One document, a PDF or a page image as a base64 data URL, to Markdown per
+// page, and with grounding to labelled blocks per page. Mistral bills every
+// page it processed, which usage reports.
+export async function ocrDocument(
   endpoint: ModelEndpoint,
-  { image, grounding = false }: { image: string; grounding?: boolean },
+  { document, grounding = false }: { document: string; grounding?: boolean },
   call: CallOptions = {},
-): Promise<OcrPageResult> {
+): Promise<OcrResult> {
   const request: OcrRequest = {
     model: endpoint.model,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "image_url", image_url: { url: image } },
-          { type: "text", text: grounding ? "grounding" : "" },
-        ],
-      },
-    ],
+    document: document.startsWith("data:application/pdf")
+      ? { type: "document_url", document_url: document }
+      : { type: "image_url", image_url: document },
+    include_blocks: grounding,
+    include_image_base64: false,
   };
-  const response = await callModel(
-    endpoint,
-    "/v1/chat/completions",
-    request,
-    chatCompletion,
-    call,
-  );
-  const content = response.choices[0]?.message.content ?? "";
-  const usage = {
-    model: response.model,
-    inputTokens: response.usage?.prompt_tokens ?? 0,
-    outputTokens: response.usage?.completion_tokens ?? 0,
+  const response = await callModel(endpoint, "/v1/ocr", request, ocrResponse, {
+    timeoutMs: OCR_TIMEOUT_MS,
+    ...call,
+  });
+  return {
+    pages: response.pages.map((page) => {
+      const markdown = page.markdown.trim();
+      if (!grounding) return { index: page.index, markdown };
+      const { width, height } = page.dimensions ?? {};
+      const blocks = (page.blocks ?? []).flatMap((block) =>
+        block.content
+          ? [
+              {
+                label: block.type ?? "text",
+                bbox: [
+                  scale(block.top_left_x, width),
+                  scale(block.top_left_y, height),
+                  scale(block.bottom_right_x, width),
+                  scale(block.bottom_right_y, height),
+                ] as OcrBlock["bbox"],
+                text: block.content,
+              },
+            ]
+          : [],
+      );
+      return { index: page.index, markdown, blocks };
+    }),
+    usage: {
+      model: response.model,
+      pages: response.usage_info.pages_processed,
+    },
   };
-  if (!grounding) return { markdown: content.trim(), usage };
-  return { ...parseGrounding(content), usage };
 }

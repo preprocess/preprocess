@@ -34,7 +34,7 @@ overrides and each group the agent names that its `groups` list leaves out.
 export CLOUDFLARE_API_TOKEN=…   CLOUDFLARE_ACCOUNT_ID=…      # your account, on Workers Paid
 export DATABASE_URL=postgres://…                            # any Postgres Hyperdrive can reach
 export EMAIL_FROM="Preprocess <invites@example.com>"        # a domain onboarded to Email Service
-export MODEL_SERVICE_URL=…      MODEL_SERVICE_KEY=…          # our hosted models or your own
+export BASETEN_API_KEY=…        MISTRAL_API_KEY=…            # optional: your model providers
 preprocess install [--version <tag> | --source <dir>] [--stage selfhost] [--plan]
 ```
 
@@ -51,8 +51,11 @@ because it builds the stack's container images.
 Inputs come from the environment, or from `--env-file` (repeatable, and later
 files win). Never set `PREPROCESS_REGION`: it marks a deploy as our cloud.
 `APP_DOMAIN`, `R2_LOCATION_HINT` and the GitHub App's values are optional. The
-full list is in `infra/README.md`. Set `MODEL_SERVICE_URL=stub` only to try
-Preprocess with fixture answers.
+full list is in `infra/README.md`. Qwen 3.8 27B runs on Workers AI in your
+account with no key; `BASETEN_API_KEY` adds Kimi, DeepSeek and `decide`,
+`MISTRAL_API_KEY` adds OCR, and `MODEL_ENDPOINTS` points any model at your own
+serving URL. Set `MODEL_SERVICE_URL=stub` only to try Preprocess with fixture
+answers.
 
 ## github-app
 
@@ -110,8 +113,8 @@ jobs:
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           database-url: ${{ secrets.DATABASE_URL }}
           email-from: ${{ vars.EMAIL_FROM }}
-          model-service-url: ${{ vars.MODEL_SERVICE_URL }}
-          model-service-key: ${{ secrets.MODEL_SERVICE_KEY }}
+          baseten-api-key: ${{ secrets.BASETEN_API_KEY }}
+          mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 ```
 
 `plan: "true"` prints the plan only. The other inputs (`stage`, `app-domain`,

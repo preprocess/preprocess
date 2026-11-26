@@ -1,17 +1,11 @@
 import { z } from "zod";
 
-// Wire formats of the two model services (design doc 07). The decision model
-// speaks Baseten's System One API
-// (docs.baseten.co/reference/inference-api/system-one); the OCR model speaks
-// OpenAI chat completions as vLLM serves LightOn OCR 3 4B. apps/model-stub
-// validates requests with these same schemas, so the client cannot come to
-// rely on a looser stub.
-
-// Groundhog-1 is Baseten's serverless decision model; this is its slug there.
-export const models = {
-  decide: "decision-models/baseten-groundhog-latest",
-  ocr: "lightonai/LightOnOCR-3-4B",
-} as const;
+// Wire formats of the two fixed-purpose model services (design doc 07). The
+// decision model speaks Baseten's System One API
+// (docs.baseten.co/reference/inference-api/system-one); OCR speaks Mistral's
+// OCR API (docs.mistral.ai/api/endpoint/ocr). apps/model-stub validates
+// requests with these same schemas, so the client cannot come to rely on a
+// looser stub.
 
 export const systemOneLimits = {
   choiceOptions: 255,
@@ -188,60 +182,64 @@ export const systemOneResponse = z.looseObject({
 });
 export type SystemOneResponse = z.infer<typeof systemOneResponse>;
 
-// OCR: one page per request, a PNG data URL (longest edge 2048 px) and a text
-// part selecting the mode: "" for Markdown, "grounding" for labelled blocks.
-export const ocrModes = ["", "grounding"] as const;
-export type OcrMode = (typeof ocrModes)[number];
+// OCR: one document per request, inline as a base64 data URL (a PDF as
+// document_url, a page image as image_url). Mistral takes up to about 50 MB
+// and 1,000 pages a request (docs.mistral.ai, document chunking cookbook).
+export const ocrLimits = { bytes: 50 * 1024 * 1024, pages: 1000 } as const;
 
 export const ocrRequest = z.strictObject({
   model: z.string().min(1),
-  messages: z
-    .tuple([
-      z.strictObject({
-        role: z.literal("user"),
-        content: z.tuple([
-          z.strictObject({
-            type: z.literal("image_url"),
-            image_url: z.strictObject({
-              url: z
-                .string()
-                .regex(
-                  /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/,
-                  "image_url.url must be a base64 PNG, JPEG or WebP data URL",
-                ),
-            }),
-          }),
-          z.strictObject({ type: z.literal("text"), text: z.enum(ocrModes) }),
-        ]),
-      }),
-    ])
-    .describe("one user message: the page image, then the mode"),
-  max_tokens: z.int().positive().optional(),
-  temperature: z.number().min(0).optional(),
+  document: z.discriminatedUnion("type", [
+    z.strictObject({
+      type: z.literal("document_url"),
+      document_url: z
+        .string()
+        .regex(
+          /^data:application\/pdf;base64,[A-Za-z0-9+/]+={0,2}$/,
+          "document_url must be a base64 PDF data URL",
+        ),
+    }),
+    z.strictObject({
+      type: z.literal("image_url"),
+      image_url: z
+        .string()
+        .regex(
+          /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/,
+          "image_url must be a base64 PNG, JPEG or WebP data URL",
+        ),
+    }),
+  ]),
+  include_blocks: z.boolean().optional(),
+  include_image_base64: z.boolean().optional(),
 });
 export type OcrRequest = z.infer<typeof ocrRequest>;
 
-export const chatCompletion = z.looseObject({
-  id: z.string(),
-  object: z.literal("chat.completion"),
-  model: z.string(),
-  choices: z
-    .array(
-      z.looseObject({
-        index: z.int(),
-        message: z.looseObject({
-          role: z.literal("assistant"),
-          content: z.string().nullable(),
-        }),
-        finish_reason: z.string().nullable(),
-      }),
-    )
-    .min(1),
-  usage: z
-    .looseObject({
-      prompt_tokens: z.int().nonnegative(),
-      completion_tokens: z.int().nonnegative(),
-    })
-    .optional(),
+// A block's corners are in pixels of the page's dimensions.
+const ocrBlock = z.looseObject({
+  type: z.string().optional(),
+  content: z.string().nullable().optional(),
+  top_left_x: z.number(),
+  top_left_y: z.number(),
+  bottom_right_x: z.number(),
+  bottom_right_y: z.number(),
 });
-export type ChatCompletion = z.infer<typeof chatCompletion>;
+
+export const ocrResponse = z.looseObject({
+  model: z.string(),
+  pages: z.array(
+    z.looseObject({
+      index: z.int().nonnegative(),
+      markdown: z.string(),
+      dimensions: z
+        .looseObject({
+          width: z.number().positive(),
+          height: z.number().positive(),
+        })
+        .nullable()
+        .optional(),
+      blocks: z.array(ocrBlock).nullable().optional(),
+    }),
+  ),
+  usage_info: z.looseObject({ pages_processed: z.int().nonnegative() }),
+});
+export type OcrResponse = z.infer<typeof ocrResponse>;

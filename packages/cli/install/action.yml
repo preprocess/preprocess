@@ -13,8 +13,8 @@
 #             cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 #             database-url: ${{ secrets.DATABASE_URL }}
 #             email-from: ${{ vars.EMAIL_FROM }}
-#             model-service-url: ${{ vars.MODEL_SERVICE_URL }}
-#             model-service-key: ${{ secrets.MODEL_SERVICE_KEY }}
+#             baseten-api-key: ${{ secrets.BASETEN_API_KEY }}
+#             mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 #
 # Upgrading is the same run with a newer tag. Docker builds the stack's
 # container images, so use a runner that has it (ubuntu-latest does).
@@ -43,10 +43,23 @@ inputs:
     description:
       The invitation sender, on a domain onboarded to Cloudflare Email Service.
     required: true
+  baseten-api-key:
+    description:
+      Your Baseten key, for Kimi, DeepSeek and decide (optional). Qwen runs on
+      Workers AI in your account without a key.
+    default: ""
+  mistral-api-key:
+    description: Your Mistral key, for OCR (optional); without it OCR is off.
+    default: ""
+  model-endpoints:
+    description:
+      Your own serving URLs per model, as JSON (optional; see infra/README.md).
+    default: ""
   model-service-url:
     description:
-      Our hosted model service or your own; "stub" deploys fixture answers.
-    required: true
+      One service for every model nothing else serves (optional); "stub" deploys
+      fixture answers.
+    default: ""
   model-service-key:
     description: The model service's key.
     default: ""
@@ -104,6 +117,9 @@ runs:
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
         DATABASE_URL: ${{ inputs.database-url }}
         EMAIL_FROM: ${{ inputs.email-from }}
+        BASETEN_API_KEY: ${{ inputs.baseten-api-key }}
+        MISTRAL_API_KEY: ${{ inputs.mistral-api-key }}
+        MODEL_ENDPOINTS: ${{ inputs.model-endpoints }}
         MODEL_SERVICE_URL: ${{ inputs.model-service-url }}
         MODEL_SERVICE_KEY: ${{ inputs.model-service-key }}
         APP_DOMAIN: ${{ inputs.app-domain }}
@@ -117,7 +133,8 @@ runs:
         PREPROCESS_LICENSE_KEY: ${{ inputs.license-key }}
       run: |
         # Empty optional inputs must stay unset, not empty, for the stack.
-        for name in MODEL_SERVICE_KEY APP_DOMAIN R2_LOCATION_HINT GITHUB_APP_ID \
+        for name in BASETEN_API_KEY MISTRAL_API_KEY MODEL_ENDPOINTS \
+          MODEL_SERVICE_URL MODEL_SERVICE_KEY APP_DOMAIN R2_LOCATION_HINT GITHUB_APP_ID \
           GITHUB_APP_SLUG GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
           GITHUB_WEBHOOK_SECRET GITHUB_APP_PRIVATE_KEY PREPROCESS_LICENSE_KEY; do
           [ -n "${!name}" ] || unset "$name"

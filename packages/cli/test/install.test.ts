@@ -11,8 +11,7 @@ const ready = {
   CLOUDFLARE_ACCOUNT_ID: "account",
   DATABASE_URL: "postgres://admin:pw@db.example.com/preprocess",
   EMAIL_FROM: "Preprocess <invites@example.com>",
-  MODEL_SERVICE_URL: "https://models.example.com",
-  MODEL_SERVICE_KEY: "model-key",
+  BASETEN_API_KEY: "baseten-key",
 };
 
 const checkout = () => {

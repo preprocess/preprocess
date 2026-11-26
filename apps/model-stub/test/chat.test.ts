@@ -21,7 +21,10 @@ describe("chat completions stub", () => {
   it("requires a bearer token", async () => {
     const response = await stub.fetch("https://stub/v1/chat/completions", {
       method: "POST",
-      body: JSON.stringify({ model: "deepseek-v4.1-flash", messages: [] }),
+      body: JSON.stringify({
+        model: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        messages: [],
+      }),
     });
     expect(response.status).toBe(401);
   });
@@ -29,7 +32,7 @@ describe("chat completions stub", () => {
   it("plays a fixture's turns in order", async () => {
     const user = { role: "user", content: "Check stock for SKU A1 please" };
     const first = await chat({
-      model: "deepseek-v4.1-flash",
+      model: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
       messages: [user],
       tools,
     });
@@ -45,7 +48,7 @@ describe("chat completions stub", () => {
       arguments: JSON.stringify({ sku: "A1" }),
     });
     const last = await chat({
-      model: "deepseek-v4.1-flash",
+      model: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
       messages: [
         user,
         {
@@ -70,7 +73,7 @@ describe("chat completions stub", () => {
 
   it("streams in the OpenAI chunk shape", async () => {
     const response = await chat({
-      model: "deepseek-v4.1-flash",
+      model: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
       messages: [{ role: "user", content: "hello" }],
       stream: true,
     });

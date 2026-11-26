@@ -165,6 +165,10 @@ export type Env = {
   // Self-hosted only: the signed license key (license.ts). Without a valid
   // one the install runs the free plan.
   PREPROCESS_LICENSE_KEY?: string;
+  // Where OCR is served (@preprocess/models endpoints): Mistral, an
+  // install's own MODEL_ENDPOINTS entry, or MODEL_SERVICE_URL (the stub).
+  MISTRAL_API_KEY?: string;
+  MODEL_ENDPOINTS?: string;
   MODEL_SERVICE_URL?: string;
   MODEL_SERVICE_KEY?: string;
   // Postgres as preprocess_app (RLS enforced) and as preprocess_system (RLS

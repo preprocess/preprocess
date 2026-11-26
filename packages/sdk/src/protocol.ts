@@ -6,36 +6,35 @@
 
 export const PROTOCOL = 1;
 
-// The base models an agent runs on (spec 12a), every call billed per token.
-// `serving` is how the untrained model is served: Baseten's per-token model
-// APIs, or the shared dedicated deployment for its base model, which also
-// serves every organization's trained adapters. `trainable` gates training
-// per model; turn it on when Baseten Loops supports one. The fast variant of
-// DeepSeek V4.1 Flash is for untrained use only.
+// The base models an agent runs on (spec 3), every call billed per token.
+// `serving` is who serves the untrained model: Baseten's per-token Model APIs
+// or Cloudflare Workers AI. `trainable` stays false while training is Coming
+// soon (spec 12a). The fast variant of DeepSeek V4.1 Flash is the same model
+// on Baseten's Fast capacity.
 export const MODEL_CATALOG = {
   "kimi-k3.1-pro": {
     label: "Kimi K3.1 Pro",
-    serving: "per-token",
+    serving: "baseten",
     trainable: false,
   },
   "deepseek-v4.1-flash": {
     label: "DeepSeek V4.1 Flash",
-    serving: "per-token",
-    trainable: true,
+    serving: "baseten",
+    trainable: false,
   },
   "deepseek-v4.1-flash-fast": {
     label: "DeepSeek V4.1 Flash (fast)",
-    serving: "per-token",
+    serving: "baseten",
     trainable: false,
   },
   "qwen3.8-27b": {
     label: "Qwen 3.8 27B",
-    serving: "dedicated",
-    trainable: true,
+    serving: "workers-ai",
+    trainable: false,
   },
 } as const satisfies Record<
   string,
-  { label: string; serving: "per-token" | "dedicated"; trainable: boolean }
+  { label: string; serving: "baseten" | "workers-ai"; trainable: boolean }
 >;
 export type Model = keyof typeof MODEL_CATALOG;
 export const MODELS = Object.keys(MODEL_CATALOG) as [Model, ...Model[]];
