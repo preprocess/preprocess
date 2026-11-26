@@ -8,6 +8,9 @@ export function getRouter() {
   return createRouter({
     routeTree,
     scrollRestoration: true,
+    // Revisiting a page within 15 s reuses its loader data; any write the
+    // browser makes marks it stale first (lib/data-changed.ts).
+    defaultStaleTime: 15_000,
   });
 }
 

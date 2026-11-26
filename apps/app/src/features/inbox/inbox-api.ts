@@ -8,6 +8,7 @@ import {
   type InboxItem,
   type MarkReadSelector,
 } from "./notification";
+import { staleAfterWrite } from "../../lib/data-changed";
 
 /**
  * The inbox from the API (GET /v1/orgs/{org}/inbox), mapped onto the items
@@ -244,6 +245,7 @@ export const loadApiInbox = createServerFn({ method: "GET" }).handler(
 );
 
 export const markApiInboxRead = createServerFn({ method: "POST" })
+  .middleware([staleAfterWrite])
   .validator((selector: MarkReadSelector) => selector)
   .handler(async ({ data: selector }): Promise<InboxCounts> => {
     const { activeOrgJson, activeOrgPath, apiRequest } =
