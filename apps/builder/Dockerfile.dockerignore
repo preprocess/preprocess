@@ -1,0 +1,8 @@
+# The build context is the repository root, but the image copies only these.
+# Everything else stays out of the context, and so out of the image's content
+# hash: a change elsewhere reuses the published image instead of rebuilding.
+*
+!packages/cli/package.json
+!packages/cli/src
+!apps/builder/image/build.sh
+!apps/builder/image/bundle.ts
