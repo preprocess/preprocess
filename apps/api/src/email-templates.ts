@@ -392,3 +392,77 @@ export const webhookDisabledEmail = (
     text: `Every delivery to ${data.endpointUrl} failed for ${period}, so the endpoint was disabled.\n\nFix the receiver, then enable it again: ${data.url}\n\n--\nSent to the owners and admins of ${data.orgName}${onPreprocess(brand)}.\n`,
   };
 };
+
+export const longDate = (at: Date) =>
+  at.toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
+// Three days before Team ends (PRE-96), to each person losing a seat.
+export const seatEndingEmail = (
+  brand: Brand,
+  data: { url: string; orgName: string; at: Date },
+): RenderedEmail => {
+  const date = longDate(data.at);
+  const subject = `Your access in ${data.orgName} changes on ${date}`;
+  const line = `${data.orgName} moves to the Free plan on ${date}, which includes 3 developer and operator seats. Yours isn’t one of them, so you’ll be able to view agents and cases but not deploy, run evals or work cases. An Owner can restore your role if the organization returns to Team.`;
+  return {
+    subject,
+    html: page(
+      brand,
+      subject,
+      clip(line),
+      heading("Your access is changing") +
+        paragraph(escapeHtml(line)) +
+        button("Open Preprocess", data.url) +
+        footer(
+          `Sent to members of ${escapeHtml(data.orgName)}${onPreprocess(brand)} who lose a seat.`,
+        ),
+    ),
+    text: `${line}\n\nOpen Preprocess: ${data.url}\n\n--\nSent to members of ${data.orgName}${onPreprocess(brand)} who lose a seat.\n`,
+  };
+};
+
+// When Team has ended (PRE-96), to the Owners: what changed with it.
+export const planSwitchedEmail = (
+  brand: Brand,
+  data: {
+    url: string;
+    orgName: string;
+    demoted: string[];
+    pausedAgents: string[];
+  },
+): RenderedEmail => {
+  const subject = `${data.orgName} is now on the Free plan`;
+  const lines = [
+    ...(data.demoted.length
+      ? [
+          `${data.demoted.length === 1 ? "1 person is" : `${data.demoted.length} people are`} now a viewer: ${data.demoted.join(", ")}. You can restore their previous roles if you return to Team.`,
+        ]
+      : []),
+    ...(data.pausedAgents.length
+      ? [
+          `Paused because they use a custom environment: ${data.pausedAgents.join(", ")}. They resume on their own if you return to Team.`,
+        ]
+      : []),
+    "Free includes 1,000 cases a month, and storage past 5 GB is billed at $0.10 per GB-month. Your credits and auto-reload are unchanged.",
+  ];
+  return {
+    subject,
+    html: page(
+      brand,
+      subject,
+      clip(lines[0]!),
+      heading("Your organization is on Free") +
+        lines.map((l) => paragraph(escapeHtml(l))).join("") +
+        button("Open Billing", data.url) +
+        footer(
+          `Sent to the owners of ${escapeHtml(data.orgName)}${onPreprocess(brand)}.`,
+        ),
+    ),
+    text: `${lines.join("\n\n")}\n\nOpen Billing: ${data.url}\n\n--\nSent to the owners of ${data.orgName}${onPreprocess(brand)}.\n`,
+  };
+};

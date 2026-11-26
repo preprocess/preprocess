@@ -6,7 +6,7 @@
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { audit } from "@preprocess/db/audit";
-import { withOrg } from "@preprocess/db/client";
+import { orgId, withOrg } from "@preprocess/db/client";
 import { HTTPException } from "hono/http-exception";
 
 import { autumn, type AutumnAttached } from "../autumn.ts";
@@ -22,6 +22,15 @@ import {
 } from "../billing.ts";
 import { eventBase, type OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
+import {
+  changePreview,
+  checkPicks,
+  customEnvironmentAgents,
+  demotedPeople,
+  forgetChange,
+  recordChange,
+  restoreRoles,
+} from "../plan-change.ts";
 import { spendingLimit } from "../spend.ts";
 
 const OrgParam = z.object({ org: z.string() });
@@ -64,6 +73,24 @@ const Billing = z
       .openapi({
         description:
           "A plan change waiting for the end of the billing period, and when it takes effect",
+      }),
+    switched: z
+      .object({
+        people: z.number().int().openapi({
+          description:
+            "People who lost their seat when Team ended, whose previous roles the Owner can restore on Team",
+        }),
+        agents: z
+          .array(z.object({ id: z.string(), slug: z.string() }))
+          .openapi({
+            description:
+              "Agents paused because they use a custom environment, which resume on Team",
+          }),
+      })
+      .nullable()
+      .openapi({
+        description:
+          "What moving down from Team changed, shown to Owners and Admins; null when nothing or for others",
       }),
     credits: z
       .object({
@@ -184,6 +211,17 @@ export const billingRoutes = new OpenAPIHono<{
           )
         : null;
       const card = owner ? customer?.payment_method?.card : undefined;
+      const manager =
+        c.var.caller.type === "person" &&
+        (c.var.caller.role === "owner" || c.var.caller.role === "admin");
+      const switched = manager
+        ? await withOrg(c.env, orgId(c.var.org), async (tx) => ({
+            people: (await demotedPeople(tx)).length,
+            agents: plan.features.has("custom_sandbox_images")
+              ? []
+              : await customEnvironmentAgents(tx),
+          }))
+        : null;
       return c.json(
         {
           plan: plan.name,
@@ -194,6 +232,10 @@ export const billingRoutes = new OpenAPIHono<{
             plan: plan.change.plan,
             at: plan.change.at?.toISOString() ?? null,
           },
+          switched:
+            switched && (switched.people || switched.agents.length)
+              ? switched
+              : null,
           credits: customer ? readCredits(customer) : null,
           autoReload: customer
             ? readAutoReload(customer.billing_controls?.auto_topups)
@@ -349,13 +391,23 @@ export const billingRoutes = new OpenAPIHono<{
       path: "/billing/plan",
       tags: ["Billing"],
       summary:
-        "Change between Free and Team (Owner), once a plan is started at checkout. Moving up to Team is immediate. Moving down to Free cancels Team at the end of its billing period, and the organization keeps its credits; until then the Owner can keep Team. Enterprise changes go through us.",
+        "Change between Free and Team (Owner), once a plan is started at checkout. Moving up to Team is immediate. Moving down to Free cancels Team at the end of its billing period, and the organization keeps its credits; until then the Owner can keep Team. At the switch, the people in keep hold Free's seats and everyone else with a seat becomes a viewer; without keep, Owners keep theirs first, then the most recently active. Enterprise changes go through us.",
       request: {
         params: OrgParam,
         body: {
           content: {
             "application/json": {
-              schema: z.object({ plan: z.enum(["free", "team"]), returnTo }),
+              schema: z.object({
+                plan: z.enum(["free", "team"]),
+                returnTo,
+                keep: z.array(z.string()).max(10).optional().openapi({
+                  description:
+                    "Moving to Free: the user ids who keep a developer or operator seat, at most 3",
+                }),
+                reason: z.string().max(2000).optional().openapi({
+                  description: "Moving to Free: why, in the Owner's words",
+                }),
+              }),
             },
           },
         },
@@ -370,6 +422,7 @@ export const billingRoutes = new OpenAPIHono<{
           description:
             "No plan started yet, already on this plan, or on Enterprise",
         },
+        422: { description: "keep names someone without a seat, or too many" },
         404: { description: "Billing is off" },
       },
     }),
@@ -377,9 +430,10 @@ export const billingRoutes = new OpenAPIHono<{
       requireOwner(c.var, "Only the organization's Owner can change its plan.");
       const billing = autumn(c.env);
       if (!billing) throw off();
-      const { plan, returnTo } = c.req.valid("json");
+      const { plan, returnTo, keep, reason } = c.req.valid("json");
       const back = backTo(c.env, returnTo);
-      const current = readPlan(await billing.customer(c.var.org));
+      const customer = await billing.customer(c.var.org);
+      const current = readPlan(customer);
       if (!current.started)
         throw new HTTPException(409, {
           message: "Start a plan at checkout first.",
@@ -390,6 +444,10 @@ export const billingRoutes = new OpenAPIHono<{
           message: "The organization is already on this plan.",
         });
       const down = plan === "free";
+      if (down && keep) {
+        const refused = await checkPicks(c.env, c.var.org, keep);
+        if (refused) throw new HTTPException(422, { message: refused });
+      }
       const attached = await billing.attach(c.var.org, {
         planId: plan,
         successUrl: back,
@@ -401,9 +459,25 @@ export const billingRoutes = new OpenAPIHono<{
           action: "billing.plan_changed",
           targetType: "organization",
           targetId: c.var.org,
-          data: { from: current.name, to: plan },
+          data: {
+            from: current.name,
+            to: plan,
+            ...(down && { keep: keep ?? null, reason: reason ?? null }),
+          },
         }),
       );
+      if (down) {
+        const end = customer.subscriptions.find(
+          (s) => s.plan_id === current.name && s.status === "active",
+        )?.current_period_end;
+        await recordChange(c.env, c.var.org, {
+          plan,
+          at: end ? new Date(end) : null,
+          keep: keep ?? null,
+          reason: reason ?? null,
+          by: c.var.caller.type === "person" ? c.var.caller.userId : "",
+        });
+      }
       return c.json({ url: paymentUrl(attached) }, 200);
     },
   )
@@ -433,6 +507,7 @@ export const billingRoutes = new OpenAPIHono<{
           message: "No plan change is waiting.",
         });
       await billing.keep(c.var.org, current.name);
+      await forgetChange(c.env, c.var.org);
       await withOrg(c.env, c.var.org, (tx) =>
         audit(tx, {
           ...eventBase(c.var),
@@ -443,6 +518,135 @@ export const billingRoutes = new OpenAPIHono<{
         }),
       );
       return c.body(null, 204);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "get",
+      path: "/billing/plan/change/preview",
+      tags: ["Billing"],
+      summary:
+        "What moving from Team to Free changes at the end of the billing period, from live usage (Owner). Only what applies is listed: seats past Free's with everyone who holds one and who would keep theirs, agents that pause, storage billed past Free's, and this month's cases past Free's. An empty list means nothing else changes.",
+      request: { params: OrgParam },
+      responses: {
+        200: {
+          content: {
+            "application/json": {
+              schema: z
+                .object({
+                  at: z.string().nullable().openapi({
+                    description: "When Team ends and Free starts",
+                  }),
+                  items: z.array(
+                    z.discriminatedUnion("kind", [
+                      z.object({
+                        kind: z.literal("seats"),
+                        limit: z.number().int(),
+                        people: z.array(
+                          z.object({
+                            userId: z.string(),
+                            name: z.string(),
+                            email: z.string(),
+                            keeps: z.boolean().openapi({
+                              description:
+                                "Keeps a seat unless the Owner picks otherwise",
+                            }),
+                          }),
+                        ),
+                      }),
+                      z.object({
+                        kind: z.literal("agents"),
+                        agents: z.array(
+                          z.object({ id: z.string(), slug: z.string() }),
+                        ),
+                      }),
+                      z.object({
+                        kind: z.literal("storage"),
+                        gb: z.number(),
+                        includedGb: z.number(),
+                        usdPerMonth: z.number(),
+                      }),
+                      z.object({
+                        kind: z.literal("cases"),
+                        thisMonth: z.number().int(),
+                        limit: z.number().int(),
+                      }),
+                    ]),
+                  ),
+                })
+                .openapi("PlanChangePreview"),
+            },
+          },
+          description: "What changes",
+        },
+        403: { description: "Not the Owner" },
+        409: { description: "Not on Team" },
+        404: { description: "Billing is off" },
+      },
+    }),
+    async (c) => {
+      requireOwner(c.var, "Only the organization's Owner can change its plan.");
+      const billing = autumn(c.env);
+      if (!billing) throw off();
+      const customer = await billing.customer(c.var.org);
+      const current = readPlan(customer);
+      if (current.name !== "team")
+        throw new HTTPException(409, {
+          message: "Only Team moves down to Free.",
+        });
+      const end =
+        current.change?.at ??
+        customer.subscriptions.find(
+          (s) => s.plan_id === "team" && s.status === "active",
+        )?.current_period_end;
+      return c.json(
+        {
+          at: end ? new Date(end).toISOString() : null,
+          items: await changePreview(c.env, c.var.org),
+        },
+        200,
+      );
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "post",
+      path: "/billing/roles/restore",
+      tags: ["Billing"],
+      summary:
+        "Give everyone who lost their seat when Team ended their previous roles back (Owner, on Team)",
+      request: { params: OrgParam },
+      responses: {
+        200: {
+          content: {
+            "application/json": {
+              schema: z.object({
+                people: z.number().int().openapi({
+                  description: "People whose roles were restored",
+                }),
+              }),
+            },
+          },
+          description: "Restored",
+        },
+        403: { description: "Not the Owner" },
+        409: { description: "Not on a plan without a seat limit" },
+        404: { description: "Billing is off" },
+      },
+    }),
+    async (c) => {
+      requireOwner(c.var, "Only the organization's Owner can change its plan.");
+      const plan = await cloudPlan(c.env, c.var.org);
+      if (!plan) throw off();
+      if (!plan.started || plan.seats !== null)
+        throw new HTTPException(409, {
+          message: "Previous roles can be restored on the Team plan.",
+        });
+      const people = await restoreRoles(c.env, c.var.org, {
+        actorType: "person",
+        actorId: c.var.caller.type === "person" ? c.var.caller.userId : "",
+      });
+      return c.json({ people }, 200);
     },
   )
   .openapi(

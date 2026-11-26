@@ -10,6 +10,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { reportDaily, reportUsage } from "./billing.ts";
+import { runPlanChanges } from "./plan-change.ts";
 import { closeSilentSandboxes } from "./sandbox.ts";
 import { collectSandboxLayers } from "./sandbox-layers.ts";
 import { handleAuthRequest } from "./auth.ts";
@@ -196,11 +197,13 @@ export default {
   scheduled(controller, env, ctx) {
     // Every minute: re-send outbox rows a failed queue send left behind.
     // Every minute, too: report metered usage to billing and close the awake
-    // intervals of sandboxes gone silent (our cloud only).
+    // intervals of sandboxes gone silent, and warn about or apply moves down
+    // to Free (our cloud only).
     if (controller.cron === "* * * * *") {
       ctx.waitUntil(sweepOutbox(env));
       ctx.waitUntil(reportUsage(env));
       ctx.waitUntil(closeSilentSandboxes(env));
+      ctx.waitUntil(runPlanChanges(env, new Date(controller.scheduledTime)));
       return;
     }
     // 00:20 UTC: sign and store yesterday's audit chain for every
