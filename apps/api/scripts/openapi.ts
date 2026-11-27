@@ -1,6 +1,7 @@
 // Writes the API's OpenAPI document (GET /v1/openapi.json) to a file, for the
 // docs site's API reference. The Worker is bundled for Node with Cloudflare's
-// runtime modules stubbed; serving the document touches no binding.
+// runtime modules stubbed; serving the document touches no binding. The
+// document describes Training as on, as our cloud serves it.
 //
 //   pnpm --filter @preprocess/api openapi <out.json>
 
@@ -47,7 +48,7 @@ const worker = (await import(pathToFileURL(bundle).href)) as {
 };
 const response = await worker.default.fetch(
   new Request("http://api.local/v1/openapi.json"),
-  {},
+  { TRAINING_SERVICE: "on" },
 );
 if (!response.ok) throw new Error(`openapi.json answered ${response.status}`);
 await writeFile(out, JSON.stringify(await response.json(), null, 2) + "\n");
