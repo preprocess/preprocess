@@ -7,7 +7,13 @@ import {
   type ItemRect,
 } from "@preprocess/ui/hooks/use-fluid-hover";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
-import { Clock, FileIcon, ListIcon, XIcon } from "@preprocess/ui/lib/icons";
+import {
+  Clock,
+  FileIcon,
+  ListIcon,
+  MessageCircle,
+  XIcon,
+} from "@preprocess/ui/lib/icons";
 import { useShape } from "@preprocess/ui/lib/shape-context";
 import { spring } from "@preprocess/ui/lib/springs";
 import { cn } from "@preprocess/ui/lib/utils";
@@ -36,6 +42,9 @@ export const ROOM_VIEWS = [
 ] as const;
 
 export type RoomViewId = (typeof ROOM_VIEWS)[number]["id"];
+
+/** Below the tablet breakpoint the chat is a view beside Input, Review and Run. */
+export const CHAT_VIEW = { id: "chat", label: "Chat", icon: MessageCircle };
 
 const ROOM_VIEW_IDS = new Set<string>(ROOM_VIEWS.map((view) => view.id));
 
@@ -214,6 +223,7 @@ export type CaseRoomTabsProps = {
   ) => void;
   readonly toolbar?: ReactNode;
   readonly label?: string;
+  readonly views?: readonly ViewTab<string>[];
 };
 
 export const FILE_TAB_MIME = "application/x-case-file-tab";
@@ -459,6 +469,7 @@ export function CaseRoomTabs({
   onTransferFile,
   toolbar,
   label = "Case views",
+  views = ROOM_VIEWS,
 }: CaseRoomTabsProps) {
   const shape = useShape();
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -469,14 +480,10 @@ export function CaseRoomTabs({
   const hover = useFluidHover(stripRef, { axis: "x" });
   const [pointerInside, setPointerInside] = useState(false);
   const openIds = fileTabs.map((tab) => tab.id);
-  const viewIndex = ROOM_VIEWS.findIndex((view) => view.id === selectedId);
+  const viewIndex = views.findIndex((view) => view.id === selectedId);
   const fileIndex = openIds.indexOf(selectedId);
   const selectedIndex =
-    viewIndex >= 0
-      ? viewIndex
-      : fileIndex >= 0
-        ? ROOM_VIEWS.length + fileIndex
-        : -1;
+    viewIndex >= 0 ? viewIndex : fileIndex >= 0 ? views.length + fileIndex : -1;
   const isLit = (index: number) =>
     index === selectedIndex || index === hover.activeIndex;
   const openIdsKey = openIds.join("|");
@@ -576,7 +583,7 @@ export function CaseRoomTabs({
               rects={hover.itemRects}
               selectedIndex={selectedIndex}
             />
-            {ROOM_VIEWS.map((view, index) => (
+            {views.map((view, index) => (
               <RoomViewTab
                 idPrefix={idPrefix}
                 index={index}
@@ -591,7 +598,7 @@ export function CaseRoomTabs({
             {fileTabs.map((tab, index) => {
               const selected = selectedId === tab.id;
               const dragging = draggingId === tab.id;
-              const slot = ROOM_VIEWS.length + index;
+              const slot = views.length + index;
               return (
                 <FileTab
                   aria-controls={`${idPrefix}-panel-${tab.id}`}
