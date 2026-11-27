@@ -60,9 +60,17 @@ let customer: {
     status: string;
     started_at?: number;
     current_period_end?: number;
+    past_due?: boolean;
   }[];
   flags: Record<string, unknown>;
   balances: Record<string, unknown>;
+  invoices?: {
+    id: string;
+    status: string;
+    total: number;
+    currency: string;
+    created_at: number;
+  }[];
   billing_controls?: { auto_topups?: unknown[] };
   payment_method?: { card: { brand: string; last4: string } };
 };
@@ -721,6 +729,69 @@ describe("credits", () => {
       balances: {},
     };
     expect(await gate.spendGate(committed.org)).toBe("ok");
+  });
+
+  it("stop new cases once a failed payment is 7 days past due, never sooner and never on Enterprise", async () => {
+    const DAY = 86_400_000;
+    const owed = (plan: string, daysAgo: number) => ({
+      subscriptions: [{ plan_id: plan, status: "active", past_due: true }],
+      flags: {},
+      balances: { model_credit: balance(4_000) },
+      invoices: [
+        {
+          id: "in_paid",
+          status: "paid",
+          total: 16,
+          currency: "usd",
+          created_at: Date.now() - 40 * DAY,
+        },
+        {
+          id: "in_owed",
+          status: "open",
+          total: 16,
+          currency: "usd",
+          created_at: Date.now() - daysAgo * DAY,
+        },
+      ],
+    });
+    const recent = await organizationWithAgent("Recentlyowedco");
+    const late = await organizationWithAgent("Longowedco");
+    const contract = await organizationWithAgent("Contractowedco");
+    stubAutumn();
+    const create = (org: string) =>
+      late.keyed.call<{ error: { code: string; message: string } }>(
+        `/v1/orgs/${org}/cases`,
+        { body: { agent: "invoices", text: "past due" } },
+      );
+
+    customer = owed("team", 6);
+    expect(
+      (
+        await recent.keyed.call(`/v1/orgs/${recent.org}/cases`, {
+          body: { agent: "invoices", text: "in grace" },
+        })
+      ).status,
+    ).toBe(202);
+
+    customer = owed("team", 8);
+    const refused = await create(late.org);
+    expect(refused.status).toBe(402);
+    expect(refused.body.error).toEqual({
+      code: "payment_past_due",
+      message:
+        "The last payment failed more than 7 days ago. An Owner can update the card in Billing.",
+    });
+    const gate = new Platform({} as ExecutionContext, environment);
+    expect(await gate.spendGate(late.org)).toBe("ok");
+
+    customer = owed("enterprise", 30);
+    expect(
+      (
+        await contract.keyed.call(`/v1/orgs/${contract.org}/cases`, {
+          body: { agent: "invoices", text: "on terms" },
+        })
+      ).status,
+    ).toBe(202);
   });
 
   it("charge a case fee past the month's first 1,000 cases, reported as credits and counted as spend", async () => {

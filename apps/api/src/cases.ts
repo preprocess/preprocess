@@ -114,14 +114,21 @@ export const createCase = async (
   by: Creator,
   idempotencyKey?: string,
 ): Promise<{ body: CaseAccepted; replayed: boolean }> => {
-  // A plan must be started first; Free caps its monthly cases (spec 16a), and
-  // Free and Team need credits left (PRE-96).
+  // A plan must be started first; a payment past due for 7 days stops new
+  // cases until it's paid; Free caps its monthly cases (spec 16a), and Free
+  // and Team need credits left (PRE-96).
   const entitled = await entitlement(env, org, "cases");
   if (entitled === "plan_required")
     throw new ApiError(
       402,
       "plan_required",
       "This organization has no plan yet. Its Owner can start one, Free included, in Billing.",
+    );
+  if (entitled === "past_due")
+    throw new ApiError(
+      402,
+      "payment_past_due",
+      "The last payment failed more than 7 days ago. An Owner can update the card in Billing.",
     );
   if (entitled === "used_up")
     throw new ApiError(
