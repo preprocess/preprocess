@@ -777,9 +777,12 @@ export function SettingsDialogShell({
   footer?: ReactNode;
   size?: "sm" | "lg";
 }) {
+  // Focus lands on the panel itself, so a radio or checkbox group in the
+  // body doesn't open with its first row lit.
+  const panel = useRef<HTMLDivElement>(null);
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent size={size}>
+      <DialogContent initialFocus={panel} ref={panel} size={size}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? (
