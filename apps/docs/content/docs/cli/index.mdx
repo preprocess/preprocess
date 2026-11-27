@@ -1,8 +1,8 @@
 ---
 title: CLI
 description:
-  Install and authenticate @preprocess/cli to deploy agents, pull settings,
-  stream logs, run evals, and install self-hosted stacks.
+  Install @preprocess/cli, sign in, and start a project to deploy agents, pull
+  settings, stream logs, run evals, and install self-hosted stacks.
 ---
 
 `@preprocess/cli` is the command-line bridge between your local git repository
@@ -33,7 +33,21 @@ npm install --save-dev @preprocess/cli
 
 ## Sign in
 
-The CLI reads three environment variables on every command:
+On your own machine, sign in through the browser:
+
+<Configured lang="sh" code={`npx preprocess login --api {origin}`} />
+
+The CLI prints a code and opens the app's sign-in page. Check that the code
+matches, approve it, and the CLI saves that session in
+`~/.config/preprocess/credentials.json` (or under `$XDG_CONFIG_HOME`), readable
+only by you. Commands then act as you, with your role: deploying, promoting and
+rolling back need an Owner, an Admin or the Developers group. If you belong to
+more than one organization, pass `--org` (an id or slug), or set
+`PREPROCESS_ORG`. On a machine without a browser, pass `--no-browser` and open
+the printed link anywhere you're signed in.
+
+In CI, use an organization API key instead. Set these three environment
+variables; they win over a saved sign-in:
 
 <Configured
   lang="sh"
@@ -52,10 +66,23 @@ export PREPROCESS_API_KEY=...`}
 
 Pass `--api` and `--org` to override the first two for a single invocation.
 
+## Start a project
+
+```sh
+npx @preprocess/cli init my-agent
+```
+
+`preprocess init [dir]` writes a new agent project: `package.json` (named after
+the directory, or `--name`), `tsconfig.json`, `.gitignore` and an agent in
+`src/index.ts` with one tool. It never overwrites a file, so run it in a new or
+empty directory. Install the dependencies, then `preprocess deploy`.
+
 ## What to read next
 
 - [Deploy](/cli/deploy): bundling, production vs. previews, and waiting
   deployments.
+- [Promote and roll back](/cli/promote-and-rollback): choosing which deployment
+  serves production.
 - [Settings](/cli/settings): pulling dashboard overrides and group slugs into
   git.
 - [Logs and evals](/cli/logs-and-evals): inspecting run logs and benchmarking

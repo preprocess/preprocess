@@ -31,7 +31,7 @@ Add a Preprocess agent to this project with @preprocess/sdk and deploy it with t
 Set up the Preprocess CLI in this project and deploy the agent.
 
 1. Install it: \`npm install --save-dev @preprocess/cli\`.
-2. Ask me for my organization id and an organization API key. Read them from PREPROCESS_ORG and PREPROCESS_API_KEY in the environment. Never put the key in a file, a command line or CI logs. Set PREPROCESS_API_URL to {origin}.
+2. Run \`npx preprocess login --api {origin}\` and ask me to approve the code it prints in my browser. In CI, read the organization id and an organization API key from PREPROCESS_ORG and PREPROCESS_API_KEY instead, with PREPROCESS_API_URL set to {origin}, and never put the key in a file, a command line or CI logs.
 3. Run \`npx preprocess config pull\` and \`npx preprocess groups pull\` so preprocess.config.json keeps the settings people changed in the app.
 4. Run \`npx preprocess deploy\` and tell me the new deployment's status and any warnings.`,
   },

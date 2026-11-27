@@ -984,13 +984,23 @@ export const getDeployment = (
     };
   });
 
-export const listDeployments = (env: Env, org: OrgId, agentId: string) =>
+export const listDeployments = (
+  env: Env,
+  org: OrgId,
+  agentId: string,
+  environment?: "production" | "preview",
+) =>
   withOrg(env, org, async (tx) => {
     const production = await productionId(tx, agentId);
     const rows = await tx
       .select()
       .from(deployments)
-      .where(eq(deployments.agentId, agentId))
+      .where(
+        and(
+          eq(deployments.agentId, agentId),
+          environment ? eq(deployments.environment, environment) : undefined,
+        ),
+      )
       .orderBy(desc(deployments.createdAt))
       .limit(100);
     return rows.map((d) => view(d, production));
