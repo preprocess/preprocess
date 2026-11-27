@@ -66,7 +66,7 @@ export const login = async (options: LoginOptions) => {
   });
   if (!asked.ok)
     throw new Error(
-      `${options.api} did not start a sign-in (${asked.status}). Check --api or PREPROCESS_API_URL.`,
+      `${options.api} didn't start sign-in (${asked.status}). Check --api or PREPROCESS_API_URL.`,
     );
   const code = (await asked.json()) as Code;
   options.log(`Your code: ${code.user_code}`);
@@ -117,7 +117,7 @@ export const login = async (options: LoginOptions) => {
       ? orgs[0]
       : undefined;
   if (options.org && !chosen)
-    throw new Error(`You are not a member of ${options.org}.`);
+    throw new Error(`You aren't a member of ${options.org}.`);
   const file = options.save({
     api: options.api,
     token,
@@ -137,7 +137,7 @@ export const login = async (options: LoginOptions) => {
       `Signed in as ${who}. Saved to ${file}.`,
       orgs.length
         ? "Choose an organization with --org or PREPROCESS_ORG:"
-        : "You are not in an organization yet. Create one in the app.",
+        : "You aren't in an organization yet. Create one in the app.",
       ...orgs.map((o) => `  ${o.id}  ${o.name}`),
     ].join("\n"),
   };

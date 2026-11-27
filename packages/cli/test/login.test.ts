@@ -139,7 +139,7 @@ describe("preprocess login", () => {
     const chosen = await run(server([granted], orgs).fake, "globex");
     expect(chosen.saved[0]!.org).toBe("org_2");
     await expect(run(server([granted], orgs).fake, "initech")).rejects.toThrow(
-      "You are not a member of initech.",
+      "You aren't a member of initech.",
     );
   });
 
