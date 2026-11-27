@@ -17,6 +17,9 @@ import {
   usageRecords,
   usageReports,
 } from "@preprocess/db/schema/billing";
+import { cases } from "@preprocess/db/schema/cases";
+import { deployments } from "@preprocess/db/schema/deployments";
+import { evalRuns, evalSuites } from "@preprocess/db/schema/evals";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../src/env.ts";
@@ -357,6 +360,18 @@ describe("GET /billing/usage", () => {
       ocrUsd: 5.25,
       sandboxUsd: 3.6,
       storage: { gbMonths: 51.234567, includedGbMonths: 50, usd: 0.12 },
+      byAgent: [
+        {
+          agentId: null,
+          slug: null,
+          cases: 4_200,
+          casesUsd: 64,
+          modelUsageUsd: 23.84,
+          decideUsd: 2.94,
+          ocrUsd: 5.25,
+          sandboxUsd: 3.6,
+        },
+      ],
       paidFromCreditsUsd: 99.63,
       billedAtMonthEndUsd: 32.12,
       now: {
@@ -388,6 +403,189 @@ describe("GET /billing/usage", () => {
 
     expect((await shop.admin.client.call(path)).status).toBe(403);
     expect((await shop.member.client.call(path)).status).toBe(403);
+  });
+
+  it("splits each line by agent through cases and eval cases, adding up to the line exactly, and never shows another organization's usage", async () => {
+    const shop = await organization("Splitco");
+    const other = await organization("Splitother");
+    stubAutumn();
+    customer = team();
+    const at = new Date();
+    type Line =
+      "cases" | "case_fees" | "model_usage" | "decide" | "ocr" | "sandbox";
+    const seed = async (
+      org: string,
+      owner: string,
+      records: (
+        slugs: Record<string, string[]>,
+      ) => [Line, number, (string | undefined)?][],
+    ) => {
+      const ids: Record<string, string[]> = {};
+      await withOrg(env, orgId(org), async (tx) => {
+        for (const slug of ["invoices", "claims"]) {
+          const agentId = newId("agent");
+          const deploymentId = newId("deployment");
+          await tx
+            .insert(agents)
+            .values({ id: agentId, organizationId: org, slug });
+          await tx.insert(deployments).values({
+            id: deploymentId,
+            organizationId: org,
+            agentId,
+            environment: "production",
+            status: "ready",
+            bundleSha256: "00",
+            sdkVersion: "0.1.0",
+            manifest: {},
+            source: "cli",
+            createdBy: owner,
+          });
+          const caseIds = [newId("case"), newId("case")];
+          await tx.insert(cases).values(
+            caseIds.map((id) => ({
+              id,
+              organizationId: org,
+              agentId,
+              deploymentId,
+              status: "completed" as const,
+              source: "api" as const,
+            })),
+          );
+          const suite = newId("evalSuite");
+          const run = newId("evalRun");
+          await tx.insert(evalSuites).values({
+            id: suite,
+            organizationId: org,
+            agentId,
+            name: "Golden",
+            kind: "manual",
+            createdBy: owner,
+          });
+          await tx.insert(evalRuns).values({
+            id: run,
+            organizationId: org,
+            suiteId: suite,
+            deploymentId,
+            model: "test",
+            trigger: "manual",
+            status: "completed",
+            createdBy: owner,
+          });
+          ids[slug] = [...caseIds, `eval:${run}:${caseIds[0]}`];
+        }
+        await tx.insert(usageRecords).values(
+          records(ids).map(([feature, quantity, caseId]) => ({
+            id: newId("usageRecord"),
+            organizationId: org,
+            feature,
+            quantity,
+            caseId: caseId ?? null,
+            at,
+          })),
+        );
+      });
+    };
+    await seed(shop.org, shop.owner.userId, ({ invoices, claims }) => {
+      const [i1, i2] = invoices!;
+      const [c1, , cEval] = claims!;
+      return [
+        ["cases", 1, i1],
+        ["cases", 1, i2],
+        ["cases", 1, c1],
+        ["case_fees", 20_000, i1],
+        ["case_fees", 20_000, i2],
+        ["case_fees", 20_000, c1],
+        ["model_usage", 3_333, i1],
+        ["model_usage", 3_333, i2],
+        ["model_usage", 3_334, c1],
+        ["model_usage", 6_666, cEval],
+        ["decide", 7_000, i1],
+        ["decide", 4_000, c1],
+        ["decide", 6_000],
+        ["ocr", 5_250_000],
+        ["ocr", 10_000, "case_gone"],
+        ["sandbox", 3_600_000, i2],
+      ];
+    });
+    await seed(other.org, other.owner.userId, ({ invoices }) => [
+      ["cases", 1, invoices![0]],
+      ["case_fees", 9_000_000, invoices![0]],
+      ["model_usage", 77_000_000, invoices![0]],
+      ["ocr", 1_000_000],
+    ]);
+
+    const path = `/v1/orgs/${shop.org}/billing/usage`;
+    type Agent = {
+      agentId: string | null;
+      slug: string | null;
+      cases: number;
+      casesUsd: number;
+      modelUsageUsd: number;
+      decideUsd: number;
+      ocrUsd: number;
+      sandboxUsd: number;
+    };
+    const usage = await shop.owner.client.call<{
+      cases: { count: number; usd: number };
+      modelUsageUsd: number;
+      decideUsd: number;
+      ocrUsd: number;
+      sandboxUsd: number;
+      byAgent: Agent[];
+    }>(path);
+    expect(usage.status).toBe(200);
+    const u = usage.body;
+    expect(u).toMatchObject({
+      cases: { count: 3, usd: 0.06 },
+      modelUsageUsd: 0.01,
+      decideUsd: 0.01,
+      ocrUsd: 5.26,
+      sandboxUsd: 3.6,
+    });
+    expect(u.byAgent.map(({ agentId: _, ...rest }) => rest)).toEqual([
+      {
+        slug: "claims",
+        cases: 1,
+        casesUsd: 0.02,
+        modelUsageUsd: 0.01,
+        decideUsd: 0,
+        ocrUsd: 0,
+        sandboxUsd: 0,
+      },
+      {
+        slug: "invoices",
+        cases: 2,
+        casesUsd: 0.04,
+        modelUsageUsd: 0,
+        decideUsd: 0.01,
+        ocrUsd: 0,
+        sandboxUsd: 3.6,
+      },
+      {
+        slug: null,
+        cases: 0,
+        casesUsd: 0,
+        modelUsageUsd: 0,
+        decideUsd: 0,
+        ocrUsd: 5.26,
+        sandboxUsd: 0,
+      },
+    ]);
+    expect(u.byAgent.at(-1)!.agentId).toBeNull();
+    const total = (pick: (a: Agent) => number) =>
+      u.byAgent.reduce((all, a) => all + Math.round(pick(a) * 100), 0);
+    expect(total((a) => a.cases)).toBe(u.cases.count * 100);
+    expect(total((a) => a.casesUsd)).toBe(Math.round(u.cases.usd * 100));
+    expect(total((a) => a.modelUsageUsd)).toBe(
+      Math.round(u.modelUsageUsd * 100),
+    );
+    expect(total((a) => a.decideUsd)).toBe(Math.round(u.decideUsd * 100));
+    expect(total((a) => a.ocrUsd)).toBe(Math.round(u.ocrUsd * 100));
+    expect(total((a) => a.sandboxUsd)).toBe(Math.round(u.sandboxUsd * 100));
+
+    expect((await shop.admin.client.call(path)).status).toBe(403);
+    expect((await shop.member.client.call(path)).status).toBe(403);
+    expect((await other.owner.client.call(path)).status).not.toBe(200);
   });
 
   it("includes Free's seats, cases and 5 GB, and bills only storage past it", async () => {
