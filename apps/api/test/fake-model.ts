@@ -14,6 +14,11 @@ export const fakeModel = async (request: Request) => {
       { status: 401 },
     );
   const body = await request.json<{ model: string }>();
+  if (body.model === "missing")
+    return Response.json(
+      { error: { message: "The model `missing` does not exist." } },
+      { status: 404 },
+    );
   return Response.json({
     id: "chatcmpl-test",
     object: "chat.completion",
