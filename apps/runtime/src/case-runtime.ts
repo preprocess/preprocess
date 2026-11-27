@@ -13,12 +13,7 @@ import { decide } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
 import { decideCostMicroUsd, microUsd } from "@preprocess/models/prices";
 import { runMode } from "@preprocess/runmode";
-import type {
-  Effect,
-  Manifest,
-  SandboxSize,
-  ToolResult,
-} from "@preprocess/sdk/protocol";
+import type { Effect, Manifest, ToolResult } from "@preprocess/sdk/protocol";
 import { PROTOCOL } from "@preprocess/sdk/protocol";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
@@ -214,13 +209,6 @@ const withSettings = (manifest: Manifest, settings?: Settings): Manifest => {
     ...(settings.sandboxImage !== null && {
       sandboxImage: settings.sandboxImage,
     }),
-    ...(manifest.sandbox &&
-      settings.sandboxSize && {
-        sandbox: {
-          ...manifest.sandbox,
-          size: settings.sandboxSize as SandboxSize,
-        },
-      }),
     evals: { ...manifest.evals, onPush: settings.evals.onPush },
     ...(manifest.schedules && {
       schedules: manifest.schedules.map((s) => ({

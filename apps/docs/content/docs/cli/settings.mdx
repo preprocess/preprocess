@@ -12,8 +12,8 @@ beside your `package.json`.
 ## Why pull before deploying
 
 Between releases, operators and developers can override operational settings
-(`model`, `reasoning`, `ocr`, `searchCases`, `timeoutSeconds`, `toolRetries`,
-and `sandbox.size` up to the org cap) directly in the app. Because **code is the
+(`model`, `reasoning`, `ocr`, `searchCases`, `timeoutSeconds` and `toolRetries`)
+directly in the app. A sandbox's size is set in code only. Because **code is the
 truth at deploy**, promoting a new deployment clears every temporary dashboard
 override so production never silently drifts away from git.
 

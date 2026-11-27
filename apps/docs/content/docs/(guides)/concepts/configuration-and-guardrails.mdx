@@ -45,18 +45,18 @@ Every setting returned by `GET /v1/orgs/{org}/agents/{agent}/settings` reports
 its effective `value`, its `source` (`override`, `code`, `organization` or
 `default`) and the individual `code`, `organization` and `override` values.
 
-| Setting                     | Platform default         | Org default | Dashboard override         |
-| --------------------------- | ------------------------ | ----------- | -------------------------- |
-| `model`                     | `deepseek-v4.1-flash`    | Yes         | Yes                        |
-| `reasoning`                 | `medium`                 | Yes         | Yes                        |
-| `ocr`                       | `false`                  | Yes         | Yes                        |
-| `searchCases`               | `false`                  | Yes         | Yes                        |
-| `timeoutSeconds`            | `null` (runtime default) | Yes         | Yes                        |
-| `toolRetries`               | `null` (0 retries)       | Yes         | Yes                        |
-| `sandboxImage`              | `null`                   | Yes         | Yes                        |
-| `evals.onPush`              | `false`                  | Yes         | Yes                        |
-| `sandbox.size`              | None (opt-in in code)    | No          | Yes (within guardrail cap) |
-| `schedules.<name>.previews` | `false`                  | No          | Yes                        |
+| Setting                     | Platform default         | Org default | Dashboard override |
+| --------------------------- | ------------------------ | ----------- | ------------------ |
+| `model`                     | `deepseek-v4.1-flash`    | Yes         | Yes                |
+| `reasoning`                 | `medium`                 | Yes         | Yes                |
+| `ocr`                       | `false`                  | Yes         | Yes                |
+| `searchCases`               | `false`                  | Yes         | Yes                |
+| `timeoutSeconds`            | `null` (runtime default) | Yes         | Yes                |
+| `toolRetries`               | `null` (0 retries)       | Yes         | Yes                |
+| `sandboxImage`              | `null`                   | Yes         | Yes                |
+| `evals.onPush`              | `false`                  | Yes         | Yes                |
+| `sandbox.size`              | None (opt-in in code)    | No          | No                 |
+| `schedules.<name>.previews` | `false`                  | No          | Yes                |
 
 ### How deploy and promote clear overrides
 
@@ -92,8 +92,9 @@ Preprocess enforces six guardrails:
   organization's allow list and its block list unions with the organization's
   block list.
 - **Max sandbox size:** Caps the largest case sandbox size an agent can use
-  (`small`, `medium`, `large` or `null` for no cap). Both deployments and
-  `sandbox.size` dashboard overrides are checked against this cap.
+  (`small`, `medium`, `large` or `null` for no cap). Deployments are checked
+  against this cap. A sandbox's size is set in code only, so there is no
+  dashboard override to check.
 - **Monthly spending limit:** An optional USD cap per calendar month in UTC
   (`null` by default). It meters all hosted usage across the organization—cases,
   eval runs, OCR calls, sandbox time and case fees. When the cap is reached, new

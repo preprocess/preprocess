@@ -30,6 +30,7 @@ bundle("test/fixtures/invoice-agent.ts", "invoice-agent.js");
 bundle("test/fixtures/failing-agent.ts", "failing-agent.js");
 bundle("test/fixtures/approval-agent.ts", "approval-agent.js");
 bundle("test/fixtures/sandbox-agent.ts", "sandbox-agent.js");
+bundle("test/fixtures/medium-sandbox-agent.ts", "medium-sandbox-agent.js");
 bundle("test/fixtures/mcp-service.ts", "mcp-service.js");
 
 const worker = (name: string, extra: object = {}) => ({
