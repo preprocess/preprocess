@@ -1,0 +1,44 @@
+---
+title: Promote and roll back
+description:
+  Choose which deployment serves production with preprocess promote and
+  preprocess rollback.
+---
+
+A deploy from the agent's production branch is promoted on its own once nothing
+holds it. `promote` and `rollback` change which deployment serves production
+after that, without a new deploy. Both need an Owner, an Admin, the Developers
+group or an organization API key, and both run in the agent's project directory
+(or pass `--agent`).
+
+## Promote
+
+```sh
+npx preprocess promote dep_...
+```
+
+`promote` serves the named deployment in production. Only a deployment from the
+production branch can be promoted; a preview is refused. A deployment still
+waiting for a grant, or whose custom sandbox environment is building or failed,
+is refused too, and the CLI prints the reason. Promoting clears the agent's
+dashboard overrides, because code is the truth again, and prints each one it
+cleared.
+
+## Roll back
+
+```sh
+npx preprocess rollback            # the deployment that served production before this one
+npx preprocess rollback dep_...    # a deployment you name
+```
+
+`rollback` promotes an earlier production deployment. Without an id, it picks
+the one that served production most recently before the current one and says
+which it chose. Rollback moves only the agent's code: the runtime, the
+organization's secrets and its grants stay as they are, so an older deployment
+never brings back a revoked grant or an old secret value. Running `rollback`
+twice in a row switches back to the deployment you started from.
+
+## Related
+
+- [Deploy](/cli/deploy): how deploys become production or previews.
+- [Command reference](/cli/reference): all flags.

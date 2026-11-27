@@ -176,10 +176,12 @@ describe("describe", () => {
 
 describe("main", () => {
   it("names what is missing instead of deploying", async () => {
-    const result = await main(["deploy", fixture, "--agent", "stock"], {});
+    const result = await main(["deploy", fixture, "--agent", "stock"], {
+      XDG_CONFIG_HOME: "/nonexistent",
+    });
     expect(result.code).toBe(1);
     expect(result.out).toContain(
-      "--org or PREPROCESS_ORG, --api or PREPROCESS_API_URL, PREPROCESS_API_KEY",
+      "--org or PREPROCESS_ORG, --api or PREPROCESS_API_URL, a sign-in (preprocess login or PREPROCESS_API_KEY)",
     );
   });
 });
