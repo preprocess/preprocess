@@ -526,7 +526,7 @@ export function MembersPanel() {
               </Button>
             </div>
           ) : null}
-          {resendError ? <SettingsError error={resendError} /> : null}
+          {resendError ? <SettingsError error={resendError} inline /> : null}
           <SettingsCard table>
             <Table>
               <MembersHeader />

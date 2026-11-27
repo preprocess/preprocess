@@ -28,6 +28,8 @@ import {
 import { SizeProvider } from "@preprocess/ui/lib/size-context";
 import { useRef, useState, type FormEvent } from "react";
 
+import { NothingCreatedArt } from "../../components/empty-art";
+
 import {
   SettingsConfirmDialog,
   SettingsDialogActions,
@@ -455,8 +457,9 @@ export function OrgMcpSection({
     >
       {servers.length === 0 ? (
         <SettingsEmpty
-          description="Add a server, then turn it on for the agents that need it."
-          title="No MCP servers yet"
+          art={<NothingCreatedArt />}
+          description="Connect an organization MCP server so agents can call external tools."
+          title="No MCP servers connected"
         />
       ) : (
         <SettingsRows>
@@ -569,8 +572,9 @@ export function AgentMcpSection({
     >
       {organization.length + servers.length === 0 ? (
         <SettingsEmpty
-          description="Add a server here, or in Developers → MCP servers for the whole organization."
-          title="No MCP servers yet"
+          art={<NothingCreatedArt />}
+          description="Grant this agent access to organization MCP servers it declares in code."
+          title="No MCP servers granted"
         />
       ) : (
         <SettingsRows>

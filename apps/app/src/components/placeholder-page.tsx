@@ -2,13 +2,16 @@ import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 
 import { SettingsEmpty } from "../features/settings/kit";
+import { ComingSoonArt } from "./empty-art";
 
 /** A titled page with an empty state, for sections not built yet. */
 export function PlaceholderPage({
   title,
+  emptyTitle,
   description,
 }: {
   title: string;
+  emptyTitle: string;
   description: string;
 }) {
   return (
@@ -22,7 +25,11 @@ export function PlaceholderPage({
             {title}
           </h1>
         </div>
-        <SettingsEmpty description={description} title="Nothing here yet" />
+        <SettingsEmpty
+          art={<ComingSoonArt />}
+          description={description}
+          title={emptyTitle}
+        />
       </div>
     </ScrollArea>
   );

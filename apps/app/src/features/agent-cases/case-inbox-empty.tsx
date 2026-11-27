@@ -1,40 +1,70 @@
+import { Button } from "@preprocess/ui/components/button";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "@preprocess/ui/components/empty";
+import { useRouter } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 
-import { CasesEmptyArt, NoMatchArt } from "../../components/empty-art";
+import {
+  CouldntLoadArt,
+  NoResultsArt,
+  NothingCreatedArt,
+} from "../../components/empty-art";
 
 export type CaseInboxEmptyKind = "unavailable" | "empty" | "no-match";
 
 export function CaseInboxEmpty({
   kind,
-  query,
+  agentScoped = false,
+  onClearFilters,
 }: {
   kind: CaseInboxEmptyKind;
-  query?: string;
+  agentScoped?: boolean;
+  onClearFilters: () => void;
 }) {
-  const trimmedQuery = query?.trim() ?? "";
+  const router = useRouter();
+  let art: ReactNode;
   let title: string;
   let description: string;
+  let action: ReactNode = null;
   switch (kind) {
     case "unavailable":
-      title = "Cases are unavailable";
-      description = "Try again in a moment.";
+      art = <CouldntLoadArt />;
+      title = "Couldn't load cases";
+      description = "Something went wrong loading your cases. Try again.";
+      action = (
+        <Button
+          onClick={() => void router.invalidate()}
+          size="sm"
+          variant="secondary"
+        >
+          Try again
+        </Button>
+      );
       break;
     case "empty":
-      title = "No cases yet";
-      description = "Cases you can open will show up here.";
+      art = <NothingCreatedArt />;
+      title = agentScoped ? "No cases for this agent" : "No cases yet";
+      description = agentScoped
+        ? "Cases started for this agent show up here."
+        : "Start a case from an agent, the API, a schedule or MCP to see it here.";
       break;
     case "no-match":
-      title = "No cases match";
-      description =
-        trimmedQuery === ""
-          ? "Nothing matches these filters."
-          : `Nothing matches “${trimmedQuery}”.`;
+      art = <NoResultsArt />;
+      title = "No matching cases";
+      description = agentScoped
+        ? "No cases for this agent match these filters."
+        : "No cases match these filters. Adjust your search or clear filters.";
+      action = (
+        <Button onClick={onClearFilters} size="sm" variant="secondary">
+          Clear filters
+        </Button>
+      );
       break;
     default: {
       const _exhaustive: never = kind;
@@ -48,12 +78,13 @@ export function CaseInboxEmpty({
       role={kind === "unavailable" ? "alert" : undefined}
     >
       <EmptyHeader className="pointer-events-auto group max-w-md">
-        <EmptyMedia variant="graphic">
-          {kind === "no-match" ? <NoMatchArt /> : <CasesEmptyArt />}
-        </EmptyMedia>
+        <EmptyMedia variant="graphic">{art}</EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
+      {action ? (
+        <EmptyContent className="pointer-events-auto">{action}</EmptyContent>
+      ) : null}
     </Empty>
   );
 }

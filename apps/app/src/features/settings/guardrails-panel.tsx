@@ -4,6 +4,7 @@
 // Owner or Admin loosens one, and their change is the approval; anyone else,
 // and a deployment that asks for more, files a request that shows here.
 
+import { Link } from "@tanstack/react-router";
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
@@ -28,6 +29,12 @@ import {
 } from "@preprocess/ui/components/select";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+
+import {
+  AllCaughtUpArt,
+  GoneArt,
+  NoResultsArt,
+} from "../../components/empty-art";
 
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
@@ -327,15 +334,24 @@ function Requests({ highlight }: { highlight?: string }) {
         <SettingsSkeletonRows count={2} />
       ) : highlight && !linked ? (
         <SettingsEmpty
-          description="It may have been withdrawn after the deployment that filed it was replaced."
-          title="This request no longer exists"
+          action={
+            <Button asChild size="compact" variant="ghost">
+              <Link to="/settings/organization/guardrails">
+                View all requests
+              </Link>
+            </Button>
+          }
+          art={<GoneArt />}
+          description="This guardrail request no longer exists."
+          title="Request not found"
         />
       ) : shown.length === 0 ? (
         <SettingsEmpty
+          art={status === "pending" ? <AllCaughtUpArt /> : <NoResultsArt />}
           description={
             status === "pending"
-              ? "Nobody is waiting on a guardrail."
-              : `No ${status} requests yet.`
+              ? "All guardrail loosening requests have been decided."
+              : `Guardrail requests that are ${status} appear here.`
           }
           title={`No ${status} requests`}
         />

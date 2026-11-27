@@ -22,6 +22,8 @@ import {
 import { cn } from "@preprocess/ui/lib/utils";
 import { useRef, useState, type FormEvent } from "react";
 
+import { NothingCreatedArt } from "../../components/empty-art";
+
 import {
   SettingsConfirmDialog,
   SettingsDialogActions,
@@ -245,8 +247,9 @@ export function OrgNetworkSection({
     >
       {rules.length === 0 ? (
         <SettingsEmpty
-          description="Add rules to allow or block hosts for every agent."
-          title="No rules yet"
+          art={<NothingCreatedArt />}
+          description="Add host rules to control which external domains agents can reach."
+          title="No network rules yet"
         />
       ) : (
         <SettingsRows>
