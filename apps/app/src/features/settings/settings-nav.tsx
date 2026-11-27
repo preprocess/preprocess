@@ -23,6 +23,8 @@ import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 
+import { useBilling, useIsOwner } from "../billing/billing-api";
+
 type Page = {
   to:
     | "/settings/account"
@@ -32,7 +34,8 @@ type Page = {
     | "/settings/organization/defaults"
     | "/settings/organization/guardrails"
     | "/settings/organization/audit-logs"
-    | "/settings/organization/opentelemetry";
+    | "/settings/organization/opentelemetry"
+    | "/settings/organization/billing";
   label: string;
   anchors?: readonly { id: string; label: string }[];
 };
@@ -67,6 +70,7 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
         to: "/settings/organization/opentelemetry",
         label: "OpenTelemetry export",
       },
+      { to: "/settings/organization/billing", label: "Billing" },
     ],
   },
 ];
@@ -83,6 +87,15 @@ export function currentSettingsPage(pathname: string): Page | undefined {
   ).sort((a, b) => b.to.length - a.to.length)[0];
 }
 
+// Billing shows only to the Owner, on our cloud with billing on.
+function useVisible() {
+  const owner = useIsOwner();
+  const billing = useBilling();
+  const showBilling = owner === true && Boolean(billing.data);
+  return (page: Page) =>
+    page.to !== "/settings/organization/billing" || showBilling;
+}
+
 function usePathname() {
   return useRouterState({ select: (state) => state.location.pathname });
 }
@@ -90,6 +103,7 @@ function usePathname() {
 export function SettingsNav() {
   const current = currentSettingsPage(usePathname());
   const hash = useRouterState({ select: (state) => state.location.hash });
+  const visible = useVisible();
   return (
     <ShapeProvider defaultShape="rounded">
       <nav
@@ -105,7 +119,7 @@ export function SettingsNav() {
               {group.label}
             </h2>
             <SidebarMenu aria-label={group.label} className="gap-1">
-              {group.pages.map((page) => (
+              {group.pages.filter(visible).map((page) => (
                 <SidebarMenuItem key={page.to}>
                   <SidebarMenuButton
                     isActive={page === current && !(page.anchors && hash)}
@@ -141,6 +155,7 @@ export function SettingsNav() {
 export function SettingsSwitcher() {
   const navigate = useNavigate();
   const current = currentSettingsPage(usePathname());
+  const visible = useVisible();
   return (
     <div className="md:hidden">
       <Select
@@ -152,7 +167,7 @@ export function SettingsSwitcher() {
       >
         <SelectTrigger aria-label="Settings section" className="w-56" />
         <SelectContent>
-          {PAGES.map((page, index) => (
+          {PAGES.filter(visible).map((page, index) => (
             <SelectItem index={index} key={page.to} value={page.to}>
               {page.label}
             </SelectItem>

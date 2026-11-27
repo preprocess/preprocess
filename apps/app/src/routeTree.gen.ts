@@ -54,6 +54,7 @@ import { Route as SettingsAccountIndexRouteImport } from "./routes/settings/acco
 import { Route as SettingsOrganizationIndexRouteImport } from "./routes/settings/organization/index";
 import { Route as SettingsOrganizationApiKeysRouteImport } from "./routes/settings/organization/api-keys";
 import { Route as SettingsOrganizationAuditLogsRouteImport } from "./routes/settings/organization/audit-logs";
+import { Route as SettingsOrganizationBillingRouteImport } from "./routes/settings/organization/billing";
 import { Route as SettingsOrganizationDefaultsRouteImport } from "./routes/settings/organization/defaults";
 import { Route as SettingsOrganizationDevelopersRouteImport } from "./routes/settings/organization/developers";
 import { Route as SettingsOrganizationGithubRouteImport } from "./routes/settings/organization/github";
@@ -300,6 +301,12 @@ const SettingsOrganizationAuditLogsRoute =
     path: "/audit-logs",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationBillingRoute =
+  SettingsOrganizationBillingRouteImport.update({
+    id: "/billing",
+    path: "/billing",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const SettingsOrganizationDefaultsRoute =
   SettingsOrganizationDefaultsRouteImport.update({
     id: "/defaults",
@@ -427,6 +434,7 @@ export interface FileRoutesByFullPath {
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
+  "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
@@ -485,6 +493,7 @@ export interface FileRoutesByTo {
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
+  "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
@@ -547,6 +556,7 @@ export interface FileRoutesById {
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
+  "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
@@ -610,6 +620,7 @@ export interface FileRouteTypes {
     | "/cases/$agentId/$caseId"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
     | "/settings/organization/github"
@@ -668,6 +679,7 @@ export interface FileRouteTypes {
     | "/cases/$agentId/$caseId"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
     | "/settings/organization/github"
@@ -729,6 +741,7 @@ export interface FileRouteTypes {
     | "/cases/$agentId/$caseId"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
     | "/settings/organization/github"
@@ -1095,6 +1108,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationAuditLogsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/billing": {
+      id: "/settings/organization/billing";
+      path: "/billing";
+      fullPath: "/settings/organization/billing";
+      preLoaderRoute: typeof SettingsOrganizationBillingRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/settings/organization/defaults": {
       id: "/settings/organization/defaults";
       path: "/defaults";
@@ -1211,6 +1231,7 @@ const SettingsAccountRouteWithChildren = SettingsAccountRoute._addFileChildren(
 interface SettingsOrganizationRouteChildren {
   SettingsOrganizationApiKeysRoute: typeof SettingsOrganizationApiKeysRoute;
   SettingsOrganizationAuditLogsRoute: typeof SettingsOrganizationAuditLogsRoute;
+  SettingsOrganizationBillingRoute: typeof SettingsOrganizationBillingRoute;
   SettingsOrganizationDefaultsRoute: typeof SettingsOrganizationDefaultsRoute;
   SettingsOrganizationDevelopersRoute: typeof SettingsOrganizationDevelopersRoute;
   SettingsOrganizationGithubRoute: typeof SettingsOrganizationGithubRoute;
@@ -1225,6 +1246,7 @@ interface SettingsOrganizationRouteChildren {
 const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationApiKeysRoute: SettingsOrganizationApiKeysRoute,
   SettingsOrganizationAuditLogsRoute: SettingsOrganizationAuditLogsRoute,
+  SettingsOrganizationBillingRoute: SettingsOrganizationBillingRoute,
   SettingsOrganizationDefaultsRoute: SettingsOrganizationDefaultsRoute,
   SettingsOrganizationDevelopersRoute: SettingsOrganizationDevelopersRoute,
   SettingsOrganizationGithubRoute: SettingsOrganizationGithubRoute,
