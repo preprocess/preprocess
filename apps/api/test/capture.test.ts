@@ -13,18 +13,14 @@ import {
 } from "@preprocess/db/schema/access";
 import { cases, reviewEvents } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
-import {
-  createExecutionContext,
-  waitOnExecutionContext,
-} from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import type { Env, RunCapture, Runtime } from "../src/env.ts";
-import worker from "../src/index.ts";
 import { fixtureCapture } from "./fixtures/capture.ts";
 import {
   addMember,
+  callStream,
   Client,
   createOrganization,
   signUp,
@@ -54,33 +50,13 @@ type Line = {
   capture?: RunCapture | null;
   reviewEvents?: { kind: string; path: string | null }[];
   next?: string | null;
-  purged?: number;
+  skipped?: number;
 };
 const lines = (body: unknown) =>
   String(body)
     .trim()
     .split("\n")
     .map((l) => JSON.parse(l) as Line);
-
-// The export streams while the request's context is still open, so its body
-// is read before waiting on that context (as audit-export.test.ts does).
-const exportAs = async (client: Client, path: string) => {
-  const ctx = createExecutionContext();
-  const response = await worker.fetch(
-    new Request(new URL(path, environment.APP_URL), {
-      headers: {
-        origin: environment.APP_URL,
-        ...(client.cookie ? { cookie: client.cookie } : {}),
-        ...client.headers,
-      },
-    }),
-    environment,
-    ctx,
-  );
-  const body = await response.text();
-  await waitOnExecutionContext(ctx);
-  return { status: response.status, headers: response.headers, body };
-};
 
 type Seeded = {
   org: string;
@@ -351,12 +327,12 @@ describe("capture export", () => {
     `/v1/orgs/${s.org}/agents/invoices/capture/export${query}`;
 
   it("streams every closed case with its capture and review events, skipping purged ones", async () => {
-    const res = await exportAs(owner, exportPath(a));
+    const res = await callStream(owner, exportPath(a));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/x-ndjson");
     const all = lines(res.body);
     const trailer = all.pop()!;
-    expect(trailer).toEqual({ next: null, purged: 1 });
+    expect(trailer).toEqual({ next: null, skipped: 1 });
     expect(all.map((l) => l.case!.id)).toEqual([
       a.older,
       a.completed,
@@ -378,7 +354,7 @@ describe("capture export", () => {
 
   it("pages with a cursor and filters by time and status", async () => {
     const first = lines(
-      (await exportAs(developer, exportPath(a, "?limit=2"))).body,
+      (await callStream(developer, exportPath(a, "?limit=2"))).body,
     );
     expect(first.slice(0, 2).map((l) => l.case!.id)).toEqual([
       a.older,
@@ -388,7 +364,7 @@ describe("capture export", () => {
     expect(next).toBeTruthy();
     const second = lines(
       (
-        await exportAs(
+        await callStream(
           developer,
           exportPath(a, `?limit=2&cursor=${encodeURIComponent(next)}`),
         )
@@ -398,11 +374,11 @@ describe("capture export", () => {
       a.failed,
       a.cancelled,
     ]);
-    expect(second.at(-1)?.purged).toBe(0);
+    expect(second.at(-1)?.skipped).toBe(0);
     expect(second.at(-1)?.next).toBeTruthy();
     const third = lines(
       (
-        await exportAs(
+        await callStream(
           developer,
           exportPath(
             a,
@@ -411,12 +387,12 @@ describe("capture export", () => {
         )
       ).body,
     );
-    expect(third).toEqual([{ next: null, purged: 1 }]);
+    expect(third).toEqual([{ next: null, skipped: 1 }]);
 
     const from = encodeURIComponent(ago(10).toISOString());
     const filtered = lines(
       (
-        await exportAs(
+        await callStream(
           keyed,
           exportPath(a, `?from=${from}&status=completed,failed`),
         )
@@ -427,21 +403,38 @@ describe("capture export", () => {
       a.failed,
     ]);
 
-    expect((await exportAs(owner, exportPath(a, "?cursor=nope"))).status).toBe(
-      400,
-    );
     expect(
-      (await exportAs(owner, exportPath(a, "?status=running"))).status,
+      (await callStream(owner, exportPath(a, "?cursor=nope"))).status,
     ).toBe(400);
-    expect((await exportAs(owner, exportPath(a, "?limit=501"))).status).toBe(
+    expect(
+      (await callStream(owner, exportPath(a, "?status=running"))).status,
+    ).toBe(400);
+    expect((await callStream(owner, exportPath(a, "?limit=501"))).status).toBe(
       400,
     );
   });
 
   it("is for Developers, Admins, Owners and API keys only", async () => {
-    expect((await exportAs(viewer, exportPath(a))).status).toBe(403);
-    expect((await exportAs(outsider, exportPath(a))).status).toBe(403);
-    expect((await exportAs(keyed, exportPath(a))).status).toBe(200);
+    expect((await callStream(viewer, exportPath(a))).status).toBe(403);
+    expect((await callStream(outsider, exportPath(a))).status).toBe(403);
+    expect((await callStream(keyed, exportPath(a))).status).toBe(200);
+  });
+
+  it("has a count of every page's lines and skipped cases, for the same people", async () => {
+    const countPath = (s: Seeded, query = "") =>
+      `/v1/orgs/${s.org}/agents/invoices/capture/count${query}`;
+    const total = await developer.call<{ count: number }>(countPath(a));
+    expect(total.body).toEqual({ count: 5 });
+    const from = encodeURIComponent(ago(10).toISOString());
+    expect(
+      (
+        await keyed.call<{ count: number }>(
+          countPath(a, `?from=${from}&status=completed,failed`),
+        )
+      ).body,
+    ).toEqual({ count: 3 });
+    expect((await viewer.call(countPath(a))).status).toBe(403);
+    expect((await otherOwner.call(countPath(a))).status).toBe(403);
   });
 
   it("is recorded as capture.exported", async () => {
@@ -449,7 +442,7 @@ describe("capture export", () => {
       events: {
         action: string;
         targetId: string;
-        data: { count: number; purged: number; filters: { status: string[] } };
+        data: { count: number; skipped: number; filters: { status: string[] } };
       }[];
     }>(`/v1/orgs/${a.org}/audit-events?action=capture.exported`);
     expect(audit.body.events.length).toBeGreaterThanOrEqual(4);
@@ -458,8 +451,8 @@ describe("capture export", () => {
   });
 
   it("never reaches another organization's cases", async () => {
-    expect((await exportAs(otherOwner, exportPath(a))).status).toBe(403);
-    const own = lines((await exportAs(otherOwner, exportPath(b))).body);
+    expect((await callStream(otherOwner, exportPath(a))).status).toBe(403);
+    const own = lines((await callStream(otherOwner, exportPath(b))).body);
     expect(own.slice(0, -1).map((l) => l.case!.id)).toEqual([
       b.older,
       b.completed,
@@ -478,7 +471,7 @@ describe("capture export", () => {
     ).toBe(true);
     expect(
       (
-        await exportAs(
+        await callStream(
           otherOwner,
           `/v1/orgs/${b.org}/agents/${a.agentId}/capture/export`,
         )

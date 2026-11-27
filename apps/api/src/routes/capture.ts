@@ -11,6 +11,7 @@ import type { OrgVariables } from "../caller.ts";
 import {
   CLOSED,
   caseReviewEvents,
+  countClosedCases,
   EXPORT_LIMIT_MAX,
   exportable,
   exportPage,
@@ -143,12 +144,44 @@ export const captureRoutes = new OpenAPIHono<{
   .openapi(
     createRoute({
       method: "get",
+      path: "/agents/{agent}/capture/count",
+      tags: ["Training"],
+      summary:
+        "How many closed cases a capture export with these filters covers (Developers, Admins, API keys)",
+      description:
+        "The total for an export's progress: every page's lines plus their skipped cases.",
+      request: {
+        params: AgentParam,
+        query: ExportQuery.pick({ from: true, to: true, status: true }),
+      },
+      responses: {
+        200: json(z.object({ count: z.number() }), "The count"),
+        400: error("A bad filter"),
+        403: error("Not a Developer, Admin or Owner"),
+        404: error("No such agent"),
+      },
+    }),
+    async (c) => {
+      const { agent: ref } = c.req.valid("param");
+      const query = c.req.valid("query");
+      const total = await withOrg(c.env, c.var.org, async (tx) => {
+        await requireDeveloper(tx, c.var.caller);
+        const agent = await findAgent(tx, ref);
+        if (!agent) throw new ApiError(404, "not_found", "No such agent.");
+        return countClosedCases(tx, agent.id, query);
+      });
+      return c.json({ count: total }, 200);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "get",
       path: "/agents/{agent}/capture/export",
       tags: ["Training"],
       summary:
         "Export an agent's closed cases with their run capture as NDJSON (Developers, Admins, API keys)",
       description:
-        'One line per closed case, oldest first: { case, capture, reviewEvents }. The last line is { "next": cursor or null, "purged": n }, where purged counts cases skipped because retention deleted their capture. Each export is recorded as capture.exported.',
+        'One line per closed case, oldest first: { case, capture, reviewEvents }. The last line is { "next": cursor or null, "skipped": n }, where skipped counts the cases of the page left out because retention deleted their capture; GET capture/count with the same filters gives the lines and skipped cases of every page together. Each export is recorded as capture.exported.',
       request: { params: AgentParam, query: ExportQuery },
       responses: {
         200: ndjson("The cases, streamed as an attachment"),
@@ -183,7 +216,7 @@ export const captureRoutes = new OpenAPIHono<{
               limit: query.limit,
             },
             count: page.kept.length,
-            purged: page.purged,
+            skipped: page.skipped,
           },
         });
         return { agentId: agent.id, page };

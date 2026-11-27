@@ -6,7 +6,7 @@
 import { withOrg } from "@preprocess/db/client";
 import type { OrgId, Tx } from "@preprocess/db/client";
 import { cases, reviewEvents } from "@preprocess/db/schema/cases";
-import { and, asc, eq, gt, gte, inArray, lt, or } from "drizzle-orm";
+import { and, asc, count, eq, gt, gte, inArray, lt, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 
 import { agentRole, canSeeCase } from "./access.ts";
@@ -154,6 +154,29 @@ export type ExportFilter = {
   where?: (SQL | undefined)[];
 };
 
+// The agent's closed cases the filter selects.
+export const closedCases = (agentId: string, filter: ExportFilter) =>
+  and(
+    eq(cases.agentId, agentId),
+    inArray(cases.status, filter.status?.length ? filter.status : [...CLOSED]),
+    filter.from ? gte(cases.createdAt, new Date(filter.from)) : undefined,
+    filter.to ? lt(cases.createdAt, new Date(filter.to)) : undefined,
+    ...(filter.where ?? []),
+  );
+
+// How many lines and skipped cases an export of every page holds together.
+export const countClosedCases = async (
+  tx: Tx,
+  agentId: string,
+  filter: ExportFilter,
+) => {
+  const [row] = await tx
+    .select({ n: count() })
+    .from(cases)
+    .where(closedCases(agentId, filter));
+  return row?.n ?? 0;
+};
+
 const decodeCursor = (cursor: string) => {
   try {
     const [at, id] = JSON.parse(atob(cursor)) as [unknown, unknown];
@@ -183,20 +206,13 @@ export const exportPage = async (
     .from(cases)
     .where(
       and(
-        eq(cases.agentId, agentId),
-        inArray(
-          cases.status,
-          filter.status?.length ? filter.status : [...CLOSED],
-        ),
-        filter.from ? gte(cases.createdAt, new Date(filter.from)) : undefined,
-        filter.to ? lt(cases.createdAt, new Date(filter.to)) : undefined,
+        closedCases(agentId, filter),
         after
           ? or(
               gt(cases.createdAt, after.at),
               and(eq(cases.createdAt, after.at), gt(cases.id, after.id)),
             )
           : undefined,
-        ...(filter.where ?? []),
       ),
     )
     .orderBy(asc(cases.createdAt), asc(cases.id))
@@ -227,7 +243,8 @@ export type ExportItem = {
 
 export type ExportPage = {
   kept: CaseRow[];
-  purged: number;
+  // Cases left out because retention deleted their capture.
+  skipped: number;
   reviewEvents: Map<string, ReviewEvent[]>;
   next: string | null;
 };
@@ -241,7 +258,7 @@ export const exportable = async (
   const kept = page.items.filter((row) => !purged(row));
   return {
     kept,
-    purged: page.items.length - kept.length,
+    skipped: page.items.length - kept.length,
     reviewEvents: await reviewEventsOf(
       tx,
       kept.map((row) => row.id),
@@ -251,9 +268,8 @@ export const exportable = async (
 };
 
 // Streams one line per kept case, as `line` maps it, then a trailer with
-// the next page's cursor and how many cases were skipped because retention
-// deleted their capture. Captures are read a few at a time as the client
-// pulls the lines.
+// the next page's cursor and how many of the page's cases were skipped.
+// Captures are read a few at a time as the client pulls the lines.
 export const streamExport = (
   env: Env,
   org: OrgId,
@@ -268,7 +284,7 @@ export const streamExport = (
       if (i >= page.kept.length) {
         controller.enqueue(
           encoder.encode(
-            `${JSON.stringify({ next: page.next, purged: page.purged })}\n`,
+            `${JSON.stringify({ next: page.next, skipped: page.skipped })}\n`,
           ),
         );
         controller.close();
