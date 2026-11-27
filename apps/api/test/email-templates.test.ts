@@ -88,7 +88,7 @@ describe("system emails", () => {
 
   it("name Preprocess in footers on our cloud only", () => {
     const webhook = {
-      url: "https://app.example.test/developers/webhooks",
+      url: "https://app.example.test/settings/organization/api-keys",
       endpointUrl: "https://hooks.example.test",
       orgName: "Northwind",
       days: 3,
@@ -129,7 +129,7 @@ describe("system emails", () => {
 
   it("state the disable period it is given", () => {
     const email = webhookDisabledEmail(brand, {
-      url: "https://app.example.test/developers/webhooks",
+      url: "https://app.example.test/settings/organization/api-keys",
       endpointUrl: "https://hooks.example.test",
       orgName: "Northwind",
       days: 5,

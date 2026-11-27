@@ -137,7 +137,7 @@ describe("installing the App", () => {
     const linked = await setup("good");
     expect(linked.status).toBe(302);
     expect(linked.headers.get("location")).toBe(
-      new URL("/developers/github", environment.APP_URL).href,
+      new URL("/settings/organization/github", environment.APP_URL).href,
     );
 
     const repos = await call<{ fullName: string; link: unknown }[]>(
@@ -197,7 +197,7 @@ describe("installing the App", () => {
     );
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(
-      new URL("/developers/github", environment.APP_URL).href,
+      new URL("/settings/organization/github", environment.APP_URL).href,
     );
   });
 });

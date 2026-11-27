@@ -431,7 +431,7 @@ const disableIfFailing = async (env: Env, tx: Tx, endpointId: string) => {
     .from(organization)
     .where(eq(organization.id, endpoint.organizationId));
   const email = webhookDisabledEmail(emailBrand(env), {
-    url: new URL("/developers/webhooks", env.APP_URL).href,
+    url: new URL("/settings/organization/api-keys", env.APP_URL).href,
     endpointUrl: endpoint.url,
     orgName: org?.name ?? "your organization",
     days: DISABLE_AFTER_DAYS,

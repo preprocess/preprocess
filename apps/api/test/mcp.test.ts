@@ -183,7 +183,7 @@ describe("MCP servers and the organization's connection", () => {
     expect(finished.status).toBe(303);
     const landed = new URL(finished.headers.get("location")!);
     expect(landed.origin).toBe(new URL(testEnv().APP_URL).origin);
-    expect(landed.pathname).toBe("/developers/integrations");
+    expect(landed.pathname).toBe("/settings/organization/integrations");
     expect(landed.searchParams.get("connected")).toBe("crm");
     const [server] = (
       await call<Server[]>(a, "GET", "/v1/orgs/{org}/mcp-servers")
@@ -209,7 +209,7 @@ describe("MCP servers and the organization's connection", () => {
     );
     expect(forged.status).toBe(303);
     const landed = new URL(forged.headers.get("location")!);
-    expect(landed.pathname).toBe("/developers/integrations");
+    expect(landed.pathname).toBe("/settings/organization/integrations");
     expect(landed.searchParams.get("connect_error")).toBe("expired");
     expect(landed.searchParams.has("connected")).toBe(false);
   });
