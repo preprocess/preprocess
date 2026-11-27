@@ -328,7 +328,7 @@ function LiveCaseRoomChat({
           ref={scrollRef}
           viewportClassName="scroll-fade"
         >
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
+          <div className="@container mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
             {thread.map((message, index) => (
               <ThreadEntry
                 continued={continued[index]}
@@ -421,7 +421,7 @@ function SeededCaseRoomChat({ className }: Readonly<{ className?: string }>) {
           ref={scrollRef}
           viewportClassName="scroll-fade"
         >
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
+          <div className="@container mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
             {messages.map((message, index) =>
               message.role === "user" ? (
                 <ChatMessage
