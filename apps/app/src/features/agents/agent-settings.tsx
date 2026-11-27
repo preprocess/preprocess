@@ -15,6 +15,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { AllCaughtUpArt, GoneArt } from "../../components/empty-art";
+
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
 import { FIELDS, type Field } from "../settings/defaults-panel";
@@ -137,12 +139,14 @@ function AgentRequests({
         <SettingsSkeletonRows count={1} />
       ) : highlight && !shown.some((r) => r.id === highlight) ? (
         <SettingsEmpty
-          description="It may have been withdrawn after the deployment that filed it was replaced."
-          title="This request no longer exists"
+          art={<GoneArt />}
+          description="This guardrail request no longer exists."
+          title="Request not found"
         />
       ) : shown.length === 0 ? (
         <SettingsEmpty
-          description="Nothing is waiting on a guardrail for this agent."
+          art={<AllCaughtUpArt />}
+          description="This agent has no deployments waiting on a guardrail decision."
           title="No pending requests"
         />
       ) : (

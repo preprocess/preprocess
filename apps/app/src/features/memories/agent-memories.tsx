@@ -2,6 +2,8 @@ import { Button } from "@preprocess/ui/components/button";
 import { ChevronRight } from "@preprocess/ui/lib/icons";
 import { Link } from "@tanstack/react-router";
 
+import { FillsOnItsOwnArt, NotDeployedArt } from "../../components/empty-art";
+
 import { parseAgentId, parseCaseId } from "../agent-cases/agent-case-ref";
 import { orgApi } from "../auth/client";
 import { useOrgJson } from "../evals/eval-api";
@@ -60,14 +62,16 @@ export function AgentMemories({ agentSlug }: Readonly<{ agentSlug: string }>) {
           </SettingsRows>
         ) : accepted.state.kind === "missing" ? (
           <SettingsEmpty
-            description="Once this agent is deployed, rules a person accepts on its cases show up here."
-            title="No memories yet"
+            art={<NotDeployedArt />}
+            description="Memories are proposed while a deployed agent works cases."
+            title="Deploy this agent first"
           />
         ) : accepted.state.kind === "failed" ? (
           <SettingsError error={accepted.state.error} />
         ) : accepted.state.data.memories.length === 0 ? (
           <SettingsEmpty
-            description="When the agent proposes a rule on a case and a person accepts it in the Review tab, it shows up here."
+            art={<FillsOnItsOwnArt />}
+            description="Rules the agent proposes and your team accepts appear here and load into future cases."
             title="No memories yet"
           />
         ) : (

@@ -15,6 +15,8 @@ import { Plus, X } from "@preprocess/ui/lib/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 
+import { NoAccessArt, NothingCreatedArt } from "../../components/empty-art";
+
 import { useOrganizationId } from "../auth/auth-context";
 import { apiFetch, authPost, orgApi } from "../auth/client";
 import {
@@ -127,8 +129,9 @@ export function KeysAndWebhooks() {
   if (!canAdminister)
     return (
       <SettingsEmpty
-        description="Only Owners and Admins can create API keys and webhook endpoints. Ask one of them if you need a key."
-        title="Ask an Owner or Admin"
+        art={<NoAccessArt />}
+        description="Only organization Owners and Admins can manage API keys and webhooks."
+        title="Admin access required"
       />
     );
   return (
@@ -177,7 +180,8 @@ function ApiKeysSection() {
         <SettingsSkeletonRows count={2} />
       ) : keys.data.length === 0 ? (
         <SettingsEmpty
-          description="Create a key for the CLI, CI or an MCP client."
+          art={<NothingCreatedArt />}
+          description="Create an organization API key to deploy agents, start cases or connect MCP clients."
           title="No API keys yet"
         />
       ) : (
@@ -365,7 +369,8 @@ function WebhooksSection() {
         <SettingsSkeletonRows count={2} />
       ) : endpoints.data.length === 0 ? (
         <SettingsEmpty
-          description="Add an endpoint to hear when cases complete, fail or need a group."
+          art={<NothingCreatedArt />}
+          description="Add a webhook endpoint to receive case events as they happen."
           title="No webhooks yet"
         />
       ) : (

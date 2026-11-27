@@ -12,6 +12,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { NothingCreatedArt } from "../../components/empty-art";
+
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
 import {
@@ -157,7 +159,8 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
         <SettingsSkeletonRows count={3} />
       ) : rows.length === 0 ? (
         <SettingsEmpty
-          description="Run preprocess deploy, or push to a connected repository."
+          art={<NothingCreatedArt />}
+          description="Deploy this agent with the CLI or push to its repository to create a version."
           title="No deployments yet"
         />
       ) : (

@@ -29,6 +29,12 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import {
+  AllCaughtUpArt,
+  GoneArt,
+  NoResultsArt,
+} from "../../components/empty-art";
+
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
 import {
@@ -327,15 +333,17 @@ function Requests({ highlight }: { highlight?: string }) {
         <SettingsSkeletonRows count={2} />
       ) : highlight && !linked ? (
         <SettingsEmpty
-          description="It may have been withdrawn after the deployment that filed it was replaced."
-          title="This request no longer exists"
+          art={<GoneArt />}
+          description="This guardrail request no longer exists."
+          title="Request not found"
         />
       ) : shown.length === 0 ? (
         <SettingsEmpty
+          art={status === "pending" ? <AllCaughtUpArt /> : <NoResultsArt />}
           description={
             status === "pending"
-              ? "Nobody is waiting on a guardrail."
-              : `No ${status} requests yet.`
+              ? "All guardrail loosening requests have been decided."
+              : `Guardrail requests that are ${status} appear here.`
           }
           title={`No ${status} requests`}
         />

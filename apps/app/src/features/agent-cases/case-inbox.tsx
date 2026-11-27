@@ -1012,7 +1012,19 @@ export function CaseInbox({
       <div className="relative flex min-h-0 flex-1 flex-col">
         <EmptyPresence>
           {hasCases && !page.loadError ? null : (
-            <CaseInboxEmpty kind={emptyKind} query={search.q} />
+            <CaseInboxEmpty
+              agentScoped={agentScoped}
+              kind={emptyKind}
+              onClearFilters={() =>
+                onSearchChange({
+                  q: "",
+                  status: [],
+                  awaiting: [],
+                  unassigned: [],
+                  ...(agentScoped ? {} : { agent: [] }),
+                })
+              }
+            />
           )}
         </EmptyPresence>
         {hasCases ? (

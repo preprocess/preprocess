@@ -499,8 +499,13 @@ export function Inbox({
           ) : (
             <EmptyPresence>
               <InboxEmpty
-                kind={items.length === 0 ? "caught-up" : "pick"}
-                unread={unread}
+                kind={
+                  items.length === 0
+                    ? "caught-up"
+                    : unread === 0
+                      ? "all-read"
+                      : "pick"
+                }
               />
             </EmptyPresence>
           )}

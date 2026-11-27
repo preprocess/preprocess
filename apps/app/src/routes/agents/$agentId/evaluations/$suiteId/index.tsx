@@ -1,5 +1,7 @@
 import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 
+import { GoneArt } from "../../../../../components/empty-art";
+
 import { AgentPage } from "../../../../../features/agents/agent-page";
 import {
   useOrgJson,
@@ -41,8 +43,9 @@ function EvalSuitePage() {
         </SettingsCard>
       ) : state.kind === "missing" ? (
         <SettingsEmpty
-          description="It may have been deleted."
-          title="This suite doesn't exist"
+          art={<GoneArt />}
+          description="This eval suite was deleted or doesn't exist."
+          title="Eval suite not found"
         />
       ) : state.kind === "failed" ? (
         <SettingsError error={state.error} />

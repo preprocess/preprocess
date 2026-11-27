@@ -5,42 +5,43 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@preprocess/ui/components/empty";
+import type { ReactNode } from "react";
 
 import {
-  InboxCaughtUpArt,
-  InboxEmptyArt,
-  InboxPickArt,
+  AllCaughtUpArt,
+  FillsOnItsOwnArt,
+  NothingSelectedArt,
 } from "../../components/empty-art";
 
-export type InboxEmptyKind = "list" | "caught-up" | "pick";
+export type InboxEmptyKind = "list" | "caught-up" | "all-read" | "pick";
 
-export function InboxEmpty({
-  kind,
-  unread = 0,
-}: {
-  kind: InboxEmptyKind;
-  unread?: number;
-}) {
+export function InboxEmpty({ kind }: { kind: InboxEmptyKind }) {
+  let art: ReactNode;
   let title: string;
   let description: string;
   switch (kind) {
     case "list":
-      title = "No notifications";
-      description = "Mentions and case updates will show up here.";
+      art = <FillsOnItsOwnArt />;
+      title = "Inbox is empty";
+      description =
+        "Reviews, approvals, memory proposals and mentions show up here.";
       break;
     case "caught-up":
-      title = "You're all caught up";
-      description = "New mentions and case updates will show up here.";
+      art = <AllCaughtUpArt />;
+      title = "All caught up";
+      description = "Nothing needs your attention right now.";
+      break;
+    case "all-read":
+      art = <AllCaughtUpArt />;
+      title = "All caught up";
+      description =
+        "No unread items. Reviews, approvals and mentions show up here.";
       break;
     case "pick":
-      title =
-        unread === 1
-          ? "1 unread notification"
-          : `${unread} unread notifications`;
+      art = <NothingSelectedArt />;
+      title = "Select an item";
       description =
-        unread === 0
-          ? "Select an item to read it."
-          : "Select an item from the list to read it.";
+        "Pick a notification from the list to read it and act on it.";
       break;
     default: {
       const _exhaustive: never = kind;
@@ -54,15 +55,7 @@ export function InboxEmpty({
       initial={false}
     >
       <EmptyHeader className="pointer-events-auto group">
-        <EmptyMedia variant="graphic">
-          {kind === "list" ? (
-            <InboxEmptyArt />
-          ) : kind === "caught-up" ? (
-            <InboxCaughtUpArt />
-          ) : (
-            <InboxPickArt />
-          )}
-        </EmptyMedia>
+        <EmptyMedia variant="graphic">{art}</EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>

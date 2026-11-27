@@ -67,6 +67,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { CouldntLoadArt, NoAccessArt } from "../../components/empty-art";
 import { ApiError } from "../auth/client";
 
 /**
@@ -444,12 +445,14 @@ export function SettingsAvatar({
   );
 }
 
-/** The widgets' EmptyState: heading, message, optional action. */
+/** The widgets' EmptyState: optional art, heading, message, optional action. */
 export function SettingsEmpty({
+  art,
   title,
   description,
   action,
 }: {
+  art?: ReactNode;
   title: string;
   description: string;
   action?: ReactNode;
@@ -457,7 +460,8 @@ export function SettingsEmpty({
   const inCard = useContext(InCardContext);
   const content = (
     <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
-      <div className="flex max-w-sm flex-col gap-1">
+      <div className="flex max-w-sm flex-col items-center gap-1">
+        {art ? <div className="mb-2 flex">{art}</div> : null}
         <p
           className="text-body text-foreground"
           style={{ fontVariationSettings: fontWeights.semibold }}
@@ -480,7 +484,27 @@ function errorKind(error: unknown): keyof typeof ERROR_COPY {
   return "generic";
 }
 
-// Copy per failure kind.
+// Copy per failure kind, for a section that failed to load.
+const LOAD_ERROR_COPY = {
+  forbidden: {
+    title: "You don't have access",
+    body: "Ask an organization Owner or Admin if you need access to this section.",
+  },
+  unauthorized: {
+    title: "Session expired",
+    body: "Sign in again to view this section.",
+  },
+  network: {
+    title: "Couldn't load this section",
+    body: "Something went wrong fetching this data. Try again.",
+  },
+  generic: {
+    title: "Couldn't load this section",
+    body: "Something went wrong fetching this data. Try again.",
+  },
+} as const;
+
+// Copy per failure kind, for an action that failed inline.
 const ERROR_COPY = {
   forbidden: {
     title: "Incorrect permissions",
@@ -500,15 +524,45 @@ const ERROR_COPY = {
   },
 } as const;
 
-/** A load or action failure, explained by kind. */
+/**
+ * A failure, explained by kind: a section that failed to load shows the
+ * empty state with art; `inline` keeps an action's failure as a banner.
+ */
 export function SettingsError({
   error,
   className,
+  inline = false,
 }: {
   error: unknown;
   className?: string;
+  inline?: boolean;
 }) {
   const kind = errorKind(error);
+  if (!inline) {
+    const copy = LOAD_ERROR_COPY[kind];
+    return (
+      <SettingsEmpty
+        action={
+          kind === "unauthorized" ? (
+            <Button asChild size="sm" variant="secondary">
+              <a href="/sign-in">Sign in</a>
+            </Button>
+          ) : kind === "forbidden" ? undefined : (
+            <Button
+              onClick={() => window.location.reload()}
+              size="sm"
+              variant="secondary"
+            >
+              Try again
+            </Button>
+          )
+        }
+        art={kind === "forbidden" ? <NoAccessArt /> : <CouldntLoadArt />}
+        description={copy.body}
+        title={copy.title}
+      />
+    );
+  }
   const copy = ERROR_COPY[kind];
   const message =
     kind === "generic" && error instanceof Error && error.message
@@ -856,7 +910,7 @@ export function SettingsConfirmDialog({
       open={open}
       title={title}
     >
-      {error ? <SettingsError error={error} /> : null}
+      {error ? <SettingsError error={error} inline /> : null}
     </SettingsDialogShell>
   );
 }

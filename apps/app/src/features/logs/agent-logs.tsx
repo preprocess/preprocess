@@ -9,6 +9,12 @@ import { LEVELS, type LogLevel } from "@preprocess/logs";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import {
+  FillsOnItsOwnArt,
+  NoResultsArt,
+  NotDeployedArt,
+} from "../../components/empty-art";
+
 import { parseAgentCaseRef } from "../agent-cases/agent-case-ref";
 import { useOrganizationId } from "../auth/auth-context";
 import { ApiError, orgApi } from "../auth/client";
@@ -60,6 +66,13 @@ const LEVEL_LABEL: Record<LogLevel, string> = {
   warn: "Warnings",
   info: "Info",
   debug: "Debug",
+};
+
+const LEVEL_NAME: Record<LogLevel, string> = {
+  error: "error",
+  warn: "warning",
+  info: "info",
+  debug: "debug",
 };
 
 const LEVEL_BADGE = {
@@ -214,21 +227,46 @@ export function AgentLogs({ agentSlug }: Readonly<{ agentSlug: string }>) {
         </SettingsCard>
       ) : state.kind === "missing" ? (
         <SettingsEmpty
-          description="Logs appear once this agent is deployed and runs a case."
-          title="No logs yet"
+          art={<NotDeployedArt />}
+          description="Logs appear here after this agent has a deployment and works cases."
+          title="Deploy this agent first"
         />
       ) : state.kind === "failed" ? (
         <SettingsError error={state.error} />
       ) : shown.length === 0 ? (
         <SettingsEmpty
+          action={
+            search ? (
+              <Button
+                onClick={() => setQuery("")}
+                size="sm"
+                variant="secondary"
+              >
+                Clear search
+              </Button>
+            ) : undefined
+          }
+          art={
+            !search && filter === "all" ? (
+              <FillsOnItsOwnArt />
+            ) : (
+              <NoResultsArt />
+            )
+          }
           description={
             search
-              ? "No logs match this search. Try other words."
+              ? "No log entries match this query."
               : filter === "all"
-                ? "Logs appear here as this agent runs cases."
-                : `No ${LEVEL_LABEL[filter].toLowerCase()} in the logs loaded so far.`
+                ? "Run logs appear here as soon as this agent works a case."
+                : `No ${LEVEL_NAME[filter]} entries were recorded in this range.`
           }
-          title={search ? "No matching logs" : "No logs"}
+          title={
+            search
+              ? "No matching logs"
+              : filter === "all"
+                ? "No logs yet"
+                : `No ${LEVEL_NAME[filter]} logs`
+          }
         />
       ) : (
         <LogList agentSlug={agentSlug} logs={shown} />

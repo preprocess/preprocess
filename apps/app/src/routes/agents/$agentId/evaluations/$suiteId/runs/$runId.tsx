@@ -1,5 +1,7 @@
 import { Link, createFileRoute, getRouteApi } from "@tanstack/react-router";
 
+import { GoneArt } from "../../../../../../components/empty-art";
+
 import { AgentPage } from "../../../../../../features/agents/agent-page";
 import {
   shortId,
@@ -57,8 +59,9 @@ function EvalRunPage() {
         </SettingsCard>
       ) : state.kind === "missing" ? (
         <SettingsEmpty
-          description="Its suite may have been deleted."
-          title="This run doesn't exist"
+          art={<GoneArt />}
+          description="This eval run was deleted or doesn't exist."
+          title="Eval run not found"
         />
       ) : state.kind === "failed" ? (
         <SettingsError error={state.error} />
