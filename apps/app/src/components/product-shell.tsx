@@ -54,6 +54,7 @@ import type { UserOrganization } from "../features/organizations/user-organizati
 import { AppCommandMenu, AppCommandSearchTrigger } from "./app-command-menu";
 import { CreateOrganizationDialog } from "./create-organization-dialog";
 import { ProductSidebarOpenContext } from "./product-sidebar-state";
+import { SidebarHelp } from "./sidebar-app/help";
 import { SidebarInsetTopbar } from "./sidebar-app/inset-topbar";
 import { SidebarUserFooter } from "./sidebar-app/user-footer";
 import {
@@ -337,6 +338,7 @@ function ProductSidebar({
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
+          <SidebarHelp />
           <SidebarNoticeStack />
           <UserFooter />
         </SidebarFooter>
