@@ -124,7 +124,7 @@ function Card({
 const callouts = {
   note: {
     icon: InfoIcon,
-    className: "bg-surface-3",
+    className: "bg-muted",
     tone: "text-muted-foreground",
   },
   tip: {
