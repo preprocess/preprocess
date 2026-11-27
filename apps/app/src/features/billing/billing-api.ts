@@ -231,10 +231,50 @@ export function useBillingActions() {
       return people;
     },
 
-    async saveAutoReload(next: AutoReload) {
-      if (seeded()) write((b) => ({ ...b, autoReload: next }));
+    async saveAutoReload({
+      enabled,
+      belowCredits,
+      addCredits,
+      monthlyLimitUsd,
+    }: AutoReload) {
+      const next = { enabled, belowCredits, addCredits, monthlyLimitUsd };
+      if (seeded())
+        write((b) => ({
+          ...b,
+          autoReload: {
+            failed: null,
+            capReachedUntil: null,
+            ...b.autoReload,
+            ...next,
+          },
+        }));
       else await post("/billing/auto-reload", next, "PUT");
       await refresh();
+    },
+
+    /** Runs a failed auto-reload again on the card on file. */
+    async retryAutoReload(): Promise<Purchase> {
+      const purchase = seeded()
+        ? await seededResult<Purchase>(() => {
+            write((b) => ({
+              ...b,
+              credits: b.credits &&
+                b.autoReload && {
+                  remaining:
+                    b.credits.remaining +
+                    b.autoReload.addCredits -
+                    b.credits.owed,
+                  owed: 0,
+                },
+              autoReload: b.autoReload && { ...b.autoReload, failed: null },
+            }));
+            return { url: null, action: null };
+          })
+        : await post<Purchase>("/billing/auto-reload/retry", {
+            returnTo: returnTo(),
+          });
+      await refresh();
+      return purchase;
     },
 
     /** Sends the Owner to the payment portal (card, billing email, invoices). */

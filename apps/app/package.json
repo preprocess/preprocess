@@ -14,6 +14,7 @@
     "dev:vite": "vite dev",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -43,6 +44,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "catalog:",
+    "@cloudflare/vitest-plugin": "catalog:",
     "@cloudflare/workers-types": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
@@ -52,6 +54,7 @@
     "tsx": "catalog:",
     "typescript": "^5.9.3",
     "vite": "catalog:",
+    "vitest": "catalog:",
     "wrangler": "catalog:"
   }
 }

@@ -50,6 +50,7 @@ import {
 import { logSummaries } from "../src/schema/logs.ts";
 import { agentMemories } from "../src/schema/memories.ts";
 import {
+  autoReloadStates,
   sandboxIntervals,
   demotedSeats,
   planChanges,
@@ -489,6 +490,11 @@ export const seedOrganization = async (name: string) =>
       plan: "free",
       requestedBy: userId,
     });
+    await tx.insert(autoReloadStates).values({
+      organizationId: org,
+      failedAt: new Date("2026-11-26T03:00:00Z"),
+      failedReason: "card_declined",
+    });
     await tx.insert(demotedSeats).values({
       organizationId: org,
       userId,
@@ -558,6 +564,7 @@ export const tenantTables = {
   seat_activity: "organization_id",
   plan_changes: "organization_id",
   demoted_seats: "organization_id",
+  auto_reload_states: "organization_id",
   sandbox_intervals: "organization_id",
   sandbox_layers: "organization_id",
   inbox_reads: "organization_id",

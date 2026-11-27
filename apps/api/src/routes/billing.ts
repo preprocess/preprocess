@@ -10,6 +10,7 @@ import { audit } from "@preprocess/db/audit";
 import { orgId, withOrg } from "@preprocess/db/client";
 import { HTTPException } from "hono/http-exception";
 
+import { clearReloadFailure, readReloadState } from "../auto-reload.ts";
 import { autumn, type Autumn, type AutumnAttached } from "../autumn.ts";
 import {
   CREDITS,
@@ -52,6 +53,25 @@ const AutoReload = z
     }),
   })
   .openapi("AutoReload");
+
+const AutoReloadState = AutoReload.extend({
+  failed: z
+    .object({
+      at: z.string().openapi({ description: "When the reload failed" }),
+      reason: z.enum(["card_declined"]).nullable().openapi({
+        description: "Why, when the processor said; null when it didn't",
+      }),
+    })
+    .nullable()
+    .openapi({
+      description:
+        "The last auto-reload charge failed and nothing has resolved it yet, shown to Owners and Admins; null otherwise",
+    }),
+  capReachedUntil: z.string().nullable().openapi({
+    description:
+      "Auto-reload reached its monthly cap and resumes at this time (the 1st of next month, UTC), shown to Owners and Admins; null otherwise",
+  }),
+}).openapi("AutoReloadState");
 
 const Billing = z
   .object({
@@ -112,7 +132,7 @@ const Billing = z
         description:
           "Free and Team pay a case's usage from prepaid credits; null on other plans",
       }),
-    autoReload: AutoReload.nullable(),
+    autoReload: AutoReloadState.nullable(),
     card: z
       .object({
         brand: z.string(),
@@ -355,6 +375,19 @@ export const billingRoutes = new OpenAPIHono<{
       const manager =
         c.var.caller.type === "person" &&
         (c.var.caller.role === "owner" || c.var.caller.role === "admin");
+      const credits = customer && prepaid(plan) ? readCredits(customer) : null;
+      const reload =
+        customer && prepaid(plan)
+          ? readAutoReload(customer.billing_controls?.auto_topups)
+          : null;
+      const reloadState =
+        manager && credits && reload?.enabled
+          ? await readReloadState(
+              c.env,
+              c.var.org,
+              credits.remaining >= reload.belowCredits,
+            )
+          : { failed: null, capReachedUntil: null };
       const switched = manager
         ? await withOrg(c.env, orgId(c.var.org), async (tx) => ({
             people: (await demotedPeople(tx)).length,
@@ -378,11 +411,8 @@ export const billingRoutes = new OpenAPIHono<{
             switched && (switched.people || switched.agents.length)
               ? switched
               : null,
-          credits: customer && prepaid(plan) ? readCredits(customer) : null,
-          autoReload:
-            customer && prepaid(plan)
-              ? readAutoReload(customer.billing_controls?.auto_topups)
-              : null,
+          credits,
+          autoReload: reload && { ...reload, ...reloadState },
           card: card
             ? {
                 brand: card.brand,
@@ -906,6 +936,7 @@ export const billingRoutes = new OpenAPIHono<{
           data: { credits: quantity, paid: !attached.payment_url },
         }),
       );
+      if (!attached.payment_url) await clearReloadFailure(c.env, c.var.org);
       return c.json(
         {
           url: paymentUrl(attached),
@@ -1000,6 +1031,72 @@ export const billingRoutes = new OpenAPIHono<{
         }),
       );
       return c.json(saved, 200);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "post",
+      path: "/billing/auto-reload/retry",
+      tags: ["Billing"],
+      summary:
+        "Run a failed auto-reload again now (Owner; Free and Team): buy the reload's credits on the card on file. A purchase that goes through clears the failure.",
+      request: {
+        params: OrgParam,
+        body: {
+          content: {
+            "application/json": { schema: z.object({ returnTo }) },
+          },
+        },
+      },
+      responses: {
+        200: {
+          content: { "application/json": { schema: Purchase } },
+          description: "The purchase, or the payment page to finish it on",
+        },
+        403: { description: "Not the Owner" },
+        409: { description: "Not on Free or Team, or no auto-reload set" },
+        404: { description: "Billing is off" },
+      },
+    }),
+    async (c) => {
+      requireOwner(c.var, OWNER_ONLY);
+      const billing = autumn(c.env);
+      const plan = await cloudPlan(c.env, c.var.org);
+      if (!billing || !plan) throw off();
+      if (!prepaid(plan))
+        throw new HTTPException(409, {
+          message: "Credits are bought on the Free and Team plans.",
+        });
+      const reload = readAutoReload(
+        (await billing.customer(c.var.org)).billing_controls?.auto_topups,
+      );
+      if (!reload)
+        throw new HTTPException(409, {
+          message: "Auto-reload isn't set up.",
+        });
+      const { returnTo } = c.req.valid("json");
+      const attached = await billing.attach(c.var.org, {
+        planId: CREDITS_PLAN,
+        quantities: { [CREDITS]: reload.addCredits },
+        successUrl: backTo(c.env, returnTo),
+      });
+      await withOrg(c.env, c.var.org, (tx) =>
+        audit(tx, {
+          ...eventBase(c.var),
+          action: "billing.auto_reload_retried",
+          targetType: "organization",
+          targetId: c.var.org,
+          data: { credits: reload.addCredits, paid: !attached.payment_url },
+        }),
+      );
+      if (!attached.payment_url) await clearReloadFailure(c.env, c.var.org);
+      return c.json(
+        {
+          url: paymentUrl(attached),
+          action: await paymentAction(billing, c.var.org, attached),
+        },
+        200,
+      );
     },
   )
   .openapi(

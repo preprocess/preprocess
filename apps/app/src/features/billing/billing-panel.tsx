@@ -55,6 +55,7 @@ import {
   dayName,
   dollarsOf,
   longDate,
+  monthDay,
   monthName,
   nextMonthStart,
   PLAN_NAME,
@@ -308,6 +309,16 @@ function AutoReload({
     : on && saved
       ? `When balance falls below ${usd(creditsUsd(saved.belowCredits))}, add ${usd(creditsUsd(saved.addCredits))}${saved.monthlyLimitUsd === null ? "" : `, up to ${usd(saved.monthlyLimitUsd)} a month`}.`
       : "Off. Cases halt if your balance reaches $0.";
+  const failed = on ? saved?.failed : null;
+  const capUntil =
+    on && saved?.monthlyLimitUsd != null ? saved.capReachedUntil : null;
+
+  const retry = async () => {
+    const purchase = await actions.retryAutoReload();
+    if (purchase.url && purchase.action === "card_declined")
+      throw new Error("declined");
+    if (purchase.url) window.location.assign(purchase.url);
+  };
 
   return (
     <div className="flex flex-col gap-4 px-5 py-4">
@@ -315,6 +326,11 @@ function AutoReload({
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-body text-foreground">Auto-reload</span>
           <span className="text-caption text-muted-foreground">{summary}</span>
+          {capUntil && saved?.monthlyLimitUsd != null ? (
+            <span className="text-caption text-foreground">
+              {`Monthly cap of ${usd(saved.monthlyLimitUsd)} reached. Auto-reload resumes on ${monthDay(capUntil)} (UTC).`}
+            </span>
+          ) : null}
         </div>
         <Switch
           checked={on}
@@ -328,6 +344,27 @@ function AutoReload({
           }
         />
       </div>
+      {failed ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-caption text-destructive">
+            {failed.reason === "card_declined"
+              ? "Last reload failed: your card was declined."
+              : "Last reload failed."}
+          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <LoadingButton onAction={retry} size="compact" variant="secondary">
+              Retry
+            </LoadingButton>
+            <Button
+              onClick={() => void actions.openPortal()}
+              size="compact"
+              type="button"
+            >
+              Update card
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {on ? (
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

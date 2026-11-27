@@ -260,6 +260,13 @@
       "when": 1795817360912,
       "tag": "0041_device_code",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795818676071,
+      "tag": "0042_auto_reload_states",
+      "breakpoints": true
     }
   ]
 }
