@@ -21,11 +21,14 @@ export class AutumnError extends Error {
 
 export type AutumnCustomer = {
   id: string;
+  email?: string | null;
   subscriptions: {
     plan_id: string;
     status: string;
     started_at?: number;
     current_period_end?: number | null;
+    // A renewal payment failed; the status stays active.
+    past_due?: boolean;
   }[];
   flags: Record<string, unknown>;
   balances: Record<
@@ -45,9 +48,26 @@ export type AutumnCustomer = {
   >;
   billing_controls?: { auto_topups?: AutoTopUp[] };
   payment_method?: {
-    card?: { brand: string; last4: string; fingerprint?: string };
+    card?: {
+      brand: string;
+      last4: string;
+      exp_month: number;
+      exp_year: number;
+      fingerprint?: string;
+    };
   } | null;
+  // Expanded on request: totals in dollars, created_at in milliseconds.
+  invoices?: {
+    id: string;
+    status: string;
+    total: number;
+    currency: string;
+    created_at: number;
+    hosted_invoice_url?: string | null;
+  }[];
 };
+
+export type AutumnExpand = "invoices" | "payment_method";
 
 // Autumn's auto top-up: below threshold credits, buy quantity more, at most
 // limit dollars a month.
@@ -85,6 +105,9 @@ type Purchase = {
   successUrl?: string;
   // A downgrade waits for the end of the billing period.
   atPeriodEnd?: boolean;
+  // Always send the customer to the payment page instead of charging the card
+  // on file; the card entered there is saved for future charges.
+  newCard?: boolean;
 };
 
 // Free's $5 of credits is granted once per organization and card, by the
@@ -106,6 +129,7 @@ const purchase = (organizationId: string, p: Purchase) => ({
   }),
   ...(p.successUrl && { success_url: p.successUrl }),
   ...(p.atPeriodEnd && { plan_schedule: "end_of_cycle" }),
+  ...(p.newCard && { redirect_mode: "always" }),
 });
 
 export type Autumn = ReturnType<typeof client>;
@@ -143,12 +167,19 @@ const client = (key: string) => {
     customer: (
       organizationId: string,
       name?: string,
-      expand?: "payment_method",
+      expand: AutumnExpand[] = [],
     ) =>
       call<AutumnCustomer>("customers.get_or_create", {
         customer_id: organizationId,
         ...(name && { name }),
-        ...(expand && { expand: [expand] }),
+        ...(expand.length > 0 && { expand }),
+      }),
+    // The payment portal, where the Owner updates the card and the billing
+    // email and finds every invoice.
+    portal: (organizationId: string, returnUrl: string) =>
+      call<{ url: string }>("billing.open_customer_portal", {
+        customer_id: organizationId,
+        return_url: returnUrl,
       }),
     // Starts a plan once the customer adds a card in a Stripe setup session,
     // since every plan needs one (Free included; Chip, 2026-11-26). Attach's

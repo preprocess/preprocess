@@ -47,6 +47,34 @@ export const SCENARIO_SURFACES = {
       "empty",
     ],
   },
+  // Billing settings: "live" reads the API; the rest are seeded plans and
+  // states (Design's round-4 frames).
+  billing: {
+    label: "Billing",
+    states: [
+      "live",
+      "free",
+      "free-empty",
+      "no-card",
+      "team",
+      "team-small",
+      "team-low",
+      "team-empty",
+      "team-negative",
+      "team-limit",
+      "team-past-due",
+      "team-ending",
+      "team-switched",
+      "enterprise",
+      "internal",
+      "loading",
+    ],
+  },
+  // How seeded billing actions (top up, upgrade, cancel) answer.
+  "billing-result": {
+    label: "Billing result",
+    states: ["ok", "confirm-payment", "declined", "error"],
+  },
   // The sidebar notice stack's billing state, role and announcements.
   notices: {
     label: "Notices",
@@ -73,6 +101,8 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   cases: "live",
   "case-room": "conversation",
   "case-work": "live",
+  billing: "live",
+  "billing-result": "ok",
   notices: "live",
 };
 
@@ -82,6 +112,8 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   cases: "live",
   "case-room": "empty",
   "case-work": "live",
+  billing: "live",
+  "billing-result": "ok",
   notices: "live",
 };
 
