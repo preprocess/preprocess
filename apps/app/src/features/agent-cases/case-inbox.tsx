@@ -540,7 +540,7 @@ function GroupHeader({
       aria-expanded={!collapsed}
       aria-label={`${collapsed ? "Expand" : "Collapse"} ${groupKey}`}
       className={cn(
-        "group/header flex h-9 w-full cursor-pointer items-center gap-2 bg-surface-3 px-3 text-left text-body outline-none transition-colors duration-80 hover:bg-surface-4 focus-visible:ring-1 focus-visible:ring-(--focus-ring)",
+        "group/header flex h-9 w-full cursor-pointer items-center gap-2 bg-accent px-3 text-left text-body outline-none transition-colors duration-80 hover:bg-[color-mix(in_oklab,var(--accent),var(--foreground)_4%)] focus-visible:ring-1 focus-visible:ring-(--focus-ring)",
         shape.item,
       )}
       onClick={onToggle}

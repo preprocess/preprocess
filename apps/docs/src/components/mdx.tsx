@@ -82,7 +82,7 @@ function Card({
   const Icon = icon ? cardIcons[icon] : undefined;
   return (
     <PageLink
-      className="relative flex flex-col gap-4 rounded-3xl bg-surface-1 p-5 shadow-[inset_0_0_0_1px_var(--border)] transition-colors duration-80 hover:bg-surface-3"
+      className="relative flex flex-col gap-4 rounded-3xl bg-surface-1 p-5 shadow-[inset_0_0_0_1px_var(--border)] transition-colors duration-80 hover:bg-accent"
       url={href}
     >
       <ChevronRight
