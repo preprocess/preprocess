@@ -46,6 +46,9 @@ describe("rate limits", { timeout: 30_000 }, () => {
     const orgB = await createOrganization(b.client, "Rate B");
 
     await exhaust(rateLimitName.org(orgA), "org", LIMITS.org);
+    // The limiter answers after the response, so the request that finds the
+    // bucket full still gets through and the next one is refused.
+    expect((await a.client.call(`/v1/orgs/${orgA}/groups`)).status).toBe(200);
     expectLimited(await a.client.call(`/v1/orgs/${orgA}/groups`));
     expect((await b.client.call(`/v1/orgs/${orgB}/groups`)).status).toBe(200);
   });
@@ -64,7 +67,9 @@ describe("rate limits", { timeout: 30_000 }, () => {
       new Client(owner.client.environment, { authorization: `Bearer ${key}` });
 
     await exhaust(rateLimitName.org(org), `key:${first.id}`, LIMITS.apiKey);
-    expectLimited(await keyed(first.key).call(`/v1/orgs/${org}/groups`));
+    const limited = keyed(first.key);
+    expect((await limited.call(`/v1/orgs/${org}/groups`)).status).toBe(200);
+    expectLimited(await limited.call(`/v1/orgs/${org}/groups`));
     expect(
       (await keyed(second.key).call(`/v1/orgs/${org}/groups`)).status,
     ).toBe(200);
@@ -76,9 +81,10 @@ describe("rate limits", { timeout: 30_000 }, () => {
     await exhaust(rateLimitName.org(org), "org", LIMITS.org);
     owner.client.environment.BILLING_INTERNAL_ORGS = org;
     try {
-      expect((await owner.client.call(`/v1/orgs/${org}/groups`)).status).toBe(
-        200,
-      );
+      for (let i = 0; i < 2; i++)
+        expect((await owner.client.call(`/v1/orgs/${org}/groups`)).status).toBe(
+          200,
+        );
     } finally {
       delete owner.client.environment.BILLING_INTERNAL_ORGS;
     }

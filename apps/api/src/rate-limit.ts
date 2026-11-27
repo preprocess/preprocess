@@ -23,26 +23,30 @@ export const rateLimitName = {
 type Bucket = { name: string; limit: number };
 
 // The counts live in memory: an object evicted while idle has nothing left
-// worth counting. A request is counted in every bucket or in none.
+// worth counting. A request is counted in every bucket or in none, and the
+// answer names the buckets that are full.
 export class RateLimiter extends DurableObject<Env> {
   #window = 0;
   #counts = new Map<string, number>();
 
-  take(buckets: Bucket[]): { allowed: boolean; retryAfter: number } {
+  take(buckets: Bucket[]): { over: string[]; retryAfter: number } {
     const now = Date.now();
     const window = Math.floor(now / WINDOW_MS);
     if (window !== this.#window) {
       this.#window = window;
       this.#counts.clear();
     }
-    if (buckets.some((b) => (this.#counts.get(b.name) ?? 0) >= b.limit))
+    const over = buckets
+      .filter((b) => (this.#counts.get(b.name) ?? 0) >= b.limit)
+      .map((b) => b.name);
+    if (over.length)
       return {
-        allowed: false,
+        over,
         retryAfter: Math.ceil(((window + 1) * WINDOW_MS - now) / 1000),
       };
     for (const b of buckets)
       this.#counts.set(b.name, (this.#counts.get(b.name) ?? 0) + 1);
-    return { allowed: true, retryAfter: 0 };
+    return { over, retryAfter: 0 };
   }
 }
 
@@ -58,19 +62,41 @@ const tooManyRequests = (retryAfter: number) =>
     { status: 429, headers: { "retry-after": String(retryAfter) } },
   );
 
+// Organization and API key buckets this isolate has been told are full, and
+// until when.
+const full = new Map<string, number>();
+
+// The Durable Object is asked after the response, off the request's path (a
+// round trip on every /v1 request costs about 25 ms at p50): a request is
+// refused once its isolate has heard that its organization or key is full.
+// So each isolate may let through about one request too many per window.
 export const orgRateLimit = createMiddleware<{
   Bindings: Env;
   Variables: OrgVariables;
 }>(async (c, next) => {
   const { org, caller } = c.var;
   if (isInternal(c.env, org)) return next();
-  const result = await take(c.env, rateLimitName.org(org), [
+  const buckets = [
     { name: "org", limit: LIMITS.org },
     ...(caller.type === "api_key"
       ? [{ name: `key:${caller.keyId}`, limit: LIMITS.apiKey }]
       : []),
-  ]);
-  if (!result.allowed) return tooManyRequests(result.retryAfter);
+  ];
+  const now = Date.now();
+  const until = Math.max(
+    0,
+    ...buckets.map((b) => full.get(`${org}:${b.name}`) ?? 0),
+  );
+  if (until > now) return tooManyRequests(Math.ceil((until - now) / 1000));
+  for (const b of buckets) full.delete(`${org}:${b.name}`);
+  c.executionCtx.waitUntil(
+    take(c.env, rateLimitName.org(org), buckets).then(
+      ({ over, retryAfter }) => {
+        for (const name of over)
+          full.set(`${org}:${name}`, Date.now() + retryAfter * 1000);
+      },
+    ),
+  );
   await next();
 });
 
@@ -87,5 +113,5 @@ export const authRateLimit = async (env: Env, request: Request) => {
   const result = await take(env, rateLimitName.auth(ip), [
     { name: "auth", limit: LIMITS.auth },
   ]);
-  return result.allowed ? null : tooManyRequests(result.retryAfter);
+  return result.over.length ? tooManyRequests(result.retryAfter) : null;
 };
