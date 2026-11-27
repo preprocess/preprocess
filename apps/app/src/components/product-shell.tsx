@@ -10,7 +10,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -21,19 +20,13 @@ import {
 } from "@preprocess/ui/components/sidebar";
 import {
   OrbitSparkle,
-  Code,
   Folder4,
   Gauge,
-  Globe,
   Inbox,
-  Lock,
-  Monitor,
   Moon,
   OpenRectArrowOut,
-  Plug,
   Plus,
   Settings,
-  Shield,
   Sun,
   User,
 } from "@preprocess/ui/lib/icons";
@@ -65,17 +58,7 @@ import {
 import { useTheme } from "./theme-provider";
 
 type NavItem = {
-  to:
-    | "/inbox"
-    | "/cases"
-    | "/agents"
-    | "/developers/api"
-    | "/developers/integrations"
-    | "/developers/github"
-    | "/developers/sandboxes"
-    | "/developers/secrets"
-    | "/developers/network"
-    | "/developers/observability";
+  to: "/inbox" | "/cases" | "/agents" | "/developers/observability";
   label: string;
   icon: IconComponent;
   unread?: number;
@@ -253,16 +236,6 @@ function UserFooter() {
   );
 }
 
-const DEVELOPER_NAV: readonly NavItem[] = [
-  { to: "/developers/observability", label: "Observability", icon: Gauge },
-  { to: "/developers/api", label: "Keys & webhooks", icon: Lock },
-  { to: "/developers/integrations", label: "Integrations", icon: Plug },
-  { to: "/developers/github", label: "GitHub", icon: Code },
-  { to: "/developers/secrets", label: "Secrets", icon: Shield },
-  { to: "/developers/network", label: "Network", icon: Globe },
-  { to: "/developers/sandboxes", label: "Sandboxes", icon: Monitor },
-];
-
 function NavRows({
   items,
   pathname,
@@ -310,6 +283,7 @@ function ProductSidebar({
     { to: "/inbox", label: "Inbox", icon: Inbox, unread: inboxUnread },
     { to: "/cases", label: "Cases", icon: Folder4 },
     { to: "/agents", label: "Agents", icon: OrbitSparkle },
+    { to: "/developers/observability", label: "Observability", icon: Gauge },
   ];
 
   // The app is pill-shaped; the sidebar's rows and menus read better rounded.
@@ -328,14 +302,6 @@ function ProductSidebar({
             <NavRows
               items={nav}
               label="Primary navigation"
-              pathname={pathname}
-            />
-          </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel>Developers</SidebarGroupLabel>
-            <NavRows
-              items={DEVELOPER_NAV}
-              label="Developers"
               pathname={pathname}
             />
           </SidebarGroup>
