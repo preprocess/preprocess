@@ -51,6 +51,23 @@ export const CREDITS = "model_credit";
 // The add-on plan credits are bought through, at $0.01 each.
 export const CREDITS_PLAN = "credits";
 
+// Plan prices and allowances, as in autumn.config.ts. Free includes 3 seats,
+// 1,000 cases a month and 5 GB; Team and Enterprise pay $16 an active seat
+// and include 50 GB. Every plan's first 1,000 cases a month have no case fee.
+// Storage past the allowance is $0.10 a GB-month, billed to the card. Internal
+// pays nothing.
+export const FREE_SEATS = 3;
+export const FREE_CASES = 1_000;
+export const FREE_STORAGE_GB = 5;
+export const STORAGE_USD_PER_GB_MONTH = 0.1;
+export const prices = (plan: CloudPlan["name"]) => ({
+  seatUsd: plan === "team" || plan === "enterprise" ? 16 : 0,
+  includedSeats: plan === "free" ? FREE_SEATS : 0,
+  includedCases: FREE_CASES,
+  includedStorageGb: plan === "free" ? FREE_STORAGE_GB : 50,
+  storageUsdPerGbMonth: plan === "internal" ? 0 : STORAGE_USD_PER_GB_MONTH,
+});
+
 // The smallest purchase, by hand or by auto-reload: $10, so Stripe's fee is
 // a small share of it. Credits never expire; refunds go through support.
 export const MIN_TOP_UP_CREDITS = 1_000;
@@ -479,8 +496,8 @@ const grantFreeCredits = async (
   );
   const card = had
     ? null
-    : ((await billing.customer(org, undefined, "payment_method")).payment_method
-        ?.card?.fingerprint ?? null);
+    : ((await billing.customer(org, undefined, ["payment_method"]))
+        .payment_method?.card?.fingerprint ?? null);
   const claimed = await withoutOrg(env, "billing: claim free credits", (tx) =>
     tx
       .insert(freeCreditGrants)

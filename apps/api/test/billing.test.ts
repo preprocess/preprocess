@@ -583,7 +583,11 @@ describe("checkout", () => {
     const started = await shop.owner.call<{ url: string }>(path, {
       body: { plan: "team" },
     });
-    expect(started.body).toEqual({ url: paymentUrl });
+    expect(started.body).toEqual({
+      url: paymentUrl,
+      paid: false,
+      action: "add_card",
+    });
     expect(calls.find((c) => c.route === "billing.multi_attach")?.body).toEqual(
       {
         customer_id: shop.org,
@@ -608,7 +612,11 @@ describe("checkout", () => {
         returnTo: "https://app.example.test/billing",
       },
     });
-    expect(charged.body).toEqual({ url: "https://app.example.test/billing" });
+    expect(charged.body).toEqual({
+      url: "https://app.example.test/billing",
+      paid: true,
+      action: null,
+    });
     expect(
       calls.find((c) => c.route === "billing.multi_attach")?.body.plans,
     ).toContainEqual({
@@ -815,7 +823,7 @@ describe("billing routes", () => {
     });
     expect(
       calls.filter((c) => c.body.expand).map((c) => c.body.expand),
-    ).toEqual([["payment_method"]]);
+    ).toEqual([["invoices", "payment_method"]]);
     const byKey = await shop.keyed.call(path);
     expect(byKey.body).toMatchObject({ credits: { remaining: 0 }, card: null });
   });
@@ -836,7 +844,7 @@ describe("billing routes", () => {
       body: { credits: 2_000, returnTo: "https://app.example.test/billing" },
     });
     expect(bought.status).toBe(200);
-    expect(bought.body).toEqual({ url: null });
+    expect(bought.body).toEqual({ url: null, action: null });
     expect(calls.find((c) => c.route === "billing.attach")?.body).toEqual({
       customer_id: shop.org,
       plan_id: "credits",
@@ -847,7 +855,7 @@ describe("billing routes", () => {
     const authenticate = await shop.owner.call(path, {
       body: { credits: 1_000 },
     });
-    expect(authenticate.body).toEqual({ url: paymentUrl });
+    expect(authenticate.body).toEqual({ url: paymentUrl, action: "add_card" });
 
     customer = {
       subscriptions: [{ plan_id: "enterprise", status: "active" }],
@@ -950,7 +958,7 @@ describe("billing routes", () => {
     const path = `/v1/orgs/${shop.org}/billing/plan`;
     const changed = await shop.owner.call(path, { body: { plan: "team" } });
     expect(changed.status).toBe(200);
-    expect(changed.body).toEqual({ url: null });
+    expect(changed.body).toEqual({ url: null, action: null });
     expect(calls.find((c) => c.route === "billing.attach")?.body).toEqual({
       customer_id: shop.org,
       plan_id: "team",
@@ -993,7 +1001,7 @@ describe("moving down a plan", () => {
     customer = team();
     const moved = await toFree(shop.owner, shop.org);
     expect(moved.status).toBe(200);
-    expect(moved.body).toEqual({ url: null });
+    expect(moved.body).toEqual({ url: null, action: null });
     expect(calls.find((c) => c.route === "billing.attach")?.body).toEqual({
       customer_id: shop.org,
       plan_id: "free",
@@ -1335,7 +1343,11 @@ describe("moving from Team down to Free", () => {
     const billing = await shop.owner.call(`/v1/orgs/${shop.org}/billing`);
     expect(billing.body).toMatchObject({
       plan: "free",
-      switched: { people: 1, agents: [{ id: styled, slug: "styled" }] },
+      switched: {
+        people: 1,
+        agents: [{ id: styled, slug: "styled" }],
+        at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+      },
     });
     const paused = await shop.keyed.call<{
       error: { code: string; message: string };
