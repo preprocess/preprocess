@@ -55,6 +55,7 @@ import type { UserOrganization } from "../features/organizations/user-organizati
 import { AppCommandMenu, AppCommandSearchTrigger } from "./app-command-menu";
 import { CreateOrganizationDialog } from "./create-organization-dialog";
 import { ProductSidebarOpenContext } from "./product-sidebar-state";
+import { SidebarHelp } from "./sidebar-app/help";
 import { SidebarInsetTopbar } from "./sidebar-app/inset-topbar";
 import { SidebarUserFooter } from "./sidebar-app/user-footer";
 import {
@@ -259,7 +260,7 @@ const DEVELOPER_NAV: readonly NavItem[] = [
   { to: "/developers/github", label: "GitHub", icon: Code },
   { to: "/developers/secrets", label: "Secrets", icon: Shield },
   { to: "/developers/network", label: "Network", icon: Globe },
-  { to: "/developers/sandboxes", label: "Sandbox images", icon: Monitor },
+  { to: "/developers/sandboxes", label: "Sandboxes", icon: Monitor },
 ];
 
 function NavRows({
@@ -340,6 +341,7 @@ function ProductSidebar({
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
+          <SidebarHelp />
           <SidebarNoticeStack />
           <UserFooter />
         </SidebarFooter>

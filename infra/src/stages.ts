@@ -169,6 +169,11 @@ export const billingOrgs: Partial<
 // valid one the install runs the free plan. Our cloud never binds it.
 export const licenseSecrets = ["PREPROCESS_LICENSE_KEY"] as const;
 
+// The training switch (design doc 10), optional and on selfhost stages only:
+// "on" turns Training on, and unset leaves it off. Our cloud never binds it;
+// Training is always on there.
+export const trainingVars = ["TRAINING_SERVICE"] as const;
+
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).
 export const apiCrons = ["20 0 * * *", "* * * * *"];
@@ -229,6 +234,10 @@ export const localRoleDatabaseUrl = (
 // The app's local origin. It serves Better Auth and /v1 from the API Worker,
 // so cookies stay first-party.
 export const localAppUrl = "https://app.preprocess.localhost";
+
+// The public docs site, linked from the app wherever a stage has no docs
+// domain of its own.
+export const publicDocsUrl = "https://docs.preprocess.com";
 
 // The GitHub App in `pnpm dev`: scripts/github-stub.ts stands in for GitHub
 // and apps/builder/local/server.ts runs the build sandbox under Docker. The

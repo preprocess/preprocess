@@ -176,6 +176,26 @@ const Usage = z
       includedGbMonths: z.number(),
       usd: z.number(),
     }),
+    byAgent: z
+      .array(
+        z.object({
+          agentId: z.string().nullable().openapi({
+            description:
+              "Null for usage with no agent: the OCR API, or a case that is gone",
+          }),
+          slug: z.string().nullable(),
+          cases: z.number().int(),
+          casesUsd: z.number().openapi({ description: "Case fees" }),
+          modelUsageUsd: z.number(),
+          decideUsd: z.number(),
+          ocrUsd: z.number(),
+          sandboxUsd: z.number(),
+        }),
+      )
+      .openapi({
+        description:
+          "Cases and each usage line by agent, through the case or eval case it was charged to. Each line's agents add up to it exactly: each agent's amount is floored to the cent, and the cents flooring dropped go one each to the agents with the largest fractions of a cent.",
+      }),
     paidFromCreditsUsd: z.number().openapi({
       description: "Model usage, decide, OCR, sandbox time and case fees",
     }),
@@ -988,7 +1008,7 @@ export const billingRoutes = new OpenAPIHono<{
       path: "/billing/usage",
       tags: ["Billing"],
       summary:
-        "This UTC month so far (Owner): usage by line, what credits paid, what is billed at month end, usage paid from credits each day, and the plan's meters now. Dollars are floored to the cent.",
+        "This UTC month so far (Owner): usage by line and by agent, what credits paid, what is billed at month end, usage paid from credits each day, and the plan's meters now. Dollars are floored to the cent.",
       request: { params: OrgParam },
       responses: {
         200: {

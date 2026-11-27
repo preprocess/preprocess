@@ -21,6 +21,19 @@ export function useAdministers() {
     .some((r) => r === "owner" || r === "admin");
 }
 
+/** Whether the signed-in person is the active organization's Owner. */
+export function useOwns() {
+  const organizationId = useOrganizationId();
+  const member = useQuery({
+    queryKey: ["active-member", organizationId],
+    queryFn: () =>
+      apiFetch<{ role: string }>(
+        `/api/auth/organization/get-active-member-role?organizationId=${encodeURIComponent(organizationId)}`,
+      ),
+  });
+  return member.data?.role.split(",").includes("owner") ?? false;
+}
+
 /** Whether the signed-in person is an Owner or Admin of the active organization. */
 export function useCanAdminister() {
   return useAdministers() ?? false;

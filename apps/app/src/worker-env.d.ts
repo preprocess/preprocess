@@ -7,6 +7,8 @@ declare global {
       PREPROCESS_REGION?: string;
       /** Set when Google sign-in is configured; shows its button. */
       GOOGLE_CLIENT_ID?: string;
+      /** The docs site the app links to. */
+      DOCS_URL?: string;
     }
   }
 }

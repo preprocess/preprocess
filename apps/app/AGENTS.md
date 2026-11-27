@@ -20,10 +20,9 @@ section sidebar of spec 14a; its Cases section (`/agents/$agentId/cases`) lists
 the agent's cases, and `/agents/$agentId/cases/$caseId` is the case room; the
 old `/cases/$agentId/$caseId` redirects there. Sections without a real page yet
 are placeholders in `features/agents/agent-knowledge.tsx`. Organization API
-keys, integrations, webhooks, sandbox images, secrets, and network rules live
-under Developers (`/developers/*`). Organization settings hold members, groups
-and the audit log, from the API. Scrolling panes use `ScrollArea` with
-`scroll-fade`.
+keys, integrations, webhooks, sandboxes, secrets, and network rules live under
+Developers (`/developers/*`). Organization settings hold members, groups and the
+audit log, from the API. Scrolling panes use `ScrollArea` with `scroll-fade`.
 
 Agents inherit the organization's secrets and network rules. An agent may
 override a network rule for itself, and the UI marks it "Overrides

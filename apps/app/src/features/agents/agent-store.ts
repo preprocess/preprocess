@@ -79,8 +79,6 @@ export type StoredAgent = Omit<AgentSeed, "deploys" | "deployedAt"> & {
   /** The deployment serving production; a rollback moves it. */
   readonly productionId: string;
   readonly env: readonly AgentEnvVar[];
-  /** The sandbox image the agent runs in; null uses the organization's default. */
-  readonly sandboxImageId: string | null;
   /**
    * The agent's own network rules. They sit on top of the organization's;
    * a rule for a pattern the organization also rules on overrides it.
@@ -200,12 +198,6 @@ const SEED_EVERYONE: Readonly<Record<string, AgentAccessLevel>> = {
   support: "viewer",
 };
 
-/** Agents that run on a non-default image. */
-const SEED_IMAGES: Readonly<Record<string, string>> = {
-  sales: "img_office",
-  lab: "img_python",
-};
-
 /** Agent rules: plain additions, and a few that override the organization. */
 const SEED_NETWORK: Readonly<Record<string, readonly NetworkRule[]>> = {
   sales: [{ pattern: "api.stripe.com", kind: "allow" }],
@@ -259,7 +251,6 @@ function store(): Map<string, StoredAgent> {
                 deploymentEnvironment(item.branch) === "production",
             )?.id ?? "",
           env: seedEnv(seed),
-          sandboxImageId: SEED_IMAGES[seed.id] ?? null,
           network: SEED_NETWORK[seed.id] ?? [],
         },
       ];
@@ -277,25 +268,6 @@ export function agentEnvKeys(): ReadonlyMap<string, readonly string[]> {
     }
   }
   return keys;
-}
-
-/** Agents using each image, by id; null counts agents on the default. */
-export function sandboxImageUsage(): ReadonlyMap<string | null, number> {
-  const usage = new Map<string | null, number>();
-  for (const agent of store().values()) {
-    usage.set(agent.sandboxImageId, (usage.get(agent.sandboxImageId) ?? 0) + 1);
-  }
-  return usage;
-}
-
-/** Moves agents off a removed image, back to the organization default. */
-export function clearSandboxImage(imageId: string): Promise<void> {
-  for (const agent of store().values()) {
-    if (agent.sandboxImageId === imageId) {
-      store().set(agent.id, { ...agent, sandboxImageId: null });
-    }
-  }
-  return Promise.resolve();
 }
 
 /** What other pages show of an agent: its name. */

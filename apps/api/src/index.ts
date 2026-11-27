@@ -35,6 +35,7 @@ import { githubCallbacks, githubRoutes } from "./routes/github.ts";
 import { mcpCallback, mcpRoutes } from "./routes/mcp.ts";
 import { secretRoutes } from "./routes/secrets.ts";
 import { guardrailRoutes } from "./routes/guardrails.ts";
+import { sandboxRoutes } from "./routes/sandboxes.ts";
 import { scheduleRoutes } from "./routes/schedules.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { spendingRoutes } from "./routes/spending.ts";
@@ -48,7 +49,7 @@ import { logRoutes } from "./routes/logs.ts";
 import { otelRoutes } from "./routes/otel.ts";
 import { evalRoutes } from "./routes/evals.ts";
 import { memoryRoutes } from "./routes/memories.ts";
-import { trainingRoutes } from "./routes/training.ts";
+import { trainingRoutes, trainingTag } from "./routes/training.ts";
 import { meRoutes } from "./routes/me.ts";
 import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
@@ -133,6 +134,7 @@ orgApi.route("/", githubRoutes);
 orgApi.route("/", spendingRoutes);
 orgApi.route("/", billingRoutes);
 orgApi.route("/", guardrailRoutes);
+orgApi.route("/", sandboxRoutes);
 orgApi.route("/", settingsRoutes);
 orgApi.route("/", retentionRoutes);
 orgApi.route("/", scheduleRoutes);
@@ -191,7 +193,7 @@ v1.route("/orgs/:org", orgApi);
 v1.route("/me", meRoutes);
 v1.route("/", mcpCallback);
 v1.route("/", githubCallbacks);
-v1.doc31("/openapi.json", OPENAPI);
+v1.doc31("/openapi.json", (c) => ({ ...OPENAPI, tags: [trainingTag(c.env)] }));
 app.route("/v1", v1);
 
 export default {
