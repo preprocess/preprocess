@@ -431,9 +431,11 @@ async function roomOf(
   apiMemories: ApiMemory[],
 ): Promise<CaseRoomState> {
   const approvals = room.approvals ?? [];
+  const thread = room.thread ?? [];
   const people = peopleById(
     approvals.some((approval) => approval.decidedBy) ||
-      apiMemories.some((m) => m.decidedBy)
+      apiMemories.some((m) => m.decidedBy) ||
+      thread.some((message) => message.kind === "person")
       ? await getJson<ApiMember[]>("/members")
       : [],
   );
@@ -448,7 +450,15 @@ async function roomOf(
     })),
     checks: room.checks ?? [],
     answers: room.answers ?? null,
-    thread: room.thread ?? [],
+    thread: thread.map((message) =>
+      message.kind === "person"
+        ? {
+            ...message,
+            byName:
+              people.get(message.by.replace(/^person:/, ""))?.name ?? null,
+          }
+        : message,
+    ),
     approvals: approvals.map((approval) => ({
       ...approval,
       decidedByName: approval.decidedBy

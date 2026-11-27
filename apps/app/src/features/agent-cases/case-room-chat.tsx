@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  avatarMarbleSeed,
+} from "@preprocess/ui/components/avatar";
 import { ChatMessage } from "@preprocess/ui/components/chat-message";
 import { EmptyPresence } from "@preprocess/ui/components/empty";
 import { InputMessage } from "@preprocess/ui/components/input-message";
@@ -12,13 +18,17 @@ import {
   ThinkingStepsContent,
   ThinkingStepsHeader,
 } from "@preprocess/ui/components/thinking-steps";
+import { Tooltip } from "@preprocess/ui/components/tooltip";
 import type { IconName } from "@preprocess/ui/lib/icon-context";
+import { User } from "@preprocess/ui/lib/icons";
 import { cn } from "@preprocess/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Markdown } from "../../components/agent-elements/markdown";
 import { ChatEmpty } from "../../components/chat-empty";
+import { PreprocessMark } from "../../components/preprocess-mark";
+import { useAuth } from "../auth/auth-context";
 import { currentScenario } from "../../scenarios/current-scenario";
 import type { RoomMessage } from "./case-room-state";
 import { caseRoomTranscript, seededReply } from "./case-room-transcripts";
@@ -81,7 +91,66 @@ function textOf(message: UIMessage) {
     .join("\n\n");
 }
 
-function AssistantMessage({ message }: Readonly<{ message: UIMessage }>) {
+type Sender =
+  | {
+      readonly kind: "person";
+      readonly id: string;
+      readonly name: string;
+      readonly imageUrl?: string | null;
+    }
+  | { readonly kind: "agent" }
+  | { readonly kind: "input" };
+
+const senderKey = (sender: Sender) =>
+  sender.kind === "person" ? `person:${sender.id}` : sender.kind;
+
+/** The sender's 24px avatar: a person's photo or marble, the agent's mark, or a glyph for the case input. */
+function SenderAvatar({ sender }: Readonly<{ sender: Sender }>) {
+  const label =
+    sender.kind === "person"
+      ? sender.name
+      : sender.kind === "agent"
+        ? "Agent"
+        : "Case input";
+  return (
+    <Tooltip content={label} side="top">
+      <Avatar aria-label={label} role="img" size="sm">
+        {sender.kind === "person" ? (
+          <>
+            {sender.imageUrl ? (
+              <AvatarImage alt="" src={sender.imageUrl} />
+            ) : null}
+            <AvatarFallback name={avatarMarbleSeed({ id: sender.id })} />
+          </>
+        ) : (
+          <span className="flex size-full items-center justify-center rounded-full bg-hover text-muted-foreground">
+            {sender.kind === "agent" ? (
+              <PreprocessMark className="size-3 text-foreground" />
+            ) : (
+              <User aria-hidden="true" className="size-3.5" />
+            )}
+          </span>
+        )}
+      </Avatar>
+    </Tooltip>
+  );
+}
+
+/** Whether each entry continues a run from the sender before it; events break runs. */
+function continuesRun<T>(
+  entries: readonly T[],
+  keyOf: (entry: T) => string | null,
+): boolean[] {
+  return entries.map((entry, index) => {
+    const key = keyOf(entry);
+    return key !== null && index > 0 && keyOf(entries[index - 1]) === key;
+  });
+}
+
+function AssistantMessage({
+  message,
+  continued,
+}: Readonly<{ message: UIMessage; continued: boolean }>) {
   const steps = message.parts.flatMap((part, index) => {
     const step = toolStep(part, index);
     return step ? [step] : [];
@@ -122,7 +191,9 @@ function AssistantMessage({ message }: Readonly<{ message: UIMessage }>) {
       {text ? (
         // The bubble keeps pre-wrapped text; markdown lays out its own blocks.
         <ChatMessage
-          className="max-w-full [&>div:first-child]:whitespace-normal"
+          avatar={<SenderAvatar sender={{ kind: "agent" }} />}
+          className="max-w-full [&_[data-slot=chat-message-body]]:whitespace-normal"
+          continued={continued && steps.length === 0}
           from="assistant"
         >
           <Markdown content={text} />
@@ -144,18 +215,62 @@ function useStickToBottom(...deps: readonly unknown[]) {
   return scrollRef;
 }
 
-function ThreadEntry({ message }: Readonly<{ message: RoomMessage }>) {
-  if (message.kind === "event")
+/** The signed-in person as a sender; the seeded "You" without a session. */
+function youSender(
+  user: ReturnType<typeof useAuth>["user"],
+): Extract<Sender, { kind: "person" }> {
+  if (!user) return { kind: "person", id: "usr_you", name: "You" };
+  return {
+    kind: "person",
+    id: user.id,
+    name: user.name.trim() || user.email,
+    imageUrl: user.image,
+  };
+}
+
+/** Who sent a room message; null for events, which aren't from anyone. */
+function roomSender(
+  message: RoomMessage,
+  you: Extract<Sender, { kind: "person" }>,
+): Sender | null {
+  if (message.kind === "event") return null;
+  if (message.kind === "input") return { kind: "input" };
+  if (message.kind !== "person") return { kind: "agent" };
+  const id = message.by.replace(/^person:/, "");
+  if (id === you.id) return you;
+  return { kind: "person", id, name: message.byName ?? "A person" };
+}
+
+function ThreadEntry({
+  message,
+  sender,
+  continued,
+}: Readonly<{
+  message: RoomMessage;
+  sender: Sender | null;
+  continued: boolean;
+}>) {
+  if (!sender)
     return (
       <span className="self-center text-caption text-muted-foreground">
         {message.text}
       </span>
     );
-  if (message.kind === "input" || message.kind === "person")
-    return <ChatMessage from="user">{message.text}</ChatMessage>;
+  if (sender.kind !== "agent")
+    return (
+      <ChatMessage
+        avatar={<SenderAvatar sender={sender} />}
+        continued={continued}
+        from="user"
+      >
+        {message.text}
+      </ChatMessage>
+    );
   return (
     <ChatMessage
-      className="max-w-full [&>div:first-child]:whitespace-normal"
+      avatar={<SenderAvatar sender={sender} />}
+      className="max-w-full [&_[data-slot=chat-message-body]]:whitespace-normal"
+      continued={continued}
       from="assistant"
     >
       <Markdown content={message.text} />
@@ -176,6 +291,12 @@ function LiveCaseRoomChat({
   work: NonNullable<ReturnType<typeof useCaseWork>>;
 }>) {
   const { thread } = work.room;
+  const { user } = useAuth();
+  const you = youSender(user);
+  const senders = thread.map((message) => roomSender(message, you));
+  const continued = continuesRun(senders, (sender) =>
+    sender ? senderKey(sender) : null,
+  );
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -207,9 +328,14 @@ function LiveCaseRoomChat({
           ref={scrollRef}
           viewportClassName="scroll-fade"
         >
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
-            {thread.map((message) => (
-              <ThreadEntry key={message.id} message={message} />
+          <div className="@container mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
+            {thread.map((message, index) => (
+              <ThreadEntry
+                continued={continued[index]}
+                key={message.id}
+                message={message}
+                sender={senders[index]}
+              />
             ))}
           </div>
         </ScrollArea>
@@ -256,6 +382,9 @@ function SeededCaseRoomChat({ className }: Readonly<{ className?: string }>) {
   const [streaming, setStreaming] = useState(transcript.streaming);
   const replyTimer = useRef<number | undefined>(undefined);
   const scrollRef = useStickToBottom(messages.length, streaming);
+  const { user } = useAuth();
+  const you = youSender(user);
+  const continued = continuesRun(messages, (message) => message.role);
 
   useEffect(() => () => window.clearTimeout(replyTimer.current), []);
 
@@ -292,14 +421,23 @@ function SeededCaseRoomChat({ className }: Readonly<{ className?: string }>) {
           ref={scrollRef}
           viewportClassName="scroll-fade"
         >
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
-            {messages.map((message) =>
+          <div className="@container mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pb-4 pt-2">
+            {messages.map((message, index) =>
               message.role === "user" ? (
-                <ChatMessage from="user" key={message.id}>
+                <ChatMessage
+                  avatar={<SenderAvatar sender={you} />}
+                  continued={continued[index]}
+                  from="user"
+                  key={message.id}
+                >
                   {textOf(message)}
                 </ChatMessage>
               ) : (
-                <AssistantMessage key={message.id} message={message} />
+                <AssistantMessage
+                  continued={continued[index]}
+                  key={message.id}
+                  message={message}
+                />
               ),
             )}
             {streaming ? <ThinkingIndicator className="px-0" /> : null}
