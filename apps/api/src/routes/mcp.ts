@@ -536,36 +536,61 @@ mcpRoutes.openapi(
 );
 
 // The OAuth redirect. It carries no session: the state names the
-// organization and a sign-in that only the connect route created.
+// organization and a sign-in that only the connect route created. It sends
+// the browser back to the app's Integrations page with the outcome, as a
+// fixed code rather than a message, so the link can't put words in the app.
 export const mcpCallback = new OpenAPIHono<{ Bindings: Env }>();
 
+class SignInFailed extends Error {
+  constructor(readonly reason: "cancelled" | "expired" | "refused") {
+    super(reason);
+  }
+}
+
 mcpCallback.get("/mcp/oauth/callback", async (c) => {
-  const [org, id] = (c.req.query("state") ?? "").split(".");
-  const code = c.req.query("code");
-  if (!org || !id || !code)
-    throw new HTTPException(400, { message: "the sign-in was not completed" });
+  const back = new URL("/developers/integrations", c.env.APP_URL);
+  try {
+    back.searchParams.set(
+      "connected",
+      await completeSignIn(c.env, (name) => c.req.query(name)),
+    );
+  } catch (error) {
+    if (!(error instanceof SignInFailed)) throw error;
+    back.searchParams.set("connect_error", error.reason);
+  }
+  return c.redirect(back.href, 303);
+});
+
+const completeSignIn = async (
+  env: Env,
+  query: (name: string) => string | undefined,
+) => {
+  const [org, id] = (query("state") ?? "").split(".");
+  const code = query("code");
+  if (!org || !id || !code) throw new SignInFailed("cancelled");
   const organization = orgId(org);
-  const slug = await withOrg(c.env, organization, async (tx) => {
+  return withOrg(env, organization, async (tx) => {
     const [pending] = await tx
       .delete(mcpAuthorizations)
       .where(eq(mcpAuthorizations.id, id))
       .returning();
     if (!pending || pending.expiresAt < new Date())
-      throw new HTTPException(400, { message: "this sign-in has expired" });
+      throw new SignInFailed("expired");
     const [server] = await tx
       .select()
       .from(mcpServers)
       .where(eq(mcpServers.id, pending.serverId));
-    if (!server?.oauthClient)
-      throw new HTTPException(400, { message: "this sign-in has expired" });
+    if (!server?.oauthClient) throw new SignInFailed("expired");
     const tokens = await tokenRequest(server.oauthClient, {
       grant_type: "authorization_code",
       code,
       redirect_uri: pending.redirectUri,
       code_verifier: pending.codeVerifier,
-    }).catch(mcpFailure);
+    }).catch(() => {
+      throw new SignInFailed("refused");
+    });
     await saveConnection(
-      c.env,
+      env,
       tx,
       organization,
       server.id,
@@ -583,5 +608,4 @@ mcpCallback.get("/mcp/oauth/callback", async (c) => {
     });
     return server.slug;
   });
-  return c.text(`Preprocess is connected to ${slug}. You can close this tab.`);
-});
+};

@@ -1,10 +1,6 @@
 import { MODEL_CATALOG, type Model } from "@preprocess/sdk/protocol";
 
-import type {
-  SecretScope,
-  McpServer,
-  NetworkRule,
-} from "../developers/platform-store";
+import type { SecretScope, NetworkRule } from "../developers/platform-store";
 import {
   AGENT_SEED,
   type AgentAccessLevel,
@@ -95,17 +91,6 @@ export type StoredAgent = Omit<AgentSeed, "deploys" | "deployedAt"> & {
   readonly everyone: AgentAccessLevel | null;
   /** Where the agent's code lives; deployments build from it. */
   readonly repo: AgentRepo | null;
-  /** Organization MCP servers this agent has turned on; the rest are off. */
-  readonly mcp: readonly AgentMcpGrant[];
-  /** MCP servers only this agent uses. */
-  readonly mcpServers: readonly McpServer[];
-};
-
-/** An organization MCP server turned on for one agent. */
-export type AgentMcpGrant = {
-  readonly serverId: string;
-  /** The tools it may call; null allows every tool, including new ones. */
-  readonly tools: readonly string[] | null;
 };
 
 /**
@@ -227,34 +212,6 @@ const SEED_NETWORK: Readonly<Record<string, readonly NetworkRule[]>> = {
   ],
 };
 
-const SEED_MCP: Readonly<Record<string, readonly AgentMcpGrant[]>> = {
-  intake: [{ serverId: "mcp_documents", tools: null }],
-  review: [
-    { serverId: "mcp_documents", tools: null },
-    { serverId: "mcp_tickets", tools: ["list_tickets", "add_comment"] },
-  ],
-  sales: [{ serverId: "mcp_inventory", tools: ["lookup_part", "check_stock"] }],
-  support: [{ serverId: "mcp_tickets", tools: null }],
-};
-
-const SEED_AGENT_MCP: Readonly<Record<string, readonly McpServer[]>> = {
-  lab: [
-    {
-      id: "mcp_lab_fixtures",
-      name: "Lab fixtures",
-      url: "https://lab.acme.com/mcp",
-      auth: "none",
-      transport: "streamable_http",
-      token: null,
-      tools: [
-        { name: "load_fixture", description: "Load a saved test case." },
-        { name: "record_run", description: "Save a run for comparison." },
-      ],
-      addedAt: "2026-09-20T11:00:00.000Z",
-    },
-  ],
-};
-
 let agents: Map<string, StoredAgent> | undefined;
 
 function store(): Map<string, StoredAgent> {
@@ -295,8 +252,6 @@ function store(): Map<string, StoredAgent> {
             )?.id ?? "",
           env: seedEnv(seed),
           network: SEED_NETWORK[seed.id] ?? [],
-          mcp: SEED_MCP[seed.id] ?? [],
-          mcpServers: SEED_AGENT_MCP[seed.id] ?? [],
         },
       ];
     }),
@@ -328,26 +283,4 @@ export function agentSummaries(): Readonly<Record<string, AgentSummary>> {
       { id: agent.id, name: agent.name },
     ]),
   );
-}
-
-/** Agents that turned on each organization server, by server id. */
-export function mcpServerUsage(): ReadonlyMap<string, number> {
-  const usage = new Map<string, number>();
-  for (const agent of store().values()) {
-    for (const grant of agent.mcp) {
-      usage.set(grant.serverId, (usage.get(grant.serverId) ?? 0) + 1);
-    }
-  }
-  return usage;
-}
-
-/** Turns a removed organization server off for every agent. */
-export function clearMcpServer(serverId: string): Promise<void> {
-  for (const agent of store().values()) {
-    store().set(agent.id, {
-      ...agent,
-      mcp: agent.mcp.filter((grant) => grant.serverId !== serverId),
-    });
-  }
-  return Promise.resolve();
 }

@@ -25,6 +25,8 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 
 import { useBilling, useIsOwner } from "../billing/billing-api";
 import { billingShown } from "../billing/billing-types";
+import { currentScenario } from "../../scenarios/current-scenario";
+import { useAdministers } from "./use-role";
 
 type Page = {
   to:
@@ -35,6 +37,7 @@ type Page = {
     | "/settings/organization/defaults"
     | "/settings/organization/guardrails"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/retention"
     | "/settings/organization/opentelemetry"
     | "/settings/organization/billing";
   label: string;
@@ -67,6 +70,7 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
         anchors: GUARDRAIL_SECTIONS,
       },
       { to: "/settings/organization/audit-logs", label: "Audit log" },
+      { to: "/settings/organization/retention", label: "Retention" },
       {
         to: "/settings/organization/opentelemetry",
         label: "OpenTelemetry export",
@@ -89,14 +93,22 @@ export function currentSettingsPage(pathname: string): Page | undefined {
 }
 
 // Billing shows only to the Owner, on our cloud with billing on, once the plan
-// has started or billing holds for the organization.
+// has started or billing holds for the organization. Retention shows to Owners
+// and Admins, self-hosted included; seeded retention states always show it.
 function useVisible() {
   const owner = useIsOwner();
   const billing = useBilling();
+  const administers = useAdministers();
   const showBilling =
     owner === true && Boolean(billing.data && billingShown(billing.data));
+  const showRetention =
+    administers === true || currentScenario().retention !== "live";
   return (page: Page) =>
-    page.to !== "/settings/organization/billing" || showBilling;
+    page.to === "/settings/organization/billing"
+      ? showBilling
+      : page.to === "/settings/organization/retention"
+        ? showRetention
+        : true;
 }
 
 function usePathname() {
