@@ -256,7 +256,7 @@ const DEVELOPER_NAV: readonly NavItem[] = [
   { to: "/developers/integrations", label: "Integrations", icon: Plug },
   { to: "/developers/secrets", label: "Secrets", icon: Shield },
   { to: "/developers/network", label: "Network", icon: Globe },
-  { to: "/developers/sandboxes", label: "Sandbox images", icon: Monitor },
+  { to: "/developers/sandboxes", label: "Sandboxes", icon: Monitor },
 ];
 
 function NavRows({

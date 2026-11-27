@@ -151,7 +151,7 @@ const PAGES: readonly {
   },
   {
     to: "/developers/sandboxes",
-    label: "Sandbox images",
+    label: "Sandboxes",
     group: "Developers",
     icon: Monitor,
     keywords: ["docker", "container", "image"],
