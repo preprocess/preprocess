@@ -49,7 +49,7 @@ import { logRoutes } from "./routes/logs.ts";
 import { otelRoutes } from "./routes/otel.ts";
 import { evalRoutes } from "./routes/evals.ts";
 import { memoryRoutes } from "./routes/memories.ts";
-import { trainingRoutes } from "./routes/training.ts";
+import { trainingRoutes, trainingTag } from "./routes/training.ts";
 import { meRoutes } from "./routes/me.ts";
 import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
@@ -193,7 +193,7 @@ v1.route("/me", meRoutes);
 v1.route("/", mcpCallback);
 v1.route("/", githubCallbacks);
 v1.route("/", autumnWebhook);
-v1.doc31("/openapi.json", OPENAPI);
+v1.doc31("/openapi.json", (c) => ({ ...OPENAPI, tags: [trainingTag(c.env)] }));
 app.route("/v1", v1);
 
 export default {

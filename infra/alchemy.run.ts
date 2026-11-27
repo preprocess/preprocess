@@ -77,6 +77,7 @@ import {
   sandboxDurableObjects,
   sandboxImages,
   runtimeModelSecrets,
+  trainingVars,
   type SelfHostStage,
   type Stage,
 } from "./src/stages.ts";
@@ -757,6 +758,15 @@ export default Alchemy.Stack(
               [
                 name,
                 Config.Redacted(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
+        ...Object.fromEntries(
+          (selfHost ? trainingVars : []).map(
+            (name) =>
+              [
+                name,
+                Config.String(name).pipe(Config.withDefault(undefined)),
               ] as const,
           ),
         ),

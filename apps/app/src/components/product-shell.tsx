@@ -21,6 +21,7 @@ import {
 } from "@preprocess/ui/components/sidebar";
 import {
   OrbitSparkle,
+  Code,
   Folder4,
   Gauge,
   Globe,
@@ -69,6 +70,7 @@ type NavItem = {
     | "/agents"
     | "/developers/api"
     | "/developers/integrations"
+    | "/developers/github"
     | "/developers/sandboxes"
     | "/developers/secrets"
     | "/developers/network"
@@ -254,6 +256,7 @@ const DEVELOPER_NAV: readonly NavItem[] = [
   { to: "/developers/observability", label: "Observability", icon: Gauge },
   { to: "/developers/api", label: "Keys & webhooks", icon: Lock },
   { to: "/developers/integrations", label: "Integrations", icon: Plug },
+  { to: "/developers/github", label: "GitHub", icon: Code },
   { to: "/developers/secrets", label: "Secrets", icon: Shield },
   { to: "/developers/network", label: "Network", icon: Globe },
   { to: "/developers/sandboxes", label: "Sandbox images", icon: Monitor },

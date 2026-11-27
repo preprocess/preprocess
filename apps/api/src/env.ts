@@ -204,6 +204,9 @@ export type Env = {
   // Self-hosted only: the signed license key (license.ts). Without a valid
   // one the install runs the free plan.
   PREPROCESS_LICENSE_KEY?: string;
+  // Self-hosted only: "on" turns Training on (training.ts). Our cloud ignores
+  // it.
+  TRAINING_SERVICE?: string;
   // Where OCR is served (@preprocess/models endpoints): Mistral, an
   // install's own MODEL_ENDPOINTS entry, or MODEL_SERVICE_URL (the stub).
   MISTRAL_API_KEY?: string;
