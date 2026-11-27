@@ -51,7 +51,23 @@ evals:
 - `inkling-2-small` → `deepseek-v4.1-flash`
 
 New deploys with the current SDK validate `model` against the active four-model
-catalog.
+catalog, or an organization model.
+
+### Organization models
+
+An Owner or Admin can register a model the organization serves itself, such as a
+trained checkpoint, by its OpenAI-compatible endpoint
+(`POST /v1/orgs/{org}/models/endpoints` with `model: "org:<slug>"`). Agents then
+name it like a catalog model: in code (`model: "org:invoices-v2"`), as an
+agent's model setting or the organization default, in an eval run's `models` to
+compare it with the current model, and in the allowed-models guardrail. A model
+the organization hasn't registered is refused with `unknown_model`.
+
+An organization model is billed at the per-token price of the catalog model it
+was trained from (its `baseModel`), and with no base model there is no model
+charge. An organization model can't be deleted while a live deployment, an agent
+setting, the organization default or an unfinished eval run still names it
+(`model_in_use`).
 
 ## The `decide` tool (`groundhog-1`)
 

@@ -14,7 +14,11 @@ import {
 } from "@preprocess/models/endpoints";
 import { MARKUP } from "@preprocess/models/prices";
 import { runMode } from "@preprocess/runmode";
-import { MODELS, type Model as AgentModel } from "@preprocess/sdk/protocol";
+import {
+  isOrgModel,
+  MODELS,
+  type Model as AgentModel,
+} from "@preprocess/sdk/protocol";
 
 import type { Env, RegisteredEndpoint } from "./env.ts";
 
@@ -44,9 +48,10 @@ const LIST: Record<
 // What a case pays per million tokens (spec 16a): the provider's list price
 // plus 5%. Only our cloud charges; a self-hosted install calls its own
 // providers and serving URLs, so it is free.
+const FREE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
 export const modelCost = (env: Env, id: AgentModel) => {
-  if (runMode(env).kind !== "cloud")
-    return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  if (runMode(env).kind !== "cloud") return FREE;
   const list = LIST[id];
   return {
     input: list.input * MARKUP,
@@ -147,43 +152,59 @@ export const routeFetch =
 // through MODEL_SERVICE_URL. pi-ai prices each response from `cost`; a Fast
 // request served from base capacity is repriced at base rates before capture
 // records it.
+// An organization model is priced as the catalogue model it was trained
+// from; with none, the model charge is zero, since its endpoint bills the
+// organization itself (design doc 10). An override keeps the catalogue price.
+const priceOf = (
+  env: Env,
+  id: string,
+  registered: Record<string, RegisteredEndpoint>,
+) => {
+  const base = isOrgModel(id) ? registered[id]?.baseModel : id;
+  return base && base in LIST ? modelCost(env, base as AgentModel) : FREE;
+};
+
 export const openModels = (
   env: Env,
   observe: (fn: Stream) => Stream,
   registered: Record<string, RegisteredEndpoint> = {},
 ) => {
-  const routes = new Map(
-    MODELS.map((id) => {
-      const own = registered[id];
-      return [
-        id,
-        modelRoute(
-          env,
-          id,
-          own && { url: own.url, key: own.key, model: own.model },
-        ),
-      ];
-    }),
-  );
-  const models: Model<"openai-completions">[] = MODELS.map((id) => {
-    const route = routes.get(id)!;
-    return {
-      id,
-      name: id,
-      api: "openai-completions",
-      provider: PROVIDER,
-      baseUrl:
-        "binding" in route
-          ? "https://workers-ai.binding/v1"
-          : new URL("/v1", route.url).toString(),
-      reasoning: true,
-      input: ["text"],
-      cost: modelCost(env, id),
-      contextWindow: 262144,
-      maxTokens: 8192,
-      compat: { supportsDeveloperRole: false, supportsReasoningEffort: true },
-    };
+  const route = ({ url, key, model }: RegisteredEndpoint) => ({
+    url,
+    key,
+    model,
   });
+  const routes = new Map<string, ModelRoute>([
+    ...MODELS.map((id): [string, ModelRoute] => [
+      id,
+      modelRoute(env, id, registered[id] && route(registered[id])),
+    ]),
+    // The organization's own models (org:<slug>) are served only by their
+    // endpoints.
+    ...Object.entries(registered)
+      .filter(([id, own]) => own.kind === "model" && isOrgModel(id))
+      .map(([id, own]): [string, ModelRoute] => [id, route(own)]),
+  ]);
+  const models: Model<"openai-completions">[] = [...routes].map(
+    ([id, route]) => {
+      return {
+        id,
+        name: id,
+        api: "openai-completions",
+        provider: PROVIDER,
+        baseUrl:
+          "binding" in route
+            ? "https://workers-ai.binding/v1"
+            : new URL("/v1", route.url).toString(),
+        reasoning: true,
+        input: ["text"],
+        cost: priceOf(env, id, registered),
+        contextWindow: 262144,
+        maxTokens: 8192,
+        compat: { supportsDeveloperRole: false, supportsReasoningEffort: true },
+      };
+    },
+  );
   // Every call goes through its model's route. A Fast request's usage is
   // repriced before anything else reads the result: this reaction is
   // registered first, so capture records the corrected cost.

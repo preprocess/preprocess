@@ -10,6 +10,10 @@ import { and, count, eq, gte, inArray, sum } from "drizzle-orm";
 
 import type { Env } from "./env.ts";
 
+// The model charge is what the runtime priced each response at
+// (apps/runtime/src/models.ts): a catalogue model, or a catalogue override,
+// at the catalogue price; an organization model (org:<slug>) at its base
+// model's price, and at zero without one (design doc 10).
 export type Charges = { model: number; decide: number; ocr: number };
 
 const chargeFeature = {

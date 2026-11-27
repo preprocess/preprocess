@@ -9,31 +9,35 @@ import { cases } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
 import { organizationGuardrails } from "@preprocess/db/schema/guardrails";
 import { currentModel, MODEL_CATALOG } from "@preprocess/sdk/protocol";
-import type { Model } from "@preprocess/sdk/protocol";
 import { eq } from "drizzle-orm";
 
 import { actor, eventBase } from "./caller.ts";
 import type { OrgVariables } from "./caller.ts";
 import { ApiError } from "./cases.ts";
 import type { Manifest } from "./deploy.ts";
+import { assertModelKnown } from "./model-endpoints.ts";
 import { effectiveSettings } from "./settings.ts";
 
 // Runs in the organization's transaction.
-export const allowedModels = async (tx: Tx): Promise<Model[] | null> =>
-  ((
+export const allowedModels = async (tx: Tx): Promise<string[] | null> =>
+  (
     await tx
       .select({ models: organizationGuardrails.allowedModels })
       .from(organizationGuardrails)
-  )[0]?.models as Model[] | null | undefined) ?? null;
+  )[0]?.models ?? null;
 
 export const modelAllowed = (
   allowed: readonly string[] | null,
   model: string,
 ) => allowed === null || allowed.includes(currentModel(model));
 
-const label = (model: string) => MODEL_CATALOG[model as Model]?.label ?? model;
+const label = (model: string) =>
+  MODEL_CATALOG[model as keyof typeof MODEL_CATALOG]?.label ?? model;
 
+// The model exists (an organization model must be registered) and the
+// guardrail allows it.
 export const assertModelAllowed = async (tx: Tx, model: string) => {
+  await assertModelKnown(tx, currentModel(model));
   if (modelAllowed(await allowedModels(tx), model)) return;
   const id = currentModel(model);
   throw new ApiError(
@@ -64,8 +68,9 @@ export const assertCaseModelAllowed = async (tx: Tx, caseId: string) => {
 export const setAllowedModels = async (
   tx: Tx,
   vars: OrgVariables,
-  models: Model[] | null,
+  models: string[] | null,
 ) => {
+  for (const model of models ?? []) await assertModelKnown(tx, model);
   const before = await allowedModels(tx);
   const after = models && [...new Set(models)].sort();
   if (JSON.stringify(before) === JSON.stringify(after)) return false;
