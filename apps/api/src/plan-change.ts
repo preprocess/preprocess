@@ -37,21 +37,24 @@ import {
   inArray,
   isNotNull,
   isNull,
+  max,
   sql,
 } from "drizzle-orm";
 
 import { autumn } from "./autumn.ts";
-import { readPlan, settleFreeCredits, storedBytes } from "./billing.ts";
+import {
+  FREE_CASES,
+  FREE_SEATS,
+  FREE_STORAGE_GB,
+  readPlan,
+  settleFreeCredits,
+  STORAGE_USD_PER_GB_MONTH,
+  storedBytes,
+} from "./billing.ts";
 import { planSwitchedEmail, seatEndingEmail } from "./email-templates.ts";
 import { emailBrand, sendEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 import { seatMemberships } from "./seats.ts";
-
-// Free's limits, as in autumn.config.ts.
-export const FREE_SEATS = 3;
-const FREE_CASES = 1_000;
-const FREE_STORAGE_GB = 5;
-const STORAGE_USD_PER_GB_MONTH = 0.1;
 
 const DAY = 86_400_000;
 const WARN_BEFORE = 3 * DAY;
@@ -496,6 +499,14 @@ export const runPlanChanges = async (env: Env, now = new Date()) => {
 // The people whose seats Team's end took, for the Billing banner.
 export const demotedPeople = (tx: Tx) =>
   tx.selectDistinct({ userId: demotedSeats.userId }).from(demotedSeats);
+
+// When Team ended for the people who lost their seat, or null when nobody did.
+export const demotedAt = async (tx: Tx) => {
+  const [row] = await tx
+    .select({ at: max(demotedSeats.demotedAt) })
+    .from(demotedSeats);
+  return row?.at ?? null;
+};
 
 // Back on Team: everyone returns to the seat groups they left, where those
 // groups still exist. Returns how many people.
