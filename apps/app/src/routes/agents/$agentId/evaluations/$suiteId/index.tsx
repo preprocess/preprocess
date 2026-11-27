@@ -1,4 +1,5 @@
-import { createFileRoute, getRouteApi } from "@tanstack/react-router";
+import { Button } from "@preprocess/ui/components/button";
+import { Link, createFileRoute, getRouteApi } from "@tanstack/react-router";
 
 import { GoneArt } from "../../../../../components/empty-art";
 
@@ -43,6 +44,16 @@ function EvalSuitePage() {
         </SettingsCard>
       ) : state.kind === "missing" ? (
         <SettingsEmpty
+          action={
+            <Button asChild size="compact" variant="ghost">
+              <Link
+                params={{ agentId: agent.id }}
+                to="/agents/$agentId/evaluations"
+              >
+                Back to evaluations
+              </Link>
+            </Button>
+          }
           art={<GoneArt />}
           description="This eval suite was deleted or doesn't exist."
           title="Eval suite not found"

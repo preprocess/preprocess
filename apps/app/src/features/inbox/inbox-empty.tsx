@@ -13,7 +13,7 @@ import {
   NothingSelectedArt,
 } from "../../components/empty-art";
 
-export type InboxEmptyKind = "list" | "caught-up" | "all-read" | "pick";
+export type InboxEmptyKind = "list" | "all-read" | "pick";
 
 export function InboxEmpty({ kind }: { kind: InboxEmptyKind }) {
   let art: ReactNode;
@@ -25,11 +25,6 @@ export function InboxEmpty({ kind }: { kind: InboxEmptyKind }) {
       title = "Inbox is empty";
       description =
         "Reviews, approvals, memory proposals and mentions show up here.";
-      break;
-    case "caught-up":
-      art = <AllCaughtUpArt />;
-      title = "All caught up";
-      description = "Nothing needs your attention right now.";
       break;
     case "all-read":
       art = <AllCaughtUpArt />;

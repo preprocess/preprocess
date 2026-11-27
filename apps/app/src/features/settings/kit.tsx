@@ -58,6 +58,8 @@ import {
   isValidElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type AnimationEvent,
@@ -445,6 +447,39 @@ export function SettingsAvatar({
   );
 }
 
+const EmptyArtScopeContext = createContext<{
+  first: HTMLElement | null;
+  register: (element: HTMLElement) => () => void;
+} | null>(null);
+
+/**
+ * One illustration per page: inside this scope only the first SettingsEmpty
+ * with art, in document order, draws it; the rest keep their text.
+ */
+export function SettingsEmptyArtScope({ children }: { children: ReactNode }) {
+  const [members, setMembers] = useState<readonly HTMLElement[]>([]);
+  const register = useCallback((element: HTMLElement) => {
+    setMembers((current) => [...current, element]);
+    return () =>
+      setMembers((current) => current.filter((item) => item !== element));
+  }, []);
+  const first = members.reduce<HTMLElement | null>(
+    (earliest, element) =>
+      earliest === null ||
+      earliest.compareDocumentPosition(element) &
+        Node.DOCUMENT_POSITION_PRECEDING
+        ? element
+        : earliest,
+    null,
+  );
+  const value = useMemo(() => ({ first, register }), [first, register]);
+  return (
+    <EmptyArtScopeContext.Provider value={value}>
+      {children}
+    </EmptyArtScopeContext.Provider>
+  );
+}
+
 /** The widgets' EmptyState: optional art, heading, message, optional action. */
 export function SettingsEmpty({
   art,
@@ -458,10 +493,26 @@ export function SettingsEmpty({
   action?: ReactNode;
 }) {
   const inCard = useContext(InCardContext);
+  const artScope = useContext(EmptyArtScopeContext);
+  const ref = useRef<HTMLDivElement>(null);
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!art || !artScope || !ref.current) return;
+    setElement(ref.current);
+    return artScope.register(ref.current);
+  }, [art, artScope]);
+  const showArt =
+    art && (!artScope || artScope.first === null || artScope.first === element);
   const content = (
-    <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
+    <div
+      className={cn(
+        "flex flex-col items-center gap-4 px-6 text-center",
+        showArt ? "py-10" : "py-6",
+      )}
+      ref={ref}
+    >
       <div className="flex max-w-sm flex-col items-center gap-1">
-        {art ? <div className="mb-2 flex">{art}</div> : null}
+        {showArt ? <div className="mb-2 flex">{art}</div> : null}
         <p
           className="text-body text-foreground"
           style={{ fontVariationSettings: fontWeights.semibold }}

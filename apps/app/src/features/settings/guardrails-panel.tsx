@@ -4,6 +4,7 @@
 // Owner or Admin loosens one, and their change is the approval; anyone else,
 // and a deployment that asks for more, files a request that shows here.
 
+import { Link } from "@tanstack/react-router";
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
@@ -333,6 +334,13 @@ function Requests({ highlight }: { highlight?: string }) {
         <SettingsSkeletonRows count={2} />
       ) : highlight && !linked ? (
         <SettingsEmpty
+          action={
+            <Button asChild size="compact" variant="ghost">
+              <Link to="/settings/organization/guardrails">
+                View all requests
+              </Link>
+            </Button>
+          }
           art={<GoneArt />}
           description="This guardrail request no longer exists."
           title="Request not found"

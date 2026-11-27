@@ -4,6 +4,7 @@
 // comes from, with dashboard overrides that last until the next promotion, and
 // the agent's own network rules, which only narrow the organization's.
 
+import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import {
   Select,
@@ -139,6 +140,16 @@ function AgentRequests({
         <SettingsSkeletonRows count={1} />
       ) : highlight && !shown.some((r) => r.id === highlight) ? (
         <SettingsEmpty
+          action={
+            <Button asChild size="compact" variant="ghost">
+              <Link
+                params={{ agentId: agentSlug }}
+                to="/agents/$agentId/settings"
+              >
+                Back to agent settings
+              </Link>
+            </Button>
+          }
           art={<GoneArt />}
           description="This guardrail request no longer exists."
           title="Request not found"

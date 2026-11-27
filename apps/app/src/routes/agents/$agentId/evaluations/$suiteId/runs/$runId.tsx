@@ -1,3 +1,4 @@
+import { Button } from "@preprocess/ui/components/button";
 import { Link, createFileRoute, getRouteApi } from "@tanstack/react-router";
 
 import { GoneArt } from "../../../../../../components/empty-art";
@@ -59,6 +60,16 @@ function EvalRunPage() {
         </SettingsCard>
       ) : state.kind === "missing" ? (
         <SettingsEmpty
+          action={
+            <Button asChild size="compact" variant="ghost">
+              <Link
+                params={{ agentId: agent.id, suiteId }}
+                to="/agents/$agentId/evaluations/$suiteId"
+              >
+                Back to suite
+              </Link>
+            </Button>
+          }
           art={<GoneArt />}
           description="This eval run was deleted or doesn't exist."
           title="Eval run not found"
