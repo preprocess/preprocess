@@ -1340,15 +1340,14 @@ describe("moving from Team down to Free", () => {
     // The plan is cached for 30 seconds per isolate.
     const later = Date.now() + 60_000;
     vi.spyOn(Date, "now").mockReturnValue(later);
-    const billing = await shop.owner.call(`/v1/orgs/${shop.org}/billing`);
+    const billing = await shop.owner.call<{
+      switched: { at: string | null } | null;
+    }>(`/v1/orgs/${shop.org}/billing`);
     expect(billing.body).toMatchObject({
       plan: "free",
-      switched: {
-        people: 1,
-        agents: [{ id: styled, slug: "styled" }],
-        at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
-      },
+      switched: { people: 1, agents: [{ id: styled, slug: "styled" }] },
     });
+    expect(billing.body.switched?.at).toMatch(/^\d{4}-\d\d-\d\dT/);
     const paused = await shop.keyed.call<{
       error: { code: string; message: string };
     }>(`/v1/orgs/${shop.org}/cases`, {
