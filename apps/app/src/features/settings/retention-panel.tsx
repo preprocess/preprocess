@@ -190,7 +190,7 @@ export function RetentionPanel({ role }: { role: RetentionRole }) {
             </LoadingButton>
           ) : null
         }
-        description="How long each kind of data is kept after its case closes. Open cases are never touched, and a daily sweep deletes what is past its period."
+        description={`How long each kind of data is kept after its case closes. Open cases are never touched, and a daily sweep deletes what is past its period.${owner ? "" : ` ${ONLY_OWNERS}`}`}
         title="Retention periods"
       >
         {retention.isError ? (
@@ -225,15 +225,7 @@ export function RetentionPanel({ role }: { role: RetentionRole }) {
               ];
               return (
                 <SettingsRow
-                  description={
-                    !owner ? (
-                      <>
-                        {kind.hint} {ONLY_OWNERS}
-                      </>
-                    ) : (
-                      kind.hint
-                    )
-                  }
+                  description={kind.hint}
                   key={kind.key}
                   label={kind.label}
                   value={
