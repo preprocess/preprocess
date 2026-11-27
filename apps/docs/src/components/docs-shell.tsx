@@ -1050,6 +1050,11 @@ export function DocsShell({
             {toc.length > 0 ? <OnThisPagePopover /> : null}
             <ScrollArea
               className="min-h-0 flex-1"
+              ref={(root) => {
+                root
+                  ?.querySelector('[data-slot="scroll-area-viewport"]')
+                  ?.setAttribute("data-scroll-restoration-id", "docs-content");
+              }}
               viewportClassName="scroll-fade"
             >
               {children}
