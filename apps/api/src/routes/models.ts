@@ -32,6 +32,7 @@ import { ApiError } from "../cases.ts";
 import type { Env } from "../env.ts";
 import { organizationDefaultValues } from "../settings.ts";
 import {
+  describeRef,
   installEndpoints,
   modelUsers,
   openKey,
@@ -127,6 +128,32 @@ const CatalogModel = z
   })
   .openapi("CatalogModel");
 
+const ModelRef = z
+  .discriminatedUnion("type", [
+    z.object({
+      type: z.literal("deployment"),
+      agentId: z.string(),
+      agentName: z.string(),
+      deploymentId: z.string(),
+      production: z.boolean(),
+    }),
+    z.object({
+      type: z.literal("settings"),
+      agentId: z.string(),
+      agentName: z.string(),
+    }),
+    z.object({ type: z.literal("organization_default") }),
+    z.object({
+      type: z.literal("eval_suite"),
+      suiteId: z.string(),
+      suiteName: z.string(),
+    }),
+  ])
+  .openapi("ModelRef", {
+    description:
+      "Something that still names an organization model: a live deployment's code, an agent's settings, the organization default, or an eval suite with a run still going",
+  });
+
 const OrgModel = z
   .object({
     id: z.string(),
@@ -138,6 +165,10 @@ const OrgModel = z
     allowed: z.boolean(),
     isDefault: z.boolean(),
     endpoint: Endpoint,
+    usedBy: z.array(ModelRef).openapi({
+      description:
+        "What still names it; while this is not empty, deleting it is refused with model_in_use",
+    }),
   })
   .openapi("OrgModel");
 
@@ -232,7 +263,7 @@ export const modelRoutes = new OpenAPIHono<{
       },
     }),
     async (c) => {
-      const { rows, allowed, defaults } = await withOrg(
+      const { rows, allowed, defaults, usedBy } = await withOrg(
         c.env,
         c.var.org,
         async (tx) => ({
@@ -242,6 +273,19 @@ export const modelRoutes = new OpenAPIHono<{
             .orderBy(modelEndpoints.model),
           allowed: await allowedModels(tx),
           defaults: await organizationDefaultValues(tx),
+          usedBy: new Map(
+            await Promise.all(
+              (
+                await tx
+                  .select({ model: modelEndpoints.model })
+                  .from(modelEndpoints)
+                  .where(eq(modelEndpoints.kind, "model"))
+              ).map(
+                async ({ model }) =>
+                  [model, await modelUsers(tx, model)] as const,
+              ),
+            ),
+          ),
         }),
       );
       const defaultModel =
@@ -278,6 +322,7 @@ export const modelRoutes = new OpenAPIHono<{
           allowed: modelAllowed(allowed, r.model),
           isDefault: r.model === defaultModel,
           endpoint: toEndpoint(r),
+          usedBy: usedBy.get(r.model) ?? [],
         }));
       return c.json([...catalog, ...own], 200);
     },
@@ -435,20 +480,35 @@ export const modelRoutes = new OpenAPIHono<{
       summary:
         "Delete a model endpoint; a catalogue model goes back to its provider, and an organization model still in use is refused with model_in_use (Owner or Admin)",
       request: { params: EndpointParam },
-      responses: { 204: { description: "Deleted" } },
+      responses: {
+        204: { description: "Deleted" },
+        409: json(
+          z
+            .object({
+              error: z.object({
+                code: z.literal("model_in_use"),
+                message: z.string(),
+                refs: z.array(ModelRef),
+              }),
+            })
+            .openapi("ModelInUse"),
+          "An organization model something still names (model_in_use), with what names it",
+        ),
+      },
     }),
     async (c) => {
       requireAdmin(c.var.caller);
       const { id } = c.req.valid("param");
       await withOrg(c.env, c.var.org, async (tx) => {
         const row = await findEndpoint(tx, id);
-        const users =
+        const refs =
           row.kind === "model" ? await modelUsers(tx, row.model) : [];
-        if (users.length)
+        if (refs.length)
           throw new ApiError(
             409,
             "model_in_use",
-            `The model ${row.model} is still in use by ${users.join(", ")}. Move those to another model first.`,
+            `The model ${row.model} is still in use by ${refs.map(describeRef).join(", ")}. Move those to another model first.`,
+            { refs },
           );
         await tx.delete(modelEndpoints).where(eq(modelEndpoints.id, id));
         await audit(tx, {
