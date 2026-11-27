@@ -253,6 +253,13 @@
       "when": 1795768457848,
       "tag": "0040_notice_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795817360912,
+      "tag": "0041_device_code",
+      "breakpoints": true
     }
   ]
 }

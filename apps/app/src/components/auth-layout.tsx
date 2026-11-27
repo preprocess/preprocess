@@ -80,7 +80,7 @@ export function AuthField({
   id: string;
   label: string;
   hint?: string;
-  error?: string;
+  error?: ReactNode;
   onChange: (value: string) => void;
 }) {
   return (

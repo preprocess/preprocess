@@ -21,7 +21,12 @@ import { betterAuth } from "better-auth";
 import { generateRandomString } from "better-auth/crypto";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { magicLink, organization } from "better-auth/plugins";
+import {
+  bearer,
+  deviceAuthorization,
+  magicLink,
+  organization,
+} from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import {
   adminAc,
@@ -42,6 +47,9 @@ import type { Env } from "./env.ts";
 // the token opens for two minutes at most. Every other stage refuses any
 // smoke-test address before a token exists or is checked. Its link is never
 // mailed, since the smoke test opens it itself.
+// The one device-flow client: `preprocess login`.
+export const CLI_CLIENT_ID = "preprocess-cli";
+
 const SMOKE_TEST_STAGE = /^(staging|pr-\d+)$/;
 const SMOKE_TEST_LOCAL = /^smoke-test\+/i;
 const smokeTestToken = async (
@@ -525,6 +533,17 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
           rateLimit: { enabled: false },
         },
       ]),
+      // `preprocess login` (RFC 8628): the CLI asks for a code, the person
+      // approves it in the app at /device, and the CLI gets a session of its
+      // own that it sends as a bearer token. It acts as that person, with
+      // their role, never with an API key's Admin rights.
+      deviceAuthorization({
+        verificationUri: new URL("/device", env.APP_URL).toString(),
+        validateClient: (clientId) => clientId === CLI_CLIENT_ID,
+        expiresIn: "15m",
+        interval: "5s",
+      }),
+      bearer(),
     ],
   });
 };

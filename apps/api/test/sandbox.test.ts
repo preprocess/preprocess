@@ -72,6 +72,7 @@ const recorded = (sandboxId: string) =>
         .select()
         .from(usageRecords)
         .where(eq(usageRecords.caseId, `case_${sandboxId}`))
+        .orderBy(asc(usageRecords.at))
     ).map((u) => [u.feature, u.quantity]),
   }));
 

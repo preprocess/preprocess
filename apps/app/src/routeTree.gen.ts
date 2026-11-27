@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as DeviceRouteImport } from "./routes/device";
 import { Route as InboxRouteImport } from "./routes/inbox";
 import { Route as OnboardingRouteImport } from "./routes/onboarding";
 import { Route as SettingsRouteImport } from "./routes/settings";
@@ -21,6 +22,7 @@ import { Route as CasesIndexRouteImport } from "./routes/cases/index";
 import { Route as DevelopersApiRouteImport } from "./routes/developers/api";
 import { Route as DevelopersApiKeysRouteImport } from "./routes/developers/api-keys";
 import { Route as DevelopersFeedbackRouteImport } from "./routes/developers/feedback";
+import { Route as DevelopersGithubRouteImport } from "./routes/developers/github";
 import { Route as DevelopersIntegrationsRouteImport } from "./routes/developers/integrations";
 import { Route as DevelopersMcpRouteImport } from "./routes/developers/mcp";
 import { Route as DevelopersNetworkRouteImport } from "./routes/developers/network";
@@ -73,6 +75,11 @@ import { Route as AgentsAgentIdEvaluationsSuiteIdRunsRunIdRouteImport } from "./
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DeviceRoute = DeviceRouteImport.update({
+  id: "/device",
+  path: "/device",
   getParentRoute: () => rootRouteImport,
 } as any);
 const InboxRoute = InboxRouteImport.update({
@@ -128,6 +135,11 @@ const DevelopersApiKeysRoute = DevelopersApiKeysRouteImport.update({
 const DevelopersFeedbackRoute = DevelopersFeedbackRouteImport.update({
   id: "/developers/feedback",
   path: "/developers/feedback",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DevelopersGithubRoute = DevelopersGithubRouteImport.update({
+  id: "/developers/github",
+  path: "/developers/github",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevelopersIntegrationsRoute = DevelopersIntegrationsRouteImport.update({
@@ -393,6 +405,7 @@ const AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/device": typeof DeviceRoute;
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
@@ -402,6 +415,7 @@ export interface FileRoutesByFullPath {
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
+  "/developers/github": typeof DevelopersGithubRoute;
   "/developers/integrations": typeof DevelopersIntegrationsRoute;
   "/developers/mcp": typeof DevelopersMcpRoute;
   "/developers/network": typeof DevelopersNetworkRoute;
@@ -455,6 +469,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/device": typeof DeviceRoute;
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
@@ -463,6 +478,7 @@ export interface FileRoutesByTo {
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
+  "/developers/github": typeof DevelopersGithubRoute;
   "/developers/integrations": typeof DevelopersIntegrationsRoute;
   "/developers/mcp": typeof DevelopersMcpRoute;
   "/developers/network": typeof DevelopersNetworkRoute;
@@ -515,6 +531,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
+  "/device": typeof DeviceRoute;
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
@@ -524,6 +541,7 @@ export interface FileRoutesById {
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
+  "/developers/github": typeof DevelopersGithubRoute;
   "/developers/integrations": typeof DevelopersIntegrationsRoute;
   "/developers/mcp": typeof DevelopersMcpRoute;
   "/developers/network": typeof DevelopersNetworkRoute;
@@ -579,6 +597,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/device"
     | "/inbox"
     | "/onboarding"
     | "/settings"
@@ -588,6 +607,7 @@ export interface FileRouteTypes {
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
+    | "/developers/github"
     | "/developers/integrations"
     | "/developers/mcp"
     | "/developers/network"
@@ -641,6 +661,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/device"
     | "/inbox"
     | "/onboarding"
     | "/settings"
@@ -649,6 +670,7 @@ export interface FileRouteTypes {
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
+    | "/developers/github"
     | "/developers/integrations"
     | "/developers/mcp"
     | "/developers/network"
@@ -700,6 +722,7 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/device"
     | "/inbox"
     | "/onboarding"
     | "/settings"
@@ -709,6 +732,7 @@ export interface FileRouteTypes {
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
+    | "/developers/github"
     | "/developers/integrations"
     | "/developers/mcp"
     | "/developers/network"
@@ -763,6 +787,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  DeviceRoute: typeof DeviceRoute;
   InboxRoute: typeof InboxRoute;
   OnboardingRoute: typeof OnboardingRoute;
   SettingsRoute: typeof SettingsRouteWithChildren;
@@ -772,6 +797,7 @@ export interface RootRouteChildren {
   DevelopersApiRoute: typeof DevelopersApiRoute;
   DevelopersApiKeysRoute: typeof DevelopersApiKeysRoute;
   DevelopersFeedbackRoute: typeof DevelopersFeedbackRoute;
+  DevelopersGithubRoute: typeof DevelopersGithubRoute;
   DevelopersIntegrationsRoute: typeof DevelopersIntegrationsRoute;
   DevelopersMcpRoute: typeof DevelopersMcpRoute;
   DevelopersNetworkRoute: typeof DevelopersNetworkRoute;
@@ -798,6 +824,13 @@ declare module "@tanstack/react-router" {
       path: "/";
       fullPath: "/";
       preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/device": {
+      id: "/device";
+      path: "/device";
+      fullPath: "/device";
+      preLoaderRoute: typeof DeviceRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/inbox": {
@@ -875,6 +908,13 @@ declare module "@tanstack/react-router" {
       path: "/developers/feedback";
       fullPath: "/developers/feedback";
       preLoaderRoute: typeof DevelopersFeedbackRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/developers/github": {
+      id: "/developers/github";
+      path: "/developers/github";
+      fullPath: "/developers/github";
+      preLoaderRoute: typeof DevelopersGithubRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/developers/integrations": {
@@ -1327,6 +1367,7 @@ const AgentsAgentIdRouteWithChildren = AgentsAgentIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DeviceRoute: DeviceRoute,
   InboxRoute: InboxRoute,
   OnboardingRoute: OnboardingRoute,
   SettingsRoute: SettingsRouteWithChildren,
@@ -1336,6 +1377,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevelopersApiRoute: DevelopersApiRoute,
   DevelopersApiKeysRoute: DevelopersApiKeysRoute,
   DevelopersFeedbackRoute: DevelopersFeedbackRoute,
+  DevelopersGithubRoute: DevelopersGithubRoute,
   DevelopersIntegrationsRoute: DevelopersIntegrationsRoute,
   DevelopersMcpRoute: DevelopersMcpRoute,
   DevelopersNetworkRoute: DevelopersNetworkRoute,

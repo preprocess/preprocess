@@ -179,3 +179,18 @@ export const apikey = pgTable(
     index("apikey_key_idx").on(table.key),
   ],
 );
+
+// Device authorization plugin: one row per `preprocess login` attempt, from
+// the code the CLI asks for until it is approved, denied or expires.
+export const deviceCode = pgTable("device_code", {
+  id: text("id").primaryKey(),
+  deviceCode: text("device_code").notNull().unique(),
+  userCode: text("user_code").notNull().unique(),
+  userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at").notNull(),
+  status: text("status").notNull(),
+  lastPolledAt: timestamp("last_polled_at"),
+  pollingInterval: integer("polling_interval"),
+  clientId: text("client_id"),
+  scope: text("scope"),
+});
