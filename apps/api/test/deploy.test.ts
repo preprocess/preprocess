@@ -191,6 +191,28 @@ describe("deploy, secrets and one case end to end", () => {
     expect(promoted.body).toMatchObject({ status: "ready", production: true });
   });
 
+  it("lists an agent's deployments by environment, as preprocess rollback reads them", async () => {
+    const preview = await call<Deployment>(
+      a,
+      "POST",
+      "/v1/orgs/{org}/agents/stock/deployments",
+      { ...deployBody, git: { branch: "feature/faster", commit: "def5678" } },
+    );
+    expect(preview.status).toBe(201);
+    const list = async (environment: string) =>
+      (
+        await call<Array<{ id: string; environment: string }>>(
+          a,
+          "GET",
+          `/v1/orgs/{org}/agents/stock/deployments?environment=${environment}`,
+        )
+      ).body;
+    const production = await list("production");
+    expect(production.map((d) => d.id)).toContain(first.id);
+    expect(production.every((d) => d.environment === "production")).toBe(true);
+    expect((await list("preview")).map((d) => d.id)).toEqual([preview.body.id]);
+  });
+
   it("runs a case where only the deployed code sees the secret", async () => {
     const view = await runCase(a);
     expect(view.status).toBe("completed");

@@ -5,6 +5,7 @@
     "index",
     "---Commands---",
     "deploy",
+    "promote-and-rollback",
     "settings",
     "logs-and-evals",
     "---Reference---",

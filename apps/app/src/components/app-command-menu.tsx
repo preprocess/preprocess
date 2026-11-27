@@ -25,6 +25,7 @@ import {
   Moon,
   OpenRectArrowOut,
   Plug,
+  Code,
   Plus,
   Search,
   Settings,
@@ -51,6 +52,7 @@ type AppPath =
   | "/settings/organization/audit-logs"
   | "/developers/api"
   | "/developers/integrations"
+  | "/developers/github"
   | "/developers/sandboxes"
   | "/developers/secrets"
   | "/developers/network"
@@ -127,13 +129,19 @@ const PAGES: readonly {
     group: "Developers",
     icon: Plug,
     keywords: [
-      "github",
       "mcp",
       "mcp servers",
       "model context protocol",
       "tools",
       "connectors",
     ],
+  },
+  {
+    to: "/developers/github",
+    label: "GitHub",
+    group: "Developers",
+    icon: Code,
+    keywords: ["github", "repositories", "repos", "push", "deploy", "app"],
   },
   {
     to: "/developers/secrets",
