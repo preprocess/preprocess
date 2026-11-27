@@ -49,6 +49,7 @@ import { otelRoutes } from "./routes/otel.ts";
 import { evalRoutes } from "./routes/evals.ts";
 import { memoryRoutes } from "./routes/memories.ts";
 import { trainingRoutes } from "./routes/training.ts";
+import { meRoutes } from "./routes/me.ts";
 import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
 export { BuildQueue } from "./builds.ts";
@@ -187,6 +188,7 @@ orgApi.get("/mcp", (c) => c.body(null, 405, { allow: "POST" }));
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
+v1.route("/me", meRoutes);
 v1.route("/", mcpCallback);
 v1.route("/", githubCallbacks);
 v1.doc31("/openapi.json", OPENAPI);

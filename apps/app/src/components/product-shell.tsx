@@ -48,6 +48,7 @@ import {
 import { useAuth } from "../features/auth/auth-context";
 import { useContext, useState, type ReactNode } from "react";
 
+import { SidebarNoticeStack } from "../features/notices/notice-stack";
 import { useOrganizations } from "../features/organizations/organizations-context";
 import type { UserOrganization } from "../features/organizations/user-organization";
 import { AppCommandMenu, AppCommandSearchTrigger } from "./app-command-menu";
@@ -336,6 +337,7 @@ function ProductSidebar({
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
+          <SidebarNoticeStack />
           <UserFooter />
         </SidebarFooter>
       </Sidebar>

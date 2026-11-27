@@ -246,6 +246,13 @@
       "when": 1795735320219,
       "tag": "0039_mcp_transport",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795768457848,
+      "tag": "0040_notice_dismissals",
+      "breakpoints": true
     }
   ]
 }
