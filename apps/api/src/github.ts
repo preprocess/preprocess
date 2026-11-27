@@ -125,6 +125,23 @@ export const installUrl = async (
   return url.href;
 };
 
+// Where the installing account changes the App's repositories or uninstalls
+// it on GitHub.
+export const installationSettingsUrl = (
+  env: Env,
+  installation: {
+    installationId: number;
+    accountLogin: string;
+    accountType: string;
+  },
+) =>
+  new URL(
+    installation.accountType === "Organization"
+      ? `/organizations/${installation.accountLogin}/settings/installations/${installation.installationId}`
+      : `/settings/installations/${installation.installationId}`,
+    web(env),
+  ).href;
+
 // RS256 JWT for the App itself, valid ten minutes (GitHub's maximum), from
 // the PKCS #8 PEM private key.
 const appJwt = async (env: Env) => {
