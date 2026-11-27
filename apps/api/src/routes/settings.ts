@@ -14,7 +14,6 @@ import {
   organizationDefaults,
 } from "@preprocess/db/schema/settings";
 import type { SettingValues } from "@preprocess/db/schema/settings";
-import type { SandboxSize } from "@preprocess/sdk/protocol";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 
 import { assertModelAllowed } from "../allowed-models.ts";
@@ -29,10 +28,8 @@ import {
   organizationDefaultValues,
   overrideWarnings,
   resolveSettings,
-  SANDBOX_SIZE_KEY,
   settingSchema,
 } from "../settings.ts";
-import { sandboxMaxSize, sizeAllowed } from "../sandbox.ts";
 
 const OrgParam = z.object({ org: z.string() });
 const AgentParam = OrgParam.extend({ agent: z.string() });
@@ -147,23 +144,6 @@ const setOverride = async (
   const agent = await findAgent(tx, slug);
   if (key === "model" && value !== undefined)
     await assertModelAllowed(tx, value as string);
-  if (key === SANDBOX_SIZE_KEY && value !== undefined) {
-    const manifest = (await currentDeployment(tx, agent.id))?.manifest as
-      Manifest | undefined;
-    if (!manifest?.sandbox)
-      throw new ApiError(
-        409,
-        "no_sandbox",
-        "This agent's code does not ask for a sandbox, so it has no size to override.",
-      );
-    const cap = await sandboxMaxSize(tx);
-    if (!sizeAllowed(cap, value as SandboxSize))
-      throw new ApiError(
-        409,
-        "sandbox_size_not_allowed",
-        `The organization allows sandboxes up to ${cap}. An Owner or Admin can raise the limit in Guardrails.`,
-      );
-  }
   const before = await agentOverrideValues(tx, agent.id);
   const { [key]: previous, ...rest } = before;
   const next: SettingValues =
@@ -331,6 +311,8 @@ export const settingsRoutes = new OpenAPIHono<{
     }),
     async (c) => {
       const { agent, key } = c.req.valid("param");
+      if (!settingSchema(key))
+        throw new ApiError(404, "not_found", `No setting ${key}.`);
       return c.json(
         await withOrg(c.env, c.var.org, (tx) =>
           setOverride(tx, c.var, agent, key, undefined),

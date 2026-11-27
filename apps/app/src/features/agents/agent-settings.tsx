@@ -75,7 +75,7 @@ const SOURCE = {
 const text = (value: Scalar | null) => value?.toString() ?? "";
 
 // Listed only for an agent whose code asks for a sandbox; never an
-// organization default.
+// organization default. The size is set in code only, so it is read-only.
 const AGENT_FIELDS: readonly Field<string>[] = [
   ...FIELDS,
   {
@@ -238,6 +238,18 @@ function SettingRow({
   useEffect(() => setDraft(text(setting.value)), [setting.value]);
   const label = field?.label ?? setting.key;
   const changed = draft !== "" && draft !== text(setting.value);
+
+  if (setting.key === "sandbox.size")
+    return (
+      <SettingsRow
+        description={SOURCE[setting.source]}
+        label={label}
+        value={
+          SANDBOX_SIZE_OPTIONS.find((option) => option.value === setting.value)
+            ?.label ?? text(setting.value)
+        }
+      />
+    );
 
   return (
     <SettingsRow
