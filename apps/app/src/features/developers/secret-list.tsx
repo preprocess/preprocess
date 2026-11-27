@@ -1,5 +1,6 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
+import { DialogFooter } from "@preprocess/ui/components/dialog";
 import {
   CheckboxGroup,
   CheckboxItem,
@@ -299,20 +300,32 @@ function AgentsDialog({
         {error ? (
           <SettingsPanelMessage tone="danger">{error}</SettingsPanelMessage>
         ) : null}
-        <SettingsDialogActions
-          onCancel={() => onOpenChange(false)}
-          pending={pending}
-        >
-          <LoadingButton
-            disabled={!agents.data || slugs.length === 0}
-            onAction={save}
-            onStatusChange={(status) => setPending(status === "pending")}
-            pendingLabel="Saving…"
-            successLabel="Saved"
+        {agents.data && slugs.length === 0 ? (
+          <DialogFooter>
+            <Button
+              onClick={() => onOpenChange(false)}
+              type="button"
+              variant="secondary"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        ) : (
+          <SettingsDialogActions
+            onCancel={() => onOpenChange(false)}
+            pending={pending}
           >
-            Save
-          </LoadingButton>
-        </SettingsDialogActions>
+            <LoadingButton
+              disabled={!agents.data}
+              onAction={save}
+              onStatusChange={(status) => setPending(status === "pending")}
+              pendingLabel="Saving…"
+              successLabel="Saved"
+            >
+              Save
+            </LoadingButton>
+          </SettingsDialogActions>
+        )}
       </div>
     </SettingsDialogShell>
   );
@@ -365,7 +378,8 @@ function Secrets() {
           Add secret
         </Button>
       }
-      description="Encrypted values for agents' deployed code. Choose which agents receive each one; the model never sees them."
+      description="Encrypted values granted to specific agents. Values can't be viewed after saving, and updates take effect on the next call."
+      title="Organization secrets"
     >
       {secrets.isError ? (
         <SettingsError error={secrets.error} />
