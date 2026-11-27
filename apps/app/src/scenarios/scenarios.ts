@@ -47,6 +47,11 @@ export const SCENARIO_SURFACES = {
       "empty",
     ],
   },
+  // The sidebar notice stack's billing state, role and announcements.
+  notices: {
+    label: "Notices",
+    states: ["live", "one", "several", "mixed", "member", "none"],
+  },
 } as const;
 
 export type ScenarioSurface = keyof typeof SCENARIO_SURFACES;
@@ -68,6 +73,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   cases: "live",
   "case-room": "conversation",
   "case-work": "live",
+  notices: "live",
 };
 
 /** Builds without `import.meta.env.DEV` never serve seeded records. */
@@ -76,6 +82,7 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   cases: "live",
   "case-room": "empty",
   "case-work": "live",
+  notices: "live",
 };
 
 export function isScenarioSurface(value: string): value is ScenarioSurface {
