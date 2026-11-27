@@ -230,6 +230,10 @@ export const localRoleDatabaseUrl = (
 // so cookies stay first-party.
 export const localAppUrl = "https://app.preprocess.localhost";
 
+// The public docs site, linked from the app wherever a stage has no docs
+// domain of its own.
+export const publicDocsUrl = "https://docs.preprocess.com";
+
 // The GitHub App in `pnpm dev`: scripts/github-stub.ts stands in for GitHub
 // and apps/builder/local/server.ts runs the build sandbox under Docker. The
 // private key, webhook secret and client secret are generated into

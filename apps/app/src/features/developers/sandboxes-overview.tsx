@@ -278,7 +278,13 @@ function AgentsTable({ agents }: { agents: SandboxAgent[] }) {
   );
 }
 
-function AgentsSection({ agents }: { agents: SandboxAgent[] }) {
+function AgentsSection({
+  agents,
+  docsUrl,
+}: {
+  agents: SandboxAgent[];
+  docsUrl: string | null;
+}) {
   return (
     <SettingsSection
       description="Each agent declares its sandbox in code. To change one, edit the code and redeploy."
@@ -288,6 +294,19 @@ function AgentsSection({ agents }: { agents: SandboxAgent[] }) {
         <AgentsTable agents={agents} />
       ) : (
         <SettingsEmpty
+          action={
+            docsUrl ? (
+              <Button asChild size="sm" variant="secondary">
+                <a
+                  href={`${docsUrl}/sdk/sandbox`}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  Read the sandbox docs
+                </a>
+              </Button>
+            ) : undefined
+          }
           art={<NothingCreatedArt />}
           description="An agent gets a sandbox when its code declares one."
           title="No agents use a sandbox"
@@ -426,7 +445,7 @@ function LoadingSection({ title, rows }: { title: string; rows: number }) {
   );
 }
 
-export function SandboxesOverview() {
+export function SandboxesOverview({ docsUrl }: { docsUrl: string | null }) {
   const organizationId = useOrganizationId();
   const sandboxes = useQuery({
     queryKey: ["sandboxes", organizationId],
@@ -466,7 +485,7 @@ export function SandboxesOverview() {
     );
   return (
     <SettingsStacked>
-      <AgentsSection agents={sandboxes.data.agents} />
+      <AgentsSection agents={sandboxes.data.agents} docsUrl={docsUrl} />
       <PresetsSection customEnvironments={sandboxes.data.customEnvironments} />
       <SizesSection data={sandboxes.data} />
     </SettingsStacked>

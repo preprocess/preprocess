@@ -79,6 +79,7 @@ import {
   runtimeModelSecrets,
   type SelfHostStage,
   type Stage,
+  publicDocsUrl,
 } from "./src/stages.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -308,6 +309,9 @@ export default Alchemy.Stack(
     const appDomain = yield* Config.String("APP_DOMAIN").pipe(
       Config.withDefault(""),
     );
+    const docsDomain = yield* Config.String("DOCS_DOMAIN").pipe(
+      Config.withDefault(""),
+    );
     const app = yield* Cloudflare.Worker("App", {
       ...worker,
       name: n.app,
@@ -320,6 +324,9 @@ export default Alchemy.Stack(
       env: {
         ...runMode,
         API: Cloudflare.WorkerEntrypoint(apiRef),
+        // Where the app links to docs: the stage's own docs domain, else the
+        // public docs, so the app never waits on the docs Worker's URL.
+        DOCS_URL: docsDomain ? `https://${docsDomain}` : publicDocsUrl,
         // Shows the Google button; the API holds the secret.
         ...Object.fromEntries(
           googleVars.map(
@@ -341,9 +348,6 @@ export default Alchemy.Stack(
 
     // The docs site documents the API on the app's origin. Production serves
     // it on DOCS_DOMAIN; other stages use workers.dev.
-    const docsDomain = yield* Config.String("DOCS_DOMAIN").pipe(
-      Config.withDefault(""),
-    );
     const docsDist = at("apps/docs/dist");
     if (!existsSync(path.join(docsDist, "server/index.js")))
       throw new Error("apps/docs/dist is missing. Build the docs first.");
