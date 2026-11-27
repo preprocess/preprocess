@@ -41,7 +41,7 @@ export function AuthLayout({
               <PreprocessMark className="mb-6 size-7" title="Preprocess" />
               <h1
                 className="text-display tracking-[-0.03em] text-foreground"
-                style={{ fontVariationSettings: fontWeights.semibold }}
+                style={{ fontVariationSettings: fontWeights.medium }}
               >
                 <span className="block">{title}</span>
                 {subtitle ? <span className="block">{subtitle}</span> : null}
