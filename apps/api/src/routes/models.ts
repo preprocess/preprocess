@@ -29,6 +29,7 @@ import { ApiError } from "../cases.ts";
 import type { Env } from "../env.ts";
 import {
   installEndpoints,
+  modelUsers,
   openKey,
   sealKey,
   type ModelEndpointRow,
@@ -403,7 +404,7 @@ export const modelRoutes = new OpenAPIHono<{
       path: "/models/endpoints/{id}",
       tags: ["Models"],
       summary:
-        "Delete a model endpoint; a catalogue model goes back to its provider (Owner or Admin)",
+        "Delete a model endpoint; a catalogue model goes back to its provider, and an organization model still in use is refused with model_in_use (Owner or Admin)",
       request: { params: EndpointParam },
       responses: { 204: { description: "Deleted" } },
     }),
@@ -412,6 +413,14 @@ export const modelRoutes = new OpenAPIHono<{
       const { id } = c.req.valid("param");
       await withOrg(c.env, c.var.org, async (tx) => {
         const row = await findEndpoint(tx, id);
+        const users =
+          row.kind === "model" ? await modelUsers(tx, row.model) : [];
+        if (users.length)
+          throw new ApiError(
+            409,
+            "model_in_use",
+            `The model ${row.model} is still in use by ${users.join(", ")}. Move those to another model first.`,
+          );
         await tx.delete(modelEndpoints).where(eq(modelEndpoints.id, id));
         await audit(tx, {
           ...eventBase(c.var),

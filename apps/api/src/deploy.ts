@@ -25,7 +25,6 @@ import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { secrets } from "@preprocess/db/schema/secrets";
 import {
   currentModel,
-  MODELS,
   PROTOCOL,
   REASONING,
   sandboxManifest,
@@ -47,6 +46,7 @@ import { z } from "zod";
 
 import type { AuditInput } from "@preprocess/db/audit";
 import { assertModelAllowed } from "./allowed-models.ts";
+import { assertModelKnown } from "./model-endpoints.ts";
 import { decrypt, orgKeyVersion } from "./crypto.ts";
 import { startPushRuns } from "./evals.ts";
 import type { Env } from "./env.ts";
@@ -61,6 +61,7 @@ import {
   agentOverrideValues,
   clearOverrides,
   effectiveSettings,
+  modelId,
   overrideWarnings,
 } from "./settings.ts";
 import type { NetworkRules } from "./network.ts";
@@ -115,7 +116,7 @@ const manifestSchema = z
     protocol: z.literal(PROTOCOL),
     sdk: z.object({ name: z.literal("@preprocess/sdk"), version: z.string() }),
     instructions: z.string(),
-    model: z.string().transform(currentModel).pipe(z.enum(MODELS)),
+    model: z.string().transform(currentModel).pipe(modelId),
     reasoning: z.enum(REASONING),
     secrets: z.array(z.string()),
     mcp: z.array(z.string()),
@@ -739,6 +740,7 @@ export const deploy = async (
       throw new HTTPException(422, {
         message: `the code names groups this organization does not have: ${unknown.join(", ")}`,
       });
+    await assertModelKnown(tx, manifest.model);
     await assertModelAllowed(
       tx,
       (await effectiveSettings(tx, agent.id, manifest)).model,
