@@ -173,7 +173,7 @@ export function AgentDeployments({ agent }: { agent: OrgAgentDetail }) {
                 ? needsOf(deployment.waitingFor)
                 : [];
             return (
-              <div key={deployment.id}>
+              <div id={deployment.id} key={deployment.id}>
                 <SettingsRow
                   description={[
                     deployment.git.branch,

@@ -14,6 +14,7 @@ import {
   durableObjects,
   LOCAL,
   localAppUrl,
+  publicDocsUrl,
   localAuditKeyId,
   localEmailFrom,
   localGitHub,
@@ -43,6 +44,7 @@ const configs: Record<string, object> = {
     // The app serves Better Auth (/api/auth/*) and /v1 from the API Worker on
     // its own origin, so session cookies stay first-party.
     services: [{ binding: "API", service: local.api }],
+    vars: { DOCS_URL: publicDocsUrl },
     // The app builds per stage (CLOUDFLARE_ENV selects the environment).
     env: {
       staging: { name: names("staging").app, workers_dev: true },

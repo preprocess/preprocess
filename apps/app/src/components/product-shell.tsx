@@ -260,7 +260,7 @@ const DEVELOPER_NAV: readonly NavItem[] = [
   { to: "/developers/github", label: "GitHub", icon: Code },
   { to: "/developers/secrets", label: "Secrets", icon: Shield },
   { to: "/developers/network", label: "Network", icon: Globe },
-  { to: "/developers/sandboxes", label: "Sandbox images", icon: Monitor },
+  { to: "/developers/sandboxes", label: "Sandboxes", icon: Monitor },
 ];
 
 function NavRows({
