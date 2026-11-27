@@ -16,6 +16,7 @@ import { collectSandboxLayers } from "./sandbox-layers.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
+import { authRateLimit, orgRateLimit } from "./rate-limit.ts";
 import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
 import type { Env, Job } from "./env.ts";
@@ -56,6 +57,7 @@ import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
+export { RateLimiter } from "./rate-limit.ts";
 export { Scheduler } from "./scheduler.ts";
 export { McpService } from "./mcp.ts";
 export { Platform } from "./platform.ts";
@@ -94,8 +96,12 @@ app.get("/", (c) =>
 
 // Better Auth: sign-up, sign-in, sessions, organizations, members,
 // invitations and API keys. The app serves these on its own origin.
-app.on(["GET", "POST"], "/api/auth/*", (c) =>
-  handleAuthRequest(c.env, c.req.raw),
+app.on(
+  ["GET", "POST"],
+  "/api/auth/*",
+  async (c) =>
+    (await authRateLimit(c.env, c.req.raw)) ??
+    handleAuthRequest(c.env, c.req.raw),
 );
 
 // A signed-out invitee's view of their invitation, for the app's invitation
@@ -124,6 +130,7 @@ orgApi.use(async (c, next) => {
   c.get("log").set({ organizationId: c.var.org });
   await next();
 });
+orgApi.use(orgRateLimit);
 orgApi.route("/", organizationRoutes);
 orgApi.route("/", groupRoutes);
 orgApi.route("/", auditRoutes);

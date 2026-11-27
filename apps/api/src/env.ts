@@ -6,6 +6,7 @@ import type { Pipeline } from "cloudflare:pipelines";
 
 import type { BuildQueue } from "./builds.ts";
 import type { Counter } from "./counter.ts";
+import type { RateLimiter } from "./rate-limit.ts";
 import type { Scheduler } from "./scheduler.ts";
 import type { OtelRetry } from "./otel.ts";
 import type { OutboxMessage } from "./outbox.ts";
@@ -231,6 +232,9 @@ export type Env = {
   AUDIT_SIGNING_KEY: string;
   AUDIT_SIGNING_KEY_ID: string;
   COUNTER: DurableObjectNamespace<Counter>;
+  // Rate limits (rate-limit.ts): one object per organization, API key and
+  // client address.
+  RATE_LIMITER: DurableObjectNamespace<RateLimiter>;
   // Schedules (scheduler.ts): one object per agent, and one per preview.
   SCHEDULER: DurableObjectNamespace<Scheduler>;
   JOBS: Queue<Job>;
