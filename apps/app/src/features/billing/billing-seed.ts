@@ -190,6 +190,8 @@ const RELOAD_ON = {
   belowCredits: 2_500,
   addCredits: 10_000,
   monthlyLimitUsd: 500,
+  failed: null,
+  capReachedUntil: null,
 };
 const RELOAD_OFF = { ...RELOAD_ON, enabled: false };
 
@@ -295,6 +297,27 @@ const seeds: Record<
       ...base,
       pastDue: true,
       invoices: [invoice(9, 214.8, "open"), ...TEAM_INVOICES.slice(1)],
+    },
+    usage: TEAM_USAGE,
+    limitUsd: 500,
+  },
+  "team-reload-failed": {
+    billing: {
+      ...base,
+      credits: { remaining: 812, owed: 0 },
+      autoReload: {
+        ...RELOAD_ON,
+        failed: { at: "2026-11-26T09:12:00.000Z", reason: "card_declined" },
+      },
+    },
+    usage: TEAM_USAGE,
+    limitUsd: 500,
+  },
+  "team-reload-cap": {
+    billing: {
+      ...base,
+      credits: { remaining: 1_190, owed: 0 },
+      autoReload: { ...RELOAD_ON, capReachedUntil: END },
     },
     usage: TEAM_USAGE,
     limitUsd: 500,

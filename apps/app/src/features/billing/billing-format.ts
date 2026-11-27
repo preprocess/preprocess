@@ -47,6 +47,13 @@ export const monthName = (month: string) =>
 export const dayName = (day: string) => shortDate(`${day}T00:00:00Z`);
 
 /** The 1st of the month after "2026-11", as "December 1, 2026". */
+export const monthDay = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "long",
+    day: "numeric",
+  });
+
 export const nextMonthStart = (month: string) => {
   const [year, m] = month.split("-").map(Number);
   return longDate(new Date(Date.UTC(year ?? 0, m ?? 0, 1)).toISOString());

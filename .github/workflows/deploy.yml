@@ -78,6 +78,9 @@ jobs:
       # Autumn's sandbox (spec 16a): staging bills against it. Optional; without
       # it staging runs with billing off and no plans are pushed.
       AUTUMN_SECRET_KEY: ${{ secrets.AUTUMN_SECRET_KEY }}
+      # Optional: verifies Autumn's webhooks (auto-reload failures). Without
+      # it the webhook endpoint answers 404.
+      AUTUMN_WEBHOOK_SECRET: ${{ secrets.AUTUMN_WEBHOOK_SECRET }}
       BILLING_REQUIRED_FROM: ${{ vars.BILLING_REQUIRED_FROM }}
       BILLING_INTERNAL_ORGS: ${{ vars.BILLING_INTERNAL_ORGS }}
       BILLING_ENFORCED_ORGS: ${{ vars.BILLING_ENFORCED_ORGS }}
@@ -134,8 +137,8 @@ jobs:
         if: steps.credentials.outputs.ready == 'true'
         run: |
           # An unset optional value must stay unset, not bind an empty string.
-          for name in AUTUMN_SECRET_KEY BILLING_REQUIRED_FROM BILLING_INTERNAL_ORGS \
-            BILLING_ENFORCED_ORGS REAL_MODELS BASETEN_API_KEY MISTRAL_API_KEY; do
+          for name in AUTUMN_SECRET_KEY AUTUMN_WEBHOOK_SECRET BILLING_REQUIRED_FROM \
+            BILLING_INTERNAL_ORGS BILLING_ENFORCED_ORGS REAL_MODELS BASETEN_API_KEY MISTRAL_API_KEY; do
             [ -n "${!name}" ] || unset "$name"
           done
           pnpm --filter @preprocess/infra staging:deploy

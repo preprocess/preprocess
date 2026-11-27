@@ -41,6 +41,7 @@ import { spendingRoutes } from "./routes/spending.ts";
 import { retentionRoutes } from "./routes/retention.ts";
 import { sweepRetention } from "./retention.ts";
 import { billingRoutes } from "./routes/billing.ts";
+import { autumnWebhook } from "./routes/autumn.ts";
 import { ingestLogs, sendLogs } from "./logs.ts";
 import { startQueuedEval } from "./evals.ts";
 import { exportLogs, type OtelRetry } from "./otel.ts";
@@ -191,6 +192,7 @@ v1.route("/orgs/:org", orgApi);
 v1.route("/me", meRoutes);
 v1.route("/", mcpCallback);
 v1.route("/", githubCallbacks);
+v1.route("/", autumnWebhook);
 v1.doc31("/openapi.json", OPENAPI);
 app.route("/v1", v1);
 

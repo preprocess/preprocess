@@ -63,6 +63,8 @@ export const SCENARIO_SURFACES = {
       "team-negative",
       "team-limit",
       "team-past-due",
+      "team-reload-failed",
+      "team-reload-cap",
       "team-ending",
       "team-switched",
       "enterprise",
@@ -78,7 +80,16 @@ export const SCENARIO_SURFACES = {
   // The sidebar notice stack's billing state, role and announcements.
   notices: {
     label: "Notices",
-    states: ["live", "one", "several", "mixed", "member", "none"],
+    states: [
+      "live",
+      "one",
+      "several",
+      "mixed",
+      "reload-failed",
+      "reload-cap",
+      "member",
+      "none",
+    ],
   },
 } as const;
 

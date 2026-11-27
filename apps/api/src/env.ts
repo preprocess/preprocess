@@ -188,6 +188,9 @@ export type Env = {
   // Autumn (spec 16a): our cloud's billing. Unset, billing is off: nothing is
   // reported and every organization is on the free plan without limits.
   AUTUMN_SECRET_KEY?: string;
+  // Verifies Autumn's webhooks (Svix, whsec_…). Unset, the Autumn webhook
+  // answers 404 and auto-reload failures aren't recorded.
+  AUTUMN_WEBHOOK_SECRET?: string;
   // When cards became required (an ISO date; spec 16a). Unset, an
   // organization without a plan is not limited. Set, organizations created
   // before it are put on Free without a card, and later ones must start a
