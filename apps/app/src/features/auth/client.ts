@@ -13,6 +13,18 @@ export class ApiError extends Error {
   }
 }
 
+// An error page that isn't JSON (a 500 from the platform) reads as no detail,
+// so the caller shows its generic message rather than a parse error.
+function parseBody(text: string, ok: boolean): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch (cause) {
+    if (ok) throw cause;
+    return null;
+  }
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   if (init.body) headers.set("content-type", "application/json");
@@ -22,7 +34,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}) {
     credentials: "same-origin",
   });
   const text = await response.text();
-  const body = text ? (JSON.parse(text) as unknown) : null;
+  const body = parseBody(text, response.ok);
   if (!response.ok) {
     const detail = (body ?? {}) as {
       message?: string;

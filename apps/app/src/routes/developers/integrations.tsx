@@ -1,47 +1,53 @@
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 
 import {
-  clearMcpServer,
-  mcpServerUsage,
-} from "../../features/agents/agent-store";
-import { OrgMcpSection } from "../../features/developers/mcp-servers";
-import {
-  deleteOrgMcpServer,
-  getPlatformSettings,
-  saveOrgMcpServer,
-} from "../../features/developers/platform-store";
+  McpServers,
+  type ConnectResult,
+} from "../../features/developers/mcp-servers";
 import { DeveloperSettingsPage } from "../../features/settings/settings-widgets";
 
+type IntegrationsSearch = { connected?: string; connect_error?: string };
+
+const CONNECT_ERRORS = ["cancelled", "expired", "refused"] as const;
+
 export const Route = createFileRoute("/developers/integrations")({
-  loader: async () => ({
-    servers: (await getPlatformSettings()).mcpServers,
-    usage: Object.fromEntries(mcpServerUsage()),
+  validateSearch: (search: Record<string, unknown>): IntegrationsSearch => ({
+    ...(typeof search.connected === "string" && {
+      connected: search.connected,
+    }),
+    ...(typeof search.connect_error === "string" && {
+      connect_error: search.connect_error,
+    }),
   }),
   component: DevelopersIntegrationsPage,
 });
 
 /** What agents connect to outside Preprocess: MCP servers. */
 function DevelopersIntegrationsPage() {
-  const { servers, usage } = Route.useLoaderData();
-  const router = useRouter();
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  // The OAuth callback sends the browser back here with the outcome; it is
+  // shown once, and the query is dropped so a reload doesn't repeat it.
+  const [connectResult] = useState<ConnectResult | null>(() => {
+    if (search.connected) return { connected: search.connected };
+    const error = CONNECT_ERRORS.find((kind) => kind === search.connect_error);
+    return error ? { connectError: error } : null;
+  });
+  useEffect(() => {
+    if (search.connected || search.connect_error)
+      void navigate({
+        to: "/developers/integrations",
+        search: {},
+        replace: true,
+      });
+  }, [navigate, search.connected, search.connect_error]);
 
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
       <DeveloperSettingsPage title="Integrations">
-        <OrgMcpSection
-          onDelete={async (id) => {
-            await deleteOrgMcpServer(id);
-            await clearMcpServer(id);
-            await router.invalidate();
-          }}
-          onSave={async (input, id) => {
-            await saveOrgMcpServer(input, id);
-            await router.invalidate();
-          }}
-          servers={servers}
-          usage={usage}
-        />
+        <McpServers connectResult={connectResult} />
       </DeveloperSettingsPage>
     </ScrollArea>
   );
