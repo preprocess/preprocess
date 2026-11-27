@@ -97,14 +97,14 @@ describe("training switch", () => {
       return res.body.tags.find((t) => t.name === "Training")?.description;
     };
     expect(await tag(selfHosted())).toBe(
-      "Training is off on this install. Its routes answer 404.",
+      "Training is off on this install: training runs, Retrain on corrections and the Tinker-compatible API answer 404. Run capture, its export and datasets work either way.",
     );
     for (const environment of [
       testEnv(),
       selfHosted({ TRAINING_SERVICE: "on" }),
     ])
       expect(await tag(environment)).toBe(
-        "Training runs, Retrain on corrections and the Tinker-compatible API are coming soon.",
+        "Training runs, Retrain on corrections and the Tinker-compatible API are coming soon and answer 501 coming_soon. Run capture, its export and datasets work either way.",
       );
   });
 });
