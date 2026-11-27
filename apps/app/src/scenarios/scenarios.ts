@@ -83,6 +83,22 @@ export const SCENARIO_SURFACES = {
     label: "Retention",
     states: ["live", "forever", "custom", "admin", "error", "loading"],
   },
+  // Settings → Models: "live" reads the API; the rest are seeded catalogues,
+  // roles and failures (PRE-145's frames).
+  models: {
+    label: "Models",
+    states: [
+      "live",
+      "owner",
+      "member",
+      "empty",
+      "member-empty",
+      "self-hosted",
+      "error",
+      "no-access",
+      "loading",
+    ],
+  },
   // The sidebar notice stack's billing state, role and announcements.
   notices: {
     label: "Notices",
@@ -121,6 +137,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   billing: "live",
   "billing-result": "ok",
   retention: "live",
+  models: "live",
   notices: "live",
 };
 
@@ -133,6 +150,7 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   billing: "live",
   "billing-result": "ok",
   retention: "live",
+  models: "live",
   notices: "live",
 };
 

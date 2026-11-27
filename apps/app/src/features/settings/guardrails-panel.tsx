@@ -18,7 +18,6 @@ import {
 import {
   MODEL_CATALOG,
   MODELS,
-  type Model,
   type SandboxSize,
 } from "@preprocess/sdk/protocol";
 import {
@@ -37,6 +36,7 @@ import {
 } from "../../components/empty-art";
 
 import { useOrganizationId } from "../auth/auth-context";
+import { useModels } from "../models/models-api";
 import { orgApi } from "../auth/client";
 import {
   actionErrorMessage,
@@ -637,14 +637,25 @@ function Models() {
   const guardrails = useQuery({
     queryKey: ["guardrails", organizationId],
     queryFn: () =>
-      orgApi<{ allowedModels: Model[] | null }>(organizationId, "/guardrails"),
+      orgApi<{
+        allowedModels: string[] | null;
+        modelEndpoints?: { endpoints: unknown[] };
+      }>(organizationId, "/guardrails"),
   });
-  const saved = guardrails.data?.allowedModels ?? MODELS;
-  const [draft, setDraft] = useState<readonly Model[]>(MODELS);
+  const models = useModels();
+  const choices: readonly { id: string; label: string }[] = [
+    ...MODELS.map((id) => ({ id, label: MODEL_CATALOG[id].label })),
+    ...(models.data ?? []).filter((m) => m.kind === "model"),
+  ];
+  const all = choices.map((m) => m.id);
+  const saved = guardrails.data?.allowedModels ?? all;
+  const [draft, setDraft] = useState<readonly string[]>(all);
   const [error, setError] = useState<unknown>(null);
-  useEffect(() => setDraft(saved), [saved]);
+  const savedKey = saved.join();
+  useEffect(() => setDraft(saved), [savedKey]);
   const dirty =
     draft.length !== saved.length || draft.some((m) => !saved.includes(m));
+  const endpointCount = guardrails.data?.modelEndpoints?.endpoints.length ?? 0;
 
   return (
     <SettingsSection
@@ -661,33 +672,33 @@ function Models() {
             description={
               guardrails.data.allowedModels === null
                 ? "Every model, the default"
-                : `${saved.length} of ${MODELS.length} models`
+                : `${saved.length} of ${all.length} models`
             }
             label="Allowed models"
             value={
               <CheckboxGroup
                 checkedIndices={
                   new Set(
-                    MODELS.flatMap((model, index) =>
+                    all.flatMap((model, index) =>
                       draft.includes(model) ? [index] : [],
                     ),
                   )
                 }
               >
-                {MODELS.map((model, index) => (
+                {choices.map((model, index) => (
                   <CheckboxItem
                     aria-disabled={!canEdit}
-                    checked={draft.includes(model)}
+                    checked={draft.includes(model.id)}
                     index={index}
-                    key={model}
-                    label={MODEL_CATALOG[model].label}
+                    key={model.id}
+                    label={model.label}
                     onToggle={() =>
                       canEdit &&
                       setDraft(
-                        draft.includes(model)
-                          ? draft.filter((m) => m !== model)
-                          : MODELS.filter(
-                              (m) => m === model || draft.includes(m),
+                        draft.includes(model.id)
+                          ? draft.filter((m) => m !== model.id)
+                          : all.filter(
+                              (m) => m === model.id || draft.includes(m),
                             ),
                       )
                     }
@@ -706,7 +717,7 @@ function Models() {
                   await orgApi(organizationId, "/guardrails/allowed-models", {
                     method: "PUT",
                     body: JSON.stringify({
-                      models: draft.length === MODELS.length ? null : draft,
+                      models: draft.length === all.length ? null : draft,
                     }),
                   });
                   await queryClient.invalidateQueries({
@@ -720,10 +731,20 @@ function Models() {
             ) : null}
           </SettingsRow>
           <SettingsRow
-            description="Self-hosted serving URLs arrive with self-hosted installs."
+            description="Where agents' model calls go"
             label="Model endpoints"
-            value="Hosted service only"
-          />
+            value={
+              endpointCount === 0
+                ? "Preprocess only"
+                : endpointCount === 1
+                  ? "Preprocess, plus 1 custom endpoint"
+                  : `Preprocess, plus ${endpointCount} custom endpoints`
+            }
+          >
+            <Button asChild size="compact" variant="secondary">
+              <Link to="/settings/organization/models">Manage in Models</Link>
+            </Button>
+          </SettingsRow>
         </SettingsRows>
       )}
       <ErrorLine
