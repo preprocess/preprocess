@@ -289,20 +289,22 @@ function AutoReload({
             />
           </div>
           <div className="flex justify-end">
-            <LoadingButton
-              onAction={async () => {
-                const valid = fields
-                  .map((f) => f.current?.commit() ?? true)
-                  .every(Boolean);
-                if (!valid) throw new Error("invalid");
-                await actions.saveAutoReload(settings(true));
-              }}
-              pendingLabel="Saving…"
-              successLabel="Saved"
-              variant="secondary"
-            >
-              Save
-            </LoadingButton>
+            <div className="shrink-0">
+              <LoadingButton
+                onAction={async () => {
+                  const valid = fields
+                    .map((f) => f.current?.commit() ?? true)
+                    .every(Boolean);
+                  if (!valid) throw new Error("invalid");
+                  await actions.saveAutoReload(settings(true));
+                }}
+                pendingLabel="Saving…"
+                successLabel="Saved"
+                variant="secondary"
+              >
+                Save
+              </LoadingButton>
+            </div>
           </div>
         </div>
       ) : null}
