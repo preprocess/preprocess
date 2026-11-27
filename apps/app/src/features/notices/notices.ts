@@ -23,6 +23,8 @@ export type Billing = {
   change: { plan: Billing["plan"]; at: string | null } | null;
   /** Credits of $0.01; null on plans without prepaid credits. */
   credits: { remaining: number; owed: number } | null;
+  /** A subscription payment failed and is still owed; false for Members. */
+  pastDue: boolean;
   autoReload: {
     enabled: boolean;
     belowCredits: number;
@@ -55,9 +57,8 @@ const creditStopped = (billing: Billing) =>
 
 type BillingNotice = (billing: Billing) => Notice | null;
 
-// One entry per billing notice for Owners and Admins, most urgent first. Past
-// due, reload failed and reload cap join here once the billing read carries
-// them.
+// One entry per billing notice for Owners and Admins, most urgent first.
+// Reload failed and reload cap join here once the billing read carries them.
 const MANAGER_NOTICES: readonly BillingNotice[] = [
   (billing) =>
     creditStopped(billing)
@@ -66,6 +67,16 @@ const MANAGER_NOTICES: readonly BillingNotice[] = [
           level: "error",
           title: "Credit balance is empty",
           detail: "Cases paused · Add credits in Billing",
+          href: BILLING_HREF,
+        }
+      : null,
+  ({ pastDue }) =>
+    pastDue
+      ? {
+          id: "past-due",
+          level: "warning",
+          title: "Payment failed",
+          detail: "Update your card in Billing",
           href: BILLING_HREF,
         }
       : null,
@@ -161,6 +172,7 @@ const seededBilling = (overrides: Partial<Billing>): Billing => ({
   started: true,
   change: null,
   credits: { remaining: 10_037, owed: 0 },
+  pastDue: false,
   autoReload: {
     enabled: false,
     belowCredits: 2_500,
@@ -191,6 +203,7 @@ export function seededNotices(state: ScenarioState<"notices">): Seeded | null {
         billing: seededBilling({
           credits: { remaining: 412, owed: 0 },
           change: teamEnding,
+          pastDue: true,
         }),
         administers: true,
         announcements: true,
