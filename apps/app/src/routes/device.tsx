@@ -6,7 +6,7 @@ import {
   type LoadingButtonHandle,
 } from "@preprocess/ui/components/loading-button";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import {
   AuthField,
@@ -30,12 +30,22 @@ export const Route = createFileRoute("/device")({
   component: DevicePage,
 });
 
-const TITLE = "Sign in to the Preprocess CLI.";
+const TITLE = "Sign in to the Preprocess CLI";
 
 const PROBLEMS = {
   invalid: "That code isn't valid. Check the code in your terminal.",
-  expired: "That code has expired. Run preprocess login again.",
-  used: "That code was already used. Run preprocess login again.",
+  expired: (
+    <>
+      That code has expired. Run{" "}
+      <code className="font-mono">preprocess login</code> again.
+    </>
+  ),
+  used: (
+    <>
+      That code was already used. Run{" "}
+      <code className="font-mono">preprocess login</code> again.
+    </>
+  ),
 };
 
 const normalize = (code: string) =>
@@ -81,15 +91,15 @@ function DeviceCodeAnswer({ device }: Readonly<{ device: DeviceCode | null }>) {
   if (state === "approved")
     return (
       <Done
-        description="Go back to your terminal. You can close this tab."
-        title="You're signed in."
+        description="Return to your terminal. You can close this tab."
+        title="You're signed in"
       />
     );
   if (state === "denied")
     return (
       <Done
-        description="The CLI was not signed in. You can close this tab."
-        title="Sign-in denied."
+        description="The CLI wasn't signed in. You can close this tab."
+        title="Sign-in denied"
       />
     );
 
@@ -165,7 +175,7 @@ function DeviceCodeAnswer({ device }: Readonly<{ device: DeviceCode | null }>) {
 function CodeForm({
   defaultCode,
   problem,
-}: Readonly<{ defaultCode: string; problem?: string }>) {
+}: Readonly<{ defaultCode: string; problem?: ReactNode }>) {
   const navigate = useNavigate();
   const continueRef = useRef<LoadingButtonHandle>(null);
   const [code, setCode] = useState(defaultCode);
