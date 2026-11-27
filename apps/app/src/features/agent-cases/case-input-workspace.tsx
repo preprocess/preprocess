@@ -1082,6 +1082,7 @@ export function CaseInputPane({
       <SizeProvider size="compact">
         <div className="flex shrink-0 items-center gap-1 px-2 pb-2">
           <SettingsSearchField
+            className="min-w-0"
             label="Search files"
             onChange={setQuery}
             placeholder="Search files"

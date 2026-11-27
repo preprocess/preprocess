@@ -82,9 +82,11 @@ export function AssigneeStack({
 export function NeedsAssignmentTag({
   item,
   className,
+  labelClassName,
 }: Readonly<{
   item: Pick<Case, "awaiting" | "assignees">;
   className?: string;
+  labelClassName?: string;
 }>) {
   const phrase = needsAssignmentPhrase(item);
   if (!phrase) return null;
@@ -98,7 +100,7 @@ export function NeedsAssignmentTag({
       >
         <span className="flex items-center gap-1">
           <TriangleAlertIcon aria-hidden="true" className="size-3" />
-          Needs assignment
+          <span className={labelClassName}>Needs assignment</span>
         </span>
       </Badge>
     </Tooltip>

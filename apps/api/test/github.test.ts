@@ -6,6 +6,8 @@
 import { env } from "cloudflare:workers";
 import { readAuditEvents } from "@preprocess/db/audit";
 import { orgId, withOrg, type OrgId } from "@preprocess/db/client";
+import { deployments } from "@preprocess/db/schema/deployments";
+import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -249,6 +251,15 @@ describe("push builds", () => {
       source: "github",
       git: { branch: "main", commit: "abc1234" },
       sdkVersion: "0.1.0",
+    });
+    const [stored] = await withOrg(env, org, (tx) =>
+      tx
+        .select({ manifest: deployments.manifest })
+        .from(deployments)
+        .where(eq(deployments.id, done.deploymentId!)),
+    );
+    expect(stored!.manifest).toMatchObject({
+      entry: "agents/stock/src/index.ts",
     });
 
     // One token, for this repository's contents only, used for the tarball
