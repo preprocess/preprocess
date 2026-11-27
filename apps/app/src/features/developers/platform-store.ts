@@ -1,7 +1,7 @@
 /**
- * In-memory organization platform settings: sandbox images, secrets,
- * network rules every agent inherits, and MCP servers agents opt into. Changes stick until the dev server
- * restarts. There is no backend yet; builds outside dev serve none.
+ * In-memory organization platform settings: sandbox images. Changes stick
+ * until the dev server restarts. There is no backend yet; builds outside dev
+ * serve none.
  */
 
 export type SandboxImage = {
@@ -22,34 +22,6 @@ export type SandboxImage = {
  */
 export type SecretScope = "production" | "preview" | "all";
 
-export const DEFAULT_SECRET_SCOPE: SecretScope = "production";
-
-export type OrgSecret = {
-  readonly key: string;
-  readonly value: string;
-  readonly scope: SecretScope;
-  readonly updatedAt: string;
-};
-
-/**
- * A secret as the browser sees it. Values are write-only once saved, like
- * GitHub's and Vercel's sensitive variables: nothing of the value comes
- * back, only its name and when it last changed.
- */
-export type SecretSummary = {
-  readonly key: string;
-  readonly scope: SecretScope;
-  readonly updatedAt: string;
-};
-
-export function summarizeSecret(secret: {
-  key: string;
-  scope: SecretScope;
-  updatedAt: string;
-}): SecretSummary {
-  return { key: secret.key, scope: secret.scope, updatedAt: secret.updatedAt };
-}
-
 export type NetworkRuleKind = "allow" | "block";
 
 export type NetworkRule = {
@@ -68,8 +40,6 @@ export type RepoConnection = {
 type PlatformState = {
   images: SandboxImage[];
   defaultImageId: string;
-  secrets: OrgSecret[];
-  network: NetworkRule[];
   repos: RepoConnection[];
 };
 
@@ -80,8 +50,6 @@ function seed(): PlatformState {
     return {
       images: [],
       defaultImageId: "",
-      secrets: [],
-      network: [],
       repos: [],
     };
   }
@@ -113,33 +81,6 @@ function seed(): PlatformState {
       },
     ],
     defaultImageId: "img_base",
-    secrets: [
-      {
-        key: "ANTHROPIC_API_KEY",
-        value: "sk-ant-7f3a2b1c9e04",
-        scope: "all",
-        updatedAt: SEEDED_AT,
-      },
-      {
-        key: "SENTRY_DSN",
-        value: "https://8c1f@o42.ingest.sentry.io/77",
-        scope: "all",
-        updatedAt: SEEDED_AT,
-      },
-      {
-        key: "STORAGE_BUCKET",
-        value: "preprocess-org-artifacts",
-        scope: "production",
-        updatedAt: SEEDED_AT,
-      },
-    ],
-    network: [
-      { pattern: "api.anthropic.com", kind: "allow" },
-      { pattern: "*.github.com", kind: "allow" },
-      { pattern: "*.googleapis.com", kind: "allow" },
-      { pattern: "pastebin.com", kind: "block" },
-      { pattern: "*.ngrok.io", kind: "block" },
-    ],
     // Seeded: there is no GitHub connection flow yet.
     repos: [
       { id: "repo_agents", fullName: "acme/agents" },
@@ -158,18 +99,14 @@ function platform(): PlatformState {
 export type PlatformSettings = {
   readonly images: readonly SandboxImage[];
   readonly defaultImageId: string;
-  readonly secrets: readonly SecretSummary[];
-  readonly network: readonly NetworkRule[];
   readonly repos: readonly RepoConnection[];
 };
 
 export function getPlatformSettings(): Promise<PlatformSettings> {
-  const { images, defaultImageId, secrets, network, repos } = platform();
+  const { images, defaultImageId, repos } = platform();
   return Promise.resolve({
     images: [...images],
     defaultImageId,
-    secrets: secrets.map(summarizeSecret),
-    network: [...network],
     repos: [...repos],
   });
 }
@@ -202,45 +139,5 @@ export function removeSandboxImage(id: string): Promise<void> {
 
 export function setDefaultSandboxImage(id: string): Promise<void> {
   platform().defaultImageId = id;
-  return Promise.resolve();
-}
-
-/** Keys the organization sets; agents may not set them too. */
-export function platformSecretKeys(): ReadonlySet<string> {
-  return new Set(platform().secrets.map((item) => item.key));
-}
-
-export function setOrgSecret(
-  key: string,
-  value: string,
-  scope: SecretScope = DEFAULT_SECRET_SCOPE,
-): Promise<void> {
-  const current = platform();
-  const next = { key, value, scope, updatedAt: new Date().toISOString() };
-  current.secrets = current.secrets.some((item) => item.key === key)
-    ? current.secrets.map((item) => (item.key === key ? next : item))
-    : [...current.secrets, next];
-  return Promise.resolve();
-}
-
-export function deleteOrgSecret(key: string): Promise<void> {
-  const current = platform();
-  current.secrets = current.secrets.filter((item) => item.key !== key);
-  return Promise.resolve();
-}
-
-/** Adds a rule, replacing any rule for the same pattern. */
-export function setOrgNetworkRule(rule: NetworkRule): Promise<void> {
-  const current = platform();
-  current.network = [
-    ...current.network.filter((item) => item.pattern !== rule.pattern),
-    rule,
-  ];
-  return Promise.resolve();
-}
-
-export function deleteOrgNetworkRule(pattern: string): Promise<void> {
-  const current = platform();
-  current.network = current.network.filter((item) => item.pattern !== pattern);
   return Promise.resolve();
 }

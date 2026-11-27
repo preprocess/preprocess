@@ -43,7 +43,8 @@ to one branch). Each push starts an isolated build: Preprocess fetches the
 commit outside the build container, installs dependencies from your lockfile,
 and bundles the agent in a fresh build container. Builds serialize one at a time
 per agent and branch—a newer push replaces any queued build and cancels a
-running one so stale commits never overwrite newer ones.
+running one so stale commits never overwrite newer ones. See
+[Deploy from GitHub](/deploy-and-operate/github-app).
 
 Both paths produce the exact same deployment artifact and run the same
 validation and guardrail checks.

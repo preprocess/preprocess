@@ -18,7 +18,7 @@ import {
   githubRepositories,
 } from "@preprocess/db/schema/github";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { queueName, type BuildRef } from "../builds.ts";
@@ -32,6 +32,8 @@ import { AGENT_SLUG } from "../deploy.ts";
 import type { Env } from "../env.ts";
 import {
   getInstallation,
+  githubConfigured,
+  installationSettingsUrl,
   installUrl,
   listRepositories,
   personCanReach,
@@ -226,6 +228,11 @@ githubCallbacks.post("/github/webhook", async (c) => {
 // organization and person who asked; their OAuth code proves they can reach
 // the installation, so nobody links someone else's installation by its id.
 githubCallbacks.get("/github/setup", async (c) => {
+  const page = new URL("/developers/github", c.env.APP_URL).href;
+  // Changing an installation's repositories on GitHub returns here without
+  // our state; the installation_repositories webhook carries the change.
+  if (c.req.query("setup_action") === "update" && !c.req.query("state"))
+    return c.redirect(page);
   const state = await readState(c.env, c.req.query("state") ?? "");
   const installationId = Number(c.req.query("installation_id"));
   const code = c.req.query("code");
@@ -278,7 +285,7 @@ githubCallbacks.get("/github/setup", async (c) => {
       },
     });
   });
-  return c.redirect(new URL("/settings/github", c.env.APP_URL).href);
+  return c.redirect(page);
 });
 
 export const githubRoutes = new OpenAPIHono<{
@@ -360,6 +367,19 @@ const buildView = (b: typeof githubBuilds.$inferSelect) => ({
   finishedAt: b.finishedAt?.toISOString() ?? null,
 });
 
+const Installation = z
+  .object({
+    id: z.string(),
+    account: z.string(),
+    accountType: z.string(),
+    suspended: z.boolean(),
+    repositories: z.number().int(),
+    manageUrl: z.string().openapi({
+      description: "The installation's settings on GitHub",
+    }),
+  })
+  .openapi("GitHubInstallation");
+
 const OrgParams = z.object({ org: z.string() });
 const AgentParams = OrgParams.extend({ agent: z.string() });
 
@@ -409,6 +429,63 @@ githubRoutes.openapi(
           org: c.var.org,
           user: actor(c.var.caller).actorId,
         }),
+      },
+      200,
+    );
+  },
+);
+
+githubRoutes.openapi(
+  createRoute({
+    method: "get",
+    path: "/github/installations",
+    tags: ["GitHub"],
+    summary: "The organization's installations of the GitHub App",
+    request: { params: OrgParams },
+    responses: {
+      200: {
+        description:
+          "configured is false when this install has no GitHub App, so installing is unavailable",
+        content: {
+          "application/json": {
+            schema: z.object({
+              configured: z.boolean(),
+              installations: z.array(Installation),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    const rows = await withOrg(c.env, c.var.org, (tx) =>
+      tx
+        .select({
+          installation: githubInstallations,
+          repositories: count(githubRepositories.id),
+        })
+        .from(githubInstallations)
+        .leftJoin(
+          githubRepositories,
+          and(
+            eq(githubRepositories.installationId, githubInstallations.id),
+            isNull(githubRepositories.removedAt),
+          ),
+        )
+        .groupBy(githubInstallations.id)
+        .orderBy(githubInstallations.accountLogin),
+    );
+    return c.json(
+      {
+        configured: githubConfigured(c.env),
+        installations: rows.map(({ installation, repositories }) => ({
+          id: installation.id,
+          account: installation.accountLogin,
+          accountType: installation.accountType,
+          suspended: installation.suspendedAt !== null,
+          repositories,
+          manageUrl: installationSettingsUrl(c.env, installation),
+        })),
       },
       200,
     );

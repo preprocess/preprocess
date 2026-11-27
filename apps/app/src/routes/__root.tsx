@@ -36,6 +36,8 @@ import "@preprocess/ui/styles.css";
 import "../styles.css";
 
 const NAME_PATH = "/onboarding/name";
+// Approving `preprocess login` needs a session but renders without the shell.
+const DEVICE_PATH = "/device";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -167,7 +169,9 @@ function RootComponent() {
   );
   // One shell for every product route, so navigating swaps only the page.
   const outlet =
-    isPublicAuthPath(pathname) || isOnboardingPath(pathname) ? (
+    isPublicAuthPath(pathname) ||
+    isOnboardingPath(pathname) ||
+    pathname === DEVICE_PATH ? (
       <Outlet />
     ) : (
       <ProductShell inboxUnread={inboxUnread}>

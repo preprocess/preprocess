@@ -1,7 +1,43 @@
 # @preprocess/cli
 
-The `preprocess` command-line interface (mvp-surface.md): `deploy` and its
-siblings for agents, and `install` and `github-app` for self-hosting.
+The `preprocess` command-line interface (mvp-surface.md): `login`, `init`,
+`deploy`, `promote`, `rollback` and their siblings for agents, and `install` and
+`github-app` for self-hosting.
+
+## login
+
+```sh
+preprocess login --api https://app.preprocess.localhost [--org <id or slug>] [--no-browser]
+```
+
+`login` runs the OAuth device flow (RFC 8628) against the install's own Better
+Auth: it prints a code and opens `/device` in the app, where the signed-in
+person approves it. The CLI saves the session it gets in
+`$XDG_CONFIG_HOME/preprocess/credentials.json` (default `~/.config`), mode 0600,
+and later commands send it as a bearer token, acting as that person with their
+role. `PREPROCESS_API_KEY`, `PREPROCESS_ORG`, `PREPROCESS_API_URL` and the flags
+win over it, and a saved session is only sent to the API that issued it.
+
+## init
+
+```sh
+preprocess init [dir] [--name <name>]
+```
+
+Writes a new agent project (`package.json`, `tsconfig.json`, `.gitignore`,
+`src/index.ts`) and refuses if any of those files exist.
+
+## promote and rollback
+
+```sh
+preprocess promote <deployment>
+preprocess rollback [deployment]
+```
+
+`promote` serves a production-branch deployment in production. `rollback`
+promotes the named deployment, or else the one that served production before the
+current one (from `GET …/deployments?environment=production`). Only code rolls
+back; the runtime does not (spec 4).
 
 ## deploy
 
