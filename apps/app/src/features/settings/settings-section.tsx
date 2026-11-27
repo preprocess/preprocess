@@ -20,7 +20,9 @@ function SettingsPage({ group }: { group: string }) {
           <SettingsSwitcher />
           <SettingsPageHeader
             detail={
-              <p className="text-caption text-muted-foreground">{group}</p>
+              <p className="text-caption text-muted-foreground">
+                {page?.group ?? group}
+              </p>
             }
             title={page?.label ?? group}
           />

@@ -13,7 +13,7 @@ import {
   resolveTarget,
   writeCredentials,
 } from "./credentials.ts";
-import { bundle, deploy, describe, gitInfo } from "./deploy.ts";
+import { bundle, deploy, describe, entryPath, gitInfo } from "./deploy.ts";
 import { evalsList, evalsRun } from "./evals.ts";
 import { githubApp } from "./github-app.ts";
 import { init } from "./init.ts";
@@ -220,6 +220,7 @@ export const main = async (argv: string[], env = process.env) => {
     key,
     bundle: await bundle(path.resolve(cwd, entry)),
     git: gitInfo(cwd, env),
+    entry: entryPath(entry, cwd),
     onBuilding: () =>
       console.error(
         `${agent}: building the sandbox's custom environment; this can take a few minutes`,

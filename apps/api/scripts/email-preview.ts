@@ -41,7 +41,7 @@ const caseData = (app: string) => ({
 const message =
   "The customer asks for a $1,240 refund on order 48213. That is over the $1,000 I can approve. Can someone in Billing approve or decline it?";
 const webhook = (app: string) => ({
-  url: new URL("/developers/webhooks", app).href,
+  url: new URL("/settings/organization/api-keys", app).href,
   endpointUrl: "https://hooks.northwind.example/preprocess",
   orgName: "Northwind",
   days: 3,

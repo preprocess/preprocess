@@ -59,10 +59,11 @@ export PREPROCESS_API_KEY=...`}
 - `PREPROCESS_API_URL` is the origin your organization's app is served from.
 - `PREPROCESS_ORG` is your organization's id.
 - `PREPROCESS_API_KEY` is an organization API key. An Owner or Admin creates one
-  in Developers → Keys & webhooks. The key acts with Admin rights, so it can
-  deploy, promote, and work cases (it cannot approve—approving always requires a
-  person). Each key is shown once at creation, and the CLI reads it only from
-  the environment so it never lands in shell history or CI logs.
+  in Settings → Developers → API keys & webhooks. The key acts with Admin
+  rights, so it can deploy, promote, and work cases (it cannot approve—approving
+  always requires a person). Each key is shown once at creation, and the CLI
+  reads it only from the environment so it never lands in shell history or CI
+  logs.
 
 Pass `--api` and `--org` to override the first two for a single invocation.
 

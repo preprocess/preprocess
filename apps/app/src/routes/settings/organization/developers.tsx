@@ -2,6 +2,6 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/settings/organization/developers")({
   beforeLoad: () => {
-    throw redirect({ to: "/developers/integrations" });
+    throw redirect({ to: "/settings/organization/integrations" });
   },
 });

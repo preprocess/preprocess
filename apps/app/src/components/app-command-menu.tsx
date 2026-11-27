@@ -50,12 +50,12 @@ type AppPath =
   | "/settings/organization/members"
   | "/settings/organization/groups"
   | "/settings/organization/audit-logs"
-  | "/developers/api"
-  | "/developers/integrations"
-  | "/developers/github"
-  | "/developers/sandboxes"
-  | "/developers/secrets"
-  | "/developers/network"
+  | "/settings/organization/api-keys"
+  | "/settings/organization/integrations"
+  | "/settings/organization/github"
+  | "/settings/organization/sandboxes"
+  | "/settings/organization/secrets"
+  | "/settings/organization/network"
   | "/developers/observability";
 
 const PAGES: readonly {
@@ -105,13 +105,13 @@ const PAGES: readonly {
   {
     to: "/developers/observability",
     label: "Observability",
-    group: "Developers",
+    group: "Go to",
     icon: Gauge,
     keywords: ["logs", "traces", "metrics", "monitoring"],
   },
   {
-    to: "/developers/api",
-    label: "Keys & webhooks",
+    to: "/settings/organization/api-keys",
+    label: "API keys & webhooks",
     group: "Developers",
     icon: BadgeCheck,
     keywords: [
@@ -124,7 +124,7 @@ const PAGES: readonly {
     ],
   },
   {
-    to: "/developers/integrations",
+    to: "/settings/organization/integrations",
     label: "Integrations",
     group: "Developers",
     icon: Plug,
@@ -137,28 +137,28 @@ const PAGES: readonly {
     ],
   },
   {
-    to: "/developers/github",
+    to: "/settings/organization/github",
     label: "GitHub",
     group: "Developers",
     icon: Code,
     keywords: ["github", "repositories", "repos", "push", "deploy", "app"],
   },
   {
-    to: "/developers/secrets",
+    to: "/settings/organization/secrets",
     label: "Secrets",
     group: "Developers",
     icon: Shield,
     keywords: ["environment", "env", "variables"],
   },
   {
-    to: "/developers/network",
+    to: "/settings/organization/network",
     label: "Network",
     group: "Developers",
     icon: Globe,
     keywords: ["allowlist", "blocklist", "internet", "urls"],
   },
   {
-    to: "/developers/sandboxes",
+    to: "/settings/organization/sandboxes",
     label: "Sandboxes",
     group: "Developers",
     icon: Monitor,
