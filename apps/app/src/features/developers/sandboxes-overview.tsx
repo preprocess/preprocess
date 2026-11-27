@@ -12,7 +12,7 @@ import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { ChevronRight } from "@preprocess/ui/lib/icons";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import { CouldntLoadArt, NothingCreatedArt } from "../../components/empty-art";
 import { useOrganizationId } from "../auth/auth-context";
@@ -41,6 +41,7 @@ type Environment =
 type SandboxAgent = {
   id: string;
   slug: string;
+  path: string | null;
   preset: Preset;
   size: Size;
   packages: number;
@@ -155,6 +156,22 @@ function caption(agent: SandboxAgent) {
       : "Latest deployment failed to build its custom environment.";
   if (agent.paused)
     return "Custom environments require Team. Remove the setup in code, or upgrade to resume.";
+  if (agent.path)
+    return (
+      <>
+        Declared in{" "}
+        {agent.path.split("/").map((segment, i, segments) => (
+          <Fragment key={i}>
+            {segment}
+            {i < segments.length - 1 ? (
+              <>
+                /<wbr />
+              </>
+            ) : null}
+          </Fragment>
+        ))}
+      </>
+    );
   return null;
 }
 
@@ -176,7 +193,7 @@ function AgentName({ agent }: { agent: SandboxAgent }) {
         ) : null}
       </div>
       {reason ? (
-        <span className="whitespace-normal text-caption text-muted-foreground">
+        <span className="whitespace-normal hyphens-none wrap-anywhere text-caption text-muted-foreground">
           {reason}
         </span>
       ) : null}

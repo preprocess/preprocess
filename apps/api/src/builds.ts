@@ -158,6 +158,10 @@ const runBuild = async (env: Env, ref: BuildRef, signal: AbortSignal) => {
       {
         bundle: outcome.bundle,
         git: { branch: job.build.branch, commit: job.build.commit },
+        entry: [job.link.directory, job.link.entry]
+          .flatMap((p) => p.split("/"))
+          .filter((s) => s && s !== ".")
+          .join("/"),
         source: "github",
       },
       { actorType: "platform", actorId: `github:${ref.buildId}` },

@@ -4,7 +4,7 @@
 // is granted, and promotes deploys from the agent's production branch.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 import { build } from "esbuild";
@@ -104,6 +104,16 @@ export const gitInfo = (cwd: string, env = process.env): Git => {
   };
 };
 
+// The entry as the dashboard shows it: from the repository root with forward
+// slashes, or from cwd outside a git checkout.
+export const entryPath = (entry: string, cwd: string) => {
+  const root = git(cwd, "rev-parse", "--show-toplevel") ?? cwd;
+  return path
+    .relative(realpathSync(root), realpathSync(path.resolve(cwd, entry)))
+    .split(path.sep)
+    .join("/");
+};
+
 export type DeployOptions = {
   api: string;
   org: string;
@@ -111,6 +121,7 @@ export type DeployOptions = {
   key: string;
   bundle: Bundle;
   git: Git;
+  entry?: string;
   fetch?: typeof fetch;
   // While a custom sandbox environment builds: how often to ask, and for how
   // long, and where to say it is building.
@@ -130,7 +141,11 @@ export const deploy = async (options: DeployOptions): Promise<Deployment> => {
       authorization: `Bearer ${options.key}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ bundle: options.bundle, git: options.git }),
+    body: JSON.stringify({
+      bundle: options.bundle,
+      git: options.git,
+      entry: options.entry,
+    }),
   });
   const text = await response.text();
   if (!response.ok) {

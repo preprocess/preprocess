@@ -51,6 +51,10 @@ const SandboxAgent = z
   .object({
     id: z.string(),
     slug: z.string(),
+    path: z.string().nullable().openapi({
+      description:
+        "The agent's entry file relative to the repository root; null when the deploy did not send it",
+    }),
     preset: z.enum(SANDBOX_PRESETS),
     size: z.enum(SANDBOX_SIZES),
     packages: z.number().int().openapi({
@@ -91,8 +95,8 @@ const Sandboxes = z
 
 type Deployment = typeof deployments.$inferSelect;
 
-const sandboxOf = (d: Deployment | undefined) =>
-  (d?.manifest as { sandbox?: SandboxManifest } | undefined)?.sandbox ?? null;
+const manifestOf = (d: Deployment | undefined) =>
+  d?.manifest as { sandbox?: SandboxManifest; entry?: string } | undefined;
 
 // One agent's row from its production deployments, newest first.
 const agentSandbox = (history: Deployment[], customEnvironments: boolean) => {
@@ -109,9 +113,10 @@ const agentSandbox = (history: Deployment[], customEnvironments: boolean) => {
   const waiting =
     pending?.status === "waiting" && Boolean(pending.waitingFor.sandboxSize);
   const building = pending?.sandboxLayer?.status === "building";
-  const sandbox = sandboxOf(
+  const manifest = manifestOf(
     waiting || building || !production ? pending : production,
   );
+  const sandbox = manifest?.sandbox;
   if (!sandbox) return null;
   const layer =
     building || pending?.sandboxLayer?.status === "failed"
@@ -135,6 +140,7 @@ const agentSandbox = (history: Deployment[], customEnvironments: boolean) => {
           : null;
   const { apt, pip, npm } = sandbox.packages;
   return {
+    path: manifest.entry ?? null,
     preset: sandbox.preset,
     size: sandbox.size,
     packages: apt.length + pip.length + npm.length,

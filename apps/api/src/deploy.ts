@@ -639,6 +639,19 @@ export const deployInput = z.object({
       commit: z.string().min(1).optional(),
     })
     .default({}),
+  entry: z
+    .string()
+    .min(1)
+    .max(512)
+    .refine(
+      (p) =>
+        !p.startsWith("/") && !p.includes("\\") && !p.split("/").includes(".."),
+      { message: "entry is a path relative to the repository root" },
+    )
+    .optional()
+    .describe(
+      "The agent's entry file relative to the repository root, e.g. agents/intake.ts",
+    ),
 });
 
 export type DeployInput = z.infer<typeof deployInput> & {
@@ -757,7 +770,7 @@ export const deploy = async (
       }),
       environment:
         input.git.branch === agent.productionBranch ? "production" : "preview",
-      manifest,
+      manifest: { ...manifest, entry: input.entry },
       gitBranch: input.git.branch ?? null,
       gitCommit: input.git.commit ?? null,
       source: input.source,
