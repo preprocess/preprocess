@@ -63,6 +63,8 @@ export const SCENARIO_SURFACES = {
       "team-negative",
       "team-limit",
       "team-past-due",
+      "team-reload-failed",
+      "team-reload-cap",
       "team-ending",
       "team-switched",
       "enterprise",
@@ -75,10 +77,25 @@ export const SCENARIO_SURFACES = {
     label: "Billing result",
     states: ["ok", "confirm-payment", "declined", "error"],
   },
+  // Retention settings: "live" reads the API; the rest are seeded periods,
+  // and "admin" is an Admin's view (shortening disabled).
+  retention: {
+    label: "Retention",
+    states: ["live", "forever", "custom", "admin", "error", "loading"],
+  },
   // The sidebar notice stack's billing state, role and announcements.
   notices: {
     label: "Notices",
-    states: ["live", "one", "several", "mixed", "member", "none"],
+    states: [
+      "live",
+      "one",
+      "several",
+      "mixed",
+      "reload-failed",
+      "reload-cap",
+      "member",
+      "none",
+    ],
   },
 } as const;
 
@@ -103,6 +120,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   "case-work": "live",
   billing: "live",
   "billing-result": "ok",
+  retention: "live",
   notices: "live",
 };
 
@@ -114,6 +132,7 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   "case-work": "live",
   billing: "live",
   "billing-result": "ok",
+  retention: "live",
   notices: "live",
 };
 

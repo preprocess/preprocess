@@ -30,6 +30,10 @@ export type Billing = {
     belowCredits: number;
     addCredits: number;
     monthlyLimitUsd: number | null;
+    /** The last reload failed and nothing has resolved it; null for Members. */
+    failed: { at: string; reason: "card_declined" | null } | null;
+    /** The monthly cap was reached; reloads resume then. Null for Members. */
+    capReachedUntil: string | null;
   } | null;
 };
 
@@ -58,7 +62,6 @@ const creditStopped = (billing: Billing) =>
 type BillingNotice = (billing: Billing) => Notice | null;
 
 // One entry per billing notice for Owners and Admins, most urgent first.
-// Reload failed and reload cap join here once the billing read carries them.
 const MANAGER_NOTICES: readonly BillingNotice[] = [
   (billing) =>
     creditStopped(billing)
@@ -80,6 +83,19 @@ const MANAGER_NOTICES: readonly BillingNotice[] = [
           href: BILLING_HREF,
         }
       : null,
+  ({ autoReload }) =>
+    autoReload?.failed
+      ? {
+          id: "reload-failed",
+          level: "warning",
+          title: "Auto-reload failed",
+          detail:
+            autoReload.failed.reason === "card_declined"
+              ? "Card declined · Update in Billing"
+              : "Update your card in Billing",
+          href: BILLING_HREF,
+        }
+      : null,
   ({ credits, autoReload }) => {
     if (!credits || credits.remaining <= 0) return null;
     const below = autoReload?.enabled ? autoReload.belowCredits : LOW_CREDITS;
@@ -93,6 +109,16 @@ const MANAGER_NOTICES: readonly BillingNotice[] = [
         }
       : null;
   },
+  ({ autoReload }) =>
+    autoReload?.capReachedUntil
+      ? {
+          id: "reload-cap",
+          level: "warning",
+          title: "Auto-reload cap reached",
+          detail: `Resumes ${monthDay(autoReload.capReachedUntil)} · Edit in Billing`,
+          href: BILLING_HREF,
+        }
+      : null,
   ({ change }) =>
     change?.plan === "free" && change.at
       ? {
@@ -178,9 +204,20 @@ const seededBilling = (overrides: Partial<Billing>): Billing => ({
     belowCredits: 2_500,
     addCredits: 10_000,
     monthlyLimitUsd: 500,
+    failed: null,
+    capReachedUntil: null,
   },
   ...overrides,
 });
+
+const RELOAD_ON: NonNullable<Billing["autoReload"]> = {
+  enabled: true,
+  belowCredits: 2_500,
+  addCredits: 10_000,
+  monthlyLimitUsd: 500,
+  failed: null,
+  capReachedUntil: null,
+};
 
 const teamEnding = { plan: "free" as const, at: "2026-12-01T00:00:00.000Z" };
 
@@ -204,6 +241,10 @@ export function seededNotices(state: ScenarioState<"notices">): Seeded | null {
           credits: { remaining: 412, owed: 0 },
           change: teamEnding,
           pastDue: true,
+          autoReload: {
+            ...RELOAD_ON,
+            failed: { at: "2026-11-26T09:12:00.000Z", reason: "card_declined" },
+          },
         }),
         administers: true,
         announcements: true,
@@ -216,6 +257,27 @@ export function seededNotices(state: ScenarioState<"notices">): Seeded | null {
         }),
         administers: true,
         announcements: true,
+      };
+    case "reload-failed":
+      return {
+        billing: seededBilling({
+          credits: { remaining: 812, owed: 0 },
+          autoReload: {
+            ...RELOAD_ON,
+            failed: { at: "2026-11-26T09:12:00.000Z", reason: "card_declined" },
+          },
+        }),
+        administers: true,
+        announcements: false,
+      };
+    case "reload-cap":
+      return {
+        billing: seededBilling({
+          credits: { remaining: 1_190, owed: 0 },
+          autoReload: { ...RELOAD_ON, capReachedUntil: teamEnding.at },
+        }),
+        administers: true,
+        announcements: false,
       };
     case "member":
       return {

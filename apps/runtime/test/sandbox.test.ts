@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import { CAPTURE_FORMAT, CAPTURE_VERSION, captureKey } from "../src/capture.ts";
 import type { CaseView } from "../src/case-runtime.ts";
-import type { CaseKey, Settings, StartCase } from "../src/env.ts";
+import type { CaseKey, StartCase } from "../src/env.ts";
 import {
   layerBuilderName,
   layerKey,
@@ -23,6 +23,7 @@ import {
 import { LIFETIME_MS, sandboxName } from "../src/sandbox.ts";
 import { deploy } from "./deploy.ts";
 // Bundled by vitest.config.ts, as the deploy command uploads it.
+import mediumSandboxAgent from "./dist/medium-sandbox-agent.js?raw";
 import sandboxAgent from "./dist/sandbox-agent.js?raw";
 
 const runtime = (exports as unknown as { default: unknown }).default as {
@@ -186,22 +187,11 @@ describe("sandbox metering", () => {
   });
 });
 
-const settings = (sandboxSize: string): Settings => ({
-  model: "deepseek-v4.1-flash",
-  reasoning: "medium",
-  ocr: false,
-  timeoutSeconds: null,
-  toolRetries: null,
-  sandboxImage: null,
-  sandboxSize,
-  evals: { onPush: false },
-  schedules: {},
-});
-
 const run = async (
   key: CaseKey,
   text: string,
   extra: Partial<StartCase> = {},
+  module = sandboxAgent,
 ) => {
   const { bundleHash } = await deploy(
     {
@@ -209,7 +199,7 @@ const run = async (
       agentId: key.agentId,
       deploymentId: "dep_sbx",
     },
-    sandboxAgent,
+    module,
   );
   await runtime.startCase({
     ...key,
@@ -255,7 +245,8 @@ describe("sandbox tools in a case", () => {
     const view = await run(
       { organizationId: "org_capped", agentId: "agt_sbx", caseId: "case_cap" },
       "Add two and two in the sandbox.",
-      { settings: settings("medium") },
+      {},
+      mediumSandboxAgent,
     );
     expect(results(view)[0]).toMatchObject({
       isError: true,

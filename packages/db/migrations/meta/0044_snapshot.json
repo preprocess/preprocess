@@ -1,6 +1,6 @@
 {
-  "id": "a30ebcf4-73eb-4b64-a191-2e2eae125551",
-  "prevId": "d2f8a7df-08ba-4e43-ab51-cd074103abfb",
+  "id": "d3c02109-df9e-4281-b7d6-47b71f7bdd11",
+  "prevId": "1bb90a96-f9a1-482d-908b-86d174403e48",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1511,6 +1511,60 @@
         }
       },
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.auto_reload_states": {
+      "name": "auto_reload_states",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "failed_at": {
+          "name": "failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failed_reason": {
+          "name": "failed_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cap_reached_until": {
+          "name": "cap_reached_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "auto_reload_states_organization_id_organization_id_fk": {
+          "name": "auto_reload_states_organization_id_organization_id_fk",
+          "tableFrom": "auto_reload_states",
+          "tableTo": "organization",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

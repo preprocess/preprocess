@@ -22,7 +22,7 @@ catalogs:
       specifier: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051
       version: 0.1.0
     '@preprocess/ui':
-      specifier: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d7f3c48
+      specifier: https://pkg.pr.new/preprocess/kit/@preprocess/ui@dac9c3e
       version: 0.1.0
     '@tailwindcss/vite':
       specifier: ^4.3.3
@@ -227,7 +227,7 @@ importers:
         version: link:../../packages/sdk
       '@preprocess/ui':
         specifier: 'catalog:'
-        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d7f3c48(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
+        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@dac9c3e(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
       '@streamdown/code':
         specifier: ^1.1.1
         version: 1.1.1(react@19.2.8)
@@ -280,6 +280,9 @@ importers:
       '@cloudflare/vite-plugin':
         specifier: 'catalog:'
         version: 1.47.0(vite@8.1.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1))(wrangler@4.114.0(@cloudflare/workers-types@5.20261118.1))
+      '@cloudflare/vitest-plugin':
+        specifier: 'catalog:'
+        version: 1.9.0(@types/node@24.19.2)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(vite@8.1.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1)))
       '@cloudflare/workers-types':
         specifier: 'catalog:'
         version: 5.20261118.1
@@ -307,6 +310,9 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 8.1.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(vite@8.1.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.1))
       wrangler:
         specifier: 'catalog:'
         version: 4.114.0(@cloudflare/workers-types@5.20261118.1)
@@ -346,7 +352,7 @@ importers:
         version: link:../../packages/cli
       '@preprocess/ui':
         specifier: 'catalog:'
-        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d7f3c48(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
+        version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@dac9c3e(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
       '@tanstack/react-router':
         specifier: 'catalog:'
         version: 1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -2830,8 +2836,8 @@ packages:
     resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051}
     version: 0.1.0
 
-  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@d7f3c48':
-    resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/ui@d7f3c48}
+  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@dac9c3e':
+    resolution: {tarball: https://pkg.pr.new/preprocess/kit/@preprocess/ui@dac9c3e}
     version: 0.1.0
     peerDependencies:
       react: ^19.2.0
@@ -8910,7 +8916,7 @@ snapshots:
 
   '@preprocess/runmode@https://pkg.pr.new/preprocess/kit/@preprocess/runmode@7df7051': {}
 
-  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@d7f3c48(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)':
+  '@preprocess/ui@https://pkg.pr.new/preprocess/kit/@preprocess/ui@dac9c3e(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)':
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       boring-avatars: 2.0.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

@@ -155,8 +155,6 @@ export type Settings = {
   timeoutSeconds: number | null;
   toolRetries: number | null;
   sandboxImage: string | null;
-  // The sandbox size with a dashboard override applied; null without one.
-  sandboxSize?: string | null;
   evals: { onPush: boolean };
   schedules: Record<string, { previews: boolean }>;
 };

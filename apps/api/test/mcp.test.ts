@@ -180,7 +180,11 @@ describe("MCP servers and the organization's connection", () => {
     const finished = await new Client(testEnv()).call(
       back.pathname + back.search,
     );
-    expect(finished.status).toBe(200);
+    expect(finished.status).toBe(303);
+    const landed = new URL(finished.headers.get("location")!);
+    expect(landed.origin).toBe(new URL(testEnv().APP_URL).origin);
+    expect(landed.pathname).toBe("/developers/integrations");
+    expect(landed.searchParams.get("connected")).toBe("crm");
     const [server] = (
       await call<Server[]>(a, "GET", "/v1/orgs/{org}/mcp-servers")
     ).body;
@@ -203,7 +207,23 @@ describe("MCP servers and the organization's connection", () => {
     const forged = await new Client(testEnv()).call(
       `/v1/mcp/oauth/callback?code=x&state=${a.org}.mca_forged`,
     );
-    expect(forged.status).toBe(400);
+    expect(forged.status).toBe(303);
+    const landed = new URL(forged.headers.get("location")!);
+    expect(landed.pathname).toBe("/developers/integrations");
+    expect(landed.searchParams.get("connect_error")).toBe("expired");
+    expect(landed.searchParams.has("connected")).toBe(false);
+  });
+
+  it("sends the browser back when the person cancels the sign-in", async () => {
+    const cancelled = await new Client(testEnv()).call(
+      `/v1/mcp/oauth/callback?error=access_denied&state=${a.org}.mca_any`,
+    );
+    expect(cancelled.status).toBe(303);
+    expect(
+      new URL(cancelled.headers.get("location")!).searchParams.get(
+        "connect_error",
+      ),
+    ).toBe("cancelled");
   });
 
   it("calls the server for the agent's code with a token the code never sees", async () => {

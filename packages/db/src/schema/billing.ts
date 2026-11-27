@@ -205,3 +205,18 @@ export const demotedSeats = pgTable(
   },
   (t) => [primaryKey({ columns: [t.organizationId, t.userId, t.groupId] })],
 );
+
+// What auto-reload last ran into (PRE-128), from Autumn's
+// billing.auto_topup_failed webhook: a failed charge until it's resolved (a
+// successful Retry or top-up, or the balance back at the threshold), and the
+// monthly cap until the first of the next UTC month. Our cloud only.
+export const autoReloadStates = pgTable("auto_reload_states", {
+  organizationId: text()
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  failedAt: timestamp({ withTimezone: true }),
+  // "card_declined", or null when the processor gave no reason.
+  failedReason: text(),
+  capReachedUntil: timestamp({ withTimezone: true }),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});

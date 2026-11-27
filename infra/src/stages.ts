@@ -133,7 +133,12 @@ export const googleSecrets = ["GOOGLE_CLIENT_SECRET"] as const;
 
 // Autumn, our cloud's billing (spec 16a), optional: without it billing is off.
 // Never bound on a self-hosted install, which bills nothing.
-export const billingSecrets = ["AUTUMN_SECRET_KEY"] as const;
+// AUTUMN_WEBHOOK_SECRET verifies Autumn's webhooks (Svix, whsec_…); without
+// it the API's Autumn webhook answers 404.
+export const billingSecrets = [
+  "AUTUMN_SECRET_KEY",
+  "AUTUMN_WEBHOOK_SECRET",
+] as const;
 // When cards became required, and our own organizations (apps/api/src/env.ts).
 // Both unset, an organization without a plan is not limited.
 // BILLING_ENFORCED_ORGS: organizations billed like customers before the date,
@@ -234,6 +239,10 @@ export const localRoleDatabaseUrl = (
 // The app's local origin. It serves Better Auth and /v1 from the API Worker,
 // so cookies stay first-party.
 export const localAppUrl = "https://app.preprocess.localhost";
+
+// The public docs site, linked from the app wherever a stage has no docs
+// domain of its own.
+export const publicDocsUrl = "https://docs.preprocess.com";
 
 // The GitHub App in `pnpm dev`: scripts/github-stub.ts stands in for GitHub
 // and apps/builder/local/server.ts runs the build sandbox under Docker. The

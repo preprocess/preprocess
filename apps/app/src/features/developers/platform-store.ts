@@ -1,19 +1,8 @@
 /**
- * In-memory organization platform settings: sandbox images and MCP servers
- * agents opt into. Changes stick until the dev server
- * restarts. There is no backend yet; builds outside dev serve none.
+ * In-memory organization platform settings: connected repositories. Changes
+ * stick until the dev server restarts. There is no backend yet; builds outside
+ * dev serve none.
  */
-
-export type SandboxImage = {
-  readonly id: string;
-  /** Registry reference without the tag: `ghcr.io/preprocess/sandbox`. */
-  readonly repository: string;
-  readonly tag: string;
-  /** Short content digest, as `sha256:…` would read in a registry. */
-  readonly digest: string;
-  readonly sizeMb: number;
-  readonly addedAt: string;
-};
 
 /**
  * Which deployments get a secret. New secrets default to production only,
@@ -30,80 +19,6 @@ export type NetworkRule = {
   readonly kind: NetworkRuleKind;
 };
 
-/** How a remote MCP server authenticates our calls. */
-export type McpAuthKind = "none" | "oauth" | "token";
-
-/**
- * How we reach a server, detected when it's saved: streamable HTTP, or the
- * deprecated HTTP+SSE transport when that's all the server speaks.
- */
-export type McpTransport = "streamable_http" | "sse";
-
-export type McpTool = {
-  readonly name: string;
-  readonly description: string;
-};
-
-/**
- * A remote MCP server over https. A bearer token is write-only once saved,
- * like a secret.
- */
-export type McpServer = {
-  readonly id: string;
-  readonly name: string;
-  readonly url: string;
-  readonly auth: McpAuthKind;
-  readonly transport: McpTransport;
-  readonly token: string | null;
-  /** What the server last reported; empty until it's been reached. */
-  readonly tools: readonly McpTool[];
-  readonly addedAt: string;
-};
-
-/** A server as the browser sees it: everything but the token. */
-export type McpServerSummary = Omit<McpServer, "token">;
-
-export function summarizeMcpServer(server: McpServer): McpServerSummary {
-  return {
-    id: server.id,
-    name: server.name,
-    url: server.url,
-    auth: server.auth,
-    transport: server.transport,
-    tools: server.tools,
-    addedAt: server.addedAt,
-  };
-}
-
-/** What the add and edit dialogs send. An empty token keeps the saved one. */
-export type McpServerInput = {
-  readonly name: string;
-  readonly url: string;
-  readonly auth: McpAuthKind;
-  readonly token: string;
-};
-
-/** Builds or updates a server from the dialog's input. */
-export function mcpServerFrom(
-  input: McpServerInput,
-  previous?: McpServer,
-): McpServer {
-  return {
-    id: previous?.id ?? `mcp_${Date.now().toString(36)}`,
-    name: input.name,
-    url: input.url,
-    auth: input.auth,
-    // Seeded: a real backend detects it when it first reaches the server.
-    transport:
-      previous?.url === input.url ? previous.transport : "streamable_http",
-    token:
-      input.auth === "token" ? input.token || (previous?.token ?? null) : null,
-    // Seeded: a real backend lists tools when it first reaches the server.
-    tools: previous?.url === input.url ? previous.tools : [],
-    addedAt: previous?.addedAt ?? new Date().toISOString(),
-  };
-}
-
 /** A repository the organization connected (Developers → Integrations). */
 export type RepoConnection = {
   readonly id: string;
@@ -112,101 +27,20 @@ export type RepoConnection = {
 };
 
 type PlatformState = {
-  images: SandboxImage[];
-  defaultImageId: string;
   repos: RepoConnection[];
-  mcpServers: McpServer[];
 };
-
-const SEEDED_AT = "2026-08-10T12:00:00.000Z";
 
 function seed(): PlatformState {
   if (!import.meta.env.DEV) {
     return {
-      images: [],
-      defaultImageId: "",
       repos: [],
-      mcpServers: [],
     };
   }
   return {
-    images: [
-      {
-        id: "img_base",
-        repository: "ghcr.io/preprocess/sandbox",
-        tag: "2026.08",
-        digest: "sha256:4f9a1c2e",
-        sizeMb: 812,
-        addedAt: SEEDED_AT,
-      },
-      {
-        id: "img_office",
-        repository: "ghcr.io/preprocess/sandbox-office",
-        tag: "2026.08",
-        digest: "sha256:9b07de41",
-        sizeMb: 1430,
-        addedAt: "2026-08-12T09:30:00.000Z",
-      },
-      {
-        id: "img_python",
-        repository: "ghcr.io/preprocess/sandbox-python",
-        tag: "3.13",
-        digest: "sha256:c3e8a07f",
-        sizeMb: 960,
-        addedAt: "2026-08-14T16:45:00.000Z",
-      },
-    ],
-    defaultImageId: "img_base",
     // Seeded: there is no GitHub connection flow yet.
     repos: [
       { id: "repo_agents", fullName: "acme/agents" },
       { id: "repo_lab", fullName: "acme/agent-lab" },
-    ],
-    mcpServers: [
-      {
-        id: "mcp_documents",
-        name: "Document store",
-        url: "https://mcp.acme.com/documents",
-        auth: "oauth",
-        transport: "streamable_http",
-        token: null,
-        tools: [
-          { name: "search_documents", description: "Full-text search." },
-          { name: "read_document", description: "Read one document." },
-          { name: "list_folders", description: "Browse the folder tree." },
-        ],
-        addedAt: SEEDED_AT,
-      },
-      {
-        id: "mcp_inventory",
-        name: "Inventory",
-        url: "https://mcp.acme.com/inventory",
-        auth: "token",
-        transport: "streamable_http",
-        token: "seeded-demo-token",
-        tools: [
-          { name: "lookup_part", description: "Find a part by number." },
-          { name: "check_stock", description: "Stock on hand by site." },
-          { name: "reserve_stock", description: "Hold stock for an order." },
-          { name: "list_sites", description: "Warehouses and yards." },
-        ],
-        addedAt: "2026-08-18T10:15:00.000Z",
-      },
-      {
-        id: "mcp_tickets",
-        name: "Ticketing",
-        url: "https://tickets.acme.com/mcp",
-        auth: "token",
-        transport: "sse",
-        token: "tkt_4b8e1f07",
-        tools: [
-          { name: "list_tickets", description: "Open tickets by queue." },
-          { name: "create_ticket", description: "Open a ticket." },
-          { name: "update_ticket", description: "Change status or owner." },
-          { name: "add_comment", description: "Comment on a ticket." },
-        ],
-        addedAt: "2026-09-02T14:00:00.000Z",
-      },
     ],
   };
 }
@@ -219,69 +53,12 @@ function platform(): PlatformState {
 }
 
 export type PlatformSettings = {
-  readonly images: readonly SandboxImage[];
-  readonly defaultImageId: string;
   readonly repos: readonly RepoConnection[];
-  readonly mcpServers: readonly McpServerSummary[];
 };
 
 export function getPlatformSettings(): Promise<PlatformSettings> {
-  const { images, defaultImageId, repos, mcpServers } = platform();
+  const { repos } = platform();
   return Promise.resolve({
-    images: [...images],
-    defaultImageId,
     repos: [...repos],
-    mcpServers: mcpServers.map(summarizeMcpServer),
   });
-}
-
-export function addSandboxImage(
-  repository: string,
-  tag: string,
-): Promise<SandboxImage> {
-  const image: SandboxImage = {
-    id: `img_${Date.now().toString(36)}`,
-    repository,
-    tag,
-    // Seeded: a real registry reports these once the image is pulled.
-    digest: `sha256:${Math.random().toString(16).slice(2, 10)}`,
-    sizeMb: 500 + Math.round(Math.random() * 900),
-    addedAt: new Date().toISOString(),
-  };
-  platform().images.push(image);
-  return Promise.resolve(image);
-}
-
-export function removeSandboxImage(id: string): Promise<void> {
-  const current = platform();
-  if (current.defaultImageId === id) {
-    return Promise.reject(new Error("Choose another default image first."));
-  }
-  current.images = current.images.filter((image) => image.id !== id);
-  return Promise.resolve();
-}
-
-export function setDefaultSandboxImage(id: string): Promise<void> {
-  platform().defaultImageId = id;
-  return Promise.resolve();
-}
-
-/** Adds a server, or updates the one with `id`. */
-export function saveOrgMcpServer(
-  input: McpServerInput,
-  id?: string,
-): Promise<void> {
-  const current = platform();
-  const previous = current.mcpServers.find((server) => server.id === id);
-  const next = mcpServerFrom(input, previous);
-  current.mcpServers = previous
-    ? current.mcpServers.map((server) => (server.id === id ? next : server))
-    : [...current.mcpServers, next];
-  return Promise.resolve();
-}
-
-export function deleteOrgMcpServer(id: string): Promise<void> {
-  const current = platform();
-  current.mcpServers = current.mcpServers.filter((server) => server.id !== id);
-  return Promise.resolve();
 }

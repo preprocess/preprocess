@@ -14,6 +14,13 @@ export type AutoReload = {
   monthlyLimitUsd: number | null;
 };
 
+// What auto-reload last ran into, shown to Owners and Admins: a failed charge
+// nothing has resolved yet, and the monthly cap until it resumes.
+export type AutoReloadState = {
+  failed: { at: string; reason: "card_declined" | null } | null;
+  capReachedUntil: string | null;
+};
+
 export type Invoice = {
   id: string;
   at: string;
@@ -34,7 +41,7 @@ export type Billing = {
     at: string | null;
   } | null;
   credits: { remaining: number; owed: number } | null;
-  autoReload: AutoReload | null;
+  autoReload: (AutoReload & AutoReloadState) | null;
   card: {
     brand: string;
     last4: string;
@@ -47,6 +54,18 @@ export type Billing = {
   commit: { usedUsd: number; totalUsd: number } | null;
 };
 
+/** One agent's share of this month's ledger lines; no agent for usage outside a case. */
+export type AgentUsage = {
+  agentId: string | null;
+  slug: string | null;
+  cases: number;
+  casesUsd: number;
+  modelUsageUsd: number;
+  decideUsd: number;
+  ocrUsd: number;
+  sandboxUsd: number;
+};
+
 export type BillingUsage = {
   month: string;
   seats: { count: number; includedCount: number; usd: number };
@@ -56,6 +75,7 @@ export type BillingUsage = {
   ocrUsd: number;
   sandboxUsd: number;
   storage: { gbMonths: number; includedGbMonths: number; usd: number };
+  byAgent: AgentUsage[];
   paidFromCreditsUsd: number;
   billedAtMonthEndUsd: number;
   daily: { day: string; usd: number }[];

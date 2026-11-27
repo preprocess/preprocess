@@ -4,6 +4,7 @@
 
 import type { ScenarioState } from "../../scenarios/scenarios";
 import type {
+  AgentUsage,
   Billing,
   BillingUsage,
   ChangePreview,
@@ -31,6 +32,100 @@ const daily = (totalUsd: number) => {
   }));
 };
 
+// Whole units in proportion to the weights by largest remainder, so the
+// shares add up to the total exactly, like the API's split.
+const share = (total: number, weights: number[]) => {
+  const weight = weights.reduce((a, b) => a + b, 0);
+  const exact = weights.map((w) => (total * w) / weight);
+  const parts = exact.map(Math.floor);
+  let left = total - parts.reduce((a, b) => a + b, 0);
+  for (const i of exact
+    .map((_, i) => i)
+    .sort((a, b) => (exact[b] % 1) - (exact[a] % 1))) {
+    if (left <= 0) break;
+    parts[i] += 1;
+    left -= 1;
+  }
+  return parts;
+};
+
+// Each line split among the agents by weight; the OCR API's share of OCR
+// has no agent.
+const byAgent = (
+  agents: [slug: string, weight: number][],
+  lines: {
+    cases: number;
+    fees: number;
+    model: number;
+    decide: number;
+    ocr: number;
+    sandbox: number;
+    ocrApi: number;
+  },
+): AgentUsage[] => {
+  const weights = agents.map(([, w]) => w);
+  const cents = (usd: number) => Math.round(usd * 100);
+  const usdOf = (total: number) =>
+    share(cents(total), weights).map((c) => c / 100);
+  const cases = share(lines.cases, weights);
+  const fees = share(cents(lines.fees), cases).map((c) => c / 100);
+  const model = usdOf(lines.model);
+  const decide = usdOf(lines.decide);
+  const ocr = usdOf(lines.ocr - lines.ocrApi);
+  const sandbox = usdOf(lines.sandbox);
+  return [
+    ...agents.map(([slug], i) => ({
+      agentId: `agent_seed_${slug}`,
+      slug,
+      cases: cases[i],
+      casesUsd: fees[i],
+      modelUsageUsd: model[i],
+      decideUsd: decide[i],
+      ocrUsd: ocr[i],
+      sandboxUsd: sandbox[i],
+    })),
+    ...(lines.ocrApi > 0
+      ? [
+          {
+            agentId: null,
+            slug: null,
+            cases: 0,
+            casesUsd: 0,
+            modelUsageUsd: 0,
+            decideUsd: 0,
+            ocrUsd: lines.ocrApi,
+            sandboxUsd: 0,
+          },
+        ]
+      : []),
+  ];
+};
+
+const TEAM_AGENTS: [string, number][] = [
+  ["intake-agent", 42],
+  ["acme-vendor-diligence", 24],
+  ["claims-triage", 17],
+  ["contract-review", 9],
+  ["kyc-checks", 5],
+  ["expense-audit", 3],
+];
+
+const FREE_AGENTS: [string, number][] = [
+  ["intake-agent", 7],
+  ["receipt-sorter", 3],
+];
+
+const ENTERPRISE_AGENTS: [string, number][] = [
+  ["intake-agent", 21],
+  ["acme-vendor-diligence", 17],
+  ["claims-triage", 15],
+  ["contract-review", 12],
+  ["kyc-checks", 11],
+  ["expense-audit", 9],
+  ["sanctions-screening", 8],
+  ["policy-renewals", 7],
+];
+
 const sum = (...values: number[]) =>
   Math.round(values.reduce((a, b) => a + b, 0) * 100) / 100;
 
@@ -48,6 +143,8 @@ const usage = (u: {
   storageUsd: number;
   free?: boolean;
   storageGb?: number;
+  agents?: [string, number][];
+  ocrApi?: number;
 }): BillingUsage => {
   const paid = sum(u.fees, u.model, u.decide, u.ocr, u.sandbox);
   return {
@@ -67,6 +164,7 @@ const usage = (u: {
       includedGbMonths: u.includedGb,
       usd: u.storageUsd,
     },
+    byAgent: u.agents ? byAgent(u.agents, { ...u, ocrApi: u.ocrApi ?? 0 }) : [],
     paidFromCreditsUsd: paid,
     billedAtMonthEndUsd: sum(u.seatUsd, u.storageUsd),
     daily: daily(paid),
@@ -93,6 +191,8 @@ const TEAM_USAGE = usage({
   gbMonths: 62.4,
   includedGb: 50,
   storageUsd: 1.24,
+  agents: TEAM_AGENTS,
+  ocrApi: 1.4,
 });
 
 const EMPTY_USAGE = usage({
@@ -107,6 +207,8 @@ const EMPTY_USAGE = usage({
   gbMonths: 62.4,
   includedGb: 50,
   storageUsd: 1.24,
+  agents: TEAM_AGENTS,
+  ocrApi: 2.1,
 });
 
 const LIMIT_USAGE = usage({
@@ -121,6 +223,8 @@ const LIMIT_USAGE = usage({
   gbMonths: 84.1,
   includedGb: 50,
   storageUsd: 3.41,
+  agents: TEAM_AGENTS,
+  ocrApi: 3.15,
 });
 
 const FREE_USAGE = usage({
@@ -136,6 +240,8 @@ const FREE_USAGE = usage({
   gbMonths: 1.2,
   includedGb: 5,
   storageUsd: 0,
+  agents: FREE_AGENTS,
+  ocrApi: 0.04,
 });
 
 const FREE_EMPTY_USAGE = usage({
@@ -151,6 +257,8 @@ const FREE_EMPTY_USAGE = usage({
   gbMonths: 2.4,
   includedGb: 5,
   storageUsd: 0,
+  agents: FREE_AGENTS,
+  ocrApi: 0.06,
 });
 
 const NO_CARD_USAGE = usage({
@@ -180,6 +288,8 @@ const ENTERPRISE_USAGE = usage({
   gbMonths: 412.6,
   includedGb: 50,
   storageUsd: 36.26,
+  agents: ENTERPRISE_AGENTS,
+  ocrApi: 21.6,
 });
 
 const INTERNAL_USAGE = { ...TEAM_USAGE, billedAtMonthEndUsd: 0 };
@@ -190,6 +300,8 @@ const RELOAD_ON = {
   belowCredits: 2_500,
   addCredits: 10_000,
   monthlyLimitUsd: 500,
+  failed: null,
+  capReachedUntil: null,
 };
 const RELOAD_OFF = { ...RELOAD_ON, enabled: false };
 
@@ -295,6 +407,27 @@ const seeds: Record<
       ...base,
       pastDue: true,
       invoices: [invoice(9, 214.8, "open"), ...TEAM_INVOICES.slice(1)],
+    },
+    usage: TEAM_USAGE,
+    limitUsd: 500,
+  },
+  "team-reload-failed": {
+    billing: {
+      ...base,
+      credits: { remaining: 812, owed: 0 },
+      autoReload: {
+        ...RELOAD_ON,
+        failed: { at: "2026-11-26T09:12:00.000Z", reason: "card_declined" },
+      },
+    },
+    usage: TEAM_USAGE,
+    limitUsd: 500,
+  },
+  "team-reload-cap": {
+    billing: {
+      ...base,
+      credits: { remaining: 1_190, owed: 0 },
+      autoReload: { ...RELOAD_ON, capReachedUntil: END },
     },
     usage: TEAM_USAGE,
     limitUsd: 500,
