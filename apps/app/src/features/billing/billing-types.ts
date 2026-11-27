@@ -47,6 +47,18 @@ export type Billing = {
   commit: { usedUsd: number; totalUsd: number } | null;
 };
 
+/** One agent's share of this month's ledger lines; no agent for usage outside a case. */
+export type AgentUsage = {
+  agentId: string | null;
+  slug: string | null;
+  cases: number;
+  casesUsd: number;
+  modelUsageUsd: number;
+  decideUsd: number;
+  ocrUsd: number;
+  sandboxUsd: number;
+};
+
 export type BillingUsage = {
   month: string;
   seats: { count: number; includedCount: number; usd: number };
@@ -56,6 +68,7 @@ export type BillingUsage = {
   ocrUsd: number;
   sandboxUsd: number;
   storage: { gbMonths: number; includedGbMonths: number; usd: number };
+  byAgent: AgentUsage[];
   paidFromCreditsUsd: number;
   billedAtMonthEndUsd: number;
   daily: { day: string; usd: number }[];

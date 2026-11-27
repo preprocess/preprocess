@@ -13,11 +13,20 @@ import {
   BannerTitle,
 } from "@preprocess/ui/components/banner";
 import { Button } from "@preprocess/ui/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@preprocess/ui/components/collapsible";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { Skeleton } from "@preprocess/ui/components/skeleton";
 import { Switch } from "@preprocess/ui/components/switch";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
+import { ChevronRight } from "@preprocess/ui/lib/icons";
+import { spring } from "@preprocess/ui/lib/springs";
+import { cn } from "@preprocess/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { motion } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -54,6 +63,7 @@ import {
   wholeDollars,
 } from "./billing-format";
 import type {
+  AgentUsage,
   AutoReload as AutoReloadSettings,
   Billing,
   BillingUsage,
@@ -116,15 +126,94 @@ const Amount = ({ children }: { children: ReactNode }) => (
   <span className="text-body tabular-nums text-foreground">{children}</span>
 );
 
+type AgentLine = { key: string; name: string; detail?: string; amount: string };
+
+// The first agents an open line shows before "Show n more".
+const AGENTS_SHOWN = 5;
+
+// Label | muted detail | amount from sm up; label over detail, amount beside,
+// below it. One element per cell, so a row has a single disclosure button.
+const LINE_GRID =
+  "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-0.5 px-5 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto] sm:gap-y-2";
+const LINE_DETAIL =
+  "col-start-1 row-start-2 min-w-0 truncate text-caption text-muted-foreground sm:col-start-2 sm:row-start-1 sm:text-body";
+const LINE_AMOUNT =
+  "col-start-2 row-span-2 row-start-1 sm:col-start-3 sm:row-span-1";
+
+function AgentRows({ agents }: { agents: AgentLine[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? agents : agents.slice(0, AGENTS_SHOWN);
+  return (
+    <div className="flex flex-col border-t border-border/60 py-1">
+      {shown.map((agent) => (
+        <div className={cn(LINE_GRID, "min-h-10 py-2")} key={agent.key}>
+          <span className="col-start-1 row-start-1 min-w-0 truncate pl-5 text-body text-foreground">
+            {agent.name}
+          </span>
+          {agent.detail ? (
+            <span className={cn(LINE_DETAIL, "pl-5 sm:pl-0")}>
+              {agent.detail}
+            </span>
+          ) : null}
+          <span className={LINE_AMOUNT}>
+            <Amount>{agent.amount}</Amount>
+          </span>
+        </div>
+      ))}
+      {all || agents.length <= AGENTS_SHOWN ? null : (
+        <div className="px-5 py-1 pl-7">
+          <Button onClick={() => setAll(true)} size="compact" variant="ghost">
+            {`Show ${count(agents.length - AGENTS_SHOWN)} more`}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UsageRow({
   label,
   detail,
   amount,
+  agents,
 }: {
   label: string;
   detail?: string;
   amount: string;
+  agents?: AgentLine[];
 }) {
+  const [open, setOpen] = useState(false);
+  if (agents?.length)
+    return (
+      <Collapsible onOpenChange={setOpen} open={open}>
+        <div
+          className={cn(
+            LINE_GRID,
+            "relative min-h-16 py-3 has-[[data-slot=collapsible-trigger]:hover]:bg-hover sm:min-h-12",
+          )}
+        >
+          <CollapsibleTrigger className="col-start-1 row-start-1 flex min-w-0 items-center gap-1 text-left text-body text-foreground outline-none after:absolute after:inset-0 focus-visible:after:ring-1 focus-visible:after:ring-[color:var(--focus-ring,#6B97FF)] focus-visible:after:ring-inset">
+            <span className="min-w-0 truncate">{label}</span>
+            <motion.span
+              animate={{ rotate: open ? 90 : 0 }}
+              aria-hidden="true"
+              className="inline-flex shrink-0 text-muted-foreground"
+              initial={false}
+              transition={spring.moderate}
+            >
+              <ChevronRight size={14} />
+            </motion.span>
+          </CollapsibleTrigger>
+          {detail ? <span className={LINE_DETAIL}>{detail}</span> : null}
+          <span className={LINE_AMOUNT}>
+            <Amount>{amount}</Amount>
+          </span>
+        </div>
+        <CollapsibleContent>
+          <AgentRows agents={agents} />
+        </CollapsibleContent>
+      </Collapsible>
+    );
   return (
     <div>
       <SettingsRow
@@ -348,6 +437,33 @@ const EMPTY_BANNER = [
   "New cases won't start and running cases are halted until you add credits. Top up your balance, then use Rerun to restart halted cases.",
 ] as const;
 
+const NO_AGENT = "No agent";
+
+// The agents behind one ledger line, largest first; agents with nothing on
+// the line are left out.
+const agentLines = (
+  u: BillingUsage,
+  pick: (a: AgentUsage) => number,
+  withCases = false,
+): AgentLine[] =>
+  u.byAgent
+    .filter((a) => pick(a) > 0 || (withCases && a.cases > 0))
+    .sort(
+      (a, b) =>
+        pick(b) - pick(a) ||
+        b.cases - a.cases ||
+        (a.slug ?? "~").localeCompare(b.slug ?? "~"),
+    )
+    .map((a) => ({
+      key: a.agentId ?? "none",
+      name: a.slug ?? NO_AGENT,
+      detail:
+        a.agentId === null
+          ? "Usage outside a case, like the OCR API"
+          : `${count(a.cases)} ${a.cases === 1 ? "case" : "cases"}`,
+      amount: usd(pick(a)),
+    }));
+
 function usageLines(plan: Billing["plan"], u: BillingUsage) {
   const included = plan === "free";
   const seats = u.seats.count;
@@ -368,11 +484,28 @@ function usageLines(plan: Billing["plan"], u: BillingUsage) {
         ? `${count(u.cases.count)} cases, included`
         : `${count(u.cases.count)} cases, ${count(u.cases.includedCount)} free`,
       amount: usd(u.cases.usd),
+      agents: agentLines(u, (a) => a.casesUsd, true),
     },
-    { label: "Model usage", amount: usd(u.modelUsageUsd) },
-    { label: "decide", amount: usd(u.decideUsd) },
-    { label: "OCR", amount: usd(u.ocrUsd) },
-    { label: "Sandbox time", amount: usd(u.sandboxUsd) },
+    {
+      label: "Model usage",
+      amount: usd(u.modelUsageUsd),
+      agents: agentLines(u, (a) => a.modelUsageUsd),
+    },
+    {
+      label: "decide",
+      amount: usd(u.decideUsd),
+      agents: agentLines(u, (a) => a.decideUsd),
+    },
+    {
+      label: "OCR",
+      amount: usd(u.ocrUsd),
+      agents: agentLines(u, (a) => a.ocrUsd),
+    },
+    {
+      label: "Sandbox time",
+      amount: usd(u.sandboxUsd),
+      agents: agentLines(u, (a) => a.sandboxUsd),
+    },
     {
       label: "Storage",
       detail:
