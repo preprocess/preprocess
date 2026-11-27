@@ -692,11 +692,7 @@ function DocsSearch({
     return ready.searchIndex(ready.index, term).flatMap((result) => {
       const page = pages.get(result.url);
       const label = page?.label ?? result.title;
-      const group = page
-        ? [page.group, page.path === page.group ? "" : page.path, label]
-            .filter(Boolean)
-            .join(" › ")
-        : label;
+      const group = page?.group ?? "Guides";
       return [
         {
           url: result.url,

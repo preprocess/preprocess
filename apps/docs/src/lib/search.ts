@@ -149,38 +149,65 @@ export function searchIndex(
     }));
 }
 
-// A short window of the text around the first match, split into plain and
-// matched runs for highlighting.
-export function snippet(text: string, term: string, radius = 48) {
-  const words = term
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  if (words.length === 0) return [{ text, match: false }];
-  const pattern = new RegExp(`\\b(${words.join("|")})\\w*`, "gi");
-  const first = pattern.exec(text);
-  pattern.lastIndex = 0;
-  let start = 0;
-  let end = text.length;
-  if (first && text.length > radius * 2) {
-    start = Math.max(0, first.index - radius);
-    end = Math.min(text.length, first.index + radius * 2);
-    if (start > 0) start = text.indexOf(" ", start) + 1 || start;
-    if (end < text.length) end = text.lastIndexOf(" ", end) || end;
-  } else if (text.length > radius * 3) end = text.lastIndexOf(" ", radius * 3);
-  const slice = text.slice(start, end);
+function distance(a: string, b: string) {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++)
+      next[j] = Math.min(
+        row[j] + 1,
+        next[j - 1] + 1,
+        row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    row = next;
+  }
+  return row[b.length];
+}
+
+// The words the query matched: every word starting with a query term, or
+// for a typo, the closest word within the tolerance Orama searched with.
+function matches(text: string, term: string) {
+  const words = term.toLowerCase().split(/\s+/).filter(Boolean);
+  const tokens = [...text.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({
+    start: m.index,
+    end: m.index + m[0].length,
+    word: m[0].toLowerCase(),
+  }));
+  const exact = tokens.filter((t) => words.some((w) => t.word.startsWith(w)));
+  if (exact.length > 0) return exact;
+  let best: { token: (typeof tokens)[number]; cost: number } | undefined;
+  for (const token of tokens)
+    for (const word of words) {
+      const cost = Math.min(
+        distance(word, token.word),
+        distance(word, token.word.slice(0, word.length)),
+      );
+      if (cost <= (word.length >= 6 ? 2 : 1) && (!best || cost < best.cost))
+        best = { token, cost };
+    }
+  return best ? [best.token] : [];
+}
+
+// A window of the text that opens just before the first match, so the
+// highlighted word shows even when the row truncates, split into plain and
+// matched runs.
+export function snippet(text: string, term: string, lead = 24, length = 140) {
+  const found = matches(text, term);
+  let start = Math.max(0, (found[0]?.start ?? 0) - lead);
+  if (start > 0) start = text.indexOf(" ", start) + 1 || start;
+  if (found[0] && start > found[0].start) start = found[0].start;
+  let end = Math.min(text.length, start + length);
+  if (end < text.length) end = text.lastIndexOf(" ", end) || end;
   const parts: { text: string; match: boolean }[] = [];
   if (start > 0) parts.push({ text: "…", match: false });
-  let last = 0;
-  for (const m of slice.matchAll(pattern)) {
-    if (m.index > last)
-      parts.push({ text: slice.slice(last, m.index), match: false });
-    parts.push({ text: m[0], match: true });
-    last = m.index + m[0].length;
+  let last = start;
+  for (const { start: from, end: to } of found) {
+    if (from < start || to > end) continue;
+    if (from > last) parts.push({ text: text.slice(last, from), match: false });
+    parts.push({ text: text.slice(from, to), match: true });
+    last = to;
   }
-  if (last < slice.length)
-    parts.push({ text: slice.slice(last), match: false });
+  if (last < end) parts.push({ text: text.slice(last, end), match: false });
   if (end < text.length) parts.push({ text: "…", match: false });
   return parts;
 }
