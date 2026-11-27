@@ -21,7 +21,7 @@ import {
   X,
 } from "@preprocess/ui/lib/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { NoAccessArt, NothingCreatedArt } from "../../components/empty-art";
 import {
@@ -86,6 +86,15 @@ const CONNECT_ERROR_TEXT = {
   refused: "The server refused the sign-in. Connect again.",
 } as const;
 
+/** Writing's copy (PLAT-82) for a Delete that grants block. */
+const DELETE_BLOCKED_TEXT = {
+  title: (slug: string) => `Can't delete ${slug}`,
+  body: (slug: string, count: number) =>
+    count === 1
+      ? `1 agent still has access to ${slug}. Revoke its grant first, then delete the server.`
+      : `${count} agents still have access to ${slug}. Revoke their grants first, then delete the server.`,
+} as const;
+
 const SERVER_NAME = /^[a-z][a-z0-9-]{0,62}$/;
 
 function validateName(value: string) {
@@ -117,6 +126,11 @@ function ServerName({ name }: Readonly<{ name: string }>) {
       {name}
     </span>
   );
+}
+
+/** Rows on the dialog surface with hairline dividers, as Billing's dialogs. */
+function DialogRows({ children }: Readonly<{ children: ReactNode }>) {
+  return <div className="flex flex-col divide-y divide-border">{children}</div>;
 }
 
 function agentCount(count: number) {
@@ -289,7 +303,14 @@ function McpServersSection({
       icon: Pencil,
       onSelect: () => setEditing({ mode: "edit", server }),
     },
-    { label: "Delete", icon: X, onSelect: () => setDeleting(server) },
+    {
+      label: "Delete",
+      icon: X,
+      onSelect: () => {
+        setNotice(null);
+        setDeleting(server);
+      },
+    },
   ];
 
   return (
@@ -347,9 +368,6 @@ function McpServersSection({
                     Legacy SSE
                   </Badge>
                 ) : null}
-                <Badge className="shrink-0" size="sm">
-                  {server.auth === "oauth" ? "OAuth" : "No auth"}
-                </Badge>
                 {status ? (
                   <SettingsStatus state={status.state}>
                     {status.label}
@@ -427,20 +445,42 @@ function McpServersSection({
         successLabel="Disconnected"
         title={`Disconnect ${disconnecting?.slug ?? "this server"}?`}
       />
+      {deleting && deleting.agents.length > 0 ? (
+        <SettingsDialogShell
+          description={DELETE_BLOCKED_TEXT.body(
+            deleting.slug,
+            deleting.agents.length,
+          )}
+          footer={
+            <Button
+              onClick={() => setDeleting(null)}
+              type="button"
+              variant="secondary"
+            >
+              Close
+            </Button>
+          }
+          onOpenChange={(open) => (open ? undefined : setDeleting(null))}
+          open
+          title={DELETE_BLOCKED_TEXT.title(deleting.slug)}
+        >
+          <DialogRows>
+            {deleting.agents.map((agent) => (
+              <SettingsRow key={agent} label={<ServerName name={agent} />} />
+            ))}
+          </DialogRows>
+        </SettingsDialogShell>
+      ) : null}
       <SettingsConfirmDialog
         confirmLabel="Delete"
-        description={
-          deleting && deleting.agents.length > 0
-            ? `Revoke it from ${deleting.agents.join(", ")} first: agents still granted a server keep it from being deleted.`
-            : "Its connection is removed too. This can't be undone."
-        }
+        description="Its connection is removed too. This can't be undone."
         onConfirm={async () => {
           if (!deleting) return;
           await orgApi(organizationId, path(deleting), { method: "DELETE" });
           await refresh();
         }}
         onOpenChange={(open) => (open ? undefined : setDeleting(null))}
-        open={deleting !== null}
+        open={deleting !== null && deleting.agents.length === 0}
         pendingLabel="Deleting…"
         successLabel="Deleted"
         title={`Delete ${deleting?.slug ?? "this server"}?`}
@@ -740,7 +780,7 @@ function ToolsDialog({
         <SettingsPanelMessage>The server offers no tools.</SettingsPanelMessage>
       ) : (
         <ScrollArea className="max-h-80" viewportClassName="scroll-fade">
-          <SettingsRows>
+          <DialogRows>
             {tools.data.map((tool) => (
               <SettingsRow
                 description={tool.description}
@@ -748,7 +788,7 @@ function ToolsDialog({
                 label={<ServerName name={tool.name} />}
               />
             ))}
-          </SettingsRows>
+          </DialogRows>
         </ScrollArea>
       )}
     </SettingsDialogShell>
