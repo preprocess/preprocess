@@ -16,6 +16,7 @@ import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { RadioGroup, RadioItem } from "@preprocess/ui/components/radio-group";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { ArrowUpRight } from "@preprocess/ui/lib/icons";
+import { Link } from "@tanstack/react-router";
 import { useRef, useState, type ReactNode } from "react";
 
 import {
@@ -730,6 +731,15 @@ function CancelFlow({
                 <Body>
                   {`You're using ${item.gb.toLocaleString("en-US", { maximumFractionDigits: 1 })} GB (${(item.gb - item.includedGb).toLocaleString("en-US", { maximumFractionDigits: 1 })} GB over Free's ${item.includedGb} GB allowance, about ${usd(item.usdPerMonth)}/month at current usage). Overage bills to your card at month end.`}
                 </Body>
+                <div className="mt-1">
+                  <Button
+                    render={<Link to="/settings/organization/retention" />}
+                    size="compact"
+                    variant="secondary"
+                  >
+                    Manage retention
+                  </Button>
+                </div>
               </Item>
             ) : (
               <Item
