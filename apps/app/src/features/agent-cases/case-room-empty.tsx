@@ -5,9 +5,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@preprocess/ui/components/empty";
-import type { ReactNode } from "react";
 
-import { CaseReviewArt, CaseRunArt } from "../../components/empty-art";
+import { FillsOnItsOwnArt } from "../../components/empty-art";
 
 import type { INPUT_TAB } from "./case-input-workspace";
 import type { RoomViewId } from "./case-room-tabs";
@@ -15,19 +14,18 @@ import type { RoomViewId } from "./case-room-tabs";
 export type CaseRoomEmptyViewId = Exclude<RoomViewId, typeof INPUT_TAB>;
 
 export function CaseRoomViewEmpty({ viewId }: { viewId: CaseRoomEmptyViewId }) {
-  let graphic: ReactNode;
   let title: string;
   let description: string;
   switch (viewId) {
     case "review":
-      graphic = <CaseReviewArt />;
-      title = "No review yet";
-      description = "Confirm findings and actions the agent extracts.";
+      title = "Nothing to review yet";
+      description =
+        "Answers from the agent's output schema appear here once the run fills them in.";
       break;
     case "run":
-      graphic = <CaseRunArt />;
-      title = "No runs yet";
-      description = "Each run and what happened in it shows up here.";
+      title = "No run activity yet";
+      description =
+        "Model calls, tool calls and timing appear here once the case starts running.";
       break;
     default: {
       const _exhaustive: never = viewId;
@@ -41,7 +39,9 @@ export function CaseRoomViewEmpty({ viewId }: { viewId: CaseRoomEmptyViewId }) {
       initial={false}
     >
       <EmptyHeader className="pointer-events-auto group">
-        <EmptyMedia variant="graphic">{graphic}</EmptyMedia>
+        <EmptyMedia variant="graphic">
+          <FillsOnItsOwnArt />
+        </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>

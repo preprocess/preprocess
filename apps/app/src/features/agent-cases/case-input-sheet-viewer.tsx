@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 import {
   DownloadFallback,
   Opening,
+  PreviewEmpty,
   type CaseInputPreviewItem,
 } from "./case-input-fallback";
 
@@ -69,8 +70,8 @@ export default function CaseInputSheetViewer({
   if (sheets == null) return <Opening />;
   if (sheets.length === 0) {
     return (
-      <DownloadFallback
-        detail="This spreadsheet has no sheets to preview."
+      <PreviewEmpty
+        description="This spreadsheet has no rows to display."
         item={item}
       />
     );
@@ -79,8 +80,8 @@ export default function CaseInputSheetViewer({
   const sheet = sheets[active] ?? sheets[0];
   if (!sheet) {
     return (
-      <DownloadFallback
-        detail="This spreadsheet has no sheets to preview."
+      <PreviewEmpty
+        description="This spreadsheet has no rows to display."
         item={item}
       />
     );
@@ -107,7 +108,7 @@ export default function CaseInputSheetViewer({
       <ScrollArea className="min-h-0 flex-1" orientation="both">
         <table className="w-max min-w-full border-collapse text-body">
           {header ? (
-            <thead className="sticky top-0 bg-surface-3">
+            <thead className="sticky top-0 bg-accent">
               <tr className="border-b border-border">
                 {header.map((cell, cellIndex) => (
                   <th

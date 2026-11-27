@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   DownloadFallback,
   Opening,
+  PreviewEmpty,
   type CaseInputPreviewItem,
 } from "./case-input-fallback";
 import { listZipEntries, readZipEntry } from "./case-input-zip";
@@ -99,8 +100,8 @@ export default function CaseInputPptxViewer({
   if (slides == null) return <Opening />;
   if (slides.length === 0) {
     return (
-      <DownloadFallback
-        detail="This deck has no readable slides."
+      <PreviewEmpty
+        description="This presentation has no slides to display."
         item={item}
       />
     );

@@ -21,6 +21,8 @@ import {
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { FillsOnItsOwnArt } from "../../components/empty-art";
+
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
 import {
@@ -101,7 +103,7 @@ function VerifyChain({ organizationId }: { organizationId: string }) {
           Verify chain
         </LoadingButton>
       </div>
-      {error ? <SettingsError error={error} /> : null}
+      {error ? <SettingsError error={error} inline /> : null}
       {result?.ok ? (
         <Banner status="success">
           <BannerTitle>The audit log is intact</BannerTitle>
@@ -172,8 +174,9 @@ export function AuditLogPanel() {
               if (list.length === 0)
                 return (
                   <SettingsEmpty
-                    description="Actions in this organization will show up here."
-                    title="No events yet"
+                    art={<FillsOnItsOwnArt />}
+                    description="Organization, deployment, access and billing events are recorded here automatically."
+                    title="No audit events yet"
                   />
                 );
               return (

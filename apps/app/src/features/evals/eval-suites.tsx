@@ -9,6 +9,8 @@ import { ChevronRight, Plus } from "@preprocess/ui/lib/icons";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 
+import { FillsOnItsOwnArt, NotDeployedArt } from "../../components/empty-art";
+
 import { orgApi } from "../auth/client";
 import {
   SettingsDialog,
@@ -91,15 +93,17 @@ export function AgentEvalSuites({
         </SettingsRows>
       ) : state.kind === "missing" ? (
         <SettingsEmpty
-          description="The automatic suite starts collecting cases once this agent is deployed and finishes one."
-          title="No evaluations yet"
+          art={<NotDeployedArt />}
+          description="Evals run against deployed versions of this agent."
+          title="Deploy this agent first"
         />
       ) : state.kind === "failed" ? (
         <SettingsError error={state.error} />
       ) : state.data.suites.length === 0 ? (
         <SettingsEmpty
-          description="The automatic suite starts collecting cases once this agent finishes one."
-          title="No suites yet"
+          art={<FillsOnItsOwnArt />}
+          description="Completed cases with reviewed answers build your automatic suite, or create a manual suite."
+          title="No eval suites yet"
         />
       ) : (
         <SettingsRows>

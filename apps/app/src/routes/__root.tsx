@@ -27,6 +27,7 @@ import { loadInbox } from "../features/inbox/load-inbox";
 import { onDataChanged } from "../lib/data-changed";
 import { loadRequiredCheckout } from "../features/organizations/billing";
 import { OrganizationsProvider } from "../features/organizations/organizations-context";
+import { SettingsEmptyArtScope } from "../features/settings/kit";
 import { isOnboardingPath } from "../server/onboarding-path";
 import { ScenarioToolbar } from "../scenarios/scenario-toolbar";
 import { isPublicAuthPath } from "../server/public-auth-path";
@@ -170,7 +171,9 @@ function RootComponent() {
       <Outlet />
     ) : (
       <ProductShell inboxUnread={inboxUnread}>
-        <Outlet />
+        <SettingsEmptyArtScope>
+          <Outlet />
+        </SettingsEmptyArtScope>
       </ProductShell>
     );
 

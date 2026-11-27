@@ -9,6 +9,8 @@ import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { Check, Plus, X } from "@preprocess/ui/lib/icons";
 import { useRef, useState, type FormEvent } from "react";
 
+import { NothingCreatedArt } from "../../components/empty-art";
+
 import {
   SettingsConfirmDialog,
   SettingsDialogActions,
@@ -187,8 +189,9 @@ export function SandboxImagesSection({
     >
       {images.length === 0 ? (
         <SettingsEmpty
-          description="Add an image for agent sandboxes to run in."
-          title="No images yet"
+          art={<NothingCreatedArt />}
+          description="Deploy an agent with a sandbox setup to build a reusable environment here."
+          title="No custom sandbox environments"
         />
       ) : (
         <SettingsRows>

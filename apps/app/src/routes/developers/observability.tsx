@@ -9,7 +9,8 @@ export const Route = createFileRoute("/developers/observability")({
 function DevelopersObservabilityPage() {
   return (
     <PlaceholderPage
-      description="Runs, errors, latency, and cost across every agent."
+      description="Organization-wide traces and metrics will live here. Per-agent run logs and OpenTelemetry export are available today."
+      emptyTitle="Observability is coming soon"
       title="Observability"
     />
   );

@@ -15,6 +15,8 @@ import {
 import { Lock, Pencil, Plus, X } from "@preprocess/ui/lib/icons";
 import { useRef, useState, type FormEvent } from "react";
 
+import { NothingCreatedArt } from "../../components/empty-art";
+
 import {
   SettingsConfirmDialog,
   SettingsDialogActions,
@@ -289,8 +291,9 @@ export function SecretsSection({
     >
       {items.length + inherited.length === 0 ? (
         <SettingsEmpty
-          description={`Add a ${noun} and it's available to deployed code.`}
-          title={`No ${noun}s yet`}
+          art={<NothingCreatedArt />}
+          description="Add encrypted secrets that agents can use in tools without exposing values to the model."
+          title="No secrets yet"
         />
       ) : (
         <SettingsRows>

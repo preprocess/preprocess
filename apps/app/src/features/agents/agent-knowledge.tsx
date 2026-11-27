@@ -3,6 +3,7 @@ import { Button } from "@preprocess/ui/components/button";
 
 import type { ReactNode } from "react";
 
+import { ComingSoonArt } from "../../components/empty-art";
 import { SettingsEmpty, SettingsSection } from "../settings/kit";
 
 // Sections of the agent page that have no real page yet: a title and what
@@ -22,7 +23,11 @@ function Placeholder({
 }>) {
   return (
     <SettingsSection actions={actions} description={description} title={title}>
-      <SettingsEmpty description={emptyDescription} title={emptyTitle} />
+      <SettingsEmpty
+        art={<ComingSoonArt />}
+        description={emptyDescription}
+        title={emptyTitle}
+      />
     </SettingsSection>
   );
 }
@@ -43,7 +48,7 @@ export function AgentTraining() {
         </>
       }
       description="Datasets built from this agent's reviewed cases, training runs, and the fine-tuned models they produce."
-      emptyDescription="Captured cases and review events are already being collected for training, so they will be ready when training runs ship."
+      emptyDescription="Fine-tuning models on your reviewed cases and serving trained versions aren't available yet."
       emptyTitle="Training is coming soon"
       title="Training"
     />
@@ -55,8 +60,8 @@ export function AgentConfiguration() {
   return (
     <Placeholder
       description="The agent's definition and preprocess.config.json, as the production deployment was built."
-      emptyDescription="The production deployment's configuration will show up here."
-      emptyTitle="Nothing to show yet"
+      emptyDescription="Agent settings live in your code and preprocess.config.json today."
+      emptyTitle="Configuration is coming soon"
       title="Configuration"
     />
   );
@@ -67,8 +72,8 @@ export function AgentAccess() {
   return (
     <Placeholder
       description="Who can see this agent's cases and who can work them."
-      emptyDescription="Group access for this agent will show up here. Groups are managed in Settings → Groups."
-      emptyTitle="Nothing to show yet"
+      emptyDescription="Manage which groups can work or view this agent in Settings → Organization → Groups."
+      emptyTitle="Access view is coming soon"
       title="Access"
     />
   );
