@@ -260,6 +260,13 @@
       "when": 1795817360912,
       "tag": "0041_device_code",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795819881707,
+      "tag": "0043_model_endpoints",
+      "breakpoints": true
     }
   ]
 }

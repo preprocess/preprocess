@@ -81,6 +81,7 @@ import {
   githubLinks,
   githubRepositories,
 } from "../src/schema/github.ts";
+import { modelEndpoints } from "../src/schema/models.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 
 export type Org = Awaited<ReturnType<typeof seedOrganization>>;
@@ -167,6 +168,17 @@ export const seedOrganization = async (name: string) =>
       keyVersion: 1,
       ciphertext: new Uint8Array([4, 5, 6]),
       updatedBy: userId,
+    });
+    await tx.insert(modelEndpoints).values({
+      id: newId("modelEndpoint"),
+      organizationId: org,
+      model: "kimi-k3.1-pro",
+      kind: "override",
+      url: "https://models.example.com",
+      providerModel: "kimi",
+      keyVersion: 1,
+      keyCiphertext: new Uint8Array([7, 7, 7]),
+      createdBy: userId,
     });
     const deploymentId = newId("deployment");
     await tx.insert(deployments).values({
@@ -544,6 +556,7 @@ export const tenantTables = {
   agent_grants: "organization_id",
   org_keys: "organization_id",
   secrets: "organization_id",
+  model_endpoints: "organization_id",
   cases: "organization_id",
   case_assignees: "organization_id",
   idempotency_keys: "organization_id",

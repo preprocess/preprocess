@@ -1213,9 +1213,12 @@ export class CaseRuntime extends DurableObject<Env> {
   }
 
   harness = new PiHarness({
-    harness: ({ storage, context, onWake }) => {
+    harness: async ({ storage, context, onWake }) => {
       const meta = this.meta();
       if (!meta) throw new Error("case has not started");
+      // The organization's model endpoints (design doc 10), in memory only.
+      const endpoints =
+        (await this.env.PLATFORM?.modelEndpoints(meta.organizationId)) ?? {};
       const tools = meta.manifest.tools.map((tool) =>
         defineTool({
           name: tool.name,
@@ -1304,6 +1307,9 @@ export class CaseRuntime extends DurableObject<Env> {
             this.record("model.request", {
               turn: current,
               model: model.id,
+              ...(endpoints[model.id] && {
+                endpoint: endpoints[model.id]!.id,
+              }),
               reasoning:
                 (options as { reasoning?: string } | undefined)?.reasoning ??
                 options?.reasoningEffort,
@@ -1331,6 +1337,7 @@ export class CaseRuntime extends DurableObject<Env> {
           })().catch((error: unknown) => stop("error", String(error)));
           return out;
         },
+        endpoints,
       );
       registry.install(
         largeSummaries(

@@ -97,6 +97,7 @@ export class Platform extends WorkerEntrypoint {
   async secretsVersion(d) { return secrets.get(ref(d))?.version ?? "none"; }
   async secretValues(d) { return secrets.get(ref(d)) ?? { version: "none", values: {} }; }
   async caseEvent() {}
+  async modelEndpoints() { return {}; }
   // Tests cap an organization at n more passes of the spending gate.
   async limitSpend(organizationId, n) { allowed.set(organizationId, n); }
   async spendGate(organizationId) {

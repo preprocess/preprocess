@@ -49,6 +49,7 @@ import { otelRoutes } from "./routes/otel.ts";
 import { evalRoutes } from "./routes/evals.ts";
 import { memoryRoutes } from "./routes/memories.ts";
 import { trainingRoutes, trainingTag } from "./routes/training.ts";
+import { modelRoutes } from "./routes/models.ts";
 import { meRoutes } from "./routes/me.ts";
 import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
@@ -143,6 +144,7 @@ orgApi.route("/", otelRoutes);
 orgApi.route("/", evalRoutes);
 orgApi.route("/", memoryRoutes);
 orgApi.route("/", trainingRoutes);
+orgApi.route("/", modelRoutes);
 
 // The MCP server (src/mcp-server.ts) takes an organization API key, and each
 // tool call is a request to this API with the same key, so the API's own
