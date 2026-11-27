@@ -193,10 +193,15 @@ agentRoutes.openapi(
     method: "get",
     path: "/agents/{agent}/deployments",
     tags: ["Agents"],
-    request: { params: AgentParams },
+    request: {
+      params: AgentParams,
+      query: z.object({
+        environment: z.enum(["production", "preview"]).optional(),
+      }),
+    },
     responses: {
       200: {
-        description: "Newest first",
+        description: "Newest first, at most 100",
         content: { "application/json": { schema: z.array(Deployment) } },
       },
     },
@@ -207,7 +212,15 @@ agentRoutes.openapi(
       c.var.org,
       c.req.valid("param").agent,
     );
-    return c.json(await listDeployments(c.env, c.var.org, agent.id), 200);
+    return c.json(
+      await listDeployments(
+        c.env,
+        c.var.org,
+        agent.id,
+        c.req.valid("query").environment,
+      ),
+      200,
+    );
   },
 );
 

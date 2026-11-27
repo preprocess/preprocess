@@ -21,6 +21,7 @@ import { Route as CasesIndexRouteImport } from "./routes/cases/index";
 import { Route as DevelopersApiRouteImport } from "./routes/developers/api";
 import { Route as DevelopersApiKeysRouteImport } from "./routes/developers/api-keys";
 import { Route as DevelopersFeedbackRouteImport } from "./routes/developers/feedback";
+import { Route as DevelopersGithubRouteImport } from "./routes/developers/github";
 import { Route as DevelopersIntegrationsRouteImport } from "./routes/developers/integrations";
 import { Route as DevelopersMcpRouteImport } from "./routes/developers/mcp";
 import { Route as DevelopersNetworkRouteImport } from "./routes/developers/network";
@@ -128,6 +129,11 @@ const DevelopersApiKeysRoute = DevelopersApiKeysRouteImport.update({
 const DevelopersFeedbackRoute = DevelopersFeedbackRouteImport.update({
   id: "/developers/feedback",
   path: "/developers/feedback",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DevelopersGithubRoute = DevelopersGithubRouteImport.update({
+  id: "/developers/github",
+  path: "/developers/github",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevelopersIntegrationsRoute = DevelopersIntegrationsRouteImport.update({
@@ -402,6 +408,7 @@ export interface FileRoutesByFullPath {
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
+  "/developers/github": typeof DevelopersGithubRoute;
   "/developers/integrations": typeof DevelopersIntegrationsRoute;
   "/developers/mcp": typeof DevelopersMcpRoute;
   "/developers/network": typeof DevelopersNetworkRoute;
@@ -463,6 +470,7 @@ export interface FileRoutesByTo {
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
+  "/developers/github": typeof DevelopersGithubRoute;
   "/developers/integrations": typeof DevelopersIntegrationsRoute;
   "/developers/mcp": typeof DevelopersMcpRoute;
   "/developers/network": typeof DevelopersNetworkRoute;
@@ -524,6 +532,7 @@ export interface FileRoutesById {
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
+  "/developers/github": typeof DevelopersGithubRoute;
   "/developers/integrations": typeof DevelopersIntegrationsRoute;
   "/developers/mcp": typeof DevelopersMcpRoute;
   "/developers/network": typeof DevelopersNetworkRoute;
@@ -588,6 +597,7 @@ export interface FileRouteTypes {
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
+    | "/developers/github"
     | "/developers/integrations"
     | "/developers/mcp"
     | "/developers/network"
@@ -649,6 +659,7 @@ export interface FileRouteTypes {
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
+    | "/developers/github"
     | "/developers/integrations"
     | "/developers/mcp"
     | "/developers/network"
@@ -709,6 +720,7 @@ export interface FileRouteTypes {
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
+    | "/developers/github"
     | "/developers/integrations"
     | "/developers/mcp"
     | "/developers/network"
@@ -772,6 +784,7 @@ export interface RootRouteChildren {
   DevelopersApiRoute: typeof DevelopersApiRoute;
   DevelopersApiKeysRoute: typeof DevelopersApiKeysRoute;
   DevelopersFeedbackRoute: typeof DevelopersFeedbackRoute;
+  DevelopersGithubRoute: typeof DevelopersGithubRoute;
   DevelopersIntegrationsRoute: typeof DevelopersIntegrationsRoute;
   DevelopersMcpRoute: typeof DevelopersMcpRoute;
   DevelopersNetworkRoute: typeof DevelopersNetworkRoute;
@@ -875,6 +888,13 @@ declare module "@tanstack/react-router" {
       path: "/developers/feedback";
       fullPath: "/developers/feedback";
       preLoaderRoute: typeof DevelopersFeedbackRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/developers/github": {
+      id: "/developers/github";
+      path: "/developers/github";
+      fullPath: "/developers/github";
+      preLoaderRoute: typeof DevelopersGithubRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/developers/integrations": {
@@ -1336,6 +1356,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevelopersApiRoute: DevelopersApiRoute,
   DevelopersApiKeysRoute: DevelopersApiKeysRoute,
   DevelopersFeedbackRoute: DevelopersFeedbackRoute,
+  DevelopersGithubRoute: DevelopersGithubRoute,
   DevelopersIntegrationsRoute: DevelopersIntegrationsRoute,
   DevelopersMcpRoute: DevelopersMcpRoute,
   DevelopersNetworkRoute: DevelopersNetworkRoute,

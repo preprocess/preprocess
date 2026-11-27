@@ -78,6 +78,8 @@ export type RoomMessage = {
   readonly kind: "input" | "agent" | "person" | "tag" | "event";
   readonly text: string;
   readonly group: string | null;
+  /** The person's name for "person:" messages, when the room knows it. */
+  readonly byName?: string | null;
 };
 
 /**

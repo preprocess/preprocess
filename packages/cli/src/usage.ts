@@ -1,6 +1,10 @@
 // The command's help text, also rendered as the docs site's CLI reference.
 
-export const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <id>] [--api <url>]
+export const usage = `Usage: preprocess login [--api <url>] [--org <id>] [--no-browser]
+       preprocess init [dir] [--name <name>]
+       preprocess deploy [entry] [--agent <name>] [--org <id>] [--api <url>]
+       preprocess promote <deployment> [--agent <name>]
+       preprocess rollback [deployment] [--agent <name>]
        preprocess config pull [entry] [--agent <name>] [--org <id>] [--api <url>]
        preprocess groups pull [entry] [--org <id>] [--api <url>]
        preprocess cases create [--agent <name>] [--text <text>] [--file <path>]...
@@ -14,7 +18,16 @@ export const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <
        preprocess github-app --app-url <url> [--name <name>] [--owner <org>]
                              [--out <path>]
 
+  login        sign in through the browser: approve the printed code in the
+               app, and the CLI saves that session for later commands; with
+               one organization it is chosen, else pass --org
+  init         create a new agent project in dir (default: the current
+               directory) that preprocess deploy can deploy; never
+               overwrites a file
   deploy       bundle and deploy the agent
+  promote      serve a deployment from the production branch in production
+  rollback     promote the deployment that served production before the
+               current one, or the one named
   config pull  write the agent's dashboard overrides into preprocess.config.json
   groups pull  write the organization's groups into preprocess.config.json
   cases create start a case from text, files or both, on the production
@@ -41,4 +54,5 @@ export const usage = `Usage: preprocess deploy [entry] [--agent <name>] [--org <
   --org     organization id (default: PREPROCESS_ORG)
   --api     API origin (default: PREPROCESS_API_URL)
 
-PREPROCESS_API_KEY holds the organization API key.`;
+PREPROCESS_API_KEY holds an organization API key, for CI; without it, commands
+use the session preprocess login saved for the same API.`;
