@@ -123,6 +123,37 @@ export const activateOrganization = createServerFn({ method: "POST" })
     return { organizationId: data.organizationId };
   });
 
+export type DeviceCode = {
+  state: "pending" | "approved" | "denied" | "invalid" | "expired" | "used";
+  userCode: string;
+};
+
+/**
+ * Claims a `preprocess login` code for the signed-in person and says what
+ * they can do with it. Once someone has claimed a code, nobody else can.
+ */
+export const loadDeviceCode = createServerFn({ method: "GET" })
+  .validator((userCode: string) => userCode)
+  .handler(async ({ data: userCode }): Promise<DeviceCode> => {
+    const { apiRequest } = await import("../../server/api.server");
+    const response = await apiRequest(
+      `/api/auth/device?user_code=${encodeURIComponent(userCode)}`,
+    );
+    const body = await response.json<{
+      status?: "pending" | "approved" | "denied";
+      client_id?: string;
+      error?: string;
+    }>();
+    if (!response.ok)
+      return {
+        state: body.error === "expired_token" ? "expired" : "invalid",
+        userCode,
+      };
+    // Only the person who claimed the code sees its client.
+    if (!body.client_id || !body.status) return { state: "used", userCode };
+    return { state: body.status, userCode };
+  });
+
 export type Invitation = {
   id: string;
   email: string;
