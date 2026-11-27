@@ -9,5 +9,6 @@ export const getRouter = () =>
     routeTree,
     defaultPreload: "intent",
     scrollRestoration: true,
+    scrollToTopSelectors: ['[data-scroll-restoration-id="docs-content"]'],
     defaultNotFoundComponent: NotFound,
   });
