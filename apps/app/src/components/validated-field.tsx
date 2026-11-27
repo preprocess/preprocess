@@ -44,6 +44,7 @@ export const ValidatedField = forwardRef<
     | "disabled"
     | "inputMode"
     | "name"
+    | "onBlur"
     | "placeholder"
     | "required"
     | "type"

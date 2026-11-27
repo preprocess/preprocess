@@ -247,6 +247,7 @@ function AutoReload({
               inputMode="numeric"
               label="When balance falls below"
               onChange={setBelow}
+              onBlur={() => fields[0].current?.commit()}
               ref={fields[0]}
               validate={wholeDollars(5, null, "Minimum threshold is $5.")}
               value={below}
@@ -256,6 +257,7 @@ function AutoReload({
               inputMode="numeric"
               label="Add"
               onChange={setAdd}
+              onBlur={() => fields[1].current?.commit()}
               ref={fields[1]}
               validate={(v) =>
                 wholeDollars(
@@ -276,6 +278,7 @@ function AutoReload({
               inputMode="numeric"
               label="Monthly cap"
               onChange={setCap}
+              onBlur={() => fields[2].current?.commit()}
               ref={fields[2]}
               validate={(v) =>
                 v.trim() === ""

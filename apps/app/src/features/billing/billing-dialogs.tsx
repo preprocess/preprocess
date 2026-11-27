@@ -220,6 +220,7 @@ function UpgradeDialog({
           inputMode="numeric"
           label="First top-up"
           onChange={setFirst}
+          onBlur={() => field.current?.commit()}
           ref={field}
           validate={topUpAmount}
           value={first}
@@ -394,6 +395,7 @@ function TopUpDialog({
               label="Other amount"
               onChange={setOther}
               placeholder="$10–$5,000, whole dollars"
+              onBlur={() => otherField.current?.commit()}
               ref={otherField}
               validate={topUpAmount}
               value={other}
