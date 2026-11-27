@@ -106,7 +106,7 @@ export function ImageLightbox({
       aria-modal="true"
       // `dark` scopes the theme tokens so the shared Button variants read
       // correctly against the black backdrop in either app theme.
-      className="dark fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+      className="dark fixed inset-0 z-50 flex items-center justify-center bg-black/80 supports-backdrop-filter:backdrop-blur-sm"
       onClick={onClose}
     >
       <Button
