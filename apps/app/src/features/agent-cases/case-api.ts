@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 
 import { parseAgentId, parseCaseId } from "./agent-case-ref";
 import {
@@ -112,7 +112,7 @@ export type LiveCaseListPage = {
   readonly hasCases: boolean;
 };
 
-const server = () => import("../../server/api.server");
+const server = createServerOnlyFn(() => import("../../server/api.server"));
 
 /** GETs a /v1 route; with `notFound`, a 404 returns it instead of throwing. */
 async function getJson<T>(path: string, ...notFound: [] | [T]): Promise<T> {
