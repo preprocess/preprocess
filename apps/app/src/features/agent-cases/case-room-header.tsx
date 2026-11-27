@@ -49,7 +49,7 @@ function CaseStepper({ neighbors }: Readonly<{ neighbors: CaseNeighbors }>) {
   });
 
   return (
-    <div className="hidden items-center gap-0.5 md:flex">
+    <div className="flex items-center gap-0.5 @max-[941px]/case-room:hidden">
       <Tooltip
         content={<ShortcutTooltipLabel keys={["←"]} label="Previous case" />}
         side="bottom"
@@ -128,7 +128,7 @@ export function CaseRoomHeader({
           {caseItem && (caseItem.assignees.length > 0 || assign) ? (
             <AssigneeStack
               assignees={caseItem.assignees}
-              className="mr-1 max-md:hidden"
+              className="mr-1 @max-[941px]/case-room:hidden"
             />
           ) : null}
           {caseItem && assign ? (
@@ -173,7 +173,7 @@ export function CaseRoomHeader({
       }
     >
       <Breadcrumb className="flex min-w-0 items-center">
-        <BreadcrumbList className="min-w-0 flex-nowrap max-md:[&>*:not(:last-child)]:hidden">
+        <BreadcrumbList className="min-w-0 flex-nowrap @max-[941px]/case-room:[&>*:not(:last-child)]:hidden">
           <BreadcrumbItem className="hidden shrink-0 md:inline-flex">
             <BreadcrumbLink render={<Link to="/agents" />}>
               Agents
@@ -210,12 +210,17 @@ export function CaseRoomHeader({
         >
           <span className="flex items-center gap-1">
             <CaseStatusIcon status={caseItem.status} />
-            <span className="max-md:sr-only">{caseItem.status}</span>
+            <span className="@max-[941px]/case-room:sr-only">
+              {caseItem.status}
+            </span>
           </span>
         </Badge>
       ) : null}
       {caseItem ? (
-        <NeedsAssignmentTag item={caseItem} labelClassName="max-md:sr-only" />
+        <NeedsAssignmentTag
+          item={caseItem}
+          labelClassName="@max-[941px]/case-room:sr-only"
+        />
       ) : null}
     </PageHeader>
   );

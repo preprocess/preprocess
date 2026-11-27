@@ -84,14 +84,14 @@ export function AssignCaseButton({
     <>
       <Button
         aria-label="Assign"
-        className="max-md:w-7 max-md:px-0"
+        className="@max-[941px]/case-room:w-7 @max-[941px]/case-room:px-0"
         leadingIcon={User}
         onClick={() => setOpen(true)}
         size="compact"
         type="button"
         variant="ghost"
       >
-        <span className="max-md:sr-only">Assign</span>
+        <span className="@max-[941px]/case-room:sr-only">Assign</span>
       </Button>
       <Dialog
         onOpenChange={(next) => {

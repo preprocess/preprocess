@@ -43,8 +43,17 @@ export const ROOM_VIEWS = [
 
 export type RoomViewId = (typeof ROOM_VIEWS)[number]["id"];
 
-/** Below the tablet breakpoint the chat is a view beside Input, Review and Run. */
-export const CHAT_VIEW = { id: "chat", label: "Chat", icon: MessageCircle };
+function ChatIcon(props: SVGProps<SVGSVGElement>) {
+  return <MessageCircle strokeWidth={1.15} {...props} />;
+}
+
+/** When the room is too narrow to split, the chat is a view beside Input, Review and Run. */
+export const CHAT_VIEW = {
+  id: "chat",
+  label: "Chat",
+  icon: ChatIcon,
+  className: "@min-[941px]/case-room:hidden",
+};
 
 const ROOM_VIEW_IDS = new Set<string>(ROOM_VIEWS.map((view) => view.id));
 
@@ -308,7 +317,7 @@ function RoomViewTab({
   registerTab,
   onSelect,
 }: {
-  view: { readonly id: string; readonly label: string; readonly icon: Glyph };
+  view: ViewTab<string>;
   index: number;
   idPrefix: string;
   selected: boolean;
@@ -324,7 +333,7 @@ function RoomViewTab({
     <button
       aria-controls={`${idPrefix}-panel-${view.id}`}
       aria-selected={selected}
-      className={tabClass(shape.item)}
+      className={cn(tabClass(shape.item), view.className)}
       id={`${idPrefix}-tab-${view.id}`}
       onClick={() => onSelect(view.id)}
       ref={ref}
@@ -700,6 +709,7 @@ export type ViewTab<T extends string> = {
   readonly id: T;
   readonly label: string;
   readonly icon: Glyph;
+  readonly className?: string;
 };
 
 /**
