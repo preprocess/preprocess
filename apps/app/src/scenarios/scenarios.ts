@@ -75,6 +75,11 @@ export const SCENARIO_SURFACES = {
     label: "Billing result",
     states: ["ok", "confirm-payment", "declined", "error"],
   },
+  // The sidebar notice stack's billing state, role and announcements.
+  notices: {
+    label: "Notices",
+    states: ["live", "one", "several", "mixed", "member", "none"],
+  },
 } as const;
 
 export type ScenarioSurface = keyof typeof SCENARIO_SURFACES;
@@ -98,6 +103,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   "case-work": "live",
   billing: "live",
   "billing-result": "ok",
+  notices: "live",
 };
 
 /** Builds without `import.meta.env.DEV` never serve seeded records. */
@@ -108,6 +114,7 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   "case-work": "live",
   billing: "live",
   "billing-result": "ok",
+  notices: "live",
 };
 
 export function isScenarioSurface(value: string): value is ScenarioSurface {
