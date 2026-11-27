@@ -41,6 +41,7 @@ type Environment =
 type SandboxAgent = {
   id: string;
   slug: string;
+  path: string | null;
   preset: Preset;
   size: Size;
   packages: number;
@@ -155,6 +156,7 @@ function caption(agent: SandboxAgent) {
       : "Latest deployment failed to build its custom environment.";
   if (agent.paused)
     return "Custom environments require Team. Remove the setup in code, or upgrade to resume.";
+  if (agent.path) return `Declared in ${agent.path}`;
   return null;
 }
 

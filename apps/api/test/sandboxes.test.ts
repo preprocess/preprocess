@@ -17,6 +17,7 @@ type Sandboxes = {
   sizes: { size: string; vcpu: number; memoryGib: number; diskGb: number }[];
   agents: {
     slug: string;
+    path: string | null;
     preset: string;
     size: string;
     packages: number;
@@ -35,6 +36,7 @@ const deploy = (
   organization: OrgId,
   slug: string,
   module: string,
+  entry?: string,
 ) =>
   client.call<{ id: string }>(
     `/v1/orgs/${organization}/agents/${slug}/deployments`,
@@ -43,6 +45,7 @@ const deploy = (
       body: {
         bundle: { mainModule: "agent.js", modules: { "agent.js": module } },
         git: { branch: "main" },
+        ...(entry && { entry }),
       },
     },
   );
@@ -86,7 +89,13 @@ describe("GET /sandboxes", () => {
       body: { size: "medium" },
     });
     expect((await deploy(owner, org, "plain", sampleAgent)).status).toBe(201);
-    const deployed = await deploy(owner, org, "reconciler", sandboxAgent);
+    const deployed = await deploy(
+      owner,
+      org,
+      "reconciler",
+      sandboxAgent,
+      "agents/reconciler.ts",
+    );
     expect(deployed.status).toBe(201);
     const listed = await eventually(
       () => sandboxes(owner, org),
@@ -97,6 +106,7 @@ describe("GET /sandboxes", () => {
       {
         id: expect.any(String) as string,
         slug: "reconciler",
+        path: "agents/reconciler.ts",
         preset: "python-data",
         size: "large",
         packages: 1,
@@ -105,6 +115,35 @@ describe("GET /sandboxes", () => {
         environment: null,
       },
     ]);
+  });
+
+  it("gives a null path to an agent deployed without its entry", async () => {
+    expect((await deploy(owner, org, "auditor", sandboxAgent)).status).toBe(
+      201,
+    );
+    const listed = await eventually(
+      () => sandboxes(owner, org),
+      (r) => r.body.agents.some((a) => a.slug === "auditor"),
+    );
+    expect(
+      listed.body.agents.map(({ slug, path }) => ({ slug, path })),
+    ).toEqual([
+      { slug: "auditor", path: null },
+      { slug: "reconciler", path: "agents/reconciler.ts" },
+    ]);
+  });
+
+  it("refuses an entry outside the repository", async () => {
+    for (const entry of [
+      "/abs/agent.ts",
+      "../agent.ts",
+      "agents/../../agent.ts",
+      "agents\\agent.ts",
+      "a".repeat(513),
+    ])
+      expect(
+        (await deploy(owner, org, "reconciler", sandboxAgent, entry)).status,
+      ).toBe(400);
   });
 
   it("never shows another organization's agents", async () => {
