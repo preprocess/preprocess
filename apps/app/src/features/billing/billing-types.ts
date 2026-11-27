@@ -3,6 +3,10 @@
 
 export type Plan = "free" | "team" | "enterprise" | "internal";
 
+/** Billing shows once the plan has started, or once billing holds and a plan must be started. */
+export const billingShown = (billing: Pick<Billing, "started" | "required">) =>
+  billing.started || billing.required;
+
 export type AutoReload = {
   enabled: boolean;
   belowCredits: number;

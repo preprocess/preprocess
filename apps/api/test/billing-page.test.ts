@@ -490,6 +490,22 @@ describe("POST /billing/portal", () => {
       false,
     );
   });
+
+  it("is not there for an organization without a plan before billing holds for it", async () => {
+    const early = await organization("Earlyportalco");
+    stubAutumn();
+    customer = { subscriptions: [], flags: {}, balances: {} };
+    expect(
+      (
+        await early.owner.client.call(`/v1/orgs/${early.org}/billing/portal`, {
+          body: {},
+        })
+      ).status,
+    ).toBe(404);
+    expect(calls.some((c) => c.route === "billing.open_customer_portal")).toBe(
+      false,
+    );
+  });
 });
 
 describe("payment actions", () => {
@@ -570,6 +586,7 @@ describe("payment actions", () => {
     expect(changed.body).toEqual({ url: page, action: "confirm_payment" });
 
     const fresh = await organization("Checkoutactionco");
+    env.BILLING_ENFORCED_ORGS = fresh.org;
     customer = { subscriptions: [], flags: {}, balances: {} };
     attached = {
       payment_url: page,

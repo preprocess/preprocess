@@ -543,6 +543,7 @@ describe("checkout", () => {
       APP_URL: "https://app.example.test",
     });
     const shop = await organizationWithAgent("Shop", env);
+    env.BILLING_ENFORCED_ORGS = shop.org;
     stubAutumn();
     customer = { subscriptions: [], flags: {}, balances: {} };
     const path = `/v1/orgs/${shop.org}/billing/checkout`;
@@ -576,6 +577,7 @@ describe("checkout", () => {
       APP_URL: "https://app.example.test",
     });
     const shop = await organizationWithAgent("Teamshop", env);
+    env.BILLING_ENFORCED_ORGS = shop.org;
     stubAutumn();
     customer = { subscriptions: [], flags: {}, balances: {} };
     paymentUrl = "https://checkout.stripe.com/c/pay/cs_test_team";
@@ -1028,6 +1030,35 @@ describe("moving down a plan", () => {
       change: { plan: "free", at: "2026-12-26T00:00:00.000Z" },
       credits: { remaining: 800 },
     });
+  });
+
+  it("starts no plan before billing holds for the organization, and the card step returns once it does", async () => {
+    const env = testEnv({
+      AUTUMN_SECRET_KEY: "am_sk_test_stub",
+      APP_URL: "https://app.example.test",
+    });
+    const shop = await organizationWithAgent("Earlyshop", env);
+    stubAutumn();
+    customer = { subscriptions: [], flags: {}, balances: {} };
+    const path = `/v1/orgs/${shop.org}/billing/checkout`;
+    for (const plan of ["free", "team"])
+      expect((await shop.owner.call(path, { body: { plan } })).status).toBe(
+        404,
+      );
+    expect(calls.some((c) => c.route.startsWith("billing."))).toBe(false);
+
+    env.BILLING_REQUIRED_FROM = new Date(Date.now() - 60_000).toISOString();
+    const required = await shop.owner.call<{ url: string }>(path, {
+      body: { plan: "free" },
+    });
+    expect(required.status).toBe(200);
+    expect(required.body.url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+
+    delete env.BILLING_REQUIRED_FROM;
+    env.BILLING_ENFORCED_ORGS = shop.org;
+    expect(
+      (await shop.owner.call(path, { body: { plan: "free" } })).status,
+    ).toBe(200);
   });
 
   it("leaves Enterprise changes to us", async () => {

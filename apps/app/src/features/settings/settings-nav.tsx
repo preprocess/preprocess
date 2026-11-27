@@ -24,6 +24,7 @@ import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 
 import { useBilling, useIsOwner } from "../billing/billing-api";
+import { billingShown } from "../billing/billing-types";
 
 type Page = {
   to:
@@ -87,11 +88,13 @@ export function currentSettingsPage(pathname: string): Page | undefined {
   ).sort((a, b) => b.to.length - a.to.length)[0];
 }
 
-// Billing shows only to the Owner, on our cloud with billing on.
+// Billing shows only to the Owner, on our cloud with billing on, once the plan
+// has started or billing holds for the organization.
 function useVisible() {
   const owner = useIsOwner();
   const billing = useBilling();
-  const showBilling = owner === true && Boolean(billing.data);
+  const showBilling =
+    owner === true && Boolean(billing.data && billingShown(billing.data));
   return (page: Page) =>
     page.to !== "/settings/organization/billing" || showBilling;
 }

@@ -3,7 +3,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { ApiError, orgApi } from "../auth/client";
 
 // Every plan, Free included, starts at Autumn's checkout, which takes a card
-// (spec 16a). Where billing is off the API answers 404, and these give null.
+// (spec 16a). Where billing is off, or before it holds for the organization,
+// the API answers 404, and these give null.
 
 /** Checkout for Free in a new organization, or null to carry on. */
 export async function freeCheckout(organizationId: string) {

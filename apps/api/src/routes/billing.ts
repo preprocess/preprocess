@@ -2,7 +2,8 @@
 // credits (PRE-96), starting a plan through Autumn's checkout, which collects
 // a card, changing it, buying credits and setting auto-reload. Owners handle
 // billing (spec 2) and their changes are audited. Where billing is off, every
-// route answers 404.
+// route answers 404, and so do checkout and the payment portal for an
+// organization without a plan until billing holds for it.
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { audit } from "@preprocess/db/audit";
@@ -464,6 +465,8 @@ export const billingRoutes = new OpenAPIHono<{
           await organizationName(c.env, c.var.org),
         ),
       );
+      if (!current.started && !planRequired(c.env, c.var.org, false))
+        throw off();
       if (current.started) refuseFixedPlan(current.name);
       if (current.started && current.name === plan)
         throw new HTTPException(409, {
@@ -1043,7 +1046,13 @@ export const billingRoutes = new OpenAPIHono<{
     async (c) => {
       requireOwner(c.var, OWNER_ONLY);
       const billing = autumn(c.env);
-      if (!billing) throw off();
+      const plan = await cloudPlan(c.env, c.var.org);
+      if (
+        !billing ||
+        !plan ||
+        (!plan.started && !planRequired(c.env, c.var.org, false))
+      )
+        throw off();
       const back = backTo(c.env, c.req.valid("json").returnTo);
       const { url } = await billing.portal(c.var.org, back);
       return c.json({ url }, 200);
