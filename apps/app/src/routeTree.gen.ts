@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as DeviceRouteImport } from "./routes/device";
 import { Route as InboxRouteImport } from "./routes/inbox";
 import { Route as OnboardingRouteImport } from "./routes/onboarding";
 import { Route as SettingsRouteImport } from "./routes/settings";
@@ -73,6 +74,11 @@ import { Route as AgentsAgentIdEvaluationsSuiteIdRunsRunIdRouteImport } from "./
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DeviceRoute = DeviceRouteImport.update({
+  id: "/device",
+  path: "/device",
   getParentRoute: () => rootRouteImport,
 } as any);
 const InboxRoute = InboxRouteImport.update({
@@ -393,6 +399,7 @@ const AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/device": typeof DeviceRoute;
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
@@ -455,6 +462,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/device": typeof DeviceRoute;
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
@@ -515,6 +523,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
+  "/device": typeof DeviceRoute;
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
@@ -579,6 +588,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/device"
     | "/inbox"
     | "/onboarding"
     | "/settings"
@@ -641,6 +651,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/device"
     | "/inbox"
     | "/onboarding"
     | "/settings"
@@ -700,6 +711,7 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/device"
     | "/inbox"
     | "/onboarding"
     | "/settings"
@@ -763,6 +775,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  DeviceRoute: typeof DeviceRoute;
   InboxRoute: typeof InboxRoute;
   OnboardingRoute: typeof OnboardingRoute;
   SettingsRoute: typeof SettingsRouteWithChildren;
@@ -798,6 +811,13 @@ declare module "@tanstack/react-router" {
       path: "/";
       fullPath: "/";
       preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/device": {
+      id: "/device";
+      path: "/device";
+      fullPath: "/device";
+      preLoaderRoute: typeof DeviceRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/inbox": {
@@ -1327,6 +1347,7 @@ const AgentsAgentIdRouteWithChildren = AgentsAgentIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DeviceRoute: DeviceRoute,
   InboxRoute: InboxRoute,
   OnboardingRoute: OnboardingRoute,
   SettingsRoute: SettingsRouteWithChildren,
