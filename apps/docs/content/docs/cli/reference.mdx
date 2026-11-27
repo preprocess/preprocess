@@ -5,9 +5,10 @@ description: Complete usage, subcommands, and flags for the preprocess CLI.
 
 import { usage } from "@preprocess/cli/usage";
 
-Every subcommand below reads `PREPROCESS_API_URL`, `PREPROCESS_ORG`, and
-`PREPROCESS_API_KEY` from the environment (except `preprocess install`, which
-deploys or upgrades a self-hosted Preprocess stack into your own Cloudflare
-account using your Cloudflare and Postgres credentials).
+Every subcommand that calls your organization reads `PREPROCESS_API_URL`,
+`PREPROCESS_ORG`, and `PREPROCESS_API_KEY` from the environment, and falls back
+to the sign-in `preprocess login` saved. `preprocess init` works offline, and
+`preprocess install` deploys or upgrades a self-hosted Preprocess stack into
+your own Cloudflare account using your Cloudflare and Postgres credentials.
 
 <CodeSample lang="text" code={usage} />
