@@ -13,37 +13,41 @@ export const LIMITS = { org: 2400, apiKey: 600, auth: 30 } as const;
 
 const WINDOW_MS = 60_000;
 
+// One object per organization holds its own count and each of its API keys';
+// one per client address holds that address's sign-in attempts.
 export const rateLimitName = {
   org: (org: string) => `${org}:rate`,
-  apiKey: (org: string, keyId: string) => `${org}:rate:key:${keyId}`,
   auth: (ip: string) => `auth:rate:${ip}`,
 };
 
-// One object per name. The count lives in memory: an object evicted while
-// idle has nothing left worth counting.
+type Bucket = { name: string; limit: number };
+
+// The counts live in memory: an object evicted while idle has nothing left
+// worth counting. A request is counted in every bucket or in none.
 export class RateLimiter extends DurableObject<Env> {
   #window = 0;
-  #count = 0;
+  #counts = new Map<string, number>();
 
-  take(limit: number): { allowed: boolean; retryAfter: number } {
+  take(buckets: Bucket[]): { allowed: boolean; retryAfter: number } {
     const now = Date.now();
     const window = Math.floor(now / WINDOW_MS);
     if (window !== this.#window) {
       this.#window = window;
-      this.#count = 0;
+      this.#counts.clear();
     }
-    if (this.#count >= limit)
+    if (buckets.some((b) => (this.#counts.get(b.name) ?? 0) >= b.limit))
       return {
         allowed: false,
         retryAfter: Math.ceil(((window + 1) * WINDOW_MS - now) / 1000),
       };
-    this.#count++;
+    for (const b of buckets)
+      this.#counts.set(b.name, (this.#counts.get(b.name) ?? 0) + 1);
     return { allowed: true, retryAfter: 0 };
   }
 }
 
-const take = (env: Env, name: string, limit: number) =>
-  env.RATE_LIMITER.getByName(name).take(limit);
+const take = (env: Env, name: string, buckets: Bucket[]) =>
+  env.RATE_LIMITER.getByName(name).take(buckets);
 
 const tooManyRequests = (retryAfter: number) =>
   Response.json(
@@ -60,14 +64,13 @@ export const orgRateLimit = createMiddleware<{
 }>(async (c, next) => {
   const { org, caller } = c.var;
   if (isInternal(c.env, org)) return next();
-  const results = await Promise.all([
-    take(c.env, rateLimitName.org(org), LIMITS.org),
+  const result = await take(c.env, rateLimitName.org(org), [
+    { name: "org", limit: LIMITS.org },
     ...(caller.type === "api_key"
-      ? [take(c.env, rateLimitName.apiKey(org, caller.keyId), LIMITS.apiKey)]
+      ? [{ name: `key:${caller.keyId}`, limit: LIMITS.apiKey }]
       : []),
   ]);
-  const retryAfter = Math.max(...results.map((r) => r.retryAfter));
-  if (results.some((r) => !r.allowed)) return tooManyRequests(retryAfter);
+  if (!result.allowed) return tooManyRequests(result.retryAfter);
   await next();
 });
 
@@ -81,6 +84,8 @@ const AUTH_ATTEMPT =
 export const authRateLimit = async (env: Env, request: Request) => {
   const ip = request.headers.get("cf-connecting-ip");
   if (!ip || !AUTH_ATTEMPT.test(new URL(request.url).pathname)) return null;
-  const result = await take(env, rateLimitName.auth(ip), LIMITS.auth);
+  const result = await take(env, rateLimitName.auth(ip), [
+    { name: "auth", limit: LIMITS.auth },
+  ]);
   return result.allowed ? null : tooManyRequests(result.retryAfter);
 };

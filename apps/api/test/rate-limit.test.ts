@@ -15,11 +15,15 @@ import {
 
 // Uses up a bucket the way that many requests would. Counts reset each
 // minute, so this stays clear of a window's last seconds.
-const exhaust = async (name: string, limit: number) => {
+const exhaust = async (name: string, bucket: string, limit: number) => {
   const left = 60_000 - (Date.now() % 60_000);
   if (left < 10_000) await new Promise((r) => setTimeout(r, left + 50));
   const limiter = env.RATE_LIMITER.getByName(name);
-  await Promise.all(Array.from({ length: limit }, () => limiter.take(limit)));
+  await Promise.all(
+    Array.from({ length: limit }, () =>
+      limiter.take([{ name: bucket, limit }]),
+    ),
+  );
 };
 
 const expectLimited = (response: {
@@ -41,7 +45,7 @@ describe("rate limits", { timeout: 30_000 }, () => {
     const b = await signUp("Ray");
     const orgB = await createOrganization(b.client, "Rate B");
 
-    await exhaust(rateLimitName.org(orgA), LIMITS.org);
+    await exhaust(rateLimitName.org(orgA), "org", LIMITS.org);
     expectLimited(await a.client.call(`/v1/orgs/${orgA}/groups`));
     expect((await b.client.call(`/v1/orgs/${orgB}/groups`)).status).toBe(200);
   });
@@ -59,7 +63,7 @@ describe("rate limits", { timeout: 30_000 }, () => {
     const keyed = (key: string) =>
       new Client(owner.client.environment, { authorization: `Bearer ${key}` });
 
-    await exhaust(rateLimitName.apiKey(org, first.id), LIMITS.apiKey);
+    await exhaust(rateLimitName.org(org), `key:${first.id}`, LIMITS.apiKey);
     expectLimited(await keyed(first.key).call(`/v1/orgs/${org}/groups`));
     expect(
       (await keyed(second.key).call(`/v1/orgs/${org}/groups`)).status,
@@ -69,7 +73,7 @@ describe("rate limits", { timeout: 30_000 }, () => {
   it("never limit our own organizations", async () => {
     const owner = await signUp("Ina");
     const org = await createOrganization(owner.client, "Internal");
-    await exhaust(rateLimitName.org(org), LIMITS.org);
+    await exhaust(rateLimitName.org(org), "org", LIMITS.org);
     owner.client.environment.BILLING_INTERNAL_ORGS = org;
     try {
       expect((await owner.client.call(`/v1/orgs/${org}/groups`)).status).toBe(
@@ -89,7 +93,7 @@ describe("rate limits", { timeout: 30_000 }, () => {
         body: { email: `${unique("ip")}@example.test`, callbackURL: "/" },
       });
 
-    await exhaust(rateLimitName.auth(ip), LIMITS.auth);
+    await exhaust(rateLimitName.auth(ip), "auth", LIMITS.auth);
     expectLimited(await ask(from(ip)));
     expect(
       (await ask(from(`198.51.100.${Math.floor(Math.random() * 250)}`))).status,
