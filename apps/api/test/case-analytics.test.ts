@@ -19,8 +19,11 @@ const deploymentId = newId("deployment");
 const serverId = newId("mcpServer");
 let org: string;
 
+// api_error samples failed requests at random, so it stays out of these.
 const since = (start: number) =>
-  tracked.slice(start).filter((e) => e.event !== "$groupidentify");
+  tracked
+    .slice(start)
+    .filter((e) => e.event !== "$groupidentify" && e.event !== "api_error");
 
 const newCase = async () => {
   const caseId = newId("case");
