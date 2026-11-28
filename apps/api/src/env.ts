@@ -55,6 +55,31 @@ export type WriteResult =
   | { result: "refused"; path: string; reason: string }
   | { result: "conflict"; path: string; version: number };
 
+// apps/runtime's capture.ts, version 1. Events carry arbitrary JSON.
+export type RunCapture = {
+  format: "preprocess.run";
+  version: 1;
+  organizationId: string;
+  agentId: string;
+  deploymentId: string;
+  caseId: string;
+  sdkVersion: string;
+  model: string;
+  status: "completed" | "failed";
+  usage: {
+    input: number;
+    output: number;
+    costMicroUsd: number;
+    charges: { model: number; decide: number; ocr: number };
+  };
+  events: {
+    seq: number;
+    at: string;
+    kind: string;
+    data: Record<string, unknown>;
+  }[];
+};
+
 export type CaseRoomState = {
   status: string;
   run: number;
@@ -101,6 +126,9 @@ export type Runtime = {
     c: CaseKey & { userId: string; text: string },
   ): Promise<{ id: string; mentioned: string[] }>;
   cancelCase(c: CaseKey): Promise<CaseRoomState>;
+  // A closed case's run capture (format preprocess.run), or null when none
+  // is stored (design doc 10).
+  readCapture(c: CaseKey): Promise<RunCapture | null>;
   // Retention (spec 16a): a closed case's run capture, or all of its state.
   deleteCapture(c: CaseKey): Promise<void>;
   deleteCase(c: CaseKey): Promise<void>;

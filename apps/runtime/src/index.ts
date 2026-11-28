@@ -1,6 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-import { captureKey } from "./capture.ts";
+import { captureKey, type RunCapture } from "./capture.ts";
 import type { CaseState, CaseView, ReviewNote } from "./case-runtime.ts";
 import { agentWorker, storeBundle, type Bundle } from "./dispatch.ts";
 import type {
@@ -124,6 +124,13 @@ export default class Runtime extends WorkerEntrypoint<Env> {
   async deleteCapture(c: CaseKey) {
     await this.env.RUNS.delete(captureKey(c));
     await runtimeFor(this.env, c).dropCapture();
+  }
+
+  // A closed case's run capture as stored (design doc 10), or null when there
+  // is none. The API reads it here so RUNS keeps one owner.
+  async readCapture(c: CaseKey): Promise<RunCapture | null> {
+    const object = await this.env.RUNS.get(captureKey(c));
+    return object ? object.json<RunCapture>() : null;
   }
 
   async deleteCase(c: CaseKey) {
