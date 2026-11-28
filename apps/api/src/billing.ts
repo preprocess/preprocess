@@ -429,7 +429,7 @@ const listed = (list: string | undefined, org: OrgId) =>
     .map((id) => id.trim())
     .includes(org);
 
-const isInternal = (env: Env, org: OrgId) =>
+export const isInternal = (env: Env, org: OrgId) =>
   listed(env.BILLING_INTERNAL_ORGS, org);
 
 // Whether billing holds for an organization: for those BILLING_ENFORCED_ORGS
