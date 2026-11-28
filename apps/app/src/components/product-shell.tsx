@@ -22,6 +22,7 @@ import {
   OrbitSparkle,
   Folder4,
   Gauge,
+  Home,
   Inbox,
   Moon,
   OpenRectArrowOut,
@@ -58,14 +59,14 @@ import {
 import { useTheme } from "./theme-provider";
 
 type NavItem = {
-  to: "/inbox" | "/cases" | "/agents" | "/developers/observability";
+  to: "/" | "/inbox" | "/cases" | "/agents" | "/developers/observability";
   label: string;
   icon: IconComponent;
   unread?: number;
 };
 
 function isCurrent(pathname: string, to: string) {
-  return pathname === to || pathname.startsWith(`${to}/`);
+  return pathname === to || (to !== "/" && pathname.startsWith(`${to}/`));
 }
 
 function initialsOf(name: string): string {
@@ -280,6 +281,7 @@ function ProductSidebar({
   const [createOpen, setCreateOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const nav: readonly NavItem[] = [
+    { to: "/", label: "Home", icon: Home },
     { to: "/inbox", label: "Inbox", icon: Inbox, unread: inboxUnread },
     { to: "/cases", label: "Cases", icon: Folder4 },
     { to: "/agents", label: "Agents", icon: OrbitSparkle },

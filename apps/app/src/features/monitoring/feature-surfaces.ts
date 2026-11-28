@@ -8,6 +8,7 @@ export type Surface = ProductProperties<"feature_viewed">["surface"];
 // feature_viewed. Routes that only redirect, sign-in and onboarding have
 // none. The case room's Review view is its own surface, sent by the room.
 const SURFACES: Partial<Record<keyof FileRoutesById, Surface>> = {
+  "/": "home",
   "/inbox": "inbox",
   "/cases/": "cases",
   "/agents/$agentId_/cases/$caseId": "case_room",

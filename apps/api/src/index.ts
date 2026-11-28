@@ -75,6 +75,7 @@ import { modelRoutes } from "./routes/models.ts";
 import { captureRoutes } from "./routes/capture.ts";
 import { datasetRoutes } from "./routes/datasets.ts";
 import { feedbackRoutes } from "./routes/feedback.ts";
+import { homeRoutes } from "./routes/home.ts";
 import { meRoutes } from "./routes/me.ts";
 import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
@@ -234,6 +235,7 @@ orgApi.route("/", modelRoutes);
 orgApi.route("/", captureRoutes);
 orgApi.route("/", datasetRoutes);
 orgApi.route("/", feedbackRoutes);
+orgApi.route("/", homeRoutes);
 
 // The MCP server (src/mcp-server.ts) takes an organization API key, and each
 // tool call is a request to this API with the same key, so the API's own

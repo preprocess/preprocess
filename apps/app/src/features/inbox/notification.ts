@@ -42,6 +42,8 @@ export type InboxItem = {
   readonly unread: boolean;
   readonly link?: NotificationLink;
   readonly details?: readonly InboxDetail[];
+  /** The group a mention named. */
+  readonly group?: string;
 };
 
 export type InboxPage = {

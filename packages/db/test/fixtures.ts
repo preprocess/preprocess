@@ -68,6 +68,7 @@ import {
 } from "../src/schema/evals.ts";
 import { directorySync } from "../src/schema/directory-sync.ts";
 import { feedback } from "../src/schema/feedback.ts";
+import { homeDismissals } from "../src/schema/home.ts";
 import { otelExports } from "../src/schema/otel.ts";
 import {
   organizationRetention,
@@ -437,6 +438,11 @@ export const seedOrganization = async (name: string) =>
       caseId,
       client: "fixture",
     });
+    await tx.insert(homeDismissals).values({
+      organizationId: org,
+      userId,
+      card: "invite-team",
+    });
     await tx.insert(organizationRetention).values({
       organizationId: org,
       runCaptureDays: 30,
@@ -672,6 +678,7 @@ export const tenantTables = {
   organization_purges: "organization_id",
   organization_purge_objects: "organization_id",
   feedback: "organization_id",
+  home_dismissals: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

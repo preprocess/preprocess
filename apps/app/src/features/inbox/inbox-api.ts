@@ -195,6 +195,7 @@ function toItem(item: ApiInboxItem): InboxItem {
         ...base,
         kind: "mention",
         title: `${item.group?.name ?? "Your group"} was mentioned`,
+        ...(item.group ? { group: item.group.name } : {}),
         summary: subject ? `On ${caseLabel(subject)}` : "",
         body: item.message ?? "",
         link: caseLink,

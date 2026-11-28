@@ -60,6 +60,44 @@ export const amountBucket = (amount: number) =>
     ? "zero"
     : AMOUNT_BUCKETS[1 + AMOUNT_EDGES.filter((edge) => amount >= edge).length]!;
 
+// Home page cards (apps/app features/home) and the page previews.
+export const HOME_CARDS = [
+  "review_case",
+  "approve_request",
+  "reply_to_mention",
+  "review_memory",
+  "approve_guardrail",
+  "see_inbox",
+  "fix_failed_payment",
+  "fix_failed_deploy",
+  "reconnect_mcp",
+  "add_missing_secret",
+  "review_failed_cases",
+  "review_eval_regression",
+  "fix_directory_sync",
+  "renew_license",
+  "review_invitations",
+  "deploy_first_agent",
+  "invite_team",
+  "create_group",
+  "add_payment_method",
+  "set_up_sso",
+  "install_cli",
+  "deploy_template",
+  "run_test_case",
+  "connect_mcp",
+  "link_repository",
+  "open_first_case",
+] as const;
+export const HOME_TILES = [
+  "inbox",
+  "cases",
+  "agents",
+  "observability",
+  "billing",
+  "members",
+] as const;
+
 export const PRODUCT_EVENTS = {
   // The marketing site's first-touch utm_* params and referring hostname,
   // lowercased, when the sign-up came through its link (apps/api auth.ts).
@@ -358,10 +396,12 @@ export const PRODUCT_EVENTS = {
     caller: ["person", "api_key"],
     weight: COUNT,
   },
-  // The one browser event: someone opened a main surface of the app, sent
-  // with posthog.capture by the app's root route (features/monitoring).
+  // The browser events. feature_viewed: someone opened a main surface of the
+  // app, sent with posthog.capture by the app's root route
+  // (features/monitoring).
   feature_viewed: {
     surface: [
+      "home",
       "inbox",
       "cases",
       "case_room",
@@ -402,6 +442,11 @@ export const PRODUCT_EVENTS = {
       "developers_opentelemetry",
     ],
   },
+  // The home page's cards and tiles (PRE-178): which card was used or
+  // dismissed, at which place in the row, and which page preview was opened.
+  home_card_clicked: { card: HOME_CARDS, position: COUNT },
+  home_card_dismissed: { card: HOME_CARDS },
+  home_tile_opened: { tile: HOME_TILES },
   // Feedback about Preprocess (apps/api routes/feedback.ts). The category
   // only: never the message, its ids or the client.
   feedback_submitted: { category: ["bug", "idea", "question", "other"] },
