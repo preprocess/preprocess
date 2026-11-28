@@ -168,7 +168,7 @@ const oidc = (extra: object = {}) => ({
   protocol: "oidc",
   issuer: IDP,
   clientId: "preprocess",
-  clientSecret: "shh",
+  clientSecret: "oidc-client-secret-never-returned",
   ...extra,
 });
 
@@ -351,8 +351,12 @@ describe("SSO settings", () => {
       ) as string,
     });
     // The secret never comes back.
-    expect(JSON.stringify(saved.body)).not.toContain("shh");
-    expect(JSON.stringify(internalRead.body)).not.toContain("shh");
+    expect(JSON.stringify(saved.body)).not.toContain(
+      "oidc-client-secret-never-returned",
+    );
+    expect(JSON.stringify(internalRead.body)).not.toContain(
+      "oidc-client-secret-never-returned",
+    );
     expect(await events(onInternal.org, "sso.connection.created")).toHaveLength(
       1,
     );
