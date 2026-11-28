@@ -6,6 +6,7 @@ import {
   boolean,
   foreignKey,
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -32,9 +33,14 @@ export const groups = pgTable(
     // Set on a group synced from the organization's identity provider (the
     // SCIM Group's id): its name and members follow the directory and are
     // read-only here. syncedRemovedAt is set when the directory deletes it;
-    // the group and its grants stay until an Owner or Admin acts.
+    // the group and its grants stay until an Owner or Admin acts, and
+    // syncedRemovedMembers is how many people lost its access then. The
+    // SCIM Group's externalId re-links the group if the directory sends it
+    // again.
     scimGroupId: text(),
+    scimExternalId: text(),
     syncedRemovedAt: timestamp({ withTimezone: true }),
+    syncedRemovedMembers: integer(),
   },
   (t) => [
     unique().on(t.organizationId, t.slug),
