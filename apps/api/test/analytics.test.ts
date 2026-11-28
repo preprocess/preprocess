@@ -2,7 +2,7 @@
 // after their transaction commits, carry the organization group and no
 // email or name, and nothing is queued without a PostHog key.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   addMember,
@@ -88,5 +88,40 @@ describe("product analytics", () => {
     });
     expect(again.status).toBeGreaterThanOrEqual(400);
     expect(since(start).filter((e) => e.event === "org_created")).toEqual([]);
+  });
+
+  // PRE-160: an organization's failed requests, one client error in ten.
+  it("queues a sampled client error with its route template and weight", async () => {
+    const env = testEnv({ POSTHOG_KEY: "phc_test" });
+    const { client, userId } = await signUp("Erin Errors", env);
+    const org = await createOrganization(client, "Error Org");
+    const path = `/v1/orgs/${org}/agents/no-such-agent`;
+    const random = vi.spyOn(Math, "random");
+    try {
+      random.mockReturnValue(0.5);
+      let start = tracked.length;
+      expect((await client.call(path)).status).toBe(404);
+      expect(since(start).filter((e) => e.event === "api_error")).toEqual([]);
+
+      random.mockReturnValue(0);
+      start = tracked.length;
+      expect((await client.call(path)).status).toBe(404);
+      const [error] = since(start).filter((e) => e.event === "api_error");
+      expect(error).toMatchObject({
+        distinctId: userId,
+        properties: {
+          route: "/v1/orgs/:org/agents/:agent",
+          method: "get",
+          status: 404,
+          status_class: "client_error",
+          caller: "person",
+          weight: 10,
+          $groups: { organization: org },
+        },
+      });
+      expect(JSON.stringify(error)).not.toContain("no-such-agent");
+    } finally {
+      random.mockRestore();
+    }
   });
 });

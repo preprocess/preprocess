@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { createMiddleware } from "hono/factory";
 
+import { trackEvent } from "./analytics.ts";
 import { isInternal } from "./billing.ts";
 import type { OrgVariables } from "./caller.ts";
 import type { Env } from "./env.ts";
@@ -68,6 +69,25 @@ const tooManyRequests = (retryAfter: number) =>
     { status: 429, headers: { "retry-after": String(retryAfter) } },
   );
 
+// One rate_limited event (analytics.ts) per full bucket and window in each
+// isolate: a client retrying past its limit would otherwise send one a
+// request. The keys stay in memory, never in the event.
+const reported = new Map<string, number>();
+const reportLimited = (
+  env: Env,
+  waitUntil: (promise: Promise<unknown>) => void,
+  bucket: string,
+  scope: "org" | "api_key" | "sign_in" | "support_form",
+  organizationId: string | null = null,
+  actor: string | null = null,
+) => {
+  const window = Math.floor(Date.now() / WINDOW_MS);
+  if (reported.get(bucket) === window) return;
+  if (reported.size >= 10_000) reported.clear();
+  reported.set(bucket, window);
+  waitUntil(trackEvent(env, "rate_limited", organizationId, actor, { scope }));
+};
+
 // Organization and API key buckets this isolate has been told are full, and
 // until when.
 const full = new Map<string, number>();
@@ -93,7 +113,19 @@ export const orgRateLimit = createMiddleware<{
     0,
     ...buckets.map((b) => full.get(`${org}:${b.name}`) ?? 0),
   );
-  if (until > now) return tooManyRequests(Math.ceil((until - now) / 1000));
+  if (until > now) {
+    for (const b of buckets)
+      if ((full.get(`${org}:${b.name}`) ?? 0) > now)
+        reportLimited(
+          c.env,
+          (p) => c.executionCtx.waitUntil(p),
+          `${org}:${b.name}`,
+          b.name === "org" ? "org" : "api_key",
+          org,
+          caller.type === "person" ? caller.userId : null,
+        );
+    return tooManyRequests(Math.ceil((until - now) / 1000));
+  }
   for (const b of buckets) full.delete(`${org}:${b.name}`);
   c.executionCtx.waitUntil(
     take(c.env, rateLimitName.org(org), buckets).then(
@@ -113,21 +145,33 @@ const AUTH_ATTEMPT =
 
 // Only Cloudflare's edge sets cf-connecting-ip, so local development and
 // tests without it are not limited.
-export const authRateLimit = async (env: Env, request: Request) => {
+export const authRateLimit = async (
+  env: Env,
+  request: Request,
+  waitUntil: (promise: Promise<unknown>) => void,
+) => {
   const ip = request.headers.get("cf-connecting-ip");
   if (!ip || !AUTH_ATTEMPT.test(new URL(request.url).pathname)) return null;
   const result = await take(env, rateLimitName.auth(ip), [
     { name: "auth", limit: LIMITS.auth },
   ]);
-  return result.over.length ? tooManyRequests(result.retryAfter) : null;
+  if (!result.over.length) return null;
+  reportLimited(env, waitUntil, `auth:${ip}`, "sign_in");
+  return tooManyRequests(result.retryAfter);
 };
 
 // Signed-out support requests (support-inbound.ts), per client address.
-export const supportRateLimit = async (env: Env, request: Request) => {
+export const supportRateLimit = async (
+  env: Env,
+  request: Request,
+  waitUntil: (promise: Promise<unknown>) => void,
+) => {
   const ip = request.headers.get("cf-connecting-ip");
   if (!ip) return null;
   const result = await take(env, rateLimitName.support(ip), [
     { name: "support", limit: LIMITS.supportIntake },
   ]);
-  return result.over.length ? tooManyRequests(result.retryAfter) : null;
+  if (!result.over.length) return null;
+  reportLimited(env, waitUntil, `support:${ip}`, "support_form");
+  return tooManyRequests(result.retryAfter);
 };

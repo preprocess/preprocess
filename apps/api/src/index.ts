@@ -5,12 +5,12 @@ import {
   sendProductEvents,
   trafficOf,
 } from "@preprocess/logs";
-import type { LogRecord } from "@preprocess/logs";
+import type { LogRecord, ProductProperties } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { evlog, type EvlogVariables } from "evlog/hono";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { runMode } from "@preprocess/runmode";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { routePath } from "hono/route";
@@ -18,6 +18,7 @@ import { routePath } from "hono/route";
 import {
   identifyAllOrganizations,
   isProductMessage,
+  trackEvent,
   type ProductMessage,
 } from "./analytics.ts";
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
@@ -92,6 +93,15 @@ const OPENAPI = {
 
 const app = new Hono<{ Bindings: Env } & EvlogVariables>();
 
+// The route a request matched, as a template, else its path with ids taken
+// out (routeOf).
+const routeTemplate = (c: Context) => {
+  const route = routePath(c, -1);
+  return route && route !== "*" && !route.endsWith("/*")
+    ? route
+    : routeOf(c.req.path);
+};
+
 // One wide event per request (design doc 09). The run log keeps the ones an
 // organization's caller made; PostHog, where configured, gets every request's
 // route, status and duration, and its errors.
@@ -102,12 +112,8 @@ app.use(async (c, next) => {
 app.use(evlog());
 app.use(async (c, next) => {
   await next();
-  const route = routePath(c, -1);
   c.get("log").set({
-    route:
-      route && route !== "*" && !route.endsWith("/*")
-        ? route
-        : routeOf(c.req.path),
+    route: routeTemplate(c),
     traffic: trafficOf(c.req.path, c.req.header("user-agent") ?? null),
   });
 });
@@ -142,8 +148,9 @@ app.on(
   ["GET", "POST"],
   "/api/auth/*",
   async (c) =>
-    (await authRateLimit(c.env, c.req.raw)) ??
-    handleAuthRequest(c.env, c.req.raw),
+    (await authRateLimit(c.env, c.req.raw, (p) =>
+      c.executionCtx.waitUntil(p),
+    )) ?? handleAuthRequest(c.env, c.req.raw),
 );
 // Directory sync (scim.ts): SCIM also replaces, patches and deletes.
 app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/v2/*", (c) =>
@@ -172,8 +179,9 @@ app.use("/v1/orgs/:org/support/*", async (c, next) =>
 // client address. Not part of /v1.
 app.post("/api/support/requests", async (c) =>
   supportEnabled(c.env)
-    ? ((await supportRateLimit(c.env, c.req.raw)) ??
-      signedOutRequest(c.env, c.req.raw))
+    ? ((await supportRateLimit(c.env, c.req.raw, (p) =>
+        c.executionCtx.waitUntil(p),
+      )) ?? signedOutRequest(c.env, c.req.raw))
     : supportNotFound(),
 );
 
@@ -187,9 +195,36 @@ const orgApi = new OpenAPIHono<{
 // The request's wide event joins the organization's run log only once the
 // caller is known to belong to it.
 orgApi.use(orgCaller);
+// Its failed requests are api_error product events (analytics.ts) too, on
+// the organization's group, so reliability reads per customer: every server
+// error, and one client error in ten carrying weight 10. A rate limit's 429
+// is rate_limited instead.
+const CLIENT_ERROR_WEIGHT = 10;
 orgApi.use(async (c, next) => {
   c.get("log").set({ organizationId: c.var.org });
   await next();
+  const { status } = c.res;
+  if (status < 400 || status === 429) return;
+  const server = status >= 500;
+  if (!server && Math.random() * CLIENT_ERROR_WEIGHT >= 1) return;
+  const { caller } = c.var;
+  c.executionCtx.waitUntil(
+    trackEvent(
+      c.env,
+      "api_error",
+      c.var.org,
+      caller.type === "person" ? caller.userId : null,
+      {
+        route: routeTemplate(c).toLowerCase(),
+        method:
+          c.req.method.toLowerCase() as ProductProperties<"api_error">["method"],
+        status,
+        status_class: server ? "server_error" : "client_error",
+        caller: caller.type,
+        weight: server ? 1 : CLIENT_ERROR_WEIGHT,
+      },
+    ),
+  );
 });
 orgApi.use(orgRateLimit);
 orgApi.route("/", organizationRoutes);
