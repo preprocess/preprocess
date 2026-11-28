@@ -11,8 +11,8 @@ slug creates the agent automatically.
 
 ## Prerequisites
 
-- An organization on Preprocess with a payment method on file (required before
-  agents can run on Preprocess Cloud, including on the Free plan).
+- An organization on Preprocess (from launch, Preprocess Cloud requires a
+  payment method on file before agents can run, including on the Free plan).
 - An **Owner**, **Admin** or **Developers** group membership (or an organization
   API key).
 - An agent entry module exporting `agent({ ... })` from `@preprocess/sdk` (by

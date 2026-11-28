@@ -32,7 +32,8 @@ moves to Free.
    - **Storage over 5 GB:** your data stays intact, and usage above 5 GB bills
      at **$0.10/GB-month** to your card at month end. Use **Manage retention**
      if you want to lower stored data.
-   - **Monthly cases:** Free includes up to **1,000 cases per month**.
+   - **Monthly cases:** from launch, Free is capped at **1,000 cases per
+     month**.
 4. Select **Continue**, optionally choose a reason and select **Cancel plan**.
 
 ### What carries over when Team ends

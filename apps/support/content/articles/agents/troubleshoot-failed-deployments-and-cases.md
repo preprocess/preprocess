@@ -44,11 +44,11 @@ to sync your local `preprocess.config.json`, then redeploy.
 On Preprocess Cloud, `POST /v1/orgs/{org}/cases` returns `402` when billing
 blocks new cases:
 
-| Error                    | Cause and fix                                                                                                                                                |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `plan_required`          | No payment method on file. An Owner must add a card in **Settings → Organization → Billing**.                                                                |
-| `credit_exhausted`       | Your credit balance is empty or you reached the Free plan's 1,000 monthly cases. Top up credits or upgrade to Team in **Settings → Organization → Billing**. |
-| `spending_limit_reached` | Usage hit your monthly spending limit. An Owner or Admin can raise or remove it in **Settings → Governance → Guardrails → Spending limit**.                  |
+| Error                    | Cause and fix                                                                                                                                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plan_required`          | No payment method on file (from launch, Preprocess Cloud requires a card on file before agents can run, including on Free). An Owner must add a card in **Settings → Organization → Billing**. |
+| `credit_exhausted`       | Your credit balance is empty or you reached the Free plan's 1,000 monthly case cap (enforced from launch). Top up credits or upgrade to Team in **Settings → Organization → Billing**.         |
+| `spending_limit_reached` | Usage hit your monthly spending limit. An Owner or Admin can raise or remove it in **Settings → Governance → Guardrails → Spending limit**.                                                    |
 
 ### Case is `halted`
 

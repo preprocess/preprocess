@@ -16,7 +16,7 @@ Organization → Billing**.
 | ------------------------------------------------- | ----------------------------------- | -------------------------------------- | ------------------------------- |
 | **Active seats**                                  | Up to 3 developer or operator seats | $16 per active seat per month          | Custom / invoice                |
 | **Viewers**                                       | Free                                | Free                                   | Free                            |
-| **Monthly cases**                                 | Up to 1,000 included                | First 1,000 free, then tiered per case | Custom                          |
+| **Monthly cases**                                 | Up to 1,000 included (from launch)  | First 1,000 free, then tiered per case | Custom                          |
 | **Storage included**                              | 5 GB ($0.10/GB-month overage)       | 50 GB ($0.10/GB-month overage)         | Custom                          |
 | **Starting credit**                               | One-time $5 credit                  | Prepaid credits (carries over)         | Paid by invoice                 |
 | **Custom sandbox environments (`sandbox.setup`)** | No                                  | Yes                                    | Yes                             |
@@ -46,12 +46,12 @@ cases draw from your credit balance at:
 
 ### Free plan limits and card requirement
 
-Every Preprocess Cloud organization needs a payment method on file before agents
-can run, including on the Free plan. On Free:
+From launch, every Preprocess Cloud organization needs a payment method on file
+before agents can run, including on the Free plan. On Free:
 
 - **Seats:** capped at 3 active developer or operator seats. Viewers are
   unlimited and free.
-- **Cases:** capped at 1,000 cases per UTC month.
+- **Cases:** capped at 1,000 cases per UTC month from launch.
 - **Storage:** 5 GB is included. Storage above 5 GB isn't a hard cap—overage
   bills at $0.10/GB-month to your card at month end.
 - **Credits:** your balance starts with a one-time $5 credit. You can top up or
