@@ -102,6 +102,26 @@ export class Client {
   }
 }
 
+// A streamed body (an NDJSON or CSV export) is written while the request's
+// context is still open, so it is read before waiting on that context.
+export const callStream = async (client: Client, path: string) => {
+  const ctx = createExecutionContext();
+  const response = await worker.fetch(
+    new Request(new URL(path, client.environment.APP_URL), {
+      headers: {
+        origin: client.environment.APP_URL,
+        ...(client.cookie ? { cookie: client.cookie } : {}),
+        ...client.headers,
+      },
+    }),
+    client.environment,
+    ctx,
+  );
+  const body = await response.text();
+  await waitOnExecutionContext(ctx);
+  return { status: response.status, headers: response.headers, body };
+};
+
 // Test files run in parallel isolates, each with its own counter, so the
 // random part keeps two files' names apart.
 let counter = 0;

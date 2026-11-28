@@ -690,6 +690,7 @@ export default Alchemy.Stack(
         COUNTER: Cloudflare.DurableObject(durableObjects.COUNTER),
         BUILDS: Cloudflare.DurableObject(durableObjects.BUILDS),
         SCHEDULER: Cloudflare.DurableObject(durableObjects.SCHEDULER),
+        RATE_LIMITER: Cloudflare.DurableObject(durableObjects.RATE_LIMITER),
         RUNTIME: Cloudflare.WorkerEntrypoint(runtime),
         BUILDER: Cloudflare.WorkerEntrypoint(builder, "Builder"),
         PDF_RENDER: Cloudflare.WorkerEntrypoint(pdfRender),
