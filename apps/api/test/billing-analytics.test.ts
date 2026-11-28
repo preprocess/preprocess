@@ -84,10 +84,11 @@ const organization = async (name: string) => {
 };
 
 // The organization's events since start, group updates aside.
+// api_error samples failed requests at random, so it stays out of these.
 const eventsOf = (org: string, start: number) =>
   tracked
     .slice(start)
-    .filter((e) => e.event !== "$groupidentify")
+    .filter((e) => e.event !== "$groupidentify" && e.event !== "api_error")
     .filter((e) => e.properties.organization_id === org);
 
 const sign = async (
