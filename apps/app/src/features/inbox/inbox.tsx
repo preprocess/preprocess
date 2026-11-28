@@ -498,9 +498,9 @@ export function Inbox({
             <InboxReader item={selected} linked={linkedCase(selected, cases)} />
           ) : (
             <EmptyPresence>
-              {items.length === 0 ? null : (
-                <InboxEmpty kind={unread === 0 ? "all-read" : "pick"} />
-              )}
+              <InboxEmpty
+                kind={items.length === 0 ? "pick-empty-list" : "pick"}
+              />
             </EmptyPresence>
           )}
         </ResizablePanel>
