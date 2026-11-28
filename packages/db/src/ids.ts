@@ -40,6 +40,7 @@ export const prefixes = {
   sandboxInterval: "sbi",
   retentionSweep: "rsw",
   dataset: "dst",
+  scim: "scim",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

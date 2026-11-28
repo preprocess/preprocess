@@ -32,6 +32,7 @@ import { sendNotice } from "./notify.ts";
 import { deliverWebhook } from "./webhooks.ts";
 import { auditRoutes } from "./routes/audit.ts";
 import { groupRoutes } from "./routes/groups.ts";
+import { scimRoutes } from "./routes/scim.ts";
 import { organizationRoutes } from "./routes/organization.ts";
 import { ssoRoutes } from "./routes/sso.ts";
 import { githubCallbacks, githubRoutes } from "./routes/github.ts";
@@ -109,6 +110,10 @@ app.on(
     (await authRateLimit(c.env, c.req.raw)) ??
     handleAuthRequest(c.env, c.req.raw),
 );
+// Directory sync (scim.ts): SCIM also replaces, patches and deletes.
+app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/v2/*", (c) =>
+  handleAuthRequest(c.env, c.req.raw),
+);
 
 // A signed-out invitee's view of their invitation, for the app's invitation
 // page. Not part of /v1.
@@ -141,6 +146,7 @@ orgApi.route("/", organizationRoutes);
 orgApi.route("/", ssoRoutes);
 orgApi.route("/", groupRoutes);
 orgApi.route("/", auditRoutes);
+orgApi.route("/", scimRoutes);
 orgApi.route("/", agentRoutes);
 orgApi.route("/", secretRoutes);
 orgApi.route("/", mcpRoutes);
