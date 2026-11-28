@@ -16,6 +16,11 @@ import type { CaptureResult, PostHog } from "posthog-js";
 // replay leaves out entirely. URLs lose their query and hash, which can hold
 // search terms, including the URLs inside each web vital. People are identified by user id only, never by email or
 // name, and their organization is the `organization` group.
+//
+// Storage: PostHog keeps its state in page memory only, so it writes no
+// cookie and nothing to local or session storage. A full page load starts a
+// new session (and a new replay); the person is identified again on every
+// load. State an earlier version stored is removed on start.
 export type Monitoring = { key: string; host: string } | null;
 
 // The share of sessions replay records: all of them until launch.
@@ -82,6 +87,25 @@ export const scrubEvent = (
   return { ...event, properties };
 };
 
+const forgetStoredState = () => {
+  try {
+    for (const store of [localStorage, sessionStorage])
+      for (const key of Object.keys(store))
+        if (key.startsWith("ph_") || key.startsWith("__ph"))
+          store.removeItem(key);
+    const host = location.hostname.split(".");
+    for (const cookie of document.cookie.split("; ")) {
+      const name = cookie.split("=")[0] ?? "";
+      if (!name.startsWith("ph_")) continue;
+      document.cookie = `${name}=; Max-Age=0; Path=/`;
+      for (let i = 0; i < host.length - 1; i++)
+        document.cookie = `${name}=; Max-Age=0; Path=/; Domain=.${host.slice(i).join(".")}`;
+    }
+  } catch {
+    // Storage the browser blocks holds nothing of ours either.
+  }
+};
+
 let started: Promise<PostHog> | undefined;
 // PostHog once it knows the person and their organization, so every
 // product event carries the organization group.
@@ -111,7 +135,9 @@ export const startMonitoring = (
     return;
   }
   started ??= import("posthog-js").then(({ default: posthog }) => {
+    forgetStoredState();
     posthog.init(monitoring.key, {
+      persistence: "memory",
       api_host: monitoring.host,
       capture_exceptions: true,
       capture_pageview: "history_change",
