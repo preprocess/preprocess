@@ -53,11 +53,16 @@ const withoutQuery = (value: unknown) =>
 // page's URL again inside.
 const WEB_VITAL = /^\$web_vitals_[A-Z]+_event$/;
 
+// The browser sets no person properties: identify carries the user id and
+// nothing else, and role, sign-up method and first seen come from the
+// server's product events (@preprocess/logs product.ts).
 export const scrubEvent = (
   event: CaptureResult | null,
 ): CaptureResult | null => {
   if (!event) return null;
   const properties = { ...event.properties };
+  delete properties.$set;
+  delete properties.$set_once;
   for (const name of URL_PROPERTIES)
     if (name in properties) properties[name] = withoutQuery(properties[name]);
   for (const [name, metric] of Object.entries(properties))

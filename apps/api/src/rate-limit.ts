@@ -14,7 +14,6 @@ export const LIMITS = {
   org: 2400,
   apiKey: 600,
   auth: 30,
-  supportIntake: 5,
 } as const;
 
 const WINDOW_MS = 60_000;
@@ -24,7 +23,6 @@ const WINDOW_MS = 60_000;
 export const rateLimitName = {
   org: (org: string) => `${org}:rate`,
   auth: (ip: string) => `auth:rate:${ip}`,
-  support: (ip: string) => `support:rate:${ip}`,
 };
 
 type Bucket = { name: string; limit: number };
@@ -77,7 +75,7 @@ const reportLimited = (
   env: Env,
   waitUntil: (promise: Promise<unknown>) => void,
   bucket: string,
-  scope: "org" | "api_key" | "sign_in" | "support_form",
+  scope: "org" | "api_key" | "sign_in",
   organizationId: string | null = null,
   actor: string | null = null,
 ) => {
@@ -157,21 +155,5 @@ export const authRateLimit = async (
   ]);
   if (!result.over.length) return null;
   reportLimited(env, waitUntil, `auth:${ip}`, "sign_in");
-  return tooManyRequests(result.retryAfter);
-};
-
-// Signed-out support requests (support-inbound.ts), per client address.
-export const supportRateLimit = async (
-  env: Env,
-  request: Request,
-  waitUntil: (promise: Promise<unknown>) => void,
-) => {
-  const ip = request.headers.get("cf-connecting-ip");
-  if (!ip) return null;
-  const result = await take(env, rateLimitName.support(ip), [
-    { name: "support", limit: LIMITS.supportIntake },
-  ]);
-  if (!result.over.length) return null;
-  reportLimited(env, waitUntil, `support:${ip}`, "support_form");
   return tooManyRequests(result.retryAfter);
 };
