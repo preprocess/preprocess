@@ -700,6 +700,24 @@ export const readCredits = (customer: AutumnCustomer) => {
   };
 };
 
+// The credits left, for analytics (analytics.ts): read through the same
+// short cache as the credit stop. Null where billing is off or unread.
+export const creditsRemaining = async (env: Env, org: OrgId) => {
+  const billing = autumn(env);
+  if (!billing) return null;
+  try {
+    return await remember(
+      `credits:${org}`,
+      15_000,
+      async () =>
+        (await billing.customer(org)).balances[CREDITS]?.remaining ?? 0,
+    );
+  } catch (error) {
+    console.error("billing: credits", org, error);
+    return null;
+  }
+};
+
 // Deleting an organization ends Team (Captain): its usage and this month's
 // seats are reported now, and Team is cancelled so nothing more accrues; the
 // period's invoice bills them, with no refund, and credits left are

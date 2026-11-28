@@ -39,6 +39,8 @@ import {
 } from "@preprocess/db/schema/auth";
 import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
+import { productEvent, type ProductEvent } from "@preprocess/logs";
+
 import type { Env } from "./env.ts";
 import { writeOutbox } from "./outbox.ts";
 import { getPlan, unavailable } from "./plan.ts";
@@ -253,7 +255,14 @@ const param = (ctx: HookContext, name: string) => {
 
 // The SCIM plugin and the hooks that audit each SCIM write, for one auth
 // request on `tx`.
-export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
+// `later` sends a product event once the request commits (auth.ts), and
+// refreshes the organization's group properties.
+export const scimDirectory = (
+  env: Env,
+  tx: SystemTx,
+  record: Record,
+  later: (event: ProductEvent, organization: string) => void,
+) => {
   let caller: Caller | null = null;
   let userBefore: { id: string; userId: string; active: boolean } | undefined;
   let groupBefore: { externalId: string | null; members: number } | undefined;
@@ -347,6 +356,14 @@ export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
             targetId: state.userId,
             data: { role: "member" },
           });
+          later(
+            productEvent(env, "member_joined", organizationId, state.userId, {
+              member_user_id: state.userId,
+              role: "member",
+              via: "provisioned",
+            }),
+            organizationId,
+          );
         }
         if (!state.active && current && current.role !== "owner") {
           await tx.delete(member).where(eq(member.id, current.id));
@@ -355,6 +372,14 @@ export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
             action: "member.removed",
             targetId: state.userId,
           });
+          later(
+            productEvent(env, "member_removed", organizationId, null, {
+              member_user_id: state.userId,
+              role: current.role as "member",
+              via: "deprovisioned",
+            }),
+            organizationId,
+          );
         }
 
         const wanted = new Map<string, { id: string; slug: string }>();

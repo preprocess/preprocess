@@ -14,6 +14,7 @@ import { user } from "@preprocess/db/schema/auth";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { agentRole, canSeeCase } from "../access.ts";
+import { trackEvent } from "../analytics.ts";
 import { eventBase, requireDeveloper } from "../caller.ts";
 import type { Caller, OrgVariables } from "../caller.ts";
 import {
@@ -324,6 +325,13 @@ export const datasetRoutes = new OpenAPIHono<{
         });
         return view(tx, row!);
       });
+      await trackEvent(
+        c.env,
+        "dataset_created",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        { dataset_id: row.id, agent_id: row.agentId },
+      );
       return c.json(row, 201);
     },
   )
@@ -580,6 +588,18 @@ export const datasetRoutes = new OpenAPIHono<{
         });
         return { dataset, page };
       });
+      await trackEvent(
+        c.env,
+        "dataset_exported",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        {
+          dataset_id: dataset.id,
+          agent_id: dataset.agentId,
+          format: query.format,
+          cases: page.kept.length,
+        },
+      );
       return streamExport(
         c.env,
         c.var.org,

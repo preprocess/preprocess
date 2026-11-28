@@ -12,6 +12,7 @@ import { and, asc, eq, gt, gte, lt } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 
+import { trackEvent } from "../analytics.ts";
 import { checkSignature, manifestKey } from "../audit-anchor.ts";
 import type { AuditManifest } from "../audit-anchor.ts";
 import { eventBase, requireAdmin } from "../caller.ts";
@@ -433,6 +434,16 @@ export const auditRoutes = new OpenAPIHono<{
             },
           },
         }),
+      );
+      await trackEvent(
+        c.env,
+        "audit_exported",
+        org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        {
+          format: input.format,
+          days: Math.ceil((to.getTime() - from.getTime()) / 86_400_000),
+        },
       );
       const format = FORMATS[input.format];
       const encoder = new TextEncoder();
