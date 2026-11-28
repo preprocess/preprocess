@@ -179,6 +179,12 @@ export const licenseSecrets = ["PREPROCESS_LICENSE_KEY"] as const;
 // Training is always on there.
 export const trainingVars = ["TRAINING_SERVICE"] as const;
 
+// The status page heartbeat (apps/api/src/heartbeat.ts), optional and on our
+// cloud only: the API posts to the URL with the secret as its bearer token.
+// Without both, nothing is sent. Never bound on a self-hosted install.
+export const statusHeartbeatVars = ["STATUS_HEARTBEAT_URL"] as const;
+export const statusHeartbeatSecrets = ["STATUS_HEARTBEAT_SECRET"] as const;
+
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).
 export const apiCrons = ["20 0 * * *", "* * * * *"];

@@ -236,6 +236,10 @@ export type Env = {
   // Self-hosted only: "on" turns Training on (training.ts). Our cloud ignores
   // it.
   TRAINING_SERVICE?: string;
+  // Our cloud only: where the API posts its heartbeat (heartbeat.ts) and the
+  // bearer token it sends. Unset, as on a self-hosted install, nothing is sent.
+  STATUS_HEARTBEAT_URL?: string;
+  STATUS_HEARTBEAT_SECRET?: string;
   // Where OCR is served (@preprocess/models endpoints): Mistral, an
   // install's own MODEL_ENDPOINTS entry, or MODEL_SERVICE_URL (the stub).
   MISTRAL_API_KEY?: string;

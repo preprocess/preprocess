@@ -21,6 +21,7 @@ import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
 import type { Env, Job } from "./env.ts";
 import { deleteExpiredIdempotencyKeys } from "./idempotency.ts";
+import { heartbeat } from "./heartbeat.ts";
 import { sweepOutbox } from "./outbox.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import { agentRoutes } from "./routes/agents.ts";
@@ -221,7 +222,7 @@ export default {
     // intervals of sandboxes gone silent, and warn about or apply moves down
     // to Free (our cloud only).
     if (controller.cron === "* * * * *") {
-      ctx.waitUntil(sweepOutbox(env));
+      ctx.waitUntil(sweepOutbox(env).then(() => heartbeat(env, "tick")));
       ctx.waitUntil(reportUsage(env));
       ctx.waitUntil(closeSilentSandboxes(env));
       ctx.waitUntil(runPlanChanges(env, new Date(controller.scheduledTime)));
@@ -242,6 +243,7 @@ export default {
   async queue(
     batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,
     env: Env,
+    ctx: ExecutionContext,
   ) {
     if (batch.queue.startsWith("preprocess-logs-")) {
       // A failed store write retries the whole batch; a failed export
@@ -261,7 +263,10 @@ export default {
       for (const message of batch.messages as Message<OutboxMessage>[]) {
         if (message.body.kind === "eval.start")
           await startQueuedEval(env, message.body);
-        else await startQueuedCase(env, message.body);
+        else {
+          await startQueuedCase(env, message.body);
+          ctx.waitUntil(heartbeat(env, "case"));
+        }
         message.ack();
       }
       return;

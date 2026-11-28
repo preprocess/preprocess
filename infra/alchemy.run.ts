@@ -77,6 +77,8 @@ import {
   sandboxDurableObjects,
   sandboxImages,
   runtimeModelSecrets,
+  statusHeartbeatSecrets,
+  statusHeartbeatVars,
   trainingVars,
   type SelfHostStage,
   type Stage,
@@ -752,6 +754,17 @@ export default Alchemy.Stack(
                 ] as const,
             ),
           )),
+        ...(region &&
+          Object.fromEntries(
+            statusHeartbeatVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
+        ...(region && optionalSecrets(statusHeartbeatSecrets)),
         ...(region &&
           billingOrgs[stage] && {
             BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),
