@@ -51,6 +51,21 @@ export const routeOf = (path: string) =>
     )
     .join("/") || "/";
 
+// Requests nobody needs one event each for: the status page's probes,
+// which hit the app, API and docs every minute, and static files. They are
+// sampled at 1%, except 5xx answers, which are always sent. Each event's
+// sampleRate says how to weight it.
+export const LOW_VALUE_SAMPLE_RATE = 0.01;
+const STATIC_FILE =
+  /^\/(assets|fonts|_build)\/|\.(js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|txt|xml|webmanifest)$/;
+
+export const trafficOf = (path: string, userAgent: string | null) =>
+  userAgent?.startsWith("PreprocessStatus/")
+    ? "probe"
+    : STATIC_FILE.test(path)
+      ? "asset"
+      : undefined;
+
 // Free text from our own code, with anything that could be a value taken
 // out: quoted strings, emails, URLs' queries, long numbers and parenthesized
 // values (Postgres' "Key (email)=(...)").
@@ -103,9 +118,14 @@ export const toPostHog = (
       organizationId: text(event.organizationId),
     }),
   } as WideEvent;
+  const traffic = text(event.traffic);
+  const rate =
+    traffic && (status === undefined || status < 500)
+      ? Math.min(sampleRate, LOW_VALUE_SAMPLE_RATE)
+      : sampleRate;
   const request =
-    method && status !== undefined && random() < sampleRate
-      ? { ...base, sampleRate }
+    method && status !== undefined && random() < rate
+      ? { ...base, sampleRate: rate, ...(traffic && { traffic }) }
       : null;
   const failed =
     event.level === "error" ||

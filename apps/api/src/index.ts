@@ -1,4 +1,4 @@
-import { initLogs, logFailure, routeOf } from "@preprocess/logs";
+import { initLogs, logFailure, routeOf, trafficOf } from "@preprocess/logs";
 import type { LogRecord } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { evlog, type EvlogVariables } from "evlog/hono";
@@ -93,6 +93,7 @@ app.use(async (c, next) => {
       route && route !== "*" && !route.endsWith("/*")
         ? route
         : routeOf(c.req.path),
+    traffic: trafficOf(c.req.path, c.req.header("user-agent") ?? null),
   });
 });
 app.use("*", cors());
