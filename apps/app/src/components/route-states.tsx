@@ -54,7 +54,7 @@ export function AgentNotFound() {
   return (
     <RouteState
       action={
-        <Button asChild size="compact" variant="ghost">
+        <Button asChild size="sm" variant="secondary">
           <Link to="/agents">Back to agents</Link>
         </Button>
       }
@@ -69,7 +69,7 @@ export function CaseLinkNotValid() {
   return (
     <RouteState
       action={
-        <Button asChild size="compact" variant="ghost">
+        <Button asChild size="sm" variant="secondary">
           <Link to="/cases">Back to cases</Link>
         </Button>
       }

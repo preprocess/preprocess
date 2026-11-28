@@ -71,7 +71,7 @@ function GroupNotFound() {
   return (
     <SettingsEmpty
       action={
-        <Button asChild size="compact" variant="ghost">
+        <Button asChild size="sm" variant="secondary">
           <Link to="/settings/organization/groups">Back to groups</Link>
         </Button>
       }
