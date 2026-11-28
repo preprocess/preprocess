@@ -319,7 +319,11 @@ function seededWrite(
   if (method === "POST") {
     const model = input.model ?? "";
     if (models.some((m) => m.id === model))
-      throw new ApiError(`The model ${model} already has an endpoint.`, 409, "endpoint_exists");
+      throw new ApiError(
+        `The model ${model} already has an endpoint.`,
+        409,
+        "endpoint_exists",
+      );
     const endpoint: ModelEndpoint = {
       id: `mep_seed_${crypto.randomUUID().slice(0, 8)}`,
       host: hostOf(input.url!),
@@ -372,7 +376,9 @@ function seededWrite(
               baseModel:
                 input.baseModel === undefined ? m.baseModel : input.baseModel,
               checkpoint:
-                input.checkpoint === undefined ? m.checkpoint : input.checkpoint,
+                input.checkpoint === undefined
+                  ? m.checkpoint
+                  : input.checkpoint,
             }
           : { ...m, endpoint },
     ),
@@ -412,7 +418,8 @@ export function useManagesModels() {
 export const servesOwnBuiltIns = (models: readonly ModelEntry[]) =>
   models.some(
     (m) =>
-      m.kind === "catalog" && (m.serving === "endpoint" || m.serving === "install"),
+      m.kind === "catalog" &&
+      (m.serving === "endpoint" || m.serving === "install"),
   );
 
 export function useModelActions() {

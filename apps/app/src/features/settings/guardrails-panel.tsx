@@ -655,7 +655,9 @@ function Models() {
   useEffect(() => setDraft(saved), [savedKey]);
   const dirty =
     draft.length !== saved.length || draft.some((m) => !saved.includes(m));
-  const endpointCount = guardrails.data?.modelEndpoints?.endpoints.length ?? 0;
+  const endpointCount = models.data
+    ? models.data.filter((m) => m.endpoint).length
+    : (guardrails.data?.modelEndpoints?.endpoints.length ?? 0);
 
   return (
     <SettingsSection

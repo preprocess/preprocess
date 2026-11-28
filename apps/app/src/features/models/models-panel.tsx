@@ -363,7 +363,9 @@ function Loaded({
                     ? `suite:${use.suiteId}`
                     : `${use.type}:${use.agentId}:${use.type === "deployment" ? use.deploymentId : ""}`
                 }
-                label={use.type === "eval_suite" ? use.suiteName : use.agentName}
+                label={
+                  use.type === "eval_suite" ? use.suiteName : use.agentName
+                }
               />
             ))}
           </div>
@@ -401,14 +403,17 @@ function BuiltInSection({
       : "Preprocess";
   const actions = (model: CatalogModel) =>
     servedBy(model) === "Preprocess" ? (
-      <Button
-        onClick={() => onEdit(model)}
-        size="compact"
-        type="button"
-        variant="secondary"
-      >
-        Serve from your endpoint
-      </Button>
+      <span className="flex items-center justify-end">
+        <SettingsRowMenu
+          actions={[
+            {
+              label: "Serve from your endpoint",
+              onSelect: () => onEdit(model),
+            },
+          ]}
+          label={`Actions for ${model.label}`}
+        />
+      </span>
     ) : model.endpoint ? (
       <span className="flex items-center justify-end gap-1">
         {testButton(model)}
@@ -441,7 +446,7 @@ function BuiltInSection({
                 <TableHead className="w-44">Served by</TableHead>
                 <TableHead className="w-32">Allowed</TableHead>
                 {serves ? (
-                  <TableHead>
+                  <TableHead className="w-24">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 ) : null}
@@ -472,7 +477,9 @@ function BuiltInSection({
                       <AllowedBadge allowed={model.allowed} />
                     </TableCell>
                     {serves ? (
-                      <TableCell className="text-right">{actions(model)}</TableCell>
+                      <TableCell className="text-right">
+                        {actions(model)}
+                      </TableCell>
                     ) : null}
                   </TableRow>,
                   outcome ? (
@@ -506,7 +513,9 @@ function BuiltInSection({
                     : servedBy(model)}
                   <AllowedBadge allowed={model.allowed} />
                 </span>
-                {serves ? <span className="flex pt-1">{actions(model)}</span> : null}
+                {serves ? (
+                  <span className="flex pt-1">{actions(model)}</span>
+                ) : null}
               </div>
             );
           })}
@@ -560,12 +569,7 @@ function OwnSection({
     </div>
   );
   const register = (size: "compact" | "sm") => (
-    <Button
-      onClick={onRegister}
-      size={size}
-      type="button"
-      variant="secondary"
-    >
+    <Button onClick={onRegister} size={size} type="button" variant="secondary">
       Register endpoint
     </Button>
   );
@@ -623,7 +627,9 @@ function OwnSection({
                         <TableCell>
                           <AllowedBadge allowed={model.allowed} />
                         </TableCell>
-                        {manage ? <TableCell>{actions(model)}</TableCell> : null}
+                        {manage ? (
+                          <TableCell>{actions(model)}</TableCell>
+                        ) : null}
                       </TableRow>,
                       outcome ? (
                         <TableRow key={`${model.id}-test`}>
@@ -646,10 +652,15 @@ function OwnSection({
               {models.map((model) => {
                 const outcome = tests.get(model.id);
                 return (
-                  <div className="flex flex-col gap-1.5 px-5 py-3" key={model.id}>
+                  <div
+                    className="flex flex-col gap-1.5 px-5 py-3"
+                    key={model.id}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       {name(model)}
-                      {manage ? <span className="pt-1.5">{actions(model)}</span> : null}
+                      {manage ? (
+                        <span className="pt-1.5">{actions(model)}</span>
+                      ) : null}
                     </div>
                     {outcome ? <TestLine outcome={outcome} /> : null}
                     <span className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
@@ -703,7 +714,9 @@ function EndpointDialog({
   const model = editing.mode === "register" ? null : editing.model;
   const endpoint = model?.endpoint ?? null;
   const own = editing.mode !== "serve";
-  const initialUrl = endpoint ? (endpoint.url ?? `https://${endpoint.host}`) : "";
+  const initialUrl = endpoint
+    ? (endpoint.url ?? `https://${endpoint.host}`)
+    : "";
   const nameRef = useRef<ValidatedFieldHandle>(null);
   const urlRef = useRef<ValidatedFieldHandle>(null);
   const providerRef = useRef<ValidatedFieldHandle>(null);
@@ -711,7 +724,8 @@ function EndpointDialog({
   const [label, setLabel] = useState(model?.label ?? "");
   const [url, setUrl] = useState(initialUrl);
   const [providerModel, setProviderModel] = useState(
-    endpoint?.providerModel ?? (editing.mode === "serve" ? editing.model.id : ""),
+    endpoint?.providerModel ??
+      (editing.mode === "serve" ? editing.model.id : ""),
   );
   const [key, setKey] = useState("");
   const [baseModel, setBaseModel] = useState(
