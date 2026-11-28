@@ -128,9 +128,9 @@ export const toPostHog = (
       ? { ...base, sampleRate: rate, ...(traffic && { traffic }) }
       : null;
   const failed =
-    event.level === "error" ||
-    event.level === "fatal" ||
-    (status !== undefined && status >= 500);
+    status !== undefined
+      ? status >= 500
+      : event.level === "error" || event.level === "fatal";
   if (!failed) return { request, exception: null };
   const error = (event.error ?? {}) as Record<string, unknown>;
   const message = text(error.message);
