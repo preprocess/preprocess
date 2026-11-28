@@ -4,12 +4,14 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
-import { localDatabaseUrl, localRoleUrl } from "@preprocess/db/migrate";
+import { localRoleUrl } from "@preprocess/db/migrate";
 import { buildSync } from "esbuild";
 import { defineConfig } from "vitest/config";
 
 import { fakeGithub, GITHUB_API, GITHUB_WEB } from "./test/fake-github.ts";
 import { fakeMcp } from "./test/fake-mcp.ts";
+import { fakeModel, MODEL_ORIGIN } from "./test/fake-model.ts";
+import { installDatabaseUrl, testDatabaseUrl } from "./test/global-setup.ts";
 
 const require = createRequire(import.meta.url);
 // pg require()s pg-protocol, and Vitest resolves that require with the
@@ -20,8 +22,7 @@ const pgRequire = createRequire(require.resolve("pg"));
 
 const root = import.meta.dirname;
 const dist = path.join(root, "test/dist");
-const url =
-  process.env.TEST_DATABASE_URL ?? localDatabaseUrl("preprocess_api_test");
+const url = testDatabaseUrl;
 
 // The runtime and the model stub run beside the API, as in `pnpm dev`; the
 // sample agents are bundled the way `preprocess deploy` bundles one.
@@ -45,6 +46,7 @@ bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/crm-agent.ts", "crm-agent.js");
 bundle("test/fixtures/fake-builder.ts", "fake-builder.js");
 bundle("test/fixtures/network-agent.ts", "network-agent.js");
+bundle("test/fixtures/org-model-agent.ts", "org-model-agent.js");
 bundle("test/fixtures/groups-agent.ts", "groups-agent.js");
 bundle("test/fixtures/approvals-agent.ts", "approvals-agent.js");
 bundle("test/fixtures/scheduled-agent.ts", "scheduled-agent.js");
@@ -75,6 +77,11 @@ export default defineConfig({
         hyperdrives: {
           DB: localRoleUrl(url, "preprocess_app"),
           DB_SYSTEM: localRoleUrl(url, "preprocess_system"),
+          INSTALL_DB: localRoleUrl(installDatabaseUrl, "preprocess_app"),
+          INSTALL_DB_SYSTEM: localRoleUrl(
+            installDatabaseUrl,
+            "preprocess_system",
+          ),
         },
         bindings: {
           MODEL_SERVICE_URL: "http://model-stub.test",
@@ -90,12 +97,15 @@ export default defineConfig({
           GITHUB_URL: GITHUB_WEB,
           GITHUB_BUILD_TIMEOUT_SECONDS: "1",
         },
-        // The internet the API reaches: GitHub, and a remote MCP server
-        // behind OAuth.
-        outboundService: (request: Request) =>
-          [GITHUB_API, GITHUB_WEB].includes(new URL(request.url).origin)
-            ? fakeGithub(request)
-            : fakeMcp(request),
+        // The internet the API reaches: GitHub, an organization's model
+        // server, and a remote MCP server behind OAuth.
+        outboundService: (request: Request) => {
+          const { origin } = new URL(request.url);
+          if ([GITHUB_API, GITHUB_WEB].includes(origin))
+            return fakeGithub(request);
+          if (origin === MODEL_ORIGIN) return fakeModel(request);
+          return fakeMcp(request);
+        },
         serviceBindings: {
           RUNTIME: "preprocess-runtime-development",
           BUILDER: { name: "fake-builder", entrypoint: "Builder" },

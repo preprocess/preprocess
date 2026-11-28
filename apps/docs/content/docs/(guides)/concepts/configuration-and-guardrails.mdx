@@ -100,8 +100,8 @@ Preprocess enforces six guardrails:
   eval runs, OCR calls, sandbox time and case fees. When the cap is reached, new
   metered calls are refused and running cases transition to `halted` until a
   person raises the limit or the month rolls over and reruns them.
-- **Allowed models:** The catalogue models agents may run on (`null`, the
-  default, allows every model). Set it with
+- **Allowed models:** The catalogue and organization models (`org:<slug>`)
+  agents may run on (`null`, the default, allows every model). Set it with
   `PUT /v1/orgs/{org}/guardrails/allowed-models` and a body like
   `{"models": ["deepseek-v4.1-flash"]}`, or under Guardrails → Models in the
   app. Every path that picks a model checks it: deploys, the organization's
@@ -115,12 +115,12 @@ Preprocess enforces six guardrails:
   secret.
 - **MCP server grants:** Which agents are allowed to call each registered MCP
   server.
-
-<Callout title="Coming soon">
-  Custom model endpoints (sending model calls to your own serving URLs) are not
-  yet configurable; `GET /v1/orgs/{org}/guardrails` currently returns
-  `modelEndpoints: "hosted"`.
-</Callout>
+- **Model endpoints:** On a self-hosted install, Owners and Admins can serve a
+  catalog model from their own OpenAI-compatible URL
+  (`POST /v1/orgs/{org}/models/endpoints`), and cases then send that model's
+  calls there. `GET /v1/orgs/{org}/guardrails` returns `modelEndpoints.kind` as
+  `own` once any endpoint is registered, with each endpoint's model and host,
+  and `hosted` otherwise.
 
 ## Guardrail loosening requests
 

@@ -14,6 +14,7 @@ export const prefixes = {
   agent: "agt",
   deployment: "dep",
   secret: "sec",
+  modelEndpoint: "mep",
   mcpServer: "mcs",
   mcpConnection: "mcc",
   mcpAuthorization: "mca",

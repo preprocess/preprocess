@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildNotices, type Billing } from "../src/features/notices/notices";
+import { seededLicense } from "../src/features/settings/license-seed";
 
 const RELOAD = {
   enabled: true,
@@ -129,5 +130,51 @@ describe("auto-reload notices", () => {
         false,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("license notices", () => {
+  const withLicense = (
+    state: "active" | "grace" | "expired" | "invalid" | "none",
+    administers = true,
+  ) =>
+    buildNotices({
+      billing: null,
+      license: seededLicense(state),
+      administers,
+      dismissed: new Set(),
+      announcements: false,
+    });
+
+  it("warns Owners and Admins in grace with the grace end, linking to License", () => {
+    expect(withLicense("grace")).toEqual([
+      {
+        id: "license-grace",
+        level: "warning",
+        title: "License expired",
+        detail: "Grace ends Dec 15 · See License",
+        href: "/settings/organization/license",
+      },
+    ]);
+  });
+
+  it("says paid features are off past grace and for an invalid key", () => {
+    expect(withLicense("expired")).toMatchObject([
+      {
+        id: "license-expired",
+        level: "error",
+        detail: "Features off · Renew in License",
+      },
+    ]);
+    expect(withLicense("invalid")).toMatchObject([
+      { id: "license-invalid", level: "warning" },
+    ]);
+  });
+
+  it("shows nothing for an active key, no key, or to Members", () => {
+    expect(withLicense("active")).toEqual([]);
+    expect(withLicense("none")).toEqual([]);
+    expect(withLicense("grace", false)).toEqual([]);
+    expect(withLicense("expired", false)).toEqual([]);
   });
 });

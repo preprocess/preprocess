@@ -61,7 +61,9 @@ import { Route as SettingsOrganizationDevelopersRouteImport } from "./routes/set
 import { Route as SettingsOrganizationGithubRouteImport } from "./routes/settings/organization/github";
 import { Route as SettingsOrganizationGuardrailsRouteImport } from "./routes/settings/organization/guardrails";
 import { Route as SettingsOrganizationIntegrationsRouteImport } from "./routes/settings/organization/integrations";
+import { Route as SettingsOrganizationLicenseRouteImport } from "./routes/settings/organization/license";
 import { Route as SettingsOrganizationMembersRouteImport } from "./routes/settings/organization/members";
+import { Route as SettingsOrganizationModelsRouteImport } from "./routes/settings/organization/models";
 import { Route as SettingsOrganizationNetworkRouteImport } from "./routes/settings/organization/network";
 import { Route as SettingsOrganizationOpentelemetryRouteImport } from "./routes/settings/organization/opentelemetry";
 import { Route as SettingsOrganizationRetentionRouteImport } from "./routes/settings/organization/retention";
@@ -349,10 +351,22 @@ const SettingsOrganizationIntegrationsRoute =
     path: "/integrations",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationLicenseRoute =
+  SettingsOrganizationLicenseRouteImport.update({
+    id: "/license",
+    path: "/license",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const SettingsOrganizationMembersRoute =
   SettingsOrganizationMembersRouteImport.update({
     id: "/members",
     path: "/members",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
+const SettingsOrganizationModelsRoute =
+  SettingsOrganizationModelsRouteImport.update({
+    id: "/models",
+    path: "/models",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
 const SettingsOrganizationNetworkRoute =
@@ -489,7 +503,9 @@ export interface FileRoutesByFullPath {
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
+  "/settings/organization/license": typeof SettingsOrganizationLicenseRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/models": typeof SettingsOrganizationModelsRoute;
   "/settings/organization/network": typeof SettingsOrganizationNetworkRoute;
   "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
@@ -555,7 +571,9 @@ export interface FileRoutesByTo {
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
+  "/settings/organization/license": typeof SettingsOrganizationLicenseRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/models": typeof SettingsOrganizationModelsRoute;
   "/settings/organization/network": typeof SettingsOrganizationNetworkRoute;
   "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
@@ -625,7 +643,9 @@ export interface FileRoutesById {
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
+  "/settings/organization/license": typeof SettingsOrganizationLicenseRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/models": typeof SettingsOrganizationModelsRoute;
   "/settings/organization/network": typeof SettingsOrganizationNetworkRoute;
   "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
@@ -696,7 +716,9 @@ export interface FileRouteTypes {
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
+    | "/settings/organization/license"
     | "/settings/organization/members"
+    | "/settings/organization/models"
     | "/settings/organization/network"
     | "/settings/organization/opentelemetry"
     | "/settings/organization/retention"
@@ -762,7 +784,9 @@ export interface FileRouteTypes {
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
+    | "/settings/organization/license"
     | "/settings/organization/members"
+    | "/settings/organization/models"
     | "/settings/organization/network"
     | "/settings/organization/opentelemetry"
     | "/settings/organization/retention"
@@ -831,7 +855,9 @@ export interface FileRouteTypes {
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
+    | "/settings/organization/license"
     | "/settings/organization/members"
+    | "/settings/organization/models"
     | "/settings/organization/network"
     | "/settings/organization/opentelemetry"
     | "/settings/organization/retention"
@@ -1249,11 +1275,25 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationIntegrationsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/license": {
+      id: "/settings/organization/license";
+      path: "/license";
+      fullPath: "/settings/organization/license";
+      preLoaderRoute: typeof SettingsOrganizationLicenseRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/settings/organization/members": {
       id: "/settings/organization/members";
       path: "/members";
       fullPath: "/settings/organization/members";
       preLoaderRoute: typeof SettingsOrganizationMembersRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
+    "/settings/organization/models": {
+      id: "/settings/organization/models";
+      path: "/models";
+      fullPath: "/settings/organization/models";
+      preLoaderRoute: typeof SettingsOrganizationModelsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
     "/settings/organization/network": {
@@ -1378,7 +1418,9 @@ interface SettingsOrganizationRouteChildren {
   SettingsOrganizationGithubRoute: typeof SettingsOrganizationGithubRoute;
   SettingsOrganizationGuardrailsRoute: typeof SettingsOrganizationGuardrailsRoute;
   SettingsOrganizationIntegrationsRoute: typeof SettingsOrganizationIntegrationsRoute;
+  SettingsOrganizationLicenseRoute: typeof SettingsOrganizationLicenseRoute;
   SettingsOrganizationMembersRoute: typeof SettingsOrganizationMembersRoute;
+  SettingsOrganizationModelsRoute: typeof SettingsOrganizationModelsRoute;
   SettingsOrganizationNetworkRoute: typeof SettingsOrganizationNetworkRoute;
   SettingsOrganizationOpentelemetryRoute: typeof SettingsOrganizationOpentelemetryRoute;
   SettingsOrganizationRetentionRoute: typeof SettingsOrganizationRetentionRoute;
@@ -1397,7 +1439,9 @@ const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationGithubRoute: SettingsOrganizationGithubRoute,
   SettingsOrganizationGuardrailsRoute: SettingsOrganizationGuardrailsRoute,
   SettingsOrganizationIntegrationsRoute: SettingsOrganizationIntegrationsRoute,
+  SettingsOrganizationLicenseRoute: SettingsOrganizationLicenseRoute,
   SettingsOrganizationMembersRoute: SettingsOrganizationMembersRoute,
+  SettingsOrganizationModelsRoute: SettingsOrganizationModelsRoute,
   SettingsOrganizationNetworkRoute: SettingsOrganizationNetworkRoute,
   SettingsOrganizationOpentelemetryRoute:
     SettingsOrganizationOpentelemetryRoute,

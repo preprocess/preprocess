@@ -3,7 +3,11 @@
 // names the signing key's id (kid), for the issuer's records only. There is
 // no license server; the key is checked on every entitlement read.
 
+import { withoutOrgRead } from "@preprocess/db/client";
+import { installLicense } from "@preprocess/db/schema/license";
 import { z } from "zod";
+
+import type { Env } from "./env.ts";
 
 // PLACEHOLDER, NOT A REAL SIGNING KEY. Its private half was thrown away, so
 // no license verifies against it. Replace it with the production key's public
@@ -76,6 +80,32 @@ const verified = async (key: string, keys: readonly string[]) => {
   const signature = fromBase64url(signaturePart);
   for (const publicKey of keys)
     if (await signedBy(publicKey, signature, bytes)) return parsed.data;
+  return null;
+};
+
+// The install's key: the one an Owner uploaded, else PREPROCESS_LICENSE_KEY.
+export const installKey = async (
+  env: Env,
+): Promise<{
+  key: string;
+  source: "upload" | "environment";
+  uploadedAt: Date | null;
+} | null> => {
+  const [uploaded] = await withoutOrgRead(env, "license: install key", (tx) =>
+    tx
+      .select({
+        key: installLicense.key,
+        uploadedAt: installLicense.uploadedAt,
+      })
+      .from(installLicense),
+  );
+  if (uploaded) return { ...uploaded, source: "upload" };
+  if (env.PREPROCESS_LICENSE_KEY?.trim())
+    return {
+      key: env.PREPROCESS_LICENSE_KEY,
+      source: "environment",
+      uploadedAt: null,
+    };
   return null;
 };
 

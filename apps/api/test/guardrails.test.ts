@@ -80,14 +80,14 @@ describe("network rules", () => {
   });
 
   it("default to allow-all and change only by Owners and Admins", async () => {
-    const start = await owner.call<{ network: Rules; modelEndpoints: string }>(
+    const start = await owner.call<{ network: Rules }>(
       `/v1/orgs/${org}/guardrails`,
     );
     expect(start.body).toEqual({
       network: { allow: [], block: [] },
       sandboxMaxSize: null,
       allowedModels: null,
-      modelEndpoints: "hosted",
+      modelEndpoints: { kind: "hosted", endpoints: [] },
     });
     const rules = { allow: ["*.example.com"], block: ["Bank.example.com"] };
     expect(
