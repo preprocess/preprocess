@@ -14,7 +14,7 @@ import {
   RESERVED_PREFIX,
   SECRET_NAME,
 } from "@preprocess/sdk/protocol";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import {
@@ -26,6 +26,7 @@ import {
 import { encrypt, orgKey } from "../crypto.ts";
 import { liveDeployments, syncAgents, type Manifest } from "../deploy.ts";
 import type { Env } from "../env.ts";
+import { trackEvent } from "../analytics.ts";
 
 export const secretRoutes = new OpenAPIHono<{
   Bindings: Env;
@@ -213,8 +214,21 @@ secretRoutes.openapi(
         data: { secret: name, version },
       });
       // Agent code reads the new value on its next call (doc 03).
-      return { version };
+      return {
+        version,
+        secrets: existing
+          ? null
+          : (await tx.select({ n: count() }).from(secrets))[0]!.n,
+      };
     });
+    if (result.secrets !== null)
+      await trackEvent(
+        c.env,
+        "secret_added",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        { secrets: result.secrets },
+      );
     return c.json({ name, version: result.version }, 200);
   },
 );

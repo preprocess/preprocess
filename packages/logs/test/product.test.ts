@@ -120,6 +120,19 @@ describe("productEvent", () => {
       case_id: kase,
       agent_id: agent,
       outcome: "completed",
+      error_class: "none",
+      duration_ms: 42_000,
+      duration_bucket: "s10_to_1m",
+      model: "deepseek-v4.1-flash",
+      tokens_in: 1200,
+      tokens_out: 300,
+      credits: 2,
+      credits_bucket: "n1_to_10",
+      tool_calls: 3,
+      mcp_calls: 1,
+      sandbox_seconds: 0,
+      ocr_pages: 0,
+      test: false,
     });
     expect(event.distinctId).toBe(org);
     expect(event.properties.$process_person_profile).toBeUndefined();
@@ -132,7 +145,7 @@ describe("productEvent", () => {
       "signed_up",
       null,
       user,
-      { method: "google" },
+      { method: "google" } as never,
       {
         $set_once: {
           signup_method: "google",
@@ -151,7 +164,7 @@ describe("productEvent", () => {
       "case_completed",
       org,
       null,
-      { case_id: kase, agent_id: agent, outcome: "completed" },
+      { case_id: kase, agent_id: agent, outcome: "completed" } as never,
       { $set: { role: "owner" } },
     );
     expect(nobody.properties.$set).toBeUndefined();

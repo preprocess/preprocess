@@ -30,6 +30,7 @@ import {
 } from "../caller.ts";
 import { AGENT_SLUG } from "../deploy.ts";
 import type { Env } from "../env.ts";
+import { trackEvent } from "../analytics.ts";
 import {
   getInstallation,
   githubConfigured,
@@ -581,6 +582,10 @@ githubRoutes.openapi(
         directory: input.directory.replace(/\/+$/, ""),
         entry: input.entry,
       };
+      const [linked] = await tx
+        .select({ id: githubLinks.id })
+        .from(githubLinks)
+        .where(eq(githubLinks.agentSlug, agent));
       const [row] = await tx
         .insert(githubLinks)
         .values({
@@ -602,8 +607,19 @@ githubRoutes.openapi(
         targetId: row!.id,
         data: { agent, repository: input.repository, branch: input.branch },
       });
-      return row!;
+      return { ...row!, relinked: Boolean(linked) };
     });
+    await trackEvent(
+      c.env,
+      "github_repo_linked",
+      c.var.org,
+      c.var.caller.type === "person" ? c.var.caller.userId : null,
+      {
+        link_id: link.id,
+        repository_id: link.repositoryId,
+        relinked: link.relinked,
+      },
+    );
     return c.json(
       {
         agent,

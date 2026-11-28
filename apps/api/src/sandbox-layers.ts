@@ -19,6 +19,7 @@ import {
 import { and, eq, lt, sql } from "drizzle-orm";
 
 import type { DeploymentRef, Manifest } from "./deploy.ts";
+import { trackEvent } from "./analytics.ts";
 import { promote, syncDeployment } from "./deploy.ts";
 import type { Env, SandboxLayer, SandboxLayerResult } from "./env.ts";
 import { caseSandboxSizes, sandboxSizes } from "./sandbox.ts";
@@ -145,7 +146,7 @@ export const layerBuilt = async (
           .set({ status: "failed", sandboxLayer: failed })
           .where(eq(deployments.id, d.id));
       }
-      return { error };
+      return { error, failedDeploy: deploying ? d.source : null };
     };
     if ("error" in result) return fail(result.error, result.log);
     if (!ownsLayer(ref.organizationId, result.key))
@@ -186,6 +187,13 @@ export const layerBuilt = async (
       promote: waiting.length === 0 && d.environment === "production",
     };
   });
+  if ("failedDeploy" in outcome && outcome.failedDeploy)
+    await trackEvent(env, "deployment_failed", ref.organizationId, null, {
+      agent_id: ref.agentId,
+      deployment_id: ref.deploymentId,
+      source: outcome.failedDeploy,
+      failure: "environment_build_failed",
+    });
   if ("promote" in outcome && outcome.promote)
     await promote(env, org, ref.agentId, ref.deploymentId, {
       actorType: "platform",

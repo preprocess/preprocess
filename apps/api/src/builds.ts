@@ -17,6 +17,7 @@ import {
 import { eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
+import { trackEvent } from "./analytics.ts";
 import { deploy } from "./deploy.ts";
 import type { BuildResult, Env } from "./env.ts";
 import { commitArchive, withRepositoryToken } from "./github.ts";
@@ -43,6 +44,19 @@ const finish = (
       .set({ ...fields, finishedAt: new Date() })
       .where(eq(githubBuilds.id, ref.buildId)),
   );
+
+// A push build that ended without a deployment, after its row says so.
+const buildFailed = (
+  env: Env,
+  ref: BuildRef,
+  failure: "build_failed" | "build_timed_out" | "rejected",
+) =>
+  trackEvent(env, "deployment_failed", ref.organizationId, null, {
+    agent_id: null,
+    deployment_id: null,
+    source: "github",
+    failure,
+  });
 
 type Outcome =
   BuildResult | { status: "superseded" | "timed_out"; log: string };
@@ -132,6 +146,7 @@ const runBuild = async (env: Env, ref: BuildRef, signal: AbortSignal) => {
       status: "failed",
       error: error instanceof Error ? error.message : String(error),
     });
+    await buildFailed(env, ref, "build_failed");
     return;
   }
 
@@ -148,6 +163,12 @@ const runBuild = async (env: Env, ref: BuildRef, signal: AbortSignal) => {
             ? "a newer push replaced this build"
             : "the build failed; see its log",
     });
+    if (outcome.status !== "superseded")
+      await buildFailed(
+        env,
+        ref,
+        outcome.status === "timed_out" ? "build_timed_out" : "build_failed",
+      );
     return;
   }
   try {
@@ -180,6 +201,13 @@ const runBuild = async (env: Env, ref: BuildRef, signal: AbortSignal) => {
           ? error.message
           : String(error),
     });
+    await buildFailed(
+      env,
+      ref,
+      error instanceof HTTPException && error.status < 500
+        ? "rejected"
+        : "build_failed",
+    );
   }
 };
 
