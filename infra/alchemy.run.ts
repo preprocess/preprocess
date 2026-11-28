@@ -367,6 +367,15 @@ export default Alchemy.Stack(
         ),
       },
     });
+    // The Turnstile widget for sign-in and sign-up (PRE-165), managed mode on
+    // production's app domain. Nothing binds or enforces it yet.
+    const turnstile =
+      stage === "production" && appDomain
+        ? yield* Cloudflare.Turnstile.Widget("SignInWidget", {
+            domains: [appDomain],
+            mode: "managed",
+          }).pipe(keep)
+        : undefined;
     const appUrl = appDomain
       ? `https://${appDomain}`
       : Output.map(app.url, (url) => {
@@ -907,6 +916,7 @@ export default Alchemy.Stack(
       docs: docsUrl,
       api: api.url,
       ...(modelStub && { modelStub: modelStub.url }),
+      ...(turnstile && { turnstileSitekey: turnstile.sitekey }),
       branch: n.branch,
     };
   }),
