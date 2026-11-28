@@ -209,14 +209,14 @@ describe("removed group notices", () => {
         id: "group-removed-grp-01m8-contractors",
         level: "warning",
         title: "Contractors was removed",
-        detail: "Removed by IdP · 2 agents name it",
+        detail: "Removed from directory · 2 agents name it",
         href: "/settings/organization/directory-sync",
         date: contractors.removedAt,
         dismissible: true,
       },
     ]);
     expect(withGroups([{ ...contractors, agents: 1 }])[0]?.detail).toBe(
-      "Removed by IdP · 1 agent names it",
+      "Removed from directory · 1 agent names it",
     );
   });
 
