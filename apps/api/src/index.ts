@@ -1,4 +1,10 @@
-import { initLogs, logFailure, routeOf, trafficOf } from "@preprocess/logs";
+import {
+  initLogs,
+  logFailure,
+  routeOf,
+  sendProductEvents,
+  trafficOf,
+} from "@preprocess/logs";
 import type { LogRecord } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { evlog, type EvlogVariables } from "evlog/hono";
@@ -9,6 +15,11 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { routePath } from "hono/route";
 
+import {
+  identifyAllOrganizations,
+  isProductMessage,
+  type ProductMessage,
+} from "./analytics.ts";
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { reportDaily, reportUsage } from "./billing.ts";
 import { runPlanChanges } from "./plan-change.ts";
@@ -284,12 +295,15 @@ export default {
     const now = new Date(controller.scheduledTime);
     watch(ctx, "cron.sandbox-layers", collectSandboxLayers(env, now));
     watch(ctx, "cron.audit-anchor", anchorAll(env, now));
+    watch(ctx, "cron.analytics-groups", identifyAllOrganizations(env));
     watch(ctx, "cron.idempotency", deleteExpiredIdempotencyKeys(env));
     watch(ctx, "cron.retention", sweepRetention(env, now));
     watch(ctx, "cron.daily-usage", reportDaily(env, now));
   },
   async queue(
-    batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,
+    batch: MessageBatch<
+      Job | OutboxMessage | LogRecord | OtelRetry | ProductMessage
+    >,
     env: Env,
     ctx: ExecutionContext,
   ) {
@@ -309,21 +323,44 @@ export default {
 const queueKind = (queue: string) => queue.split("-")[1] ?? queue;
 
 const consume = async (
-  batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,
+  batch: MessageBatch<
+    Job | OutboxMessage | LogRecord | OtelRetry | ProductMessage
+  >,
   env: Env,
   ctx: ExecutionContext,
 ) => {
   if (batch.queue.startsWith("preprocess-logs-")) {
+    // Product events (analytics.ts) go to PostHog first, each acked once
+    // sent, so a failed send retries only those.
+    const product = batch.messages.filter((m) => isProductMessage(m.body));
+    if (product.length) {
+      try {
+        await sendProductEvents(
+          env,
+          product.map((m) => (m.body as ProductMessage).product),
+        );
+        for (const m of product) m.ack();
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            event: "product.send_failed",
+            error: String(error),
+          }),
+        );
+        for (const m of product) m.retry({ delaySeconds: 30 });
+      }
+    }
     // A failed store write retries the whole batch; a failed export
     // retries only the export.
-    const bodies = batch.messages.map((m) => m.body as LogRecord | OtelRetry);
+    const logs = batch.messages.filter((m) => !isProductMessage(m.body));
+    const bodies = logs.map((m) => m.body as LogRecord | OtelRetry);
     const fresh = bodies.filter((b): b is LogRecord => !("otelRetry" in b));
     if (fresh.length) await ingestLogs(env, fresh);
     await exportLogs(env, [
       ...fresh.map((record) => ({ otelRetry: 0, record })),
       ...bodies.filter((b): b is OtelRetry => "otelRetry" in b),
     ]);
-    batch.ackAll();
+    for (const m of logs) m.ack();
     return;
   }
   if (batch.queue.startsWith("preprocess-cases-")) {

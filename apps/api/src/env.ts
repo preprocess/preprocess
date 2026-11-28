@@ -1,4 +1,4 @@
-import type { LogRecord, PostHogEnv } from "@preprocess/logs";
+import type { LogRecord, PostHogEnv, ProductEvent } from "@preprocess/logs";
 import type { SandboxOwner } from "@preprocess/sandbox";
 import type { NetworkRules } from "@preprocess/db/schema/deployments";
 import type { SandboxPreset, SandboxSetup } from "@preprocess/sdk/protocol";
@@ -312,7 +312,8 @@ export type Env = PostHogEnv & {
   // consumer writes the store and the Postgres summaries. LOG_STORE "sql" is
   // the Pipelines stream plus R2 SQL on deployed stages; anything else keeps
   // NDJSON in LOG_BUCKET, which is how local development and tests run.
-  LOGS: Queue<LogRecord | OtelRetry>;
+  // Product analytics events (analytics.ts) ride it to PostHog too.
+  LOGS: Queue<LogRecord | OtelRetry | { product: ProductEvent }>;
   // Each queue's dead letters (dead-letters.ts), read only for their depth.
   // Deployed stages bind them; local development and tests do not.
   JOBS_DLQ?: Queue;

@@ -23,6 +23,7 @@ import {
   requireAdmin,
   type OrgVariables,
 } from "../caller.ts";
+import { trackEvent } from "../analytics.ts";
 import type { Env } from "../env.ts";
 import {
   listTools,
@@ -203,7 +204,7 @@ mcpRoutes.openapi(
     // A server that refuses an unauthenticated session wants an OAuth
     // sign-in; one that accepts it needs no connection.
     const { auth, transport } = await detectServer(url).catch(mcpFailure);
-    await withOrg(c.env, c.var.org, async (tx) => {
+    const saved = await withOrg(c.env, c.var.org, async (tx) => {
       const [existing] = await tx
         .select()
         .from(mcpServers)
@@ -213,7 +214,7 @@ mcpRoutes.openapi(
         existing.auth === auth &&
         existing.transport === transport
       )
-        return;
+        return null;
       const id = existing?.id ?? newId("mcpServer");
       if (existing) {
         await tx
@@ -238,7 +239,17 @@ mcpRoutes.openapi(
         targetId: id,
         data: { server: slug, url, auth, transport },
       });
+      return id;
     });
+    // A server that takes no sign-in is connected once it is saved.
+    if (saved && auth === "none")
+      await trackEvent(
+        c.env,
+        "mcp_connected",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        { mcp_server_id: saved, auth },
+      );
     return c.json({ slug, auth, transport }, 200);
   },
 );
@@ -569,7 +580,7 @@ const completeSignIn = async (
   const code = query("code");
   if (!org || !id || !code) throw new SignInFailed("cancelled");
   const organization = orgId(org);
-  return withOrg(env, organization, async (tx) => {
+  const connected = await withOrg(env, organization, async (tx) => {
     const [pending] = await tx
       .delete(mcpAuthorizations)
       .where(eq(mcpAuthorizations.id, id))
@@ -606,6 +617,14 @@ const completeSignIn = async (
       targetId: server.id,
       data: { server: server.slug },
     });
-    return server.slug;
+    return { slug: server.slug, id: server.id, by: pending.createdBy };
   });
+  await trackEvent(
+    env,
+    "mcp_connected",
+    org,
+    connected.by.startsWith("key_") ? null : connected.by,
+    { mcp_server_id: connected.id, auth: "oauth" },
+  );
+  return connected.slug;
 };

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@preprocess/ui/components/button";
 import { IconChevronLeft, IconChevronRight, IconX } from "@tabler/icons-react";
 import { cn } from "./utils/cn";
+import { REPLAY_BLOCK } from "../../features/monitoring/posthog";
 
 export type LightboxImage = {
   /** Stable identifier — used for keys and to know which image is active. */
@@ -106,7 +107,10 @@ export function ImageLightbox({
       aria-modal="true"
       // `dark` scopes the theme tokens so the shared Button variants read
       // correctly against the black backdrop in either app theme.
-      className="dark fixed inset-0 z-50 flex items-center justify-center bg-black/80 supports-backdrop-filter:backdrop-blur-sm"
+      className={cn(
+        REPLAY_BLOCK,
+        "dark fixed inset-0 z-50 flex items-center justify-center bg-black/80 supports-backdrop-filter:backdrop-blur-sm",
+      )}
       onClick={onClose}
     >
       <Button

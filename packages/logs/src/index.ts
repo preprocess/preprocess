@@ -17,6 +17,16 @@ export {
   trafficOf,
   type PostHogEnv,
 } from "./posthog.ts";
+export {
+  organizationIdentify,
+  PRODUCT_EVENTS,
+  productEvent,
+  sendProductEvents,
+  type OrganizationTraits,
+  type ProductEvent,
+  type ProductEventName,
+  type ProductProperties,
+} from "./product.ts";
 
 // One run-log record (design doc 09): the Pipelines stream's schema, a line
 // of the local NDJSON store, and what the logs API returns.
