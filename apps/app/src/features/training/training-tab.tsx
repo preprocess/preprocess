@@ -15,7 +15,7 @@ import {
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import { NothingCreatedArt } from "../../components/empty-art";
+import { DatasetsArt } from "../../components/empty-art";
 import {
   ValidatedField,
   type ValidatedFieldHandle,
@@ -121,7 +121,7 @@ export function AgentTrainingTab({
                 </Button>
               ) : undefined
             }
-            art={<NothingCreatedArt />}
+            art={<DatasetsArt />}
             description="A dataset picks cases by period, status, deployment and what people changed. It stays current as cases close."
             title="No datasets yet"
           />

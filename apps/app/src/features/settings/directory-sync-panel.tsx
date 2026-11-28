@@ -12,7 +12,7 @@ import { cn } from "@preprocess/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 
-import { CouldntLoadArt, NothingCreatedArt } from "../../components/empty-art";
+import { CouldntLoadArt, DirectorySyncArt } from "../../components/empty-art";
 import { ApiError } from "../auth/client";
 import { PAGE_FORWARD } from "../groups/groups-panel";
 import {
@@ -430,7 +430,7 @@ function SyncedSection({ settings, readOnly, onDialog }: SectionProps) {
     >
       {never ? (
         <SettingsEmpty
-          art={<NothingCreatedArt />}
+          art={<DirectorySyncArt />}
           description="Add the base URL and token to your identity provider's SCIM settings, then assign people and groups to the app."
           title="Nothing synced yet"
         />

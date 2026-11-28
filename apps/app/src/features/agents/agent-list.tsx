@@ -20,7 +20,7 @@ import { cn } from "@preprocess/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, type ReactNode } from "react";
 
-import { NoResultsArt, NothingCreatedArt } from "../../components/empty-art";
+import { AgentsArt, NoResultsArt } from "../../components/empty-art";
 import { PageHeader, PageTitle } from "../../components/page-header";
 import { useHotkeys } from "../../components/use-hotkeys";
 import { SettingsSearchField } from "../settings/kit";
@@ -171,11 +171,7 @@ export function AgentList({
             >
               <EmptyHeader className="pointer-events-auto group max-w-md">
                 <EmptyMedia variant="graphic">
-                  {agents.length === 0 ? (
-                    <NothingCreatedArt />
-                  ) : (
-                    <NoResultsArt />
-                  )}
+                  {agents.length === 0 ? <AgentsArt /> : <NoResultsArt />}
                 </EmptyMedia>
                 <EmptyTitle>
                   {agents.length === 0 ? "No agents yet" : "No matching agents"}

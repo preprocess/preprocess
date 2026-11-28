@@ -11,9 +11,9 @@ import { useRouter } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import {
+  CasesArt,
   CouldntLoadArt,
   NoResultsArt,
-  NothingCreatedArt,
 } from "../../components/empty-art";
 
 export type CaseInboxEmptyKind = "unavailable" | "empty" | "no-match";
@@ -48,7 +48,7 @@ export function CaseInboxEmpty({
       );
       break;
     case "empty":
-      art = <NothingCreatedArt />;
+      art = <CasesArt />;
       title = agentScoped ? "No cases for this agent" : "No cases yet";
       description = agentScoped
         ? "Cases started for this agent show up here."

@@ -23,7 +23,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 
-import { NoAccessArt, NothingCreatedArt } from "../../components/empty-art";
+import { McpServersArt, NoAccessArt } from "../../components/empty-art";
 import {
   ValidatedField,
   type ValidatedFieldHandle,
@@ -341,7 +341,7 @@ function McpServersSection({
         <SettingsSkeletonRows count={2} />
       ) : servers.data.length === 0 ? (
         <SettingsEmpty
-          art={<NothingCreatedArt />}
+          art={<McpServersArt />}
           description="Add a remote MCP server so agents can call its tools."
           title="No MCP servers yet"
         />

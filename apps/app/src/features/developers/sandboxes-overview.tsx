@@ -14,7 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Fragment, type ReactNode } from "react";
 
-import { CouldntLoadArt, NothingCreatedArt } from "../../components/empty-art";
+import { CouldntLoadArt, SandboxesArt } from "../../components/empty-art";
 import { useOrganizationId } from "../auth/auth-context";
 import { ApiError, orgApi } from "../auth/client";
 import {
@@ -324,7 +324,7 @@ function AgentsSection({
               </Button>
             ) : undefined
           }
-          art={<NothingCreatedArt />}
+          art={<SandboxesArt />}
           description="An agent gets a sandbox when its code declares one."
           title="No agents use a sandbox"
         />

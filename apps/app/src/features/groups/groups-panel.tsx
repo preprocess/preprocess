@@ -21,7 +21,11 @@ import {
 import { Link } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 
-import { NothingCreatedArt } from "../../components/empty-art";
+import {
+  GroupAgentAccessArt,
+  GroupMembersArt,
+  GroupsArt,
+} from "../../components/empty-art";
 
 import {
   AccessSelect,
@@ -107,7 +111,7 @@ export function GroupsList({
     >
       {groups.length === 0 ? (
         <SettingsEmpty
-          art={<NothingCreatedArt />}
+          art={<GroupsArt />}
           description="Create a group to control who works an agent's cases and which team a case waits on."
           title="No groups yet"
         />
@@ -320,7 +324,7 @@ function GroupMembers({
       >
         {group.members.length === 0 ? (
           <SettingsEmpty
-            art={<NothingCreatedArt />}
+            art={<GroupMembersArt />}
             description="Add people to give them this group's agent access."
             title="No members in this group"
           />
@@ -440,7 +444,7 @@ function GroupAccess({
     >
       {group.agents.length === 0 ? (
         <SettingsEmpty
-          art={<NothingCreatedArt />}
+          art={<GroupAgentAccessArt />}
           description="Grant this group operator or viewer access to an agent."
           title="No agent access yet"
         />

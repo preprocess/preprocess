@@ -20,10 +20,7 @@ import { MODELS } from "@preprocess/sdk/protocol";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 
-import {
-  FillsOnItsOwnArt,
-  NothingCreatedArt,
-} from "../../components/empty-art";
+import { EvalRunsArt, EvalSuiteCasesArt } from "../../components/empty-art";
 
 import { orgApi } from "../auth/client";
 import {
@@ -141,7 +138,7 @@ export function EvalSuiteView({
       >
         {suite.runs.length === 0 ? (
           <SettingsEmpty
-            art={<NothingCreatedArt />}
+            art={<EvalRunsArt />}
             description="Run this suite against a deployment to score answers field by field."
             title="No eval runs yet"
           />
@@ -188,7 +185,7 @@ export function EvalSuiteView({
       >
         {suite.suiteCases.length === 0 ? (
           <SettingsEmpty
-            art={<FillsOnItsOwnArt />}
+            art={<EvalSuiteCasesArt />}
             description="Add completed cases to replay and score against new deployments."
             title="No cases in this suite"
           />

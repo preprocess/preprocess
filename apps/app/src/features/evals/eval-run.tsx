@@ -4,7 +4,7 @@ import { ChevronDown } from "@preprocess/ui/lib/icons";
 import { cn } from "@preprocess/ui/lib/utils";
 import { useState } from "react";
 
-import { FillsOnItsOwnArt } from "../../components/empty-art";
+import { EvalRunCasesArt } from "../../components/empty-art";
 
 import {
   SettingsCard,
@@ -99,7 +99,7 @@ export function EvalRunView({ run }: Readonly<{ run: EvalRunDetail }>) {
       >
         {run.results.length === 0 ? (
           <SettingsEmpty
-            art={<FillsOnItsOwnArt />}
+            art={<EvalRunCasesArt />}
             description="Scored cases appear here as this eval run finishes."
             title="No case results yet"
           />

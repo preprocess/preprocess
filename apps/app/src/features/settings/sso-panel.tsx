@@ -32,7 +32,11 @@ import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { Textarea } from "@preprocess/ui/components/textarea";
 import { useEffect, useState } from "react";
 
-import { CouldntLoadArt, NothingCreatedArt } from "../../components/empty-art";
+import {
+  CouldntLoadArt,
+  SsoDomainsArt,
+  SsoIdentityProviderArt,
+} from "../../components/empty-art";
 import { ApiError } from "../auth/client";
 import { ErrorLine } from "./guardrails-panel";
 import {
@@ -264,7 +268,7 @@ function ConnectionSection({ settings, readOnly, onDialog }: SectionProps) {
               </Button>
             )
           }
-          art={<NothingCreatedArt />}
+          art={<SsoIdentityProviderArt />}
           description="Connect Okta, Entra ID, Google Workspace or any SAML or OIDC provider so people can sign in with their work account."
           title="No identity provider yet"
         />
@@ -584,7 +588,7 @@ function DomainsSection({ settings, readOnly, onDialog }: SectionProps) {
     >
       {settings.domains.length === 0 ? (
         <SettingsEmpty
-          art={<NothingCreatedArt />}
+          art={<SsoDomainsArt />}
           description="Add the email domain your team signs in with, such as acme.com."
           title="No domains yet"
         />
