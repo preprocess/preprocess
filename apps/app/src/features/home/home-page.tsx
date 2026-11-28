@@ -326,7 +326,7 @@ const TILE: Record<Tile, { label: string; icon: IconComponent; href: string }> =
   };
 
 const TILE_FRAME =
-  "relative flex min-h-48 flex-col gap-3 rounded-xl p-4 ring-1 ring-border";
+  "relative flex flex-col gap-3 rounded-xl p-4 ring-1 ring-border md:min-h-48";
 
 function TileHeader({
   tile,
@@ -568,7 +568,7 @@ function tileBody({
         : 0;
       const ratio = balance + spentUsd > 0 ? balance / (balance + spentUsd) : 0;
       return (
-        <div className="flex flex-1 flex-col justify-center gap-2">
+        <div className="flex flex-col gap-2">
           <span
             className="text-title tabular-nums text-foreground"
             style={medium}
@@ -595,7 +595,7 @@ function tileBody({
     case "members": {
       const members = home.members!;
       return (
-        <div className="flex flex-1 flex-col justify-center gap-3">
+        <div className="flex flex-col gap-3">
           <AssigneeStack
             assignees={members.people.map((person) => ({
               ...person,
@@ -646,7 +646,7 @@ function Activity({
   const x = (i: number) => (i / Math.max(1, hours.length - 1)) * width;
   const y = (value: number) => height - 2 - (value / max) * (height - 4);
   return (
-    <div className="flex flex-1 flex-col justify-between gap-3">
+    <div className="flex flex-col gap-3">
       <svg
         aria-hidden="true"
         className="h-16 w-full"
