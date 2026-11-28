@@ -125,7 +125,7 @@ export type Runtime = {
   ): Promise<unknown>;
   postMessage(
     c: CaseKey & { userId: string; text: string },
-  ): Promise<{ id: string; mentioned: string[] }>;
+  ): Promise<{ id: string; mentioned: string[]; first: boolean }>;
   cancelCase(c: CaseKey): Promise<CaseRoomState>;
   // A closed case's run capture (format preprocess.run), or null when none
   // is stored (design doc 10).

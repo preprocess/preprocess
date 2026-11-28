@@ -20,6 +20,7 @@ import {
   promote,
 } from "../deploy.ts";
 import type { Env } from "../env.ts";
+import { trackEvent } from "../analytics.ts";
 
 export const agentRoutes = new OpenAPIHono<{
   Bindings: Env;
@@ -173,17 +174,36 @@ agentRoutes.openapi(
   }),
   async (c) => {
     await requireDeployer(c.env, c.var, "deploy", c.req.valid("param").agent);
+    const source =
+      c.req.header("x-preprocess-source") === "github" ? "github" : "cli";
     const deployment = await deploy(
       c.env,
       c.var.org,
       c.req.valid("param").agent,
-      {
-        ...c.req.valid("json"),
-        source:
-          c.req.header("x-preprocess-source") === "github" ? "github" : "cli",
-      },
+      { ...c.req.valid("json"), source },
       eventBase(c.var),
-    );
+    ).catch(async (error: unknown) => {
+      // A deploy that failed its checks: manifest, groups, model or plan.
+      if (error instanceof HTTPException && error.status < 500)
+        await trackEvent(
+          c.env,
+          "deployment_failed",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          {
+            agent_id: null,
+            deployment_id: null,
+            source:
+              source === "github"
+                ? "github"
+                : c.var.caller.type === "person"
+                  ? "cli"
+                  : "api",
+            failure: "rejected",
+          },
+        );
+      throw error;
+    });
     return c.json(deployment, 201);
   },
 );
@@ -266,12 +286,27 @@ agentRoutes.openapi(
     const { agent: slug, deployment } = c.req.valid("param");
     await requireDeployer(c.env, c.var, "promote", slug);
     const agent = await agentBySlug(c.env, c.var.org, slug);
+    const replaced = await productionDeployment(c.env, c.var.org, agent.id);
     const cleared = await promote(
       c.env,
       c.var.org,
       agent.id,
       deployment,
       eventBase(c.var),
+    );
+    const now = await productionDeployment(c.env, c.var.org, agent.id);
+    await trackEvent(
+      c.env,
+      "deployment_promoted",
+      c.var.org,
+      c.var.caller.type === "person" ? c.var.caller.userId : null,
+      {
+        agent_id: agent.id,
+        deployment_id: deployment,
+        rollback: Boolean(
+          replaced && now && now.createdAt < replaced.createdAt,
+        ),
+      },
     );
     const promoted = await getDeployment(
       c.env,
@@ -320,6 +355,13 @@ agentRoutes.openapi(
       });
       return row!;
     });
+    await trackEvent(
+      c.env,
+      "agent_archived",
+      c.var.org,
+      c.var.caller.type === "person" ? c.var.caller.userId : null,
+      { agent_id: agent.id },
+    );
     return c.json(await agentView(c.env, c.var.org, archived), 200);
   },
 );
