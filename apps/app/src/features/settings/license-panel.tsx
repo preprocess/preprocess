@@ -6,11 +6,6 @@
 // the page carries the larger callout; the sidebar notice links here.
 
 import {
-  Banner,
-  BannerDescription,
-  BannerTitle,
-} from "@preprocess/ui/components/banner";
-import {
   AsyncActionAbortError,
   LoadingButton,
 } from "@preprocess/ui/components/loading-button";
@@ -50,44 +45,20 @@ const STATUS: Record<
 
 const KEEPS_WORKING = "The free product and your data keep working.";
 
-function Callout({ license }: { license: License }) {
-  const expired = license.expiresAt ? formatDate(license.expiresAt) : null;
-  const graceEnds = license.graceEndsAt
-    ? formatDate(license.graceEndsAt)
-    : null;
+const statusDescription = (license: License) => {
   switch (license.status) {
     case "grace":
-      return (
-        <Banner contrast="high" status="warning">
-          <BannerTitle>{`Paid features end on ${graceEnds}`}</BannerTitle>
-          <BannerDescription>
-            {`Your license expired on ${expired}. Upload a renewed key before ${graceEnds} to keep paid features on. ${KEEPS_WORKING}`}
-          </BannerDescription>
-        </Banner>
-      );
+      return `Paid features end ${license.graceEndsAt ? formatDate(license.graceEndsAt) : "soon"}. Upload a renewed key to keep them on.`;
     case "expired":
-      return (
-        <Banner contrast="high" status="error">
-          <BannerTitle>Paid features are off</BannerTitle>
-          <BannerDescription>
-            {`Your license expired on ${expired} and its 30-day grace period ended on ${graceEnds}. Upload a renewed key to turn them back on. ${KEEPS_WORKING}`}
-          </BannerDescription>
-        </Banner>
-      );
+      return `Paid features are off since ${license.expiresAt ? formatDate(license.expiresAt) : "the license expired"}. Upload a renewed key to turn them back on.`;
     case "invalid":
-      return (
-        <Banner contrast="high" status="warning">
-          <BannerTitle>The license key isn't valid</BannerTitle>
-          <BannerDescription>
-            {`Paid features are off until a valid key is uploaded. ${KEEPS_WORKING}`}
-          </BannerDescription>
-        </Banner>
-      );
-    case "active":
+      return "Paid features are off until a valid key is uploaded.";
     case "none":
-      return null;
+      return "Paid features need a license key from Preprocess.";
+    case "active":
+      return undefined;
   }
-}
+};
 
 const seatsLabel = ({ used, limit }: License["seats"]) =>
   limit === null
@@ -107,11 +78,7 @@ function Details({ license }: { license: License }) {
   return (
     <SettingsRows>
       <SettingsRow
-        description={
-          license.status === "none"
-            ? "Paid features need a license key from Preprocess."
-            : undefined
-        }
+        description={statusDescription(license)}
         label="Status"
         value={
           <SettingsStatus state={status.state}>{status.label}</SettingsStatus>
@@ -159,6 +126,7 @@ function UploadKey() {
     <SettingsSection
       actions={
         <LoadingButton
+          disabled={key.trim() === ""}
           onAction={async () => {
             setError(null);
             if (!field.current?.commit()) throw new AsyncActionAbortError();
@@ -198,9 +166,8 @@ export function LicensePanel({ role }: { role: LicenseRole }) {
   const owner = role === "owner";
   return (
     <SettingsStacked>
-      {license.data ? <Callout license={license.data} /> : null}
       <SettingsSection
-        description={`The license key turns on paid features for this self-hosted install. It is checked offline, on this install.${owner ? "" : " Only Owners can upload a key."}`}
+        description={`The license key turns on paid features for this self-hosted install. It is checked offline, on this install.${owner ? "" : " Only Owners can upload a key."}${license.data && license.data.status !== "active" ? ` ${KEEPS_WORKING}` : ""}`}
         title="License"
       >
         {license.isError ? (

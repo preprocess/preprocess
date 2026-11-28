@@ -10,9 +10,6 @@ export const installDatabaseUrl = Object.assign(new URL(testDatabaseUrl), {
 }).href;
 
 export default async function setup() {
-  await Promise.all(
-    [testDatabaseUrl, installDatabaseUrl].map((url) =>
-      migrate(url, { fresh: true }),
-    ),
-  );
+  await migrate(testDatabaseUrl, { fresh: true });
+  await migrate(installDatabaseUrl, { fresh: true });
 }
