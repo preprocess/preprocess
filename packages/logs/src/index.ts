@@ -18,6 +18,10 @@ export {
   type PostHogEnv,
 } from "./posthog.ts";
 export {
+  AMOUNT_BUCKETS,
+  amountBucket,
+  DURATION_BUCKETS,
+  durationBucket,
   organizationIdentify,
   PRODUCT_EVENTS,
   productEvent,

@@ -15,12 +15,47 @@ const ID = "id";
 const OPTIONAL_ID = "id?";
 const COUNT = "count";
 const FLAG = "flag";
+// A short lowercase token we didn't list ourselves: a model id, a UTM
+// value, a referring domain, a route template. Never a sentence.
+const SLUG = "slug";
 
-type Kind = typeof ID | typeof OPTIONAL_ID | typeof COUNT | typeof FLAG;
+type Kind =
+  typeof ID | typeof OPTIONAL_ID | typeof COUNT | typeof FLAG | typeof SLUG;
 export type PropertySpec = Kind | readonly string[];
 
 const ROLES = ["owner", "admin", "member"] as const;
 const PLANS = ["free", "team", "enterprise", "internal"] as const;
+
+// Buckets for breakdowns, beside the raw count they summarise.
+export const DURATION_BUCKETS = [
+  "lt_10s",
+  "s10_to_1m",
+  "m1_to_10m",
+  "m10_to_1h",
+  "h1_to_1d",
+  "gt_1d",
+] as const;
+const DURATION_EDGES = [10_000, 60_000, 600_000, 3_600_000, 86_400_000];
+
+export const AMOUNT_BUCKETS = [
+  "zero",
+  "lt_1",
+  "n1_to_10",
+  "n10_to_100",
+  "n100_to_1k",
+  "n1k_to_10k",
+  "gt_10k",
+] as const;
+const AMOUNT_EDGES = [1, 10, 100, 1_000, 10_000];
+
+export const durationBucket = (ms: number) =>
+  DURATION_BUCKETS[DURATION_EDGES.filter((edge) => ms >= edge).length]!;
+
+// Credits, tokens, pages: zero apart, then by powers of ten.
+export const amountBucket = (amount: number) =>
+  amount <= 0
+    ? "zero"
+    : AMOUNT_BUCKETS[1 + AMOUNT_EDGES.filter((edge) => amount >= edge).length]!;
 
 export const PRODUCT_EVENTS = {
   signed_up: { method: ["email", "google", "sso", "directory"] },
@@ -96,9 +131,11 @@ type ValueOf<S> = S extends typeof ID
       ? number
       : S extends typeof FLAG
         ? boolean
-        : S extends readonly (infer V)[]
-          ? V
-          : never;
+        : S extends typeof SLUG
+          ? string
+          : S extends readonly (infer V)[]
+            ? V
+            : never;
 
 export type ProductProperties<N extends ProductEventName> = {
   -readonly [P in keyof (typeof PRODUCT_EVENTS)[N]]: ValueOf<
@@ -122,6 +159,8 @@ export type ProductEvent = {
   properties: Record<string, unknown>;
 };
 
+const SLUG_VALUE = /^[a-z0-9/][a-z0-9._:/{}-]{0,79}$/;
+
 // Ours: a type prefix and a 26-character base32 body (packages/db ids.ts).
 const TYPED_ID = /^[a-z]{2,6}_[0-9a-z]{26}$/;
 
@@ -132,6 +171,7 @@ export const validValue = (spec: PropertySpec, value: unknown) => {
     return typeof value === "string" && TYPED_ID.test(value);
   if (spec === COUNT)
     return typeof value === "number" && Number.isInteger(value) && value >= 0;
+  if (spec === SLUG) return typeof value === "string" && SLUG_VALUE.test(value);
   return typeof value === "boolean";
 };
 
