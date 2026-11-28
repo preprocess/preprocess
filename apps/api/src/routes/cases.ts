@@ -45,6 +45,7 @@ import type { OrgRole, OrgVariables } from "../caller.ts";
 import { applyCorrection } from "../case-search.ts";
 import { ApiError, createCase, type Approval } from "../cases.ts";
 import type { Env, WriteResult } from "../env.ts";
+import { trackEvent } from "../analytics.ts";
 import { acceptedMemories } from "../memories.ts";
 import { markSeat, meter } from "../metering.ts";
 import { notifyLater } from "../notify.ts";
@@ -390,6 +391,18 @@ const decideApproval = async (
       },
     });
   });
+  await trackEvent(
+    c.env,
+    "review_decided",
+    c.var.org,
+    c.var.caller.type === "person" ? c.var.caller.userId : null,
+    {
+      case_id: caseId,
+      agent_id: key.agentId,
+      decision,
+      level: found.level,
+    },
+  );
   return c.json(next as unknown as z.infer<typeof RoomState>, 200);
 };
 
@@ -1017,6 +1030,17 @@ export const caseRoutes = new OpenAPIHono<{
         text: c.req.valid("json").text,
       });
       await withOrg(c.env, c.var.org, (tx) => markOperator(tx, c));
+      await trackEvent(
+        c.env,
+        "operator_replied",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        {
+          case_id: key.caseId,
+          agent_id: key.agentId,
+          mentions: posted.mentioned.length,
+        },
+      );
       return c.json(posted, 201);
     },
   )

@@ -24,6 +24,7 @@ import { and, eq, isNull, lt } from "drizzle-orm";
 import { actor, eventBase } from "./caller.ts";
 import type { OrgVariables } from "./caller.ts";
 import type { Env } from "./env.ts";
+import { trackEvent } from "./analytics.ts";
 import { meter } from "./metering.ts";
 
 // Cloudflare's instance types (developers.cloudflare.com/containers/platform/limits).
@@ -141,46 +142,59 @@ export const recordSandboxEvent = async (
   if (runMode(env).kind !== "cloud" || !validSize(event)) return;
   const where = { sandboxId: event.sandboxId, seq: event.seq };
   const at = eventTime(event, now);
-  await withOrg(env, orgId(event.organizationId), async (tx) => {
-    switch (event.type) {
-      case "start":
-      case "wake":
-        await tx
-          .insert(sandboxIntervals)
-          .values({
-            id: newId("sandboxInterval"),
-            organizationId: event.organizationId,
-            sandboxId: event.sandboxId,
-            seq: event.seq,
-            agent: event.agent ?? null,
-            caseId: event.caseId ?? null,
-            kind: event.kind,
-            size: event.size,
-            startedAt: at ?? now,
-            lastSeenAt: at ?? now,
-          })
-          .onConflictDoNothing();
-        return;
-      case "heartbeat":
-        await tx
-          .update(sandboxIntervals)
-          .set({ lastSeenAt: at ?? now })
-          .where(
-            and(
-              eq(sandboxIntervals.sandboxId, event.sandboxId),
-              eq(sandboxIntervals.seq, event.seq),
-              isNull(sandboxIntervals.endedAt),
-            ),
-          );
-        return;
-      case "sleep":
-      case "destroy":
-        await close(tx, env, where, at ?? now, event.type);
-        return;
-      case "crash":
-        await close(tx, env, where, at ?? "lastSeen", "crash");
-    }
-  });
+  const started = await withOrg(
+    env,
+    orgId(event.organizationId),
+    async (tx) => {
+      switch (event.type) {
+        case "start":
+        case "wake": {
+          const [opened] = await tx
+            .insert(sandboxIntervals)
+            .values({
+              id: newId("sandboxInterval"),
+              organizationId: event.organizationId,
+              sandboxId: event.sandboxId,
+              seq: event.seq,
+              agent: event.agent ?? null,
+              caseId: event.caseId ?? null,
+              kind: event.kind,
+              size: event.size,
+              startedAt: at ?? now,
+              lastSeenAt: at ?? now,
+            })
+            .onConflictDoNothing()
+            .returning({ id: sandboxIntervals.id });
+          return Boolean(opened) && event.type === "start";
+        }
+        case "heartbeat":
+          await tx
+            .update(sandboxIntervals)
+            .set({ lastSeenAt: at ?? now })
+            .where(
+              and(
+                eq(sandboxIntervals.sandboxId, event.sandboxId),
+                eq(sandboxIntervals.seq, event.seq),
+                isNull(sandboxIntervals.endedAt),
+              ),
+            );
+          return;
+        case "sleep":
+        case "destroy":
+          await close(tx, env, where, at ?? now, event.type);
+          return;
+        case "crash":
+          await close(tx, env, where, at ?? "lastSeen", "crash");
+      }
+      return false;
+    },
+  );
+  // A case's sandbox, the first time it starts.
+  if (started && event.kind === "case")
+    await trackEvent(env, "sandbox_used", event.organizationId, null, {
+      case_id: event.caseId ?? null,
+      size: event.size as "small",
+    });
 };
 
 // Every minute: intervals whose sandbox went silent end at their last

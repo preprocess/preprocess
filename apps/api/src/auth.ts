@@ -38,6 +38,9 @@ import {
 } from "better-auth/plugins/organization/access";
 import { and, count, eq, gt, sql } from "drizzle-orm";
 
+import { productEvent, type ProductEvent } from "@preprocess/logs";
+
+import { identifyOrganizations, track } from "./analytics.ts";
 import { endBillingForDeletion } from "./billing.ts";
 import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
@@ -245,9 +248,42 @@ export const requestContext = (request: Request): RequestContext => ({
   ssoTest: null,
 });
 
+// Product events a request's hooks decide, sent once its transaction
+// commits (withAuth); a rolled-back request sends none.
+const pending = new WeakMap<
+  RequestContext,
+  { events: ProductEvent[]; organizations: Set<string> }
+>();
+
+const pendingFor = (request: RequestContext) => {
+  let found = pending.get(request);
+  if (!found) {
+    found = { events: [], organizations: new Set() };
+    pending.set(request, found);
+  }
+  return found;
+};
+
+const signUpMethod = (path: string) =>
+  path.startsWith("/scim/v2")
+    ? ("directory" as const)
+    : SSO_CALLBACK.test(path)
+      ? ("sso" as const)
+      : path.startsWith("/callback")
+        ? ("google" as const)
+        : ("email" as const);
+
 export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
   const record = (event: Omit<AuditInput, "ip" | "requestId">) =>
     audit(tx, { ...event, ip: request.ip, requestId: request.requestId });
+  // An event to send after commit, and the organization whose group
+  // properties (seats) it changed.
+  const later = (event: ProductEvent | null, organization?: string) => {
+    if (request.ssoTest) return;
+    const found = pendingFor(request);
+    if (event) found.events.push(event);
+    if (organization) found.organizations.add(organization);
+  };
   // Better Auth adds the creator as owner (calling afterAddMember) before
   // afterCreateOrganization, when the chain does not exist yet. The
   // organization.created event records that owner instead.
@@ -491,6 +527,14 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             } else if (!(await mayJoin(user.email))) throw needsInvitation();
             return { data: { ...user, ...fullName(user) } };
           },
+          after(user, ctx) {
+            later(
+              productEvent(env, "signed_up", null, user.id, {
+                method: signUpMethod(ctx?.path ?? ""),
+              }),
+            );
+            return Promise.resolve();
+          },
         },
         update: {
           before: (user) =>
@@ -712,6 +756,10 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
                 developersGroup: developers,
               },
             });
+            later(
+              productEvent(env, "org_created", org.id, user.id, {}),
+              org.id,
+            );
           },
           async afterUpdateOrganization({ organization: org, user }) {
             if (!org) return;
@@ -757,6 +805,20 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               targetId: user.id,
               data: { role: member.role, invitation: invitation.id },
             });
+            later(
+              productEvent(
+                env,
+                "member_joined",
+                member.organizationId,
+                user.id,
+                {
+                  member_user_id: user.id,
+                  role: member.role as "member",
+                  via: "invitation",
+                },
+              ),
+              member.organizationId,
+            );
           },
           async afterAddMember({ member, user }) {
             if (creatingOrganization) return;
@@ -769,6 +831,20 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               targetId: user.id,
               data: { role: member.role },
             });
+            later(
+              productEvent(
+                env,
+                "member_joined",
+                member.organizationId,
+                user.id,
+                {
+                  member_user_id: user.id,
+                  role: member.role as "member",
+                  via: request.actorId ? "added" : "provisioned",
+                },
+              ),
+              member.organizationId,
+            );
           },
           async afterUpdateMemberRole({ member, previousRole }) {
             await record({
@@ -782,6 +858,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             });
           },
           async afterRemoveMember({ member }) {
+            later(null, member.organizationId);
             await record({
               organizationId: member.organizationId,
               actorType: "person",
@@ -801,6 +878,18 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               targetId: invitation.id,
               data: { role: invitation.role },
             });
+            later(
+              productEvent(
+                env,
+                "member_invited",
+                invitation.organizationId,
+                inviter.id,
+                {
+                  invitation_id: invitation.id,
+                  role: invitation.role as "member",
+                },
+              ),
+            );
           },
           async afterCancelInvitation({ invitation, cancelledBy }) {
             await record({
@@ -919,6 +1008,14 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             targetId: user.id,
             data: { role: "member", via: "sso", provider: provider.providerId },
           });
+          later(
+            productEvent(env, "member_joined", organizationId, user.id, {
+              member_user_id: user.id,
+              role: "member",
+              via: "provisioned",
+            }),
+            organizationId,
+          );
           // A default group that has since been deleted adds nobody.
           if (!connection.defaultGroupId) return;
           const [group] = await tx
@@ -967,13 +1064,21 @@ export const withAuth = async <T>(
   fn: (auth: Auth, tx: SystemTx) => Promise<T>,
 ): Promise<T> => {
   try {
-    return await withoutOrg(env, "better-auth", async (tx) => {
+    const result = await withoutOrg(env, "better-auth", async (tx) => {
       const result = await fn(createAuth(env, tx, request), tx);
       if (result instanceof Response && result.status >= 400)
         throw new Rollback(result);
       return result;
     });
+    const decided = pending.get(request);
+    pending.delete(request);
+    if (decided) {
+      await track(env, decided.events);
+      await identifyOrganizations(env, [...decided.organizations]);
+    }
+    return result;
   } catch (error) {
+    pending.delete(request);
     if (error instanceof Rollback) return error.response as T;
     throw error;
   }

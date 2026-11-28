@@ -138,15 +138,15 @@ variables are set.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                                                                                        | Enables Google sign-in; without both, users sign in via emailed link                                                                                                                           |
 | `LOG_CATALOG_TOKEN`                                                                                                               | Token with R2 Data Catalog, R2 storage and R2 SQL access to route run logs through Cloudflare Pipelines into an Iceberg table; without it, run logs are stored as NDJSON in the logs R2 bucket |
 | `PREPROCESS_LICENSE_KEY`                                                                                                          | Signed offline Ed25519 license key; without a valid key, the install runs the free feature set                                                                                                 |
-| `POSTHOG_KEY`                                                                                                                     | Project API key (`phc_…`) of your own PostHog project; sends server errors, request events and browser errors there. Without it, nothing is sent                                               |
+| `POSTHOG_KEY`                                                                                                                     | Project API key (`phc_…`) of your own PostHog project; sends errors, request events, product events and masked session replays there. Without it, nothing is sent                              |
 | `POSTHOG_HOST`                                                                                                                    | Ingestion host of your PostHog, for example `https://eu.i.posthog.com` or your own instance; defaults to `https://us.i.posthog.com`                                                            |
 
-## Error monitoring with your own PostHog
+## Monitoring with your own PostHog
 
 A self-hosted install sends nothing to Preprocess or to anyone else. To watch
-your install's errors and latency, point it at a PostHog project you own: set
-`POSTHOG_KEY` and, unless your project is on PostHog's US cloud, `POSTHOG_HOST`,
-then deploy again. Leave both unset to keep monitoring off.
+your install's errors, latency and usage, point it at a PostHog project you own:
+set `POSTHOG_KEY` and, unless your project is on PostHog's US cloud,
+`POSTHOG_HOST`, then deploy again. Leave both unset to keep monitoring off.
 
 With a key set, the app, docs, API and runtime Workers send:
 
@@ -156,12 +156,22 @@ With a key set, the app, docs, API and runtime Workers send:
 - `$exception`: each server error, with its type, a message with quoted values,
   emails, query strings and long numbers removed, and its stack frames. Errors
   during a case carry only the kind of step that failed, never text.
-- From the app in the browser: page views and browser errors, with the person's
-  user id and organization id. There is no autocapture and no session recording,
-  page addresses lose their query strings, and element text stays masked.
+- Product events from the API, once the action they name is saved: `signed_up`,
+  `org_created`, `member_invited`, `member_joined`, `agent_created`,
+  `agent_deployed`, `case_started`, `case_completed`, `case_handed_off`,
+  `operator_replied`, `review_decided`, `mcp_connected`, `sandbox_used`,
+  `credits_topped_up` and `plan_changed`. Their properties are ids, counts and
+  fixed values (such as a deploy's source or a review's decision) only. Each
+  event carries its organization as the `organization` group, whose properties
+  are the plan, the seat count and when it was created.
+- From the app in the browser: page views, browser errors and session replays,
+  with the person's user id and organization. Replays mask every input and all
+  text, record no network requests, and leave out the case room, documents and
+  images entirely. There is no autocapture, and page addresses lose their query
+  strings.
 
-Request bodies, answers, files, tool output, secrets and messages are never
-sent.
+Request bodies, answers, files, tool output, secrets, messages, names and email
+addresses are never sent.
 
 ## Installing with `preprocess install`
 
