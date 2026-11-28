@@ -50,7 +50,7 @@ const statusDescription = (license: License) => {
     case "grace":
       return `Paid features end ${license.graceEndsAt ? formatDate(license.graceEndsAt) : "soon"}. Upload a renewed key to keep them on.`;
     case "expired":
-      return `Paid features are off since ${license.expiresAt ? formatDate(license.expiresAt) : "the license expired"}. Upload a renewed key to turn them back on.`;
+      return `Paid features are off since ${license.graceEndsAt ? formatDate(license.graceEndsAt) : "the grace period ended"}. Upload a renewed key to turn them back on.`;
     case "invalid":
       return "Paid features are off until a valid key is uploaded.";
     case "none":
