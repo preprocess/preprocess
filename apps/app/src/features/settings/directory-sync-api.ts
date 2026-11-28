@@ -37,10 +37,12 @@ async function settle<T>(response: Response): Promise<Result<T>> {
     .catch(() => null);
   const message =
     typeof body?.error === "string" ? body.error : body?.error?.message;
+  if (!message)
+    console.error(`Directory sync request failed: ${response.status}`);
   return {
     ok: false,
     status: response.status,
-    message: message ?? `The request failed (${response.status}).`,
+    message: message ?? "Something went wrong. Try again.",
   };
 }
 

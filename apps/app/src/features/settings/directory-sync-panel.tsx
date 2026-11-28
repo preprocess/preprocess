@@ -7,9 +7,9 @@
 
 import { Button } from "@preprocess/ui/components/button";
 import { InputCopy } from "@preprocess/ui/components/input-copy";
-import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { Spinner } from "@preprocess/ui/components/spinner";
 import { ChevronRight } from "@preprocess/ui/lib/icons";
+import { cn } from "@preprocess/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 
@@ -228,6 +228,7 @@ function ConnectionSection({ settings, readOnly, onDialog }: SectionProps) {
   const expired = settings.reason === "license_expired";
   const actions = useDirectorySyncActions();
   const [error, setError] = useState<unknown>(null);
+  const [generating, setGenerating] = useState(false);
   return (
     <SettingsSection
       description={
@@ -275,21 +276,38 @@ function ConnectionSection({ settings, readOnly, onDialog }: SectionProps) {
             }
           >
             {readOnly ? null : (
-              <LoadingButton
-                errorLabel="Retry"
-                onAction={async () => {
+              <Button
+                aria-busy={generating || undefined}
+                onClick={() => {
+                  if (generating) return;
                   setError(null);
-                  const issued = await actions.generate();
-                  onDialog({ kind: "token", secret: issued.token });
+                  setGenerating(true);
+                  actions
+                    .generate()
+                    .then((issued) =>
+                      onDialog({ kind: "token", secret: issued.token }),
+                    )
+                    .catch(setError)
+                    .finally(() => setGenerating(false));
                 }}
-                onError={setError}
-                pendingLabel="Generating…"
                 size="compact"
-                successLabel="Done"
+                type="button"
                 variant="secondary"
               >
-                Generate token
-              </LoadingButton>
+                <span className="grid place-items-center">
+                  <span
+                    className={cn(
+                      "col-start-1 row-start-1",
+                      generating && "invisible",
+                    )}
+                  >
+                    Generate token
+                  </span>
+                  {generating ? (
+                    <Spinner className="col-start-1 row-start-1 size-3.5" />
+                  ) : null}
+                </span>
+              </Button>
             )}
           </SettingsRow>
         )}
