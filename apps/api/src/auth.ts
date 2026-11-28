@@ -38,7 +38,11 @@ import {
 } from "better-auth/plugins/organization/access";
 import { and, count, eq, gt, sql } from "drizzle-orm";
 
-import { productEvent, type ProductEvent } from "@preprocess/logs";
+import {
+  productEvent,
+  type ProductEvent,
+  type ProductProperties,
+} from "@preprocess/logs";
 
 import { identifyOrganizations, track } from "./analytics.ts";
 import { endBillingForDeletion } from "./billing.ts";
@@ -239,6 +243,42 @@ export type RequestContext = {
   // domain and invitation checks and note whom the identity provider signed
   // in, and the whole transaction is rolled back, so nobody is signed in.
   ssoTest: { email: string | null } | null;
+  // What signed_up carries about where the person came from.
+  signUpAttribution: Partial<Record<(typeof ATTRIBUTION)[number], string>>;
+};
+
+// Sign-up attribution (PRE-160): the app's sign-up page keeps the marketing
+// link's first-touch utm_* params and referring hostname in this cookie
+// (apps/app routes/sign-up.tsx) for the 30 minutes a link or Google sign-in
+// takes. Values are lowercased here, and signed_up keeps only valid slugs, so
+// no free text gets through.
+export const SIGNUP_ATTRIBUTION_COOKIE = "preprocess_signup_attribution";
+const ATTRIBUTION = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "referrer_domain",
+] as const;
+const HOSTNAME = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+
+const signUpAttribution = (request: Request) => {
+  const raw = readCookie(request, SIGNUP_ATTRIBUTION_COOKIE);
+  if (!raw) return {};
+  let params: URLSearchParams;
+  try {
+    params = new URLSearchParams(decodeURIComponent(raw));
+  } catch {
+    return {};
+  }
+  return Object.fromEntries(
+    ATTRIBUTION.flatMap((name) => {
+      const value = params.get(name)?.trim().toLowerCase();
+      if (!value || (name === "referrer_domain" && !HOSTNAME.test(value)))
+        return [];
+      return [[name, value]];
+    }),
+  );
 };
 
 export const requestContext = (request: Request): RequestContext => ({
@@ -247,6 +287,7 @@ export const requestContext = (request: Request): RequestContext => ({
   actorId: null,
   idpOrigins: [],
   ssoTest: null,
+  signUpAttribution: signUpAttribution(request),
 });
 
 // Product events a request's hooks decide, sent once its transaction
@@ -532,7 +573,8 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             later(
               productEvent(env, "signed_up", null, user.id, {
                 method: signUpMethod(ctx?.path ?? ""),
-              }),
+                ...request.signUpAttribution,
+              } as ProductProperties<"signed_up">),
             );
             return Promise.resolve();
           },
