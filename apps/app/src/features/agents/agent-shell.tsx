@@ -17,7 +17,6 @@ import {
 import { MenuItem } from "@preprocess/ui/components/menu-item";
 import {
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -64,8 +63,6 @@ type Section = {
   label: string;
   icon: IconComponent;
   to: SectionTo;
-  /** Labelled "Coming soon" and not usable yet (spec 12a). */
-  comingSoon?: true;
   group: "" | "Operate" | "Ship" | "Manage";
 };
 
@@ -105,7 +102,6 @@ export const AGENT_SECTIONS = [
     icon: SquareLibrary,
     to: "/agents/$agentId/training",
     group: "Operate",
-    comingSoon: true,
   },
   {
     id: "configuration",
@@ -210,9 +206,6 @@ export function AgentSectionNav({
                   >
                     {item.label}
                   </SidebarMenuButton>
-                  {"comingSoon" in item ? (
-                    <SidebarMenuBadge>Coming soon</SidebarMenuBadge>
-                  ) : null}
                   {item.id === section && anchors?.length ? (
                     <SidebarMenuSub>
                       {anchors.map((anchor) => (
@@ -299,7 +292,6 @@ export function AgentSectionCrumb({
               {group.sections.map((item) => (
                 <MenuItem
                   checked={item.id === section}
-                  detail={"comingSoon" in item ? "Coming soon" : undefined}
                   icon={item.icon}
                   index={index++}
                   key={item.id}

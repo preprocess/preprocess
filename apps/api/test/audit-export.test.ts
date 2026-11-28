@@ -33,7 +33,7 @@ const license = async () => {
   const now = Date.now();
   const bytes = new TextEncoder().encode(
     JSON.stringify({
-      kid: "test-only",
+      kid: "test-audit-export",
       customer: "Acme Corp",
       features: ["audit_export"],
       seats: 10,
@@ -95,7 +95,7 @@ beforeAll(async () => {
       (await crypto.subtle.exportKey("raw", signing.publicKey)) as ArrayBuffer,
     ),
   );
-  licenseKeys.push(signingPublic);
+  licenseKeys["test-audit-export"] = signingPublic;
   licensed = testEnv({
     PREPROCESS_REGION: undefined,
     PREPROCESS_LICENSE_KEY: await license(),
@@ -107,7 +107,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  licenseKeys.splice(licenseKeys.indexOf(signingPublic), 1);
+  delete licenseKeys["test-audit-export"];
 });
 
 describe("audit export", () => {
