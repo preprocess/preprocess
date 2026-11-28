@@ -85,6 +85,9 @@ import {
   type Stage,
   publicDocsUrl,
   publicStatusUrl,
+  posthogPersonSecrets,
+  refuseIcebergLogs,
+  posthogPersonVars,
   posthogProject,
   posthogVars,
 } from "./src/stages.ts";
@@ -483,6 +486,8 @@ export default Alchemy.Stack(
     const logCatalogToken = yield* Config.Redacted("LOG_CATALOG_TOKEN").pipe(
       Config.withDefault(undefined),
     );
+    const icebergRefusal = refuseIcebergLogs(logCatalogToken !== undefined);
+    if (icebergRefusal) return yield* Effect.die(new Error(icebergRefusal));
     let logSql = {};
     if (logCatalogToken) {
       const catalog = yield* Cloudflare.Basin.Catalog("LogCatalog", {
@@ -804,6 +809,16 @@ export default Alchemy.Stack(
             ),
           )),
         ...(region && optionalSecrets(statusHeartbeatSecrets)),
+        ...Object.fromEntries(
+          posthogPersonVars.map(
+            (name) =>
+              [
+                name,
+                Config.String(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
+        ...optionalSecrets(posthogPersonSecrets),
         ...(region &&
           billingOrgs[stage] && {
             BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),

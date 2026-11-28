@@ -35,7 +35,14 @@ export const organizationPurges = pgTable(
 // case: a case's object (and its sandbox), agent id and case id.
 // scheduler: an agent's scheduler, agent id and "" or a preview's id.
 // builds: a build queue, agent slug and branch.
-export const PURGE_OBJECT_KINDS = ["case", "scheduler", "builds"] as const;
+// person: a member's PostHog person, "" and the user id; deleted once the
+// user belongs to no organization.
+export const PURGE_OBJECT_KINDS = [
+  "case",
+  "scheduler",
+  "builds",
+  "person",
+] as const;
 export type PurgeObjectKind = (typeof PURGE_OBJECT_KINDS)[number];
 
 export const organizationPurgeObjects = pgTable(

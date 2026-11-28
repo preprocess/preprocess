@@ -221,6 +221,24 @@ export const posthogProject: Partial<
   },
 };
 
+// Deleting an organization (PRE-162) removes its run logs from the NDJSON store
+// in the logs bucket only. Rows in the Iceberg table that LOG_CATALOG_TOKEN
+// turns on (LOG_STORE "sql") can't be deleted from a Worker, and no job
+// outside Workers deletes them yet, so a deploy with the token is refused
+// until one exists and this becomes true.
+export const icebergLogDeletion = false;
+export const refuseIcebergLogs = (catalogTokenSet: boolean) =>
+  catalogTokenSet && !icebergLogDeletion
+    ? "LOG_CATALOG_TOKEN turns on Iceberg run logs, which deleting an organization can't remove yet (PRE-162). Unset it, or build the Iceberg log deletion job first."
+    : null;
+
+// Deleting an organization deletes the PostHog persons of members left in no
+// organization (apps/api/src/purge.ts), with a personal API key scoped to
+// person:write and the project's id. Optional on every stage: unset, persons
+// stay in PostHog.
+export const posthogPersonVars = ["POSTHOG_PROJECT_ID"] as const;
+export const posthogPersonSecrets = ["POSTHOG_PERSONAL_API_KEY"] as const;
+
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).
 export const apiCrons = ["20 0 * * *", "* * * * *"];
