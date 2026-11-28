@@ -66,7 +66,7 @@ export const PRODUCT_EVENTS = {
     role: ROLES,
     via: ["invitation", "added", "provisioned"],
   },
-  // Onboarding, collaboration and admin, support (PRE-160). Each fires on
+  // Onboarding, collaboration and admin (PRE-160). Each fires on
   // the server once its action commits; the auth ones through withAuth.
   // The first name and the first organization a person saves.
   onboarding_step_completed: { step: ["name", "organization"] },
@@ -117,12 +117,6 @@ export const PRODUCT_EVENTS = {
   // CLI receives its session. Neither names an organization.
   device_authorized: {},
   cli_login: {},
-  support_request_solved: {
-    request_id: ID,
-    by: ["customer", "agent", "operator"],
-    open_seconds: COUNT,
-    open_for: DURATION_BUCKETS,
-  },
   agent_created: { agent_id: ID },
   agent_deployed: {
     agent_id: ID,
