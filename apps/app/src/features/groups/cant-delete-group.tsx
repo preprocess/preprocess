@@ -27,7 +27,7 @@ export function CantDeleteGroupDialog({
 }) {
   return (
     <SettingsDialogShell
-      description="These agents' live deployments still name this group. Deploy code that stops naming it, then delete it."
+      description="These live deployments still use this group. Remove it from their code and redeploy, then delete the group."
       footer={
         <Button
           onClick={() => onOpenChange(false)}

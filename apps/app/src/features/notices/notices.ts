@@ -203,7 +203,7 @@ const removedGroupNotice = (group: RemovedGroup): Notice => ({
   id: removedGroupNoticeId(group.id),
   level: "warning",
   title: `${group.name} was removed`,
-  detail: `Removed by IdP · ${group.agents} ${group.agents === 1 ? "agent names" : "agents name"} it`,
+  detail: `Removed from directory · ${group.agents} ${group.agents === 1 ? "agent names" : "agents name"} it`,
   href: DIRECTORY_SYNC_HREF,
   date: group.removedAt,
   dismissible: true,
