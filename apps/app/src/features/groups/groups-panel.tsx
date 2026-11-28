@@ -44,6 +44,7 @@ import {
   SettingsSection,
   actionErrorMessage,
 } from "../settings/kit";
+import { CantDeleteGroupDialog } from "./cant-delete-group";
 import {
   SettingsChrome,
   SettingsPageHeader,
@@ -398,12 +399,18 @@ function GroupDelete({
           </Button>
         </SettingsRow>
       </SettingsRows>
+      <CantDeleteGroupDialog
+        name={group.name}
+        namedBy={group.namedBy}
+        onOpenChange={setDeleting}
+        open={deleting && group.namedBy.length > 0}
+      />
       <SettingsConfirmDialog
         confirmLabel="Delete group"
         description={`Every agent grant ${group.name} holds is removed with it.`}
         onConfirm={onDelete}
         onOpenChange={setDeleting}
-        open={deleting}
+        open={deleting && group.namedBy.length === 0}
         pendingLabel="Deleting…"
         successLabel="Deleted"
         title={`Delete ${group.name}?`}

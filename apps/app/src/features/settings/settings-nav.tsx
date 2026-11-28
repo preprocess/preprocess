@@ -41,6 +41,7 @@ type Page = {
     | "/settings/organization/defaults"
     | "/settings/organization/guardrails"
     | "/settings/organization/sso"
+    | "/settings/organization/directory-sync"
     | "/settings/organization/audit-logs"
     | "/settings/organization/retention"
     | "/settings/organization/opentelemetry"
@@ -105,6 +106,10 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
         anchors: GUARDRAIL_SECTIONS,
       },
       { to: "/settings/organization/sso", label: "Single sign-on" },
+      {
+        to: "/settings/organization/directory-sync",
+        label: "Directory sync",
+      },
       { to: "/settings/organization/audit-logs", label: "Audit log" },
       { to: "/settings/organization/retention", label: "Retention" },
     ],
@@ -132,8 +137,8 @@ export function currentSettingsPage(pathname: string) {
 // Billing shows only to the Owner, on our cloud with billing on, once the plan
 // has started or billing holds for the organization. Retention shows to Owners
 // and Admins, self-hosted included; seeded retention states always show it.
-// Single sign-on shows to Owners and Admins, and in seeded states but
-// "member".
+// Single sign-on and Directory sync show to Owners and Admins, and in seeded
+// states but "member".
 // License shows to Owners and Admins of a self-hosted install, and in seeded
 // license states.
 function useVisible() {
@@ -147,6 +152,9 @@ function useVisible() {
   const ssoState = currentScenario().sso;
   const showSso =
     ssoState === "live" ? administers === true : ssoState !== "member";
+  const syncState = currentScenario()["directory-sync"];
+  const showDirectorySync =
+    syncState === "live" ? administers === true : syncState !== "member";
   const license = useLicense(administers === true);
   const showLicense = Boolean(license.data);
   return (page: Page) =>
@@ -156,9 +164,11 @@ function useVisible() {
         ? showRetention
         : page.to === "/settings/organization/sso"
           ? showSso
-          : page.to === "/settings/organization/license"
-            ? showLicense
-            : true;
+          : page.to === "/settings/organization/directory-sync"
+            ? showDirectorySync
+            : page.to === "/settings/organization/license"
+              ? showLicense
+              : true;
 }
 
 function usePathname() {

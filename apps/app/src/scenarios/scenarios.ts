@@ -105,6 +105,29 @@ export const SCENARIO_SURFACES = {
       "error",
     ],
   },
+  // Directory sync settings (PRE-138): "live" reads the API; the rest are
+  // seeded states named after Design's frames. "admin" is an Admin's
+  // read-only view, "member" a Member's 403.
+  "directory-sync": {
+    label: "Directory sync",
+    states: [
+      "live",
+      "never",
+      "synced",
+      "syncing",
+      "group-removed",
+      "token-created",
+      "regenerate",
+      "revoke",
+      "admin",
+      "expired",
+      "locked",
+      "locked-selfhost",
+      "member",
+      "loading",
+      "error",
+    ],
+  },
   // Settings → Models: "live" reads the API; the rest are seeded catalogues,
   // roles and failures (PRE-145's frames).
   models: {
@@ -187,6 +210,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   "billing-result": "ok",
   retention: "live",
   sso: "live",
+  "directory-sync": "live",
   models: "live",
   license: "live",
   notices: "live",
@@ -203,6 +227,7 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   "billing-result": "ok",
   retention: "live",
   sso: "live",
+  "directory-sync": "live",
   models: "live",
   license: "live",
   notices: "live",

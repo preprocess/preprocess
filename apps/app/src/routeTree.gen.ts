@@ -58,6 +58,7 @@ import { Route as SettingsOrganizationAuditLogsRouteImport } from "./routes/sett
 import { Route as SettingsOrganizationBillingRouteImport } from "./routes/settings/organization/billing";
 import { Route as SettingsOrganizationDefaultsRouteImport } from "./routes/settings/organization/defaults";
 import { Route as SettingsOrganizationDevelopersRouteImport } from "./routes/settings/organization/developers";
+import { Route as SettingsOrganizationDirectorySyncRouteImport } from "./routes/settings/organization/directory-sync";
 import { Route as SettingsOrganizationGithubRouteImport } from "./routes/settings/organization/github";
 import { Route as SettingsOrganizationGuardrailsRouteImport } from "./routes/settings/organization/guardrails";
 import { Route as SettingsOrganizationIntegrationsRouteImport } from "./routes/settings/organization/integrations";
@@ -334,6 +335,12 @@ const SettingsOrganizationDevelopersRoute =
     path: "/developers",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationDirectorySyncRoute =
+  SettingsOrganizationDirectorySyncRouteImport.update({
+    id: "/directory-sync",
+    path: "/directory-sync",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const SettingsOrganizationGithubRoute =
   SettingsOrganizationGithubRouteImport.update({
     id: "/github",
@@ -506,6 +513,7 @@ export interface FileRoutesByFullPath {
   "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
+  "/settings/organization/directory-sync": typeof SettingsOrganizationDirectorySyncRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
@@ -575,6 +583,7 @@ export interface FileRoutesByTo {
   "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
+  "/settings/organization/directory-sync": typeof SettingsOrganizationDirectorySyncRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
@@ -648,6 +657,7 @@ export interface FileRoutesById {
   "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
+  "/settings/organization/directory-sync": typeof SettingsOrganizationDirectorySyncRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
@@ -722,6 +732,7 @@ export interface FileRouteTypes {
     | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
+    | "/settings/organization/directory-sync"
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
@@ -791,6 +802,7 @@ export interface FileRouteTypes {
     | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
+    | "/settings/organization/directory-sync"
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
@@ -863,6 +875,7 @@ export interface FileRouteTypes {
     | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
+    | "/settings/organization/directory-sync"
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
@@ -1266,6 +1279,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationDevelopersRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/directory-sync": {
+      id: "/settings/organization/directory-sync";
+      path: "/directory-sync";
+      fullPath: "/settings/organization/directory-sync";
+      preLoaderRoute: typeof SettingsOrganizationDirectorySyncRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/settings/organization/github": {
       id: "/settings/organization/github";
       path: "/github";
@@ -1434,6 +1454,7 @@ interface SettingsOrganizationRouteChildren {
   SettingsOrganizationBillingRoute: typeof SettingsOrganizationBillingRoute;
   SettingsOrganizationDefaultsRoute: typeof SettingsOrganizationDefaultsRoute;
   SettingsOrganizationDevelopersRoute: typeof SettingsOrganizationDevelopersRoute;
+  SettingsOrganizationDirectorySyncRoute: typeof SettingsOrganizationDirectorySyncRoute;
   SettingsOrganizationGithubRoute: typeof SettingsOrganizationGithubRoute;
   SettingsOrganizationGuardrailsRoute: typeof SettingsOrganizationGuardrailsRoute;
   SettingsOrganizationIntegrationsRoute: typeof SettingsOrganizationIntegrationsRoute;
@@ -1456,6 +1477,8 @@ const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationBillingRoute: SettingsOrganizationBillingRoute,
   SettingsOrganizationDefaultsRoute: SettingsOrganizationDefaultsRoute,
   SettingsOrganizationDevelopersRoute: SettingsOrganizationDevelopersRoute,
+  SettingsOrganizationDirectorySyncRoute:
+    SettingsOrganizationDirectorySyncRoute,
   SettingsOrganizationGithubRoute: SettingsOrganizationGithubRoute,
   SettingsOrganizationGuardrailsRoute: SettingsOrganizationGuardrailsRoute,
   SettingsOrganizationIntegrationsRoute: SettingsOrganizationIntegrationsRoute,
