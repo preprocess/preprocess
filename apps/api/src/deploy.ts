@@ -370,6 +370,39 @@ export const agentsNamingGroup = async (
   return naming;
 };
 
+// The live deployments whose code names the group, one per agent and
+// environment, by agent slug: what has to redeploy before it can go.
+export const deploymentsNamingGroup = async (tx: Tx, groupId: string) => {
+  const naming: {
+    agentId: string;
+    agentSlug: string;
+    environment: "production" | "preview";
+  }[] = [];
+  for (const agentId of await agentsNamingGroup(tx, groupId)) {
+    const live = (await liveDeployments(tx, agentId)).map((d) => d.id);
+    const rows = await tx
+      .selectDistinct({
+        agentSlug: agents.slug,
+        environment: deployments.environment,
+      })
+      .from(deploymentGroups)
+      .innerJoin(deployments, eq(deployments.id, deploymentGroups.deploymentId))
+      .innerJoin(agents, eq(agents.id, deployments.agentId))
+      .where(
+        and(
+          eq(deploymentGroups.groupId, groupId),
+          inArray(deploymentGroups.deploymentId, live),
+        ),
+      );
+    naming.push(...rows.map((row) => ({ agentId, ...row })));
+  }
+  return naming.sort(
+    (a, b) =>
+      a.agentSlug.localeCompare(b.agentSlug) ||
+      a.environment.localeCompare(b.environment),
+  );
+};
+
 // Whether a live deployment's code names the group: the group, or its access
 // to agentId when given, cannot be removed while so.
 export const groupInUse = async (tx: Tx, groupId: string, agentId?: string) =>

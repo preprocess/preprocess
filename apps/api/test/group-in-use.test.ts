@@ -89,6 +89,20 @@ describe("a group live code names", () => {
     expect(deleted.body.error).toContain("contracts");
   });
 
+  it("lists the live deployments that name it on the group", async () => {
+    type Detail = { namedBy: { agentSlug: string; environment: string }[] };
+    const named = await call<Detail>("GET", `/v1/orgs/{org}/groups/${legal}`);
+    expect(named.status).toBe(200);
+    expect(named.body.namedBy).toEqual([
+      { agentId, agentSlug: "contracts", environment: "production" },
+    ]);
+    const unnamed = await call<Detail>(
+      "GET",
+      `/v1/orgs/{org}/groups/${finance}`,
+    );
+    expect(unnamed.body.namedBy).toEqual([]);
+  });
+
   it("does not hold a group the code does not name", async () => {
     expect((await grant(finance, "operator")).status).toBe(200);
     expect((await grant(finance, "viewer")).status).toBe(200);

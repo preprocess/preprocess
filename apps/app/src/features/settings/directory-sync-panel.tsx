@@ -6,7 +6,6 @@
 // licenses keep the page header and show one row.
 
 import { Button } from "@preprocess/ui/components/button";
-import { InputCopy } from "@preprocess/ui/components/input-copy";
 import { Spinner } from "@preprocess/ui/components/spinner";
 import { ChevronRight } from "@preprocess/ui/lib/icons";
 import { cn } from "@preprocess/ui/lib/utils";
@@ -17,6 +16,11 @@ import { CouldntLoadArt, NothingCreatedArt } from "../../components/empty-art";
 import { ApiError } from "../auth/client";
 import { PAGE_FORWARD } from "../groups/groups-panel";
 import {
+  CantDeleteGroupDialog,
+  type NamingDeployment,
+} from "../groups/cant-delete-group";
+import {
+  namingDeployments,
   seededDialog,
   useDirectorySync,
   useDirectorySyncActions,
@@ -50,13 +54,15 @@ import {
   SettingsLoadingSections,
   SettingsNoAccess,
   SettingsNote,
+  WrapCopy,
 } from "./sso-shared";
 
 type Dialog =
   | { kind: "token"; secret: string }
   | { kind: "regenerate" }
   | { kind: "revoke" }
-  | { kind: "delete"; group: ScimGroup };
+  | { kind: "delete"; group: ScimGroup }
+  | { kind: "refused"; group: ScimGroup; namedBy: NamingDeployment[] };
 
 const count = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`;
@@ -159,7 +165,12 @@ function Loaded({
       >
         {dialog?.kind === "token" ? (
           <div className="flex flex-col gap-4">
-            <InputCopy label="Bearer token" value={dialog.secret} />
+            <WrapCopy
+              field
+              label="Bearer token"
+              value={dialog.secret}
+              wrap="anywhere"
+            />
             <SettingsPanelMessage>
               Copy it now. It won't be shown again.
             </SettingsPanelMessage>
@@ -195,6 +206,12 @@ function Loaded({
         open={dialog?.kind === "revoke"}
         pendingLabel="Revoking…"
         title="Revoke token?"
+      />
+      <CantDeleteGroupDialog
+        name={dialog?.kind === "refused" ? dialog.group.name : ""}
+        namedBy={dialog?.kind === "refused" ? dialog.namedBy : []}
+        onOpenChange={close("refused")}
+        open={dialog?.kind === "refused"}
       />
       <SettingsConfirmDialog
         confirmLabel="Delete group"
@@ -345,7 +362,7 @@ function removedCaption(group: ScimGroup) {
       ? `Its ${count(group.removedMembers, "person", "people")} lost the access it gave.`
       : null,
     group.agents
-      ? `${count(group.agents, "agent", "agents")} still name it.`
+      ? `${count(group.agents, "agent", "agents")} still ${group.agents === 1 ? "names" : "name"} it.`
       : "No agents name it.",
   ]
     .filter(Boolean)
@@ -381,6 +398,18 @@ function RowLink({
 
 function SyncedSection({ settings, readOnly, onDialog }: SectionProps) {
   const { sync } = settings;
+  // A group that agents still name can't go; say which deployments instead
+  // of offering a delete the API refuses.
+  const askToDelete = async (group: ScimGroup) => {
+    const namedBy = group.agents
+      ? await namingDeployments(group.id).catch(() => [])
+      : [];
+    onDialog(
+      namedBy.length
+        ? { kind: "refused", group, namedBy }
+        : { kind: "delete", group },
+    );
+  };
   const never = !settings.lastSyncAt && !sync.running;
   const removed = settings.groups
     .filter((group) => group.removedAt)
@@ -444,7 +473,7 @@ function SyncedSection({ settings, readOnly, onDialog }: SectionProps) {
                   actions={[
                     {
                       label: "Delete group",
-                      onSelect: () => onDialog({ kind: "delete", group }),
+                      onSelect: () => void askToDelete(group),
                     },
                   ]}
                   label={`${group.name} actions`}

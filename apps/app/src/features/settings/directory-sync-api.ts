@@ -10,7 +10,9 @@ import { staleAfterWrite } from "../../lib/data-changed";
 import { currentScenario } from "../../scenarios/current-scenario";
 import { useOrganizationId } from "../auth/auth-context";
 import { ApiError } from "../auth/client";
+import type { NamingDeployment } from "../groups/cant-delete-group";
 import {
+  SEEDED_NAMED_BY,
   SEEDED_SECRET,
   seededDirectorySync,
   type DirectorySync,
@@ -56,6 +58,28 @@ const liveStatus = createServerFn({ method: "GET" }).handler(
     return settle(await activeOrgRequest("/scim"));
   },
 );
+
+const liveNamedBy = createServerFn({ method: "GET" })
+  .validator((id: string) => id)
+  .handler(async ({ data: id }): Promise<NamingDeployment[]> => {
+    const { activeOrgJson } = await import("../../server/api.server");
+    const group = await activeOrgJson<{ namedBy?: NamingDeployment[] }>(
+      `/groups/${encodeURIComponent(id)}`,
+    );
+    return (group.namedBy ?? []).map(({ agentSlug, environment }) => ({
+      agentSlug,
+      environment,
+    }));
+  });
+
+/** The live deployments that name a group, which keep it from being deleted. */
+export async function namingDeployments(
+  groupId: string,
+): Promise<NamingDeployment[]> {
+  if (currentScenario()["directory-sync"] === "live")
+    return liveNamedBy({ data: groupId });
+  return SEEDED_NAMED_BY[groupId] ?? [];
+}
 
 /** An issued token as POST /scim/tokens answers it: shown once. */
 type Issued = { prefix: string; token: string };

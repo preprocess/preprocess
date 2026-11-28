@@ -2,6 +2,7 @@
 // seeded states, one per Design frame.
 
 import type { ScenarioState } from "../../scenarios/scenarios";
+import type { NamingDeployment } from "../groups/cant-delete-group";
 
 export type ScimCurrentToken = {
   prefix: string;
@@ -89,6 +90,14 @@ const GROUPS: ScimGroup[] = [
   group("Finance reviewers", 6),
   group("Operators", 42),
 ];
+
+/** Live deployments naming each seeded group, as GET /groups/{group} lists them. */
+export const SEEDED_NAMED_BY: Record<string, NamingDeployment[]> = {
+  grp_contractors: [
+    { agentSlug: "claims-intake", environment: "production" },
+    { agentSlug: "payouts", environment: "production" },
+  ],
+};
 
 /** The token the seeded token-created state shows once. */
 export const SEEDED_SECRET = "scim_4Qz8Lm2VtR9xK7aP1wE6nB3cY5hJ0a91f";

@@ -170,11 +170,14 @@ export function WrapCopy({
   label,
   field = false,
   disabled,
+  wrap = "parts",
 }: {
   value: string;
   label: string;
   field?: boolean;
   disabled?: boolean;
+  /** "anywhere" for a value with no "/", "." or "=" to break at, such as a token. */
+  wrap?: "parts" | "anywhere";
 }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -186,7 +189,10 @@ export function WrapCopy({
     <div className="flex min-w-0 items-start gap-2">
       <span
         className={
-          "min-w-0 flex-1 py-1.5 font-mono text-caption break-normal " +
+          "min-w-0 flex-1 py-1.5 font-mono text-caption " +
+          (wrap === "anywhere"
+            ? "[overflow-wrap:anywhere] "
+            : "break-normal ") +
           (disabled ? "text-muted-foreground" : "text-foreground")
         }
       >
