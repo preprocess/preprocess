@@ -1,4 +1,10 @@
 {
   "title": "Billing and credits",
-  "pages": ["how-credits-work"]
+  "pages": [
+    "plans-pricing-and-free-limits",
+    "buy-credits-and-set-auto-reload",
+    "set-spending-limits-and-alerts",
+    "update-payment-method-and-invoices",
+    "cancel-plan-or-delete-organization"
+  ]
 }
