@@ -268,24 +268,25 @@ export const exportable = async (
 };
 
 // Streams one line per kept case, as `line` maps it, then a trailer with
-// the next page's cursor and how many of the page's cases were skipped.
+// the next page's cursor and how many of the page's cases were skipped:
+// those whose capture was purged and those `line` left out.
 // Captures are read a few at a time as the client pulls the lines.
 export const streamExport = (
   env: Env,
   org: OrgId,
   page: ExportPage,
+  // null leaves the case out.
   line: (item: ExportItem) => unknown,
   filename: string,
 ) => {
   const encoder = new TextEncoder();
   let i = 0;
+  let skipped = page.skipped;
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       if (i >= page.kept.length) {
         controller.enqueue(
-          encoder.encode(
-            `${JSON.stringify({ next: page.next, skipped: page.skipped })}\n`,
-          ),
+          encoder.encode(`${JSON.stringify({ next: page.next, skipped })}\n`),
         );
         controller.close();
         return;
@@ -301,24 +302,27 @@ export const streamExport = (
           }),
         ),
       );
-      const lines = batch.map((row, j) => {
+      const lines = batch.flatMap((row, j) => {
         const capture = captures[j] ?? null;
-        return `${JSON.stringify(
-          line({
-            case: {
-              id: row.id,
-              status: row.status,
-              createdAt: row.createdAt.toISOString(),
-              completedAt: row.completedAt?.toISOString() ?? null,
-              deploymentId: row.deploymentId,
-              model: capture?.model ?? null,
-            },
-            capture,
-            reviewEvents: page.reviewEvents.get(row.id) ?? [],
-          }),
-        )}\n`;
+        const value = line({
+          case: {
+            id: row.id,
+            status: row.status,
+            createdAt: row.createdAt.toISOString(),
+            completedAt: row.completedAt?.toISOString() ?? null,
+            deploymentId: row.deploymentId,
+            model: capture?.model ?? null,
+          },
+          capture,
+          reviewEvents: page.reviewEvents.get(row.id) ?? [],
+        });
+        if (value === null) {
+          skipped++;
+          return [];
+        }
+        return [`${JSON.stringify(value)}\n`];
       });
-      controller.enqueue(encoder.encode(lines.join("")));
+      if (lines.length) controller.enqueue(encoder.encode(lines.join("")));
     },
   });
   return new Response(body, {
