@@ -160,3 +160,34 @@ export const sendToPostHog = async (
       }),
   ]);
 };
+
+// A platform metric that is neither a request nor an error, such as the
+// depth of a dead-letter queue: one event per entry, where configured.
+export const capturePostHog = async (
+  env: PostHogEnv,
+  service: string,
+  eventName: string,
+  entries: Record<string, string | number | null>[],
+) => {
+  const posthog = posthogConfig(env);
+  if (!posthog || !entries.length) return;
+  const timestamp = new Date().toISOString();
+  await sendBatchToPostHogEvents(
+    entries.map((entry) => ({
+      timestamp,
+      level: "info",
+      service,
+      environment: posthog.stage,
+      stage: posthog.stage,
+      ...entry,
+    })),
+    {
+      apiKey: posthog.key,
+      host: posthog.host,
+      eventName,
+      recordShape: "json",
+      timeout: 3000,
+      retries: 0,
+    },
+  );
+};
