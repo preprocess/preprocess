@@ -136,7 +136,7 @@ function InvitationPage() {
       Signed in as {session.user.email}.{" "}
       <button
         className={authLinkClass}
-        onClick={() => void signOut()}
+        onClick={() => void signOut(here)}
         type="button"
       >
         Use a different account
