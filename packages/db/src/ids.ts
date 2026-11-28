@@ -42,9 +42,6 @@ export const prefixes = {
   retentionSweep: "rsw",
   dataset: "dst",
   scim: "scim",
-  supportRequest: "spr",
-  supportMessage: "spm",
-  supportAttachment: "spa",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
