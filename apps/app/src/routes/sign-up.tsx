@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AuthLayout, authLinkClass } from "../components/auth-layout";
 import {
@@ -10,12 +10,43 @@ import {
 import { safeRedirect } from "../features/auth/safe-redirect";
 import { loadAuthOptions } from "../features/auth/session";
 
+// Sign-up attribution (PRE-160): the marketing site's sign-up link carries
+// the visitor's first-touch utm_* params and referring hostname. This page
+// keeps them in a first-party cookie, sent only to /api/auth, for the 30
+// minutes a link or Google sign-in takes; apps/api auth.ts
+// (SIGNUP_ATTRIBUTION_COOKIE) puts them on signed_up once the account exists.
+const ATTRIBUTION = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "referrer_domain",
+] as const;
+type Attribution = Partial<Record<(typeof ATTRIBUTION)[number], string>>;
+
+const rememberAttribution = (search: Attribution) => {
+  const params = new URLSearchParams();
+  for (const name of ATTRIBUTION) {
+    const value = search[name];
+    if (value) params.set(name, value.slice(0, 100));
+  }
+  if (!params.size) return;
+  document.cookie = `preprocess_signup_attribution=${encodeURIComponent(params.toString())}; Path=/api/auth; Max-Age=1800; SameSite=Lax; Secure`;
+};
+
 export const Route = createFileRoute("/sign-up")({
-  validateSearch: (search): { redirect?: string; email?: string } => ({
+  validateSearch: (
+    search,
+  ): { redirect?: string; email?: string } & Attribution => ({
     ...(typeof search.redirect === "string"
       ? { redirect: search.redirect }
       : {}),
     ...(typeof search.email === "string" ? { email: search.email } : {}),
+    ...Object.fromEntries(
+      ATTRIBUTION.flatMap((name) =>
+        typeof search[name] === "string" ? [[name, search[name]]] : [],
+      ),
+    ),
   }),
   loader: () => loadAuthOptions(),
   component: SignUpPage,
@@ -29,6 +60,7 @@ function SignUpPage() {
   const [sent, setSent] = useState<string | null>(null);
   const next = safeRedirect(search.redirect);
   const invited = next.startsWith("/invitations/");
+  useEffect(() => rememberAttribution(search), [search]);
 
   if (sent)
     return (

@@ -37,10 +37,23 @@ export const isStage = (stage: string): stage is Stage =>
   isPreviewStage(stage) ||
   isSelfHostStage(stage);
 
+// The queues whose consumers move failed messages to a dead-letter queue,
+// bound to the API as <QUEUE>_DLQ.
+export const deadLetterQueues = [
+  "jobs",
+  "cases",
+  "webhooks",
+  "emails",
+  "logs",
+] as const;
+
 export const names = (stage: string) => ({
   app: `preprocess-app-${stage}`,
   // The docs site (apps/docs).
   docs: `preprocess-docs-${stage}`,
+  // The help center (apps/support), on our cloud's stages only: selfhost
+  // stages never deploy it.
+  support: `preprocess-support-${stage}`,
   api: `preprocess-api-${stage}`,
   queue: `preprocess-jobs-${stage}`,
   // Case starts (design doc 04): the API enqueues after commit and consumes.
@@ -52,6 +65,11 @@ export const names = (stage: string) => ({
   emailsSent: `preprocess-emails-sent-${stage}`,
   // Run logs (design doc 09): every producer's records, consumed by the API.
   logsQueue: `preprocess-logs-${stage}`,
+  // Each queue's dead letters: messages its consumer failed on every retry,
+  // held for 14 days. Nothing consumes them; the API's minute cron reports
+  // their depth (apps/api/src/dead-letters.ts).
+  deadLetters: (queue: (typeof deadLetterQueues)[number]) =>
+    `preprocess-dlq-${queue}-${stage}`,
   logs: `preprocess-logs-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
@@ -185,6 +203,57 @@ export const trainingVars = ["TRAINING_SERVICE"] as const;
 export const statusHeartbeatVars = ["STATUS_HEARTBEAT_URL"] as const;
 export const statusHeartbeatSecrets = ["STATUS_HEARTBEAT_SECRET"] as const;
 
+// Support requests (apps/api/src/support.ts), our cloud only and all
+// optional; never bound on a self-hosted install, which has no support
+// intake. SUPPORT_ORG_ID and SUPPORT_AGENT_ID name the Preprocess Support
+// organization and its support agent, on any of our stages. Production alone
+// sends support email (SUPPORT_EMAIL_FROM), receives it (SUPPORT_INBOUND_DOMAIN,
+// whose Email Routing rules the stack declares) and checks the signed-out
+// form with a real Turnstile key; staging and previews send no support email
+// and use Cloudflare's always-pass Turnstile test keys.
+export const supportVars = ["SUPPORT_ORG_ID", "SUPPORT_AGENT_ID"] as const;
+export const supportProductionVars = [
+  "SUPPORT_EMAIL_FROM",
+  "SUPPORT_INBOUND_DOMAIN",
+  "SUPPORT_TURNSTILE_SITE_KEY",
+] as const;
+export const supportProductionSecrets = [
+  "SUPPORT_TURNSTILE_SECRET_KEY",
+] as const;
+// Cloudflare's documented test keys: the site key always passes and so does
+// the secret, for any token.
+export const turnstileTestKeys = {
+  SUPPORT_TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+  SUPPORT_TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
+};
+// The literal addresses Email Routing hands to the API on
+// SUPPORT_INBOUND_DOMAIN: requests@ (where Google forwards
+// support@preprocess.com) and r@, whose r+<token>@ subaddresses are replies.
+// Catch-all rules exist on the apex only, so these are literal rules with
+// subaddressing on.
+export const supportInboundLocalParts = ["requests", "r"] as const;
+
+// PostHog (spec 12 and 15): server errors and request events from the app,
+// docs, API and runtime, and the app's browser errors. Production and staging
+// each send to their own PostHog project, so staging never reaches
+// production's; the keys are public project keys (phc_), the same ones
+// browsers receive. Previews send nothing. A self-hosted
+// install sends nothing unless its deploy sets POSTHOG_KEY, and POSTHOG_HOST
+// for a host other than PostHog's US cloud, to point at its own PostHog.
+export const posthogVars = ["POSTHOG_KEY", "POSTHOG_HOST"] as const;
+export const posthogProject: Partial<
+  Record<Stage, Record<(typeof posthogVars)[number], string>>
+> = {
+  production: {
+    POSTHOG_KEY: "phc_AU5GoFmdkBQ8bxX6wvEbpneNhQbbVSayfzNCxa6RauJu",
+    POSTHOG_HOST: "https://us.i.posthog.com",
+  },
+  staging: {
+    POSTHOG_KEY: "phc_urwmiA4mz5QA3Dhu3WWxW8hmhPiK9qnFLHwtgpnA9uBq",
+    POSTHOG_HOST: "https://us.i.posthog.com",
+  },
+};
+
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).
 export const apiCrons = ["20 0 * * *", "* * * * *"];
@@ -248,9 +317,16 @@ export const localRoleDatabaseUrl = (
 // so cookies stay first-party.
 export const localAppUrl = "https://app.preprocess.localhost";
 
+// The docs site's local origin, whose search index the help center merges.
+export const localDocsUrl = "https://docs.preprocess.localhost";
+
 // The public docs site, linked from the app wherever a stage has no docs
 // domain of its own.
 export const publicDocsUrl = "https://docs.preprocess.com";
+
+// Our public status page, linked from the app and docs on our own stages only;
+// a self-hosted install has no status page of ours (spec 16).
+export const publicStatusUrl = "https://status.preprocess.com";
 
 // The GitHub App in `pnpm dev`: scripts/github-stub.ts stands in for GitHub
 // and apps/builder/local/server.ts runs the build sandbox under Docker. The
@@ -264,6 +340,9 @@ export const localGitHub = {
   builder: "http://127.0.0.1:8789",
 };
 export const localEmailFrom = "Preprocess <invitations@preprocess.localhost>";
+// Locally support email goes to the send_email sink like every other email.
+export const localSupportEmailFrom =
+  "Preprocess Support <support@preprocess.localhost>";
 export const localAuditKeyId = "audit-ed25519-development";
 
 // values typed into a local database. Deployed stages bind Secrets Store.

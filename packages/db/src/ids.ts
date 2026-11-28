@@ -11,6 +11,7 @@ export const prefixes = {
   invitation: "inv",
   apikey: "key",
   ssoProvider: "sso",
+  ssoDomain: "ssd",
   group: "grp",
   agent: "agt",
   deployment: "dep",
@@ -41,6 +42,9 @@ export const prefixes = {
   retentionSweep: "rsw",
   dataset: "dst",
   scim: "scim",
+  supportRequest: "spr",
+  supportMessage: "spm",
+  supportAttachment: "spa",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

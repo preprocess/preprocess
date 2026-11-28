@@ -15,8 +15,21 @@ import {
   files,
   idempotencyKeys,
 } from "@preprocess/db/schema/cases";
+import { sandboxIntervals } from "@preprocess/db/schema/billing";
 import { deployments } from "@preprocess/db/schema/deployments";
-import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { mcpServers } from "@preprocess/db/schema/mcp";
+import { amountBucket, durationBucket } from "@preprocess/logs";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
@@ -24,10 +37,11 @@ import { agentRole, canSeeCase, canWorkCase } from "./access.ts";
 import { assertModelAllowed } from "./allowed-models.ts";
 import type { Caller } from "./caller.ts";
 import type { Manifest } from "./deploy.ts";
+import { modelSlug, trackEvent } from "./analytics.ts";
 import { acceptedMemories } from "./memories.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
-import { creditStop, entitlement } from "./billing.ts";
+import { creditStop, entitlement, MICRO_USD_PER_CREDIT } from "./billing.ts";
 import { customImagesAllowed } from "./plan.ts";
 import { indexCase } from "./case-search.ts";
 import { joinAutomaticSuite } from "./evals.ts";
@@ -214,6 +228,7 @@ export const createCase = async (
         id: deployments.id,
         layer: deployments.sandboxLayer,
         manifest: deployments.manifest,
+        environment: deployments.environment,
       })
       .from(deployments)
       .where(
@@ -320,10 +335,32 @@ export const createCase = async (
             eq(idempotencyKeys.key, idempotencyKey),
           ),
         );
-    return { body, replayed: false as const, outboxId };
+    return {
+      body,
+      replayed: false as const,
+      outboxId,
+      agentId: agent.id,
+      deploymentId: deployment.id,
+      test: deployment.environment === "preview",
+    };
   });
-  if (!created.replayed)
+  if (!created.replayed) {
     await drainOutbox(env, org, [{ id: created.outboxId, kind: "case.start" }]);
+    await trackEvent(
+      env,
+      "case_started",
+      org,
+      by.actorType === "person" ? by.createdBy : null,
+      {
+        case_id: created.body.id,
+        agent_id: created.agentId,
+        deployment_id: created.deploymentId,
+        source: by.source,
+        files: input.files.length,
+        test: created.test,
+      },
+    );
+  }
   return { body: created.body, replayed: created.replayed };
 };
 
@@ -448,6 +485,8 @@ export type CaseEvent = {
       // Set when the case waits on an approval, whose own event sends the
       // webhook.
       approvalId?: string;
+      // On completion or failure: what the run used (product analytics).
+      stats?: CaseStats;
       completed?: {
         input: StartCase["input"];
         captureKey: string;
@@ -466,6 +505,26 @@ export type CaseEvent = {
     }
 );
 
+// apps/runtime/src/env.ts CaseStats.
+export type CaseStats = {
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  toolCalls: number;
+  modelErrors: number;
+  ocrPages: number;
+  mcp: { server: string; calls: number; errors: number }[];
+};
+
+const errorClass = (event: Extract<CaseEvent, { type: "status" }>) =>
+  event.status !== "failed"
+    ? ("none" as const)
+    : event.error?.code === "timeout"
+      ? ("timeout" as const)
+      : event.stats?.modelErrors
+        ? ("model_error" as const)
+        : ("run_failed" as const);
+
 const groupBySlug = async (tx: Tx, slug: string) => {
   const [group] = await tx
     .select({ id: groups.id })
@@ -479,6 +538,14 @@ const groupBySlug = async (tx: Tx, slug: string) => {
 // queued in the same transaction and drained after it commits.
 export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
   const rows: { id: string; kind: OutboxKind }[] = [];
+  let handedOffTo = null as string | null;
+  let finished = false as boolean;
+  let halted = false as boolean;
+  let test = false as boolean;
+  let requested = null as { level: Approval["level"]; group: boolean } | null;
+  let durationMs = 0;
+  let sandboxSeconds = 0;
+  let mcpIds = new Map<string, string>();
   await withOrg(env, orgId(event.organizationId), async (tx) => {
     const own = and(
       eq(cases.id, event.caseId),
@@ -494,6 +561,10 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
             .from(groups)
             .where(eq(groups.slug, a.group))
         : [];
+      const [seen] = await tx
+        .select({ id: caseApprovals.id })
+        .from(caseApprovals)
+        .where(eq(caseApprovals.id, a.id));
       const decided = {
         status: a.status,
         decidedBy: a.decidedBy,
@@ -517,6 +588,10 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
         .onConflictDoUpdate({ target: caseApprovals.id, set: decided });
       // A new request notifies the group the code named, or any operator.
       if (a.status !== "pending" || a.decidedAt !== null) return;
+      if (!seen) {
+        requested = { level: a.level, group: a.group !== null };
+        test = await onPreview(tx, event.caseId);
+      }
       const webhookRows = await queueWebhooks(env, tx, event.organizationId, {
         caseId: event.caseId,
         agentId: event.agentId,
@@ -594,10 +669,14 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
         status: cases.status,
         group: cases.waitingOnGroupId,
         since: cases.waitingSince,
+        createdAt: cases.createdAt,
+        environment: deployments.environment,
       })
       .from(cases)
+      .innerJoin(deployments, eq(deployments.id, cases.deploymentId))
       .where(own);
     if (!before) return;
+    test = before.environment === "preview";
     if (event.charges)
       await meterCharges(
         tx,
@@ -620,6 +699,29 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
       event.status === "waiting" &&
       group !== null &&
       (before.status !== "waiting" || before.group !== group.id);
+    if (newWait) handedOffTo = group.id;
+    finished = done && before.status !== event.status;
+    halted = event.status === "halted" && before.status !== "halted";
+    if (finished) {
+      durationMs = Math.max(0, now.getTime() - before.createdAt.getTime());
+      const [used] = await tx
+        .select({
+          seconds: sql<string>`coalesce(sum(extract(epoch from coalesce(${sandboxIntervals.endedAt}, ${sandboxIntervals.lastSeenAt}) - ${sandboxIntervals.startedAt})), 0)`,
+        })
+        .from(sandboxIntervals)
+        .where(eq(sandboxIntervals.caseId, event.caseId));
+      sandboxSeconds = Math.round(Number(used?.seconds ?? 0));
+      const slugs = event.stats?.mcp.map((m) => m.server) ?? [];
+      if (slugs.length)
+        mcpIds = new Map(
+          (
+            await tx
+              .select({ id: mcpServers.id, slug: mcpServers.slug })
+              .from(mcpServers)
+              .where(inArray(mcpServers.slug, slugs))
+          ).map((m) => [m.slug, m.id]),
+        );
+    }
     await tx
       .update(cases)
       .set({
@@ -678,4 +780,68 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
     for (const id of webhookRows) rows.push({ id, kind: "webhook" });
   });
   if (rows.length) await drainOutbox(env, orgId(event.organizationId), rows);
+  const ids = { case_id: event.caseId, agent_id: event.agentId };
+  if (requested)
+    await trackEvent(env, "approval_requested", event.organizationId, null, {
+      ...ids,
+      ...requested,
+      test,
+    });
+  if (event.type !== "status") return;
+  if (finished) {
+    const stats = event.stats;
+    const credits = (event.costMicroUsd ?? 0) / MICRO_USD_PER_CREDIT;
+    await trackEvent(env, "case_completed", event.organizationId, null, {
+      ...ids,
+      outcome: event.status as "completed",
+      error_class: errorClass(event),
+      duration_ms: durationMs,
+      duration_bucket: durationBucket(durationMs),
+      model: stats ? modelSlug(stats.model) : "unknown",
+      tokens_in: stats?.tokensIn ?? 0,
+      tokens_out: stats?.tokensOut ?? 0,
+      credits: Math.round(credits),
+      credits_bucket: amountBucket(credits),
+      tool_calls: stats?.toolCalls ?? 0,
+      mcp_calls: stats?.mcp.reduce((total, m) => total + m.calls, 0) ?? 0,
+      sandbox_seconds: sandboxSeconds,
+      ocr_pages: stats?.ocrPages ?? 0,
+      test,
+    });
+    for (const m of stats?.mcp ?? []) {
+      const server = mcpIds.get(m.server);
+      if (server)
+        await trackEvent(env, "mcp_tool_called", event.organizationId, null, {
+          ...ids,
+          mcp_server_id: server,
+          calls: m.calls,
+          errors: m.errors,
+          test,
+        });
+    }
+  }
+  if (halted && event.haltReason)
+    await trackEvent(env, "case_halted", event.organizationId, null, {
+      ...ids,
+      cause: event.haltReason,
+      test,
+    });
+  if (handedOffTo)
+    await trackEvent(env, "case_handed_off", event.organizationId, null, {
+      ...ids,
+      group_id: handedOffTo,
+      approval: event.approvalId !== undefined,
+      test,
+    });
+};
+
+// Whether a case runs on a preview deployment: a test of unreleased code,
+// which product analytics marks `test`.
+export const onPreview = async (tx: Tx, caseId: string) => {
+  const [row] = await tx
+    .select({ environment: deployments.environment })
+    .from(cases)
+    .innerJoin(deployments, eq(deployments.id, cases.deploymentId))
+    .where(eq(cases.id, caseId));
+  return row?.environment === "preview";
 };

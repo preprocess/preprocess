@@ -5,12 +5,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "preprocess-app-development",
-  "main": "@tanstack/react-start/server-entry",
+  "main": "src/server.ts",
   "compatibility_date": "2026-07-26",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "services": [{ "binding": "API", "service": "preprocess-api-development" }],
-  "vars": { "DOCS_URL": "https://docs.preprocess.com" },
+  "vars": {
+    "DOCS_URL": "https://docs.preprocess.com",
+    "STATUS_URL": "https://status.preprocess.com",
+  },
   "env": {
     "staging": { "name": "preprocess-app-staging", "workers_dev": true },
     "production": { "name": "preprocess-app-production", "workers_dev": false },

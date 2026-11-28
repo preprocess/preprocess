@@ -309,6 +309,27 @@
       "when": 1795828222355,
       "tag": "0048_scim",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795832494182,
+      "tag": "0049_directory_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795833613046,
+      "tag": "0050_sso_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795838275894,
+      "tag": "0051_support_requests",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,8 @@ import { orgId, withOrg, withoutOrg } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { sandboxIntervals } from "@preprocess/db/schema/billing";
+import { cases } from "@preprocess/db/schema/cases";
+import { deployments } from "@preprocess/db/schema/deployments";
 import { organizationGuardrails } from "@preprocess/db/schema/guardrails";
 import { runMode } from "@preprocess/runmode";
 import type { SandboxEvent } from "@preprocess/sandbox";
@@ -24,6 +26,7 @@ import { and, eq, isNull, lt } from "drizzle-orm";
 import { actor, eventBase } from "./caller.ts";
 import type { OrgVariables } from "./caller.ts";
 import type { Env } from "./env.ts";
+import { trackEvent } from "./analytics.ts";
 import { meter } from "./metering.ts";
 
 // Cloudflare's instance types (developers.cloudflare.com/containers/platform/limits).
@@ -116,13 +119,13 @@ const close = async (
       ),
     )
     .for("update");
-  if (!open) return;
+  if (!open) return false;
   const endedAt = at === "lastSeen" ? open.lastSeenAt : at;
   await tx
     .update(sandboxIntervals)
     .set({ endedAt, endReason: reason })
     .where(eq(sandboxIntervals.id, open.id));
-  if (open.kind !== "case" || !open.caseId) return;
+  if (open.kind !== "case" || !open.caseId) return true;
   const seconds =
     Math.max(0, endedAt.getTime() - open.startedAt.getTime()) / 1000;
   await meter(tx, env, {
@@ -131,6 +134,28 @@ const close = async (
     quantity: sandboxPrice(open.size as CaseSandboxSize, seconds),
     caseId: open.caseId,
   });
+  return true;
+};
+
+// The preset a case's sandbox runs, from its deployment's code.
+const casePreset = async (
+  tx: Tx,
+  caseId: string | undefined,
+): Promise<"standard" | "node" | "python" | "python_data" | "unknown"> => {
+  if (!caseId) return "unknown" as const;
+  const [row] = await tx
+    .select({ manifest: deployments.manifest })
+    .from(cases)
+    .innerJoin(deployments, eq(deployments.id, cases.deploymentId))
+    .where(eq(cases.id, caseId));
+  const preset = (
+    row?.manifest as { sandbox?: { preset?: string } } | undefined
+  )?.sandbox?.preset;
+  return preset === "python-data"
+    ? ("python_data" as const)
+    : preset === "standard" || preset === "node" || preset === "python"
+      ? preset
+      : ("unknown" as const);
 };
 
 export const recordSandboxEvent = async (
@@ -141,46 +166,69 @@ export const recordSandboxEvent = async (
   if (runMode(env).kind !== "cloud" || !validSize(event)) return;
   const where = { sandboxId: event.sandboxId, seq: event.seq };
   const at = eventTime(event, now);
-  await withOrg(env, orgId(event.organizationId), async (tx) => {
-    switch (event.type) {
-      case "start":
-      case "wake":
-        await tx
-          .insert(sandboxIntervals)
-          .values({
-            id: newId("sandboxInterval"),
-            organizationId: event.organizationId,
-            sandboxId: event.sandboxId,
-            seq: event.seq,
-            agent: event.agent ?? null,
-            caseId: event.caseId ?? null,
-            kind: event.kind,
-            size: event.size,
-            startedAt: at ?? now,
-            lastSeenAt: at ?? now,
-          })
-          .onConflictDoNothing();
-        return;
-      case "heartbeat":
-        await tx
-          .update(sandboxIntervals)
-          .set({ lastSeenAt: at ?? now })
-          .where(
-            and(
-              eq(sandboxIntervals.sandboxId, event.sandboxId),
-              eq(sandboxIntervals.seq, event.seq),
-              isNull(sandboxIntervals.endedAt),
-            ),
-          );
-        return;
-      case "sleep":
-      case "destroy":
-        await close(tx, env, where, at ?? now, event.type);
-        return;
-      case "crash":
-        await close(tx, env, where, at ?? "lastSeen", "crash");
-    }
-  });
+  const outcome = await withOrg(
+    env,
+    orgId(event.organizationId),
+    async (tx) => {
+      switch (event.type) {
+        case "start":
+        case "wake": {
+          const [opened] = await tx
+            .insert(sandboxIntervals)
+            .values({
+              id: newId("sandboxInterval"),
+              organizationId: event.organizationId,
+              sandboxId: event.sandboxId,
+              seq: event.seq,
+              agent: event.agent ?? null,
+              caseId: event.caseId ?? null,
+              kind: event.kind,
+              size: event.size,
+              startedAt: at ?? now,
+              lastSeenAt: at ?? now,
+            })
+            .onConflictDoNothing()
+            .returning({ id: sandboxIntervals.id });
+          return opened && event.type === "start" && event.kind === "case"
+            ? { started: await casePreset(tx, event.caseId) }
+            : null;
+        }
+        case "heartbeat":
+          await tx
+            .update(sandboxIntervals)
+            .set({ lastSeenAt: at ?? now })
+            .where(
+              and(
+                eq(sandboxIntervals.sandboxId, event.sandboxId),
+                eq(sandboxIntervals.seq, event.seq),
+                isNull(sandboxIntervals.endedAt),
+              ),
+            );
+          return null;
+        case "sleep":
+        case "destroy":
+          await close(tx, env, where, at ?? now, event.type);
+          return null;
+        case "crash":
+          return (await close(tx, env, where, at ?? "lastSeen", "crash"))
+            ? { crashed: true }
+            : null;
+      }
+      return null;
+    },
+  );
+  if (event.kind !== "case" || !outcome) return;
+  const ids = {
+    case_id: event.caseId ?? null,
+    size: event.size as CaseSandboxSize,
+  };
+  // A case's sandbox, the first time it starts, and one that crashed.
+  if ("started" in outcome)
+    await trackEvent(env, "sandbox_used", event.organizationId, null, {
+      ...ids,
+      preset: outcome.started,
+    });
+  else await trackEvent(env, "sandbox_failed", event.organizationId, null, ids);
 };
 
 // Every minute: intervals whose sandbox went silent end at their last

@@ -16,3 +16,4 @@ pnpm-workspace.yaml
 apps/runtime/test/dist/
 apps/docs/openapi.json
 apps/docs/.source/
+apps/support/.source/

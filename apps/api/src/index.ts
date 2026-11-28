@@ -1,4 +1,10 @@
-import { initLogs } from "@preprocess/logs";
+import {
+  initLogs,
+  logFailure,
+  routeOf,
+  sendProductEvents,
+  trafficOf,
+} from "@preprocess/logs";
 import type { LogRecord } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { evlog, type EvlogVariables } from "evlog/hono";
@@ -7,7 +13,13 @@ import { runMode } from "@preprocess/runmode";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
+import { routePath } from "hono/route";
 
+import {
+  identifyAllOrganizations,
+  isProductMessage,
+  type ProductMessage,
+} from "./analytics.ts";
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { reportDaily, reportUsage } from "./billing.ts";
 import { runPlanChanges } from "./plan-change.ts";
@@ -16,10 +28,11 @@ import { collectSandboxLayers } from "./sandbox-layers.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
-import { authRateLimit, orgRateLimit } from "./rate-limit.ts";
+import { authRateLimit, orgRateLimit, supportRateLimit } from "./rate-limit.ts";
 import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
 import type { Env, Job } from "./env.ts";
+import { reportDeadLetters } from "./dead-letters.ts";
 import { deleteExpiredIdempotencyKeys } from "./idempotency.ts";
 import { heartbeat } from "./heartbeat.ts";
 import { sweepOutbox } from "./outbox.ts";
@@ -60,7 +73,10 @@ import { modelRoutes } from "./routes/models.ts";
 import { captureRoutes } from "./routes/capture.ts";
 import { datasetRoutes } from "./routes/datasets.ts";
 import { meRoutes } from "./routes/me.ts";
-import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
+import { supportRoutes } from "./routes/support.ts";
+import { supportEnabled } from "./support.ts";
+import { receiveSupportEmail, signedOutRequest } from "./support-inbound.ts";
+import { buildTools, handleMcp, TOOLS, type Tool } from "./mcp-server.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
@@ -74,8 +90,27 @@ const OPENAPI = {
   info: { title: "Preprocess API", version: "1" },
 };
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env } & EvlogVariables>();
 
+// One wide event per request (design doc 09). The run log keeps the ones an
+// organization's caller made; PostHog, where configured, gets every request's
+// route, status and duration, and its errors.
+app.use(async (c, next) => {
+  initLogs("api", (records) => sendLogs(c.env, records), c.env);
+  await next();
+});
+app.use(evlog());
+app.use(async (c, next) => {
+  await next();
+  const route = routePath(c, -1);
+  c.get("log").set({
+    route:
+      route && route !== "*" && !route.endsWith("/*")
+        ? route
+        : routeOf(c.req.path),
+    traffic: trafficOf(c.req.path, c.req.header("user-agent") ?? null),
+  });
+});
 app.use("*", cors());
 
 app.onError((error, c) => {
@@ -122,6 +157,26 @@ app.get("/api/invitations/:id", async (c) => {
   return preview ? c.json(preview) : c.json({ error: "not_found" }, 404);
 });
 
+// Support (support.ts) is our cloud's only: a self-hosted install answers 404
+// for every support route, before anyone is asked to sign in.
+const supportNotFound = () =>
+  Response.json(
+    { error: { code: "not_found", message: "Not found." } },
+    { status: 404 },
+  );
+app.use("/v1/orgs/:org/support/*", async (c, next) =>
+  supportEnabled(c.env) ? next() : supportNotFound(),
+);
+
+// A signed-out visitor's support request, behind Turnstile and a limit per
+// client address. Not part of /v1.
+app.post("/api/support/requests", async (c) =>
+  supportEnabled(c.env)
+    ? ((await supportRateLimit(c.env, c.req.raw)) ??
+      signedOutRequest(c.env, c.req.raw))
+    : supportNotFound(),
+);
+
 // The public half of the audit signing key, for checking manifests.
 app.get("/v1/audit/keys", async (c) => c.json(await publicKeys(c.env)));
 
@@ -129,13 +184,8 @@ const orgApi = new OpenAPIHono<{
   Bindings: Env;
   Variables: OrgVariables & EvlogVariables["Variables"];
 }>();
-// One wide event per request (design doc 09). It joins the organization's
-// run log only once the caller is known to belong to it.
-orgApi.use(async (c, next) => {
-  initLogs("api", (records) => sendLogs(c.env, records));
-  await next();
-});
-orgApi.use(evlog());
+// The request's wide event joins the organization's run log only once the
+// caller is known to belong to it.
 orgApi.use(orgCaller);
 orgApi.use(async (c, next) => {
   c.get("log").set({ organizationId: c.var.org });
@@ -170,6 +220,7 @@ orgApi.route("/", trainingRoutes);
 orgApi.route("/", modelRoutes);
 orgApi.route("/", captureRoutes);
 orgApi.route("/", datasetRoutes);
+orgApi.route("/", supportRoutes);
 
 // The MCP server (src/mcp-server.ts) takes an organization API key, and each
 // tool call is a request to this API with the same key, so the API's own
@@ -190,7 +241,7 @@ orgApi.post("/mcp", async (c) => {
         v1.getOpenAPI31Document(OPENAPI) as unknown as Parameters<
           typeof buildTools
         >[0],
-      )),
+      )).filter((tool) => supportEnabled(c.env) || !TOOLS[tool.name]?.hosted),
     (request) =>
       app.fetch(
         new Request(
@@ -201,6 +252,7 @@ orgApi.post("/mcp", async (c) => {
               "content-type": "application/json",
               authorization: c.req.header("authorization") ?? "",
               "x-api-key": c.req.header("x-api-key") ?? "",
+              "x-preprocess-client": "mcp",
             },
             body: request.body ?? null,
           },
@@ -222,18 +274,49 @@ v1.route("/", autumnWebhook);
 v1.doc31("/openapi.json", (c) => ({ ...OPENAPI, tags: [trainingTag(c.env)] }));
 app.route("/v1", v1);
 
+// A cron task or queue batch that fails is an error event, like a failed
+// request.
+const watch = (
+  ctx: ExecutionContext,
+  operation: string,
+  promise: Promise<unknown>,
+) =>
+  ctx.waitUntil(
+    promise.catch((error: unknown) => {
+      console.error(error);
+      logFailure(operation, error, (p) => ctx.waitUntil(p));
+    }),
+  );
+
 export default {
   fetch: app.fetch,
+  // Inbound support email (support-inbound.ts), from Email Routing on
+  // SUPPORT_INBOUND_DOMAIN. Locally, wrangler dev feeds a raw message to it
+  // at /cdn-cgi/handler/email (scripts/support-email.ts).
+  async email(message, env) {
+    initLogs("api", (records) => sendLogs(env, records), env);
+    await receiveSupportEmail(env, message);
+  },
   scheduled(controller, env, ctx) {
+    initLogs("api", (records) => sendLogs(env, records), env);
     // Every minute: re-send outbox rows a failed queue send left behind.
-    // Every minute, too: report metered usage to billing and close the awake
-    // intervals of sandboxes gone silent, and warn about or apply moves down
-    // to Free (our cloud only).
+    // Every minute, too: report metered usage to billing, close the awake
+    // intervals of sandboxes gone silent, report dead-letter queues that hold
+    // messages, and warn about or apply moves down to Free (our cloud only).
     if (controller.cron === "* * * * *") {
-      ctx.waitUntil(sweepOutbox(env).then(() => heartbeat(env, "tick")));
-      ctx.waitUntil(reportUsage(env));
-      ctx.waitUntil(closeSilentSandboxes(env));
-      ctx.waitUntil(runPlanChanges(env, new Date(controller.scheduledTime)));
+      watch(
+        ctx,
+        "cron.outbox",
+        sweepOutbox(env).then(() => heartbeat(env, "tick")),
+      );
+      watch(ctx, "cron.usage", reportUsage(env));
+      watch(ctx, "cron.sandboxes", closeSilentSandboxes(env));
+      watch(ctx, "cron.dead-letters", reportDeadLetters(env));
+      watch(
+        ctx,
+        "cron.plan-changes",
+        runPlanChanges(env, new Date(controller.scheduledTime)),
+      );
       return;
     }
     // 00:20 UTC: sign and store yesterday's audit chain for every
@@ -242,78 +325,123 @@ export default {
     // deployment names, and report yesterday's storage and, on the first,
     // last month's active seats.
     const now = new Date(controller.scheduledTime);
-    ctx.waitUntil(collectSandboxLayers(env, now));
-    ctx.waitUntil(anchorAll(env, now));
-    ctx.waitUntil(deleteExpiredIdempotencyKeys(env));
-    ctx.waitUntil(sweepRetention(env, now));
-    ctx.waitUntil(reportDaily(env, now));
+    watch(ctx, "cron.sandbox-layers", collectSandboxLayers(env, now));
+    watch(ctx, "cron.audit-anchor", anchorAll(env, now));
+    watch(ctx, "cron.analytics-groups", identifyAllOrganizations(env));
+    watch(ctx, "cron.idempotency", deleteExpiredIdempotencyKeys(env));
+    watch(ctx, "cron.retention", sweepRetention(env, now));
+    watch(ctx, "cron.daily-usage", reportDaily(env, now));
   },
   async queue(
-    batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,
+    batch: MessageBatch<
+      Job | OutboxMessage | LogRecord | OtelRetry | ProductMessage
+    >,
     env: Env,
     ctx: ExecutionContext,
   ) {
-    if (batch.queue.startsWith("preprocess-logs-")) {
-      // A failed store write retries the whole batch; a failed export
-      // retries only the export.
-      const bodies = batch.messages.map((m) => m.body as LogRecord | OtelRetry);
-      const fresh = bodies.filter((b): b is LogRecord => !("otelRetry" in b));
-      if (fresh.length) await ingestLogs(env, fresh);
-      await exportLogs(env, [
-        ...fresh.map((record) => ({ otelRetry: 0, record })),
-        ...bodies.filter((b): b is OtelRetry => "otelRetry" in b),
-      ]);
-      batch.ackAll();
-      return;
-    }
-    if (batch.queue.startsWith("preprocess-cases-")) {
-      // A start that throws is retried by the queue.
-      for (const message of batch.messages as Message<OutboxMessage>[]) {
-        if (message.body.kind === "eval.start")
-          await startQueuedEval(env, message.body);
-        else {
-          await startQueuedCase(env, message.body);
-          ctx.waitUntil(heartbeat(env, "case"));
-        }
-        message.ack();
-      }
-      return;
-    }
-    if (batch.queue.startsWith("preprocess-emails-")) {
-      for (const message of batch.messages as Message<OutboxMessage>[]) {
-        try {
-          await sendNotice(env, message.body);
-          message.ack();
-        } catch (error) {
-          console.error(
-            JSON.stringify({ event: "notice.failed", error: String(error) }),
-          );
-          message.retry();
-        }
-      }
-      return;
-    }
-    if (batch.queue.startsWith("preprocess-webhooks-")) {
-      for (const message of batch.messages as Message<OutboxMessage>[]) {
-        const retryIn = await deliverWebhook(env, message.body);
-        if (retryIn === null) message.ack();
-        else message.retry({ delaySeconds: retryIn });
-      }
-      return;
-    }
-    for (const message of batch.messages as Message<Job>[]) {
-      // A job's result goes to R2 under its organization.
-      const job = message.body;
-      await env.FILES.put(
-        `${job.organizationId}/jobs/${job.id}.json`,
-        JSON.stringify({
-          ...job,
-          status: "done",
-          finishedAt: new Date().toISOString(),
-        }),
-        { httpMetadata: { contentType: "application/json" } },
+    initLogs("api", (records) => sendLogs(env, records), env);
+    try {
+      await consume(batch, env, ctx);
+    } catch (error) {
+      logFailure(`queue.${queueKind(batch.queue)}`, error, (p) =>
+        ctx.waitUntil(p),
       );
-      message.ack();
+      throw error;
     }
   },
 } satisfies ExportedHandler<Env, Job | OutboxMessage | LogRecord>;
+
+// preprocess-<kind>-<stage> to <kind>.
+const queueKind = (queue: string) => queue.split("-")[1] ?? queue;
+
+const consume = async (
+  batch: MessageBatch<
+    Job | OutboxMessage | LogRecord | OtelRetry | ProductMessage
+  >,
+  env: Env,
+  ctx: ExecutionContext,
+) => {
+  if (batch.queue.startsWith("preprocess-logs-")) {
+    // Product events (analytics.ts) go to PostHog first, each acked once
+    // sent, so a failed send retries only those.
+    const product = batch.messages.filter((m) => isProductMessage(m.body));
+    if (product.length) {
+      try {
+        await sendProductEvents(
+          env,
+          product.map((m) => (m.body as ProductMessage).product),
+        );
+        for (const m of product) m.ack();
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            event: "product.send_failed",
+            error: String(error),
+          }),
+        );
+        for (const m of product) m.retry({ delaySeconds: 30 });
+      }
+    }
+    // A failed store write retries the whole batch; a failed export
+    // retries only the export.
+    const logs = batch.messages.filter((m) => !isProductMessage(m.body));
+    const bodies = logs.map((m) => m.body as LogRecord | OtelRetry);
+    const fresh = bodies.filter((b): b is LogRecord => !("otelRetry" in b));
+    if (fresh.length) await ingestLogs(env, fresh);
+    await exportLogs(env, [
+      ...fresh.map((record) => ({ otelRetry: 0, record })),
+      ...bodies.filter((b): b is OtelRetry => "otelRetry" in b),
+    ]);
+    for (const m of logs) m.ack();
+    return;
+  }
+  if (batch.queue.startsWith("preprocess-cases-")) {
+    // A start that throws is retried by the queue.
+    for (const message of batch.messages as Message<OutboxMessage>[]) {
+      if (message.body.kind === "eval.start")
+        await startQueuedEval(env, message.body);
+      else {
+        await startQueuedCase(env, message.body);
+        ctx.waitUntil(heartbeat(env, "case"));
+      }
+      message.ack();
+    }
+    return;
+  }
+  if (batch.queue.startsWith("preprocess-emails-")) {
+    for (const message of batch.messages as Message<OutboxMessage>[]) {
+      try {
+        await sendNotice(env, message.body);
+        message.ack();
+      } catch (error) {
+        console.error(
+          JSON.stringify({ event: "notice.failed", error: String(error) }),
+        );
+        message.retry();
+      }
+    }
+    return;
+  }
+  if (batch.queue.startsWith("preprocess-webhooks-")) {
+    for (const message of batch.messages as Message<OutboxMessage>[]) {
+      const retryIn = await deliverWebhook(env, message.body);
+      if (retryIn === null) message.ack();
+      else message.retry({ delaySeconds: retryIn });
+    }
+    return;
+  }
+  for (const message of batch.messages as Message<Job>[]) {
+    // A job's result goes to R2 under its organization.
+    const job = message.body;
+    await env.FILES.put(
+      `${job.organizationId}/jobs/${job.id}.json`,
+      JSON.stringify({
+        ...job,
+        status: "done",
+        finishedAt: new Date().toISOString(),
+      }),
+      { httpMetadata: { contentType: "application/json" } },
+    );
+    message.ack();
+  }
+};

@@ -66,6 +66,7 @@ import type { CaseNeighbors } from "./list-org-cases";
 import type { CaseInputSample } from "./flue-lab-input-samples";
 import { AgentSectionNav } from "../agents/agent-shell";
 import type { OrgAgentDetail } from "../agents/list-org-agents";
+import { REPLAY_BLOCK } from "../monitoring/posthog";
 
 export type AgentCaseRoomProps = {
   /** The agent the case belongs to; the room sits under its Cases section. */
@@ -543,7 +544,10 @@ export function AgentCaseRoom({
     <CaseRecordContext.Provider value={caseItem}>
       <CaseWorkContext.Provider value={work}>
         <div
-          className="@container/case-room flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden @max-[941px]/case-room:[&_[data-room-pane=fill]]:grow! @max-[941px]/case-room:[&_[data-room-pane=hidden]]:hidden! @max-[941px]/case-room:[&_[data-room-pane=tabs]]:shrink-0! @max-[941px]/case-room:[&_[data-room-pane=tabs]]:grow-0! @max-[941px]/case-room:[&_[data-room-pane=tabs]]:basis-auto!"
+          className={cn(
+            REPLAY_BLOCK,
+            "@container/case-room flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden @max-[941px]/case-room:[&_[data-room-pane=fill]]:grow! @max-[941px]/case-room:[&_[data-room-pane=hidden]]:hidden! @max-[941px]/case-room:[&_[data-room-pane=tabs]]:shrink-0! @max-[941px]/case-room:[&_[data-room-pane=tabs]]:grow-0! @max-[941px]/case-room:[&_[data-room-pane=tabs]]:basis-auto!",
+          )}
           data-testid="agent-case-room"
         >
           <CaseRoomHeader

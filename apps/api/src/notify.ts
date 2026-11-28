@@ -3,16 +3,24 @@
 // writes an outbox row; the EMAILS consumer resolves recipients at send time,
 // skips people who turned email off, and sends one email per person. Keys
 // already sent are kept in KV for a day, so a redelivery sends nothing twice.
-// A person's tag names that person; nothing else names other people.
+// A person's tag names that person; nothing else names other people. A synced
+// group the identity provider removed goes to the Developers, Owners and
+// Admins (scim.ts).
 
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
 import { agents, groupMembers, groups } from "@preprocess/db/schema/access";
-import { organization, user } from "@preprocess/db/schema/auth";
+import { member, organization, user } from "@preprocess/db/schema/auth";
 import { caseMentions, cases } from "@preprocess/db/schema/cases";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
-import { assignedEmail, taggedEmail, waitingEmail } from "./email-templates.ts";
+import { agentsNamingGroup } from "./deploy.ts";
+import {
+  assignedEmail,
+  groupRemovedEmail,
+  taggedEmail,
+  waitingEmail,
+} from "./email-templates.ts";
 import type { RenderedEmail } from "./email-templates.ts";
 import { emailBrand, sendEmail } from "./email.ts";
 import type { Env } from "./env.ts";
@@ -28,7 +36,35 @@ export type Notice =
       since: string;
       reason: string | null;
     }
-  | { type: "assigned"; caseId: string; userId: string; assignedAt: string };
+  | { type: "assigned"; caseId: string; userId: string; assignedAt: string }
+  | { type: "scim.group.removed"; groupId: string; removedAt: string };
+
+export const DIRECTORY_SYNC_PATH = "/settings/organization/directory-sync";
+
+// Who hears about a removed synced group: the Owners, the Admins and the
+// Developers group's members.
+export const removedGroupAudience = async (tx: Tx, organizationId: string) => {
+  const admins = await tx
+    .select({ id: member.userId })
+    .from(member)
+    .where(
+      and(
+        eq(member.organizationId, organizationId),
+        inArray(member.role, ["owner", "admin"]),
+      ),
+    );
+  const developers = await tx
+    .select({ id: groupMembers.userId })
+    .from(groupMembers)
+    .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+    .where(
+      and(
+        eq(groups.organizationId, organizationId),
+        eq(groups.isDevelopers, true),
+      ),
+    );
+  return [...new Set([...admins, ...developers].map((p) => p.id))];
+};
 
 // Inside the transaction that decides the notice.
 export const notifyLater = async (
@@ -106,6 +142,34 @@ const compose = async (
   notice: Notice,
 ): Promise<Email | null> => {
   const brand = emailBrand(env);
+  if (notice.type === "scim.group.removed") {
+    const [group] = await tx
+      .select({
+        name: groups.name,
+        removedAt: groups.syncedRemovedAt,
+        people: groups.syncedRemovedMembers,
+        organizationId: groups.organizationId,
+        orgName: organization.name,
+      })
+      .from(groups)
+      .innerJoin(organization, eq(organization.id, groups.organizationId))
+      .where(eq(groups.id, notice.groupId));
+    // Deleted, or re-linked by the directory, since.
+    if (!group?.removedAt || group.removedAt.toISOString() !== notice.removedAt)
+      return null;
+    return {
+      key: `scim.group.removed:${notice.groupId}:${notice.removedAt}`,
+      userIds: await removedGroupAudience(tx, group.organizationId),
+      email: groupRemovedEmail(brand, {
+        url: new URL(DIRECTORY_SYNC_PATH, env.APP_URL).href,
+        orgName: group.orgName,
+        groupName: group.name,
+        at: group.removedAt,
+        people: group.people ?? 0,
+        agents: (await agentsNamingGroup(tx, notice.groupId)).length,
+      }),
+    };
+  }
   if (notice.type === "mention") {
     const [mention] = await tx
       .select()

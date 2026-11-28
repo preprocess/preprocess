@@ -7,7 +7,9 @@
 // and consumers, the case runtime that loads agent code as Dynamic Workers,
 // the Tail Worker on that code, the GitHub build sandbox (apps/builder, a
 // Container), the PDF renderer (apps/pdf-render, a Container), the stub model service (apps/model-stub) unless
-// MODEL_SERVICE_URL names a real one, and Postgres behind Hyperdrive.
+// MODEL_SERVICE_URL names a real one, and Postgres behind Hyperdrive. Our
+// cloud's stages also get the help center (apps/support); selfhost stages
+// don't.
 //
 // Stages differ only in their database, run mode and what survives a destroy:
 // - pr-<number>: its own PlanetScale branch, migrated and seeded, removed with
@@ -45,6 +47,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
 import { GrantAppRole } from "./src/app-role.ts";
+import { EmailSubaddressing } from "./src/email-subaddressing.ts";
 import { originConnectionLimits } from "./src/connections.ts";
 import {
   roleOrigin,
@@ -67,6 +70,7 @@ import {
   imageRepositories,
   licenseSecrets,
   compatibility,
+  deadLetterQueues,
   durableObjects,
   isPreviewStage,
   isSelfHostStage,
@@ -79,10 +83,18 @@ import {
   runtimeModelSecrets,
   statusHeartbeatSecrets,
   statusHeartbeatVars,
+  supportInboundLocalParts,
+  supportProductionSecrets,
+  supportProductionVars,
+  supportVars,
+  turnstileTestKeys,
   trainingVars,
   type SelfHostStage,
   type Stage,
   publicDocsUrl,
+  publicStatusUrl,
+  posthogProject,
+  posthogVars,
 } from "./src/stages.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -303,6 +315,20 @@ export default Alchemy.Stack(
       : {};
     const runMode = region ? { PREPROCESS_REGION: region } : {};
     const keep = RemovalPolicy.protect(!preview);
+    // PostHog for the app, docs, API and runtime: our production's project
+    // from stages.ts, a self-hosted install's own when its deploy sets
+    // POSTHOG_KEY, and nothing on staging or previews.
+    const posthog = selfHost
+      ? Object.fromEntries(
+          posthogVars.map(
+            (name) =>
+              [
+                name,
+                Config.String(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        )
+      : (posthogProject[stage] ?? {});
 
     // The API, tail, runtime and app bind each other's entrypoints; Alchemy
     // creates each Worker before binding, so the cycle deploys.
@@ -326,10 +352,14 @@ export default Alchemy.Stack(
       ...(appDomain && { domain: appDomain }),
       env: {
         ...runMode,
+        ...posthog,
+        STAGE: stage,
         API: Cloudflare.WorkerEntrypoint(apiRef),
         // Where the app links to docs: the stage's own docs domain, else the
         // public docs, so the app never waits on the docs Worker's URL.
         DOCS_URL: docsDomain ? `https://${docsDomain}` : publicDocsUrl,
+        // Our status page; a self-hosted install links none (spec 16).
+        ...(!selfHost && { STATUS_URL: publicStatusUrl }),
         // Shows the Google button; the API holds the secret.
         ...Object.fromEntries(
           googleVars.map(
@@ -364,12 +394,60 @@ export default Alchemy.Stack(
       workersDev: !docsDomain,
       ...(docsDomain && { domain: docsDomain }),
       env: {
+        ...posthog,
+        STAGE: stage,
         API_URL: appDomain
           ? `https://${appDomain}/v1`
           : Output.map(app.url, (url) => `${url}/v1`),
+        ...(!selfHost && { STATUS_URL: publicStatusUrl }),
       },
     });
     const docsUrl = docsDomain ? `https://${docsDomain}` : docs.url;
+
+    // The help center (apps/support), hosted-only: selfhost stages deploy
+    // none, so a self-hosted install has no support intake and its data stays
+    // in its account. Production serves it on SUPPORT_DOMAIN, set by the
+    // deploy environment; other stages use workers.dev. It merges the stage's
+    // own docs index, and sends PostHog events from production only, so
+    // staging and previews reach no PostHog project.
+    let supportUrl: string | Output.Output<string | undefined> | undefined;
+    if (!selfHost) {
+      const supportDomain = yield* Config.String("SUPPORT_DOMAIN").pipe(
+        Config.withDefault(""),
+      );
+      const supportDist = at("apps/support/dist");
+      if (!existsSync(path.join(supportDist, "server/index.js")))
+        throw new Error(
+          "apps/support/dist is missing. Build the help center first.",
+        );
+      const support = yield* Cloudflare.Worker("Support", {
+        ...worker,
+        name: n.support,
+        main: path.join(supportDist, "server/index.js"),
+        bundle: false,
+        rules: [{ globs: ["**/*.js", "**/*.mjs"] }],
+        assets: { directory: path.join(supportDist, "client") },
+        workersDev: !supportDomain,
+        ...(supportDomain && { domain: supportDomain }),
+        env: {
+          ...(stage === "production" && posthog),
+          STAGE: stage,
+          APP_URL: appUrl,
+          DOCS_URL: docsDomain
+            ? `https://${docsDomain}`
+            : Output.map(docs.url, (url) => {
+                if (!url) throw new Error("The docs have no workers.dev URL");
+                return url;
+              }),
+          STATUS_URL: publicStatusUrl,
+          // Workers on one account can't fetch each other over workers.dev
+          // or a shared zone (error 1042), so the docs index comes through
+          // a service binding.
+          DOCS: Cloudflare.WorkerEntrypoint(docs),
+        },
+      });
+      supportUrl = supportDomain ? `https://${supportDomain}` : support.url;
+    }
 
     const roles = selfHost
       ? yield* selfHostPostgres
@@ -427,6 +505,18 @@ export default Alchemy.Stack(
     const emailsQueue = yield* Cloudflare.Queues.Queue("Emails", {
       name: n.emailsQueue,
     });
+    // Dead letters (stages.ts deadLetters), one queue per consumer, kept as
+    // long as Queues allows so a failure can be read and replayed.
+    const deadLetters = Object.fromEntries(
+      yield* Effect.all(
+        deadLetterQueues.map((queue) =>
+          Cloudflare.Queues.Queue(`DeadLetters-${queue}`, {
+            name: n.deadLetters(queue),
+            messageRetentionPeriod: 14 * 24 * 60 * 60,
+          }).pipe(Effect.map((dlq) => [queue, dlq] as const)),
+        ),
+      ),
+    ) as Record<(typeof deadLetterQueues)[number], Cloudflare.Queues.Queue>;
     const emailsSent = yield* Cloudflare.KV.Namespace("EmailsSent", {
       title: n.emailsSent,
     });
@@ -651,6 +741,7 @@ export default Alchemy.Stack(
       env: {
         STAGE: stage,
         ...runMode,
+        ...posthog,
         ...modelService,
         ...(realModels && {
           ...optionalSecrets(runtimeModelSecrets),
@@ -669,6 +760,14 @@ export default Alchemy.Stack(
       },
     });
 
+    // Support (apps/api/src/support.ts): production's inbound domain, when
+    // its deploy sets one.
+    const supportInboundDomain =
+      stage === "production"
+        ? yield* Config.String("SUPPORT_INBOUND_DOMAIN").pipe(
+            Config.withDefault(undefined),
+          )
+        : undefined;
     const api = yield* Cloudflare.Worker("Api", {
       ...worker,
       name: n.api,
@@ -679,6 +778,7 @@ export default Alchemy.Stack(
       env: {
         STAGE: stage,
         ...runMode,
+        ...posthog,
         ...modelService,
         ...(realModels && optionalSecrets(apiModelSecrets)),
         DB: db,
@@ -766,6 +866,31 @@ export default Alchemy.Stack(
           )),
         ...(region && optionalSecrets(statusHeartbeatSecrets)),
         ...(region &&
+          Object.fromEntries(
+            supportVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
+        ...(region &&
+          (stage === "production"
+            ? {
+                ...Object.fromEntries(
+                  supportProductionVars.map(
+                    (name) =>
+                      [
+                        name,
+                        Config.String(name).pipe(Config.withDefault(undefined)),
+                      ] as const,
+                  ),
+                ),
+                ...optionalSecrets(supportProductionSecrets),
+              }
+            : turnstileTestKeys)),
+        ...(region &&
           billingOrgs[stage] && {
             BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),
             BILLING_ENFORCED_ORGS: billingOrgs[stage].enforced.join(","),
@@ -794,41 +919,80 @@ export default Alchemy.Stack(
         EMAILS: emailsQueue,
         EMAILS_SENT: emailsSent,
         LOGS: logsQueue,
+        ...Object.fromEntries(
+          deadLetterQueues.map((queue) => [
+            `${queue.toUpperCase()}_DLQ`,
+            deadLetters[queue],
+          ]),
+        ),
         LOG_BUCKET: logsBucket,
         ...logSql,
         FILES: files,
       },
     });
+    // Inbound support email (production, with SUPPORT_INBOUND_DOMAIN): Email
+    // Routing is enabled on that subdomain of its zone outside this stack,
+    // and catch-all rules exist on the apex only, so requests@ and r@ on the
+    // subdomain are literal rules to the API, with subaddressing on for the
+    // r+<token>@ reply addresses.
+    if (supportInboundDomain) {
+      const zone = supportInboundDomain.split(".").slice(1).join(".");
+      const rules = [];
+      for (const local of supportInboundLocalParts)
+        rules.push(
+          yield* Cloudflare.Email.Rule(`SupportInbound-${local}`, {
+            zone,
+            name: `Support: ${local}@${supportInboundDomain} to the API`,
+            matchers: [
+              {
+                type: "literal",
+                field: "to",
+                value: `${local}@${supportInboundDomain}`,
+              },
+            ],
+            actions: [{ type: "worker", value: [n.api] }],
+          }),
+        );
+      yield* EmailSubaddressing("SupportSubaddressing", {
+        zoneId: rules[0]!.zoneId,
+      });
+    }
     yield* Cloudflare.Queues.Consumer("JobsConsumer", {
       queueId: jobs.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.jobs.queueName,
       settings: { maxWaitTimeMs: 1000 },
     });
     yield* Cloudflare.Queues.Consumer("CasesConsumer", {
       queueId: casesQueue.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.cases.queueName,
       settings: { maxWaitTimeMs: 1000 },
     });
     yield* Cloudflare.Queues.Consumer("EmailsConsumer", {
       queueId: emailsQueue.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.emails.queueName,
       settings: { maxWaitTimeMs: 1000 },
     });
     yield* Cloudflare.Queues.Consumer("LogsConsumer", {
       queueId: logsQueue.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.logs.queueName,
       settings: { maxWaitTimeMs: 5000, batchSize: 100 },
     });
     // The consumer times each retry itself, over 24 hours (doc 06).
     yield* Cloudflare.Queues.Consumer("WebhooksConsumer", {
       queueId: webhooksQueue.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.webhooks.queueName,
       settings: { maxWaitTimeMs: 1000, maxRetries: 20 },
     });
 
     return {
       app: appUrl,
       docs: docsUrl,
+      ...(supportUrl && { support: supportUrl }),
       api: api.url,
       ...(modelStub && { modelStub: modelStub.url }),
       branch: n.branch,

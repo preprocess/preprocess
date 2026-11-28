@@ -1,0 +1,24 @@
+---
+title: Product analytics and session replay
+---
+
+**Product analytics.** We use PostHog, a product analytics service, to
+understand how Preprocess is used and to improve it. When you use the Preprocess
+app, we record which pages you visit and actions such as signing up, creating an
+organization, inviting a teammate, deploying an agent, starting or completing a
+case, and changing your plan. These records contain identifiers (such as your
+user ID, your organization's ID and the IDs of agents and cases), counts and
+fixed categories (such as a plan name or whether a review was approved). They
+never contain the content of your cases, documents, prompts or messages, and
+they never contain your name or email address. We also record your
+organization's plan, seat count and creation date so we can understand usage by
+organization.
+
+**Session replay.** To find and fix usability problems, we record how the
+Preprocess app's pages are laid out and how you move through them: clicks,
+scrolling and page changes. Before a recording leaves your browser, all text on
+the page and everything you type are masked. The case room, documents and images
+are excluded entirely. Network requests and console logs are not recorded.
+Recordings are linked to your user ID and organization and are kept for 30 days.
+Self-hosted installations send nothing to Preprocess. An installation sends this
+data only to a PostHog project its operator configures.

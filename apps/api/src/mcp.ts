@@ -20,6 +20,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 
 import { decrypt, encrypt, orgKey, orgKeyVersion } from "./crypto.ts";
+import { trackEvent } from "./analytics.ts";
 import type { Env } from "./env.ts";
 
 export type McpProps = {
@@ -499,8 +500,8 @@ export const refreshConnection = async (
   env: Env,
   org: OrgId,
   server: typeof mcpServers.$inferSelect,
-) =>
-  withOrg(env, org, async (tx) => {
+) => {
+  const token = await withOrg(env, org, async (tx) => {
     const [connection] = await tx
       .select()
       .from(mcpConnections)
@@ -529,9 +530,7 @@ export const refreshConnection = async (
         targetId: server.id,
         data: { server: server.slug },
       });
-      throw new McpError(
-        `the connection to MCP server ${server.slug} needs a new sign-in`,
-      );
+      return null;
     }
     await saveConnection(
       env,
@@ -543,6 +542,16 @@ export const refreshConnection = async (
     );
     return refreshed.accessToken;
   });
+  if (token !== null) return token;
+  // The connection is marked once that commits, then the call fails.
+  await trackEvent(env, "mcp_auth_failed", org, null, {
+    mcp_server_id: server.id,
+    step: "refresh",
+  });
+  throw new McpError(
+    `the connection to MCP server ${server.slug} needs a new sign-in`,
+  );
+};
 
 const accessToken = async (
   env: Env,

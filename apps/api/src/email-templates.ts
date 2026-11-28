@@ -467,3 +467,110 @@ export const planSwitchedEmail = (
     text: `${lines.join("\n\n")}\n\nOpen Billing: ${data.url}\n\n--\n${sentTo}\n`,
   };
 };
+
+// A synced group the identity provider removed (PRE-138, decision 2), to
+// the Developers, Owners and Admins.
+export const groupRemovedEmail = (
+  brand: Brand,
+  data: {
+    url: string;
+    orgName: string;
+    groupName: string;
+    at: Date;
+    people: number;
+    agents: number;
+  },
+): RenderedEmail => {
+  const subject = `${data.groupName} was removed from ${data.orgName}`;
+  const people = data.people === 1 ? "1 person" : `${data.people} people`;
+  const agents =
+    data.agents === 1
+      ? "1 agent still names it"
+      : `${data.agents} agents still name it`;
+  const lines = [
+    `Your identity provider removed ${data.groupName} on ${longDate(data.at)}.${data.people ? ` Its ${people} lost the access it gave.` : ""}`,
+    data.agents
+      ? `${agents}, so cases that wait on it have nobody to pick them up. Review the group in Directory sync.`
+      : "No agents name it. Review the group in Directory sync.",
+  ];
+  const sentTo = `Sent to the owners, admins and developers of ${data.orgName}${onPreprocess(brand)}.`;
+  return {
+    subject,
+    html: page(
+      brand,
+      subject,
+      clip(lines[0]!),
+      heading(escapeHtml(`${data.groupName} was removed`)) +
+        lines.map((l) => paragraph(escapeHtml(l))).join("") +
+        button("Open Directory sync", data.url) +
+        footer(escapeHtml(sentTo)),
+    ),
+    text: `${lines.join("\n\n")}\n\nOpen Directory sync: ${data.url}\n\n--\n${sentTo}\n`,
+  };
+};
+
+// Support requests (PRE-155), from Preprocess Support. The requester gets an
+// acknowledgement when a request comes in and each reply after; replying to
+// either adds to the same request. Our support agent's replies are signed
+// Preprocess Support, never as a person.
+type SupportData = {
+  // The request in the app, for a requester with an account; null for a
+  // signed-out visitor, who follows the thread by email.
+  url: string | null;
+  requestId: string;
+  subject: string;
+};
+
+const supportFooter = (data: SupportData) =>
+  `Request ${data.requestId}. Reply to this email to add to your request.`;
+
+export const supportReceivedEmail = (
+  brand: Brand,
+  data: SupportData & { body: string; dueAt: Date | null },
+): RenderedEmail => {
+  const subject = `We got your request: ${data.subject}`;
+  const line = data.dueAt
+    ? `Thanks for writing in. You'll hear from us by ${longDate(data.dueAt)}.`
+    : "Thanks for writing in. We'll reply to this email address.";
+  return {
+    subject,
+    html: page(
+      brand,
+      subject,
+      line,
+      heading("We got your request") +
+        paragraph(escapeHtml(line)) +
+        quote(escapeHtml(data.subject), data.body) +
+        (data.url ? button("View request", data.url) : "") +
+        footer(escapeHtml(supportFooter(data))),
+    ),
+    text: `We got your request\n\n${line}\n\n${data.subject}\n\n${data.body}\n\n${data.url ? `View request: ${data.url}\n\n` : ""}--\n${supportFooter(data)}\n`,
+  };
+};
+
+export const supportReplyEmail = (
+  brand: Brand,
+  data: SupportData & { body: string; solved: boolean },
+): RenderedEmail => {
+  const subject = `Re: ${data.subject}`;
+  const title = data.solved
+    ? "Preprocess Support solved your request"
+    : "Preprocess Support replied";
+  const after = data.solved
+    ? "If this didn't solve it, reply to this email and we'll pick it up again."
+    : null;
+  return {
+    subject,
+    html: page(
+      brand,
+      subject,
+      clip(data.body),
+      heading(title) +
+        quote(null, data.body) +
+        (after ? row("24px 0 0", paragraph(escapeHtml(after))) : "") +
+        (data.url ? button("View request", data.url) : "") +
+        footer(escapeHtml(supportFooter(data))),
+    ),
+    text: `${title}\n\n${data.body}\n\n${after ? `${after}\n\n` : ""}${data.url ? `View request: ${data.url}\n\n` : ""}--\n${supportFooter(data)}\n`,
+  };
+};

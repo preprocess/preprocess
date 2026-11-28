@@ -5,9 +5,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "preprocess-docs-development",
-  "main": "@tanstack/react-start/server-entry",
+  "main": "src/server.ts",
   "compatibility_date": "2026-07-26",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "vars": { "API_URL": "https://app.preprocess.localhost/v1" },
+  "vars": {
+    "API_URL": "https://app.preprocess.localhost/v1",
+    "STATUS_URL": "https://status.preprocess.com",
+  },
 }

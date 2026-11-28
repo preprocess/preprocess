@@ -8,6 +8,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { FluidProvider } from "@preprocess/ui/lib/fluid-provider";
+import { createServerFn } from "@tanstack/react-start";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
@@ -25,6 +26,10 @@ import {
   needsName,
 } from "../features/auth/session";
 import { loadInbox } from "../features/inbox/load-inbox";
+import {
+  loadMonitoring,
+  startMonitoring,
+} from "../features/monitoring/posthog";
 import { onDataChanged } from "../lib/data-changed";
 import { loadRequiredCheckout } from "../features/organizations/billing";
 import { OrganizationsProvider } from "../features/organizations/organizations-context";
@@ -35,6 +40,13 @@ import { isPublicAuthPath } from "../server/public-auth-path";
 
 import "@preprocess/ui/styles.css";
 import "../styles.css";
+
+// The Help menu's links: the install's docs, and our status page, which only
+// our own stages set (spec 16).
+const loadHelpLinks = createServerFn({ method: "GET" }).handler(async () => {
+  const { docsUrl, statusUrl } = await import("../server/run-mode.server");
+  return { docsUrl: docsUrl(), statusUrl: statusUrl() };
+});
 
 const NAME_PATH = "/onboarding/name";
 // Approving `preprocess login` needs a session but renders without the shell.
@@ -83,7 +95,11 @@ export const Route = createRootRoute({
       await activateOrganization({ data: { organizationId: first.id } });
   },
   loader: async ({ location }) => {
-    const sidebarOpen = await loadProductSidebarOpen();
+    const [sidebarOpen, monitoring, helpLinks] = await Promise.all([
+      loadProductSidebarOpen(),
+      loadMonitoring(),
+      loadHelpLinks(),
+    ]);
 
     if (isPublicAuthPath(location.pathname)) {
       return {
@@ -91,6 +107,8 @@ export const Route = createRootRoute({
         inboxUnread: 0,
         organizations: [],
         sidebarOpen,
+        monitoring,
+        helpLinks,
       };
     }
 
@@ -147,6 +165,8 @@ export const Route = createRootRoute({
       inboxUnread: inbox.unreadCount,
       organizations,
       sidebarOpen,
+      monitoring,
+      helpLinks,
     };
   },
   // Auth, organizations, and the unread count load with the document. Client
@@ -163,12 +183,19 @@ const queryClient = new QueryClient({
 });
 
 function RootComponent() {
-  const { inboxUnread, session, organizations, sidebarOpen } =
+  const { inboxUnread, session, organizations, sidebarOpen, monitoring } =
     Route.useLoaderData();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const router = useRouter();
+  const userId = session?.user.id;
+  const organizationId = session?.organizationId ?? null;
+  useEffect(
+    () =>
+      startMonitoring(monitoring, userId ? { userId, organizationId } : null),
+    [monitoring, userId, organizationId],
+  );
   useEffect(
     () =>
       onDataChanged(() => {

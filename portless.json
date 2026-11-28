@@ -7,6 +7,9 @@
     "apps/docs": {
       "name": "docs.preprocess"
     },
+    "apps/support": {
+      "name": "support.preprocess"
+    },
     "apps/api": {
       "name": "api.preprocess"
     },

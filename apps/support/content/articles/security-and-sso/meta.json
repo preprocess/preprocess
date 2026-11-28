@@ -1,0 +1,9 @@
+{
+  "title": "Security and SSO",
+  "pages": [
+    "configure-saml-or-oidc-sso",
+    "set-up-scim-directory-sync",
+    "manage-groups-and-agent-access",
+    "data-privacy-retention-and-audit-logs"
+  ]
+}

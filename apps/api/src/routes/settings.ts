@@ -22,6 +22,7 @@ import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
 import type { Manifest } from "../deploy.ts";
 import type { Env } from "../env.ts";
+import { modelSlug, trackEvent } from "../analytics.ts";
 import {
   agentOverrideValues,
   DEFAULTS,
@@ -171,7 +172,44 @@ const setOverride = async (
     targetId: agent.id,
     data: { key, before: previous ?? null, after: value ?? null },
   });
-  return agentSettings(tx, agent.id);
+  return { agentId: agent.id, body: await agentSettings(tx, agent.id) };
+};
+
+const SETTINGS = {
+  model: "model",
+  reasoning: "reasoning",
+  ocr: "ocr",
+  searchCases: "search_cases",
+  timeoutSeconds: "timeout_seconds",
+  toolRetries: "tool_retries",
+  sandboxImage: "sandbox_image",
+  "evals.onPush": "evals_on_push",
+} as const;
+
+// After an override commits: which setting changed, and the model when it
+// is the one chosen.
+const trackOverride = async (
+  env: Env,
+  vars: OrgVariables,
+  agentId: string,
+  key: string,
+  value: unknown,
+) => {
+  const person = vars.caller.type === "person" ? vars.caller.userId : null;
+  await trackEvent(env, "agent_setting_changed", vars.org, person, {
+    agent_id: agentId,
+    setting:
+      key in SETTINGS
+        ? SETTINGS[key as keyof typeof SETTINGS]
+        : "schedule_previews",
+    cleared: value === undefined,
+  });
+  if (key === "model" && typeof value === "string")
+    await trackEvent(env, "model_selected", vars.org, person, {
+      model: modelSlug(value),
+      scope: "agent",
+      agent_id: agentId,
+    });
 };
 
 export const settingsRoutes = new OpenAPIHono<{
@@ -236,6 +274,18 @@ export const settingsRoutes = new OpenAPIHono<{
         });
         return next;
       });
+      if (typeof patch.model === "string")
+        await trackEvent(
+          c.env,
+          "model_selected",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          {
+            model: modelSlug(patch.model),
+            scope: "organization",
+            agent_id: null,
+          },
+        );
       return c.json(body, 200);
     },
   )
@@ -286,18 +336,12 @@ export const settingsRoutes = new OpenAPIHono<{
           "invalid_value",
           `Not a value for ${key}: ${z.prettifyError(parsed.error)}`,
         );
-      return c.json(
-        await withOrg(c.env, c.var.org, (tx) =>
-          setOverride(
-            tx,
-            c.var,
-            agent,
-            key,
-            parsed.data as string | number | boolean,
-          ),
-        ),
-        200,
+      const value = parsed.data as string | number | boolean;
+      const { agentId, body } = await withOrg(c.env, c.var.org, (tx) =>
+        setOverride(tx, c.var, agent, key, value),
       );
+      await trackOverride(c.env, c.var, agentId, key, value);
+      return c.json(body, 200);
     },
   )
   .openapi(
@@ -313,11 +357,10 @@ export const settingsRoutes = new OpenAPIHono<{
       const { agent, key } = c.req.valid("param");
       if (!settingSchema(key))
         throw new ApiError(404, "not_found", `No setting ${key}.`);
-      return c.json(
-        await withOrg(c.env, c.var.org, (tx) =>
-          setOverride(tx, c.var, agent, key, undefined),
-        ),
-        200,
+      const { agentId, body } = await withOrg(c.env, c.var.org, (tx) =>
+        setOverride(tx, c.var, agent, key, undefined),
       );
+      await trackOverride(c.env, c.var, agentId, key, undefined);
+      return c.json(body, 200);
     },
   );

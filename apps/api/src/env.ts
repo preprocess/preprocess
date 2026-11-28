@@ -1,4 +1,4 @@
-import type { LogRecord } from "@preprocess/logs";
+import type { LogRecord, PostHogEnv, ProductEvent } from "@preprocess/logs";
 import type { SandboxOwner } from "@preprocess/sandbox";
 import type { NetworkRules } from "@preprocess/db/schema/deployments";
 import type { SandboxPreset, SandboxSetup } from "@preprocess/sdk/protocol";
@@ -125,7 +125,7 @@ export type Runtime = {
   ): Promise<unknown>;
   postMessage(
     c: CaseKey & { userId: string; text: string },
-  ): Promise<{ id: string; mentioned: string[] }>;
+  ): Promise<{ id: string; mentioned: string[]; first: boolean }>;
   cancelCase(c: CaseKey): Promise<CaseRoomState>;
   // A closed case's run capture (format preprocess.run), or null when none
   // is stored (design doc 10).
@@ -209,7 +209,9 @@ export type Builder = {
   cancel(id: string): Promise<void>;
 };
 
-export type Env = {
+// POSTHOG_KEY and POSTHOG_HOST (@preprocess/logs posthog.ts): set on our
+// production and on a self-hosted install that names its own PostHog.
+export type Env = PostHogEnv & {
   STAGE: string;
   // Set on our cloud, unset on a self-hosted install; read it through
   // @preprocess/runmode.
@@ -310,7 +312,15 @@ export type Env = {
   // consumer writes the store and the Postgres summaries. LOG_STORE "sql" is
   // the Pipelines stream plus R2 SQL on deployed stages; anything else keeps
   // NDJSON in LOG_BUCKET, which is how local development and tests run.
-  LOGS: Queue<LogRecord | OtelRetry>;
+  // Product analytics events (analytics.ts) ride it to PostHog too.
+  LOGS: Queue<LogRecord | OtelRetry | { product: ProductEvent }>;
+  // Each queue's dead letters (dead-letters.ts), read only for their depth.
+  // Deployed stages bind them; local development and tests do not.
+  JOBS_DLQ?: Queue;
+  CASES_DLQ?: Queue;
+  WEBHOOKS_DLQ?: Queue;
+  EMAILS_DLQ?: Queue;
+  LOGS_DLQ?: Queue;
   LOG_BUCKET: R2Bucket;
   LOG_STORE?: string;
   LOG_STREAM?: Pipeline;
@@ -319,4 +329,17 @@ export type Env = {
   CLOUDFLARE_ACCOUNT_ID?: string;
   LOG_SQL_BUCKET?: string;
   LOG_SQL_TOKEN?: string;
+  // Support requests (support.ts), our cloud only and all optional. With
+  // SUPPORT_ORG_ID and SUPPORT_AGENT_ID each request is also a case for
+  // the support agent in our Preprocess Support organization. Support email
+  // is sent only with SUPPORT_EMAIL_FROM ("Preprocess Support
+  // <support@preprocess.com>" in production), with replies threading back
+  // through r+<token>@SUPPORT_INBOUND_DOMAIN when that is set. The signed-out
+  // form's Turnstile secret; its site key is for the forms.
+  SUPPORT_ORG_ID?: string;
+  SUPPORT_AGENT_ID?: string;
+  SUPPORT_EMAIL_FROM?: string;
+  SUPPORT_INBOUND_DOMAIN?: string;
+  SUPPORT_TURNSTILE_SECRET_KEY?: string;
+  SUPPORT_TURNSTILE_SITE_KEY?: string;
 };

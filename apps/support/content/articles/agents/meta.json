@@ -1,0 +1,10 @@
+{
+  "title": "Agents",
+  "pages": [
+    "deploy-your-first-agent",
+    "switch-between-preview-and-production",
+    "understand-case-statuses-and-review",
+    "troubleshoot-failed-deployments-and-cases",
+    "configure-agent-models-and-sandboxes"
+  ]
+}

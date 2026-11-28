@@ -15,8 +15,9 @@ import { withoutOrg, withoutOrgRead } from "@preprocess/db/client";
 import type { SystemTx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import type { IdKind } from "@preprocess/db/ids";
-import { groups } from "@preprocess/db/schema/access";
+import { groupMembers, groups } from "@preprocess/db/schema/access";
 import * as authSchema from "@preprocess/db/schema/auth";
+import { ssoDomains as ssoDomainRows } from "@preprocess/db/schema/sso";
 import { runMode } from "@preprocess/runmode";
 import { betterAuth } from "better-auth";
 import { generateRandomString } from "better-auth/crypto";
@@ -37,7 +38,15 @@ import {
 } from "better-auth/plugins/organization/access";
 import { and, count, eq, gt, sql } from "drizzle-orm";
 
+import {
+  productEvent,
+  type ProductEvent,
+  type ProductProperties,
+} from "@preprocess/logs";
+
+import { identifyOrganizations, track } from "./analytics.ts";
 import { endBillingForDeletion } from "./billing.ts";
+import { deleteSupportObjects } from "./support.ts";
 import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 import { refuseWithoutPlan, SCIM_PATH, scimDirectory } from "./scim.ts";
@@ -117,8 +126,99 @@ export const SSO_MANAGEMENT_PATHS = [
   "/sso/request-domain-verification",
   "/sso/verify-domain",
 ];
-// The DNS TXT record that proves a domain: _preprocess-sso-<provider>.<domain>.
+// Better Auth's own domain proof is unused: sso_domains holds each domain's
+// TXT record (routes/sso.ts), and the connection the plugin sees lists only
+// verified domains and counts as verified.
 export const SSO_TOKEN_PREFIX = "preprocess-sso";
+// Shown in a connection's domain list while none of its domains is verified,
+// so no address reaches it by email. .invalid never resolves (RFC 2606).
+export const SSO_NO_DOMAIN = "unverified.invalid";
+
+// A test sign-in (routes/sso.ts): its cookie marks the tester's browser, and
+// the identity provider's answer lands on the done page in their popup.
+export const SSO_TEST_COOKIE = "preprocess_sso_test";
+export const SSO_TEST_DONE = "/api/auth/sso-test/done";
+const SSO_TEST_TTL_MS = 15 * 60_000;
+
+export type SsoTestReason =
+  | "audience_mismatch"
+  | "signature_invalid"
+  | "certificate_expired"
+  | "clock_skew"
+  | "user_not_assigned"
+  | "other";
+export type SsoTest =
+  | { ok: true; at: string; by: { id: string; name: string }; email: string }
+  | {
+      ok: false;
+      at: string;
+      by: { id: string; name: string };
+      reason: SsoTestReason;
+      idpMessage: string;
+    };
+
+// Which hint the settings page shows, from what the plugin or the identity
+// provider said.
+export const ssoTestReason = (message: string): SsoTestReason => {
+  if (
+    /access_denied|not assigned|requestdenied|unauthorized_client/i.test(
+      message,
+    )
+  )
+    return "user_not_assigned";
+  if (/audience/i.test(message)) return "audience_mismatch";
+  if (/certificate/i.test(message) && /expired|not valid after/i.test(message))
+    return "certificate_expired";
+  if (/signature|digest/i.test(message)) return "signature_invalid";
+  if (
+    /notbefore|notonorafter|clock|timestamp|not yet valid|expired/i.test(
+      message,
+    )
+  )
+    return "clock_skew";
+  return "other";
+};
+
+// The SP entity id the connection's SAML app must name as its audience.
+export const ssoEntityId = (env: Env, providerId: string) =>
+  `${new URL("/api/auth", env.APP_URL).toString()}/sso/saml2/sp/metadata?providerId=${encodeURIComponent(providerId)}`;
+
+// The plugin answers a SAML response it can't parse with only "Invalid SAML
+// response". For a test, the response itself says what was wrong often
+// enough: a refusal, another audience, or an assertion outside its time.
+const diagnoseSaml = (
+  xml: string,
+  audience: string,
+  now: number,
+): { reason: SsoTestReason; message: string } | null => {
+  const tag = (name: string) =>
+    new RegExp(`<(?:\\w+:)?${name}>([^<]+)<`).exec(xml)?.[1]?.trim();
+  const status = /<(?:\w+:)?StatusCode[^>]*Value="([^"]+)"/.exec(xml)?.[1];
+  if (status && !status.endsWith(":Success"))
+    return {
+      reason: "user_not_assigned",
+      message: tag("StatusMessage") ?? status.split(":").at(-1)!,
+    };
+  const given = tag("Audience");
+  if (given && given !== audience)
+    return {
+      reason: "audience_mismatch",
+      message: `Audience mismatch. Expected ${audience}`,
+    };
+  const conditions = /<(?:\w+:)?Conditions([^>]*)>/.exec(xml)?.[1] ?? "";
+  const notBefore = /NotBefore="([^"]+)"/.exec(conditions)?.[1];
+  const notOnOrAfter = /NotOnOrAfter="([^"]+)"/.exec(conditions)?.[1];
+  const skew = 5 * 60_000;
+  if (
+    (notBefore && Date.parse(notBefore) > now + skew) ||
+    (notOnOrAfter && Date.parse(notOnOrAfter) < now - skew)
+  )
+    return {
+      reason: "clock_skew",
+      message: `The assertion is valid from ${notBefore ?? "any time"} to ${notOnOrAfter ?? "any time"}`,
+    };
+  return null;
+};
 
 // The domains a connection signs in, as stored (comma-separated).
 export const ssoDomains = (domain: string) =>
@@ -139,6 +239,46 @@ export type RequestContext = {
   // (routes/sso.ts), or the connection an SSO callback names. Never trusted
   // for anything else, so one organization's IdP is no origin of ours.
   idpOrigins: string[];
+  // Set while a test sign-in comes back (runSsoTest): the hooks skip the
+  // domain and invitation checks and note whom the identity provider signed
+  // in, and the whole transaction is rolled back, so nobody is signed in.
+  ssoTest: { email: string | null } | null;
+  // What signed_up carries about where the person came from.
+  signUpAttribution: Partial<Record<(typeof ATTRIBUTION)[number], string>>;
+};
+
+// Sign-up attribution (PRE-160): the app's sign-up page keeps the marketing
+// link's first-touch utm_* params and referring hostname in this cookie
+// (apps/app routes/sign-up.tsx) for the 30 minutes a link or Google sign-in
+// takes. Values are lowercased here, and signed_up keeps only valid slugs, so
+// no free text gets through.
+export const SIGNUP_ATTRIBUTION_COOKIE = "preprocess_signup_attribution";
+const ATTRIBUTION = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "referrer_domain",
+] as const;
+const HOSTNAME = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+
+const signUpAttribution = (request: Request) => {
+  const raw = readCookie(request, SIGNUP_ATTRIBUTION_COOKIE);
+  if (!raw) return {};
+  let params: URLSearchParams;
+  try {
+    params = new URLSearchParams(decodeURIComponent(raw));
+  } catch {
+    return {};
+  }
+  return Object.fromEntries(
+    ATTRIBUTION.flatMap((name) => {
+      const value = params.get(name)?.trim().toLowerCase();
+      if (!value || (name === "referrer_domain" && !HOSTNAME.test(value)))
+        return [];
+      return [[name, value]];
+    }),
+  );
 };
 
 export const requestContext = (request: Request): RequestContext => ({
@@ -146,11 +286,46 @@ export const requestContext = (request: Request): RequestContext => ({
   requestId: request.headers.get("cf-ray") ?? crypto.randomUUID(),
   actorId: null,
   idpOrigins: [],
+  ssoTest: null,
+  signUpAttribution: signUpAttribution(request),
 });
+
+// Product events a request's hooks decide, sent once its transaction
+// commits (withAuth); a rolled-back request sends none.
+const pending = new WeakMap<
+  RequestContext,
+  { events: ProductEvent[]; organizations: Set<string> }
+>();
+
+const pendingFor = (request: RequestContext) => {
+  let found = pending.get(request);
+  if (!found) {
+    found = { events: [], organizations: new Set() };
+    pending.set(request, found);
+  }
+  return found;
+};
+
+const signUpMethod = (path: string) =>
+  path.startsWith("/scim/v2")
+    ? ("directory" as const)
+    : SSO_CALLBACK.test(path)
+      ? ("sso" as const)
+      : path.startsWith("/callback")
+        ? ("google" as const)
+        : ("email" as const);
 
 export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
   const record = (event: Omit<AuditInput, "ip" | "requestId">) =>
     audit(tx, { ...event, ip: request.ip, requestId: request.requestId });
+  // An event to send after commit, and the organization whose group
+  // properties (seats) it changed.
+  const later = (event: ProductEvent | null, organization?: string) => {
+    if (request.ssoTest) return;
+    const found = pendingFor(request);
+    if (event) found.events.push(event);
+    if (organization) found.organizations.add(organization);
+  };
   // Better Auth adds the creator as owner (calling afterAddMember) before
   // afterCreateOrganization, when the chain does not exist yet. The
   // organization.created event records that owner instead.
@@ -222,6 +397,31 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       .where(eq(authSchema.ssoProvider.providerId, providerId));
     return found;
   };
+  // Whether the address is at one of the organization's verified domains:
+  // only those sign in through its connection.
+  const atVerifiedDomain = async (
+    organizationId: string | null | undefined,
+    email: string,
+  ) => {
+    const domain = email.split("@").at(-1)?.toLowerCase();
+    if (!organizationId || !domain) return false;
+    const [found] = await tx
+      .select({ id: ssoDomainRows.id })
+      .from(ssoDomainRows)
+      .where(
+        and(
+          eq(ssoDomainRows.organizationId, organizationId),
+          eq(ssoDomainRows.domain, domain),
+          eq(ssoDomainRows.status, "verified"),
+        ),
+      );
+    return Boolean(found);
+  };
+  const domainNotVerified = () =>
+    new APIError("FORBIDDEN", {
+      code: "SSO_DOMAIN_NOT_VERIFIED",
+      message: "Your email's domain isn't verified for single sign-on.",
+    });
   // The organization whose verified, enforced connection covers this
   // address, unless the person is one of its Owners: Owners keep every way in
   // so a broken connection can't lock the organization out.
@@ -311,6 +511,11 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
           ),
       },
     },
+    session: {
+      additionalFields: {
+        signInMethod: { type: "string", required: false, input: false },
+      },
+    },
     user: {
       additionalFields: {
         deactivatedAt: { type: "date", required: false, input: false },
@@ -339,7 +544,16 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             // A first SSO sign-in joins through its connection: with JIT on,
             // or an invitation to the connection's organization.
             if (ctx?.path && SSO_CALLBACK.test(ctx.path)) {
+              if (request.ssoTest)
+                return { data: { ...user, ...fullName(user) } };
               const connection = await ssoConnection(ctx.params?.providerId);
+              if (
+                !(await atVerifiedDomain(
+                  connection?.organizationId,
+                  user.email,
+                ))
+              )
+                throw domainNotVerified();
               if (
                 !connection?.jit &&
                 !(await pendingInvitation(
@@ -354,6 +568,15 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
                 });
             } else if (!(await mayJoin(user.email))) throw needsInvitation();
             return { data: { ...user, ...fullName(user) } };
+          },
+          after(user, ctx) {
+            later(
+              productEvent(env, "signed_up", null, user.id, {
+                method: signUpMethod(ctx?.path ?? ""),
+                ...request.signUpAttribution,
+              } as ProductProperties<"signed_up">),
+            );
+            return Promise.resolve();
           },
         },
         update: {
@@ -381,9 +604,24 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             // address at the domain. `preprocess login` is approved from a
             // session in the app, which already went through SSO.
             const path = ctx?.path ?? "";
+            if (SSO_CALLBACK.test(path)) {
+              if (request.ssoTest) {
+                request.ssoTest.email = found?.email ?? null;
+                return;
+              }
+              const connection = await ssoConnection(ctx?.params?.providerId);
+              if (
+                !found ||
+                !(await atVerifiedDomain(
+                  connection?.organizationId,
+                  found.email,
+                ))
+              )
+                throw domainNotVerified();
+              return { data: { ...session, signInMethod: "sso" } };
+            }
             if (
               found &&
-              !SSO_CALLBACK.test(path) &&
               path !== "/device/token" &&
               (await ssoRequired(found.email))
             )
@@ -561,6 +799,10 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
                 developersGroup: developers,
               },
             });
+            later(
+              productEvent(env, "org_created", org.id, user.id, {}),
+              org.id,
+            );
           },
           async afterUpdateOrganization({ organization: org, user }) {
             if (!org) return;
@@ -595,6 +837,11 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             await tx.execute(sql`
               insert into deleted_organizations (organization_id, deleted_at, final_seq, final_hash)
               select organization_id, now(), seq, hash from audit_heads where organization_id = ${org.id}`);
+            later(productEvent(env, "org_deleted", org.id, user.id, {}));
+          },
+          // Its support rows go by cascade; their attachments' objects here.
+          async afterDeleteOrganization({ organization: org }) {
+            await deleteSupportObjects(env, org.id);
           },
           async afterAcceptInvitation({ invitation, member, user }) {
             await record({
@@ -606,6 +853,20 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               targetId: user.id,
               data: { role: member.role, invitation: invitation.id },
             });
+            later(
+              productEvent(
+                env,
+                "member_joined",
+                member.organizationId,
+                user.id,
+                {
+                  member_user_id: user.id,
+                  role: member.role as "member",
+                  via: "invitation",
+                },
+              ),
+              member.organizationId,
+            );
           },
           async afterAddMember({ member, user }) {
             if (creatingOrganization) return;
@@ -618,6 +879,20 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               targetId: user.id,
               data: { role: member.role },
             });
+            later(
+              productEvent(
+                env,
+                "member_joined",
+                member.organizationId,
+                user.id,
+                {
+                  member_user_id: user.id,
+                  role: member.role as "member",
+                  via: request.actorId ? "added" : "provisioned",
+                },
+              ),
+              member.organizationId,
+            );
           },
           async afterUpdateMemberRole({ member, previousRole }) {
             await record({
@@ -631,6 +906,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             });
           },
           async afterRemoveMember({ member }) {
+            later(null, member.organizationId);
             await record({
               organizationId: member.organizationId,
               actorType: "person",
@@ -650,6 +926,18 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               targetId: invitation.id,
               data: { role: invitation.role },
             });
+            later(
+              productEvent(
+                env,
+                "member_invited",
+                invitation.organizationId,
+                inviter.id,
+                {
+                  invitation_id: invitation.id,
+                  role: invitation.role as "member",
+                },
+              ),
+            );
           },
           async afterCancelInvitation({ invitation, cancelledBy }) {
             await record({
@@ -717,6 +1005,22 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
                 defaultValue: true,
                 input: true,
               },
+              metadataUrl: { type: "string", required: false, input: false },
+              metadataReadAt: { type: "date", required: false, input: false },
+              certificateExpiresAt: {
+                type: "date",
+                required: false,
+                input: false,
+              },
+              defaultGroupId: {
+                type: "string",
+                required: false,
+                input: false,
+              },
+              testId: { type: "string", required: false, input: false },
+              testStartedBy: { type: "string", required: false, input: false },
+              testStartedAt: { type: "date", required: false, input: false },
+              lastTest: { type: "string", required: false, input: false },
             },
           },
         },
@@ -752,6 +1056,39 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             targetId: user.id,
             data: { role: "member", via: "sso", provider: provider.providerId },
           });
+          later(
+            productEvent(env, "member_joined", organizationId, user.id, {
+              member_user_id: user.id,
+              role: "member",
+              via: "provisioned",
+            }),
+            organizationId,
+          );
+          // A default group that has since been deleted adds nobody.
+          if (!connection.defaultGroupId) return;
+          const [group] = await tx
+            .select({ id: groups.id, slug: groups.slug })
+            .from(groups)
+            .where(
+              and(
+                eq(groups.organizationId, organizationId),
+                eq(groups.id, connection.defaultGroupId),
+              ),
+            );
+          if (!group) return;
+          await tx
+            .insert(groupMembers)
+            .values({ organizationId, groupId: group.id, userId: user.id })
+            .onConflictDoNothing();
+          await record({
+            organizationId,
+            actorType: "platform",
+            actorId: "platform:sso",
+            action: "group.member.added",
+            targetType: "group",
+            targetId: group.id,
+            data: { group: group.slug, user: user.id, via: "sso" },
+          });
         },
       }),
       directory.plugin,
@@ -775,13 +1112,21 @@ export const withAuth = async <T>(
   fn: (auth: Auth, tx: SystemTx) => Promise<T>,
 ): Promise<T> => {
   try {
-    return await withoutOrg(env, "better-auth", async (tx) => {
+    const result = await withoutOrg(env, "better-auth", async (tx) => {
       const result = await fn(createAuth(env, tx, request), tx);
       if (result instanceof Response && result.status >= 400)
         throw new Rollback(result);
       return result;
     });
+    const decided = pending.get(request);
+    pending.delete(request);
+    if (decided) {
+      await track(env, decided.events);
+      await identifyOrganizations(env, [...decided.organizations]);
+    }
+    return result;
   } catch (error) {
+    pending.delete(request);
     if (error instanceof Rollback) return error.response as T;
     throw error;
   }
@@ -796,24 +1141,200 @@ export const readSession = (env: Env, request: Request) =>
     }),
   );
 
+const readCookie = (request: Request, name: string) =>
+  request.headers
+    .get("cookie")
+    ?.split(/;\s*/)
+    .find((cookie) => cookie.startsWith(`${name}=`))
+    ?.slice(name.length + 1) || null;
+
+// Where a test sign-in's popup lands: it tells the settings page to read the
+// result and closes. It also clears the test cookie.
+const ssoTestDone = () =>
+  new Response(
+    `<!doctype html><meta charset="utf-8"><title>Single sign-on</title><script>window.opener?.postMessage({ type: "preprocess:sso-test" }, location.origin); window.close();</script>`,
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "set-cookie": `${SSO_TEST_COOKIE}=; Path=/api/auth; Max-Age=0; HttpOnly; Secure; SameSite=None`,
+      },
+    },
+  );
+
+class TestAnswered extends Error {
+  constructor(readonly answer: { email: string | null; message: string }) {
+    super("sso test answered");
+  }
+}
+
+// What the identity provider's answer came to: the plugin redirects to the
+// done page, with ?error= when it refused the answer.
+const testAnswer = async (
+  env: Env,
+  response: Response,
+  email: string | null,
+) => {
+  const location = response.headers.get("location");
+  const params = location ? new URL(location, env.APP_URL).searchParams : null;
+  const error = [params?.get("error"), params?.get("error_description")]
+    .filter(Boolean)
+    .join(": ");
+  if (!error && email && response.status < 400) return { email, message: "" };
+  if (error) return { email: null, message: error };
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => null)) as { message?: string } | null;
+  return {
+    email: null,
+    message:
+      body?.message ?? `The sign-in ended with status ${response.status}.`,
+  };
+};
+
+// An Owner's test sign-in coming back from the identity provider (started by
+// GET /v1/orgs/{org}/sso/test, which set the cookie). The plugin checks the
+// answer as for any sign-in, inside a transaction that is then rolled back,
+// so the test signs nobody in and adds nobody. The result is stored on the
+// connection and audited. Null when the cookie names no test in flight, and
+// the request is an ordinary sign-in.
+const runSsoTest = async (
+  env: Env,
+  request: Request,
+  context: RequestContext,
+  providerId: string,
+  testId: string,
+): Promise<Response | null> => {
+  const [connection] = await withoutOrgRead(env, "better-auth", (tx) =>
+    tx
+      .select()
+      .from(authSchema.ssoProvider)
+      .where(eq(authSchema.ssoProvider.providerId, providerId)),
+  );
+  if (
+    !connection?.organizationId ||
+    connection.testId !== testId ||
+    !connection.testStartedBy ||
+    !connection.testStartedAt ||
+    Date.now() - connection.testStartedAt.getTime() > SSO_TEST_TTL_MS
+  )
+    return null;
+  if (connection.oidcConfig)
+    context.idpOrigins = [new URL(connection.issuer).origin];
+  const test = { email: null as string | null };
+  context.ssoTest = test;
+  const samlXml = connection.samlConfig
+    ? await request
+        .clone()
+        .formData()
+        .then((form) => {
+          const answer = form.get("SAMLResponse");
+          return typeof answer === "string" ? atob(answer) : "";
+        })
+        .catch(() => "")
+    : "";
+  // Throwing the answer out of the transaction is what rolls it back.
+  const answer = await withoutOrg(env, "better-auth", async (tx) => {
+    const response = await createAuth(env, tx, context).handler(request);
+    throw new TestAnswered(await testAnswer(env, response, test.email));
+  }).catch((error: unknown) =>
+    error instanceof TestAnswered
+      ? error.answer
+      : { email: null, message: (error as Error).message },
+  );
+  const organizationId = connection.organizationId;
+  const testerId = connection.testStartedBy;
+  await withoutOrg(env, "better-auth", async (tx) => {
+    const [tester] = await tx
+      .select({ name: authSchema.user.name, email: authSchema.user.email })
+      .from(authSchema.user)
+      .where(eq(authSchema.user.id, testerId));
+    const by = { id: testerId, name: tester?.name || tester?.email || "" };
+    const at = new Date().toISOString();
+    const reason = ssoTestReason(answer.message);
+    const diagnosed =
+      !answer.email && reason === "other" && samlXml
+        ? diagnoseSaml(samlXml, ssoEntityId(env, providerId), Date.now())
+        : null;
+    const certificateExpired =
+      connection.certificateExpiresAt &&
+      connection.certificateExpiresAt.getTime() < Date.now();
+    const result: SsoTest = answer.email
+      ? { ok: true, at, by, email: answer.email }
+      : diagnosed
+        ? {
+            ok: false,
+            at,
+            by,
+            reason: diagnosed.reason,
+            idpMessage: diagnosed.message,
+          }
+        : reason === "other" && certificateExpired
+          ? {
+              ok: false,
+              at,
+              by,
+              reason: "certificate_expired",
+              idpMessage: `The signing certificate expired on ${connection.certificateExpiresAt!.toISOString().slice(0, 10)}`,
+            }
+          : { ok: false, at, by, reason, idpMessage: answer.message };
+    const stored = await tx
+      .update(authSchema.ssoProvider)
+      .set({ lastTest: JSON.stringify(result), testId: null })
+      .where(
+        and(
+          eq(authSchema.ssoProvider.providerId, providerId),
+          eq(authSchema.ssoProvider.testId, testId),
+        ),
+      )
+      .returning({ id: authSchema.ssoProvider.id });
+    if (!stored.length) return;
+    await audit(tx, {
+      organizationId,
+      actorType: "person",
+      actorId: testerId,
+      action: result.ok ? "sso.test.passed" : "sso.test.failed",
+      targetType: "sso_connection",
+      targetId: providerId,
+      data: result.ok ? { email: result.email } : { reason: result.reason },
+      ip: context.ip,
+      requestId: context.requestId,
+    });
+  });
+  return ssoTestDone();
+};
+
 // Better Auth's own routes (/api/auth/*), with the signed-in person resolved
 // first so hooks can name who acted. Reading the session names nobody, so it
 // skips both the transaction and the second lookup.
 export const handleAuthRequest = async (env: Env, request: Request) => {
   const context = requestContext(request);
+  const { pathname } = new URL(request.url);
   // SCIM (scim.ts) authenticates by its own bearer token, never a session.
-  if (new URL(request.url).pathname.startsWith(`${SCIM_PATH}/`))
+  if (pathname.startsWith(`${SCIM_PATH}/`))
     return (
       (await refuseWithoutPlan(env, request)) ??
       withAuth(env, context, (auth) => auth.handler(request))
     );
-  if (
-    request.method === "GET" &&
-    new URL(request.url).pathname === "/api/auth/get-session"
-  )
+  if (request.method === "GET" && pathname === "/api/auth/get-session")
     return withoutOrgRead(env, "better-auth", (tx) =>
       createAuth(env, tx, context).handler(request),
     );
+  if (pathname === SSO_TEST_DONE) return ssoTestDone();
+  const landing =
+    /^\/api\/auth\/sso\/(?:callback|saml2\/sp\/acs)\/([^/]+)$/.exec(pathname);
+  const testId = landing ? readCookie(request, SSO_TEST_COOKIE) : null;
+  if (landing && testId) {
+    const tested = await runSsoTest(
+      env,
+      request,
+      context,
+      decodeURIComponent(landing[1]!),
+      testId,
+    );
+    if (tested) return tested;
+  }
   return withAuth(env, context, async (auth, tx) => {
     const session = await auth.api.getSession({ headers: request.headers });
     context.actorId = session?.user.id ?? null;

@@ -1,13 +1,16 @@
 // Packages under packages/ must stay publishable and reusable by other
 // Preprocess, Inc. products (spec 16): each has its own name, version and
-// exports, and none imports from apps/. Fails listing every violation.
+// exports, and none imports from apps/. Apps deploy on their own, so none
+// imports another app's source either (the help center shares the docs'
+// search through packages/search). Fails listing every violation.
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
+const appDirs = await readdir(path.join(root, "apps"));
 const apps = await Promise.all(
-  (await readdir(path.join(root, "apps"))).map(
+  appDirs.map(
     async (dir) =>
       (
         JSON.parse(
@@ -73,6 +76,32 @@ for (const dir of await readdir(path.join(root, "packages"))) {
           `${path.relative(root, file)}: imports ${spec} from an app`,
         );
       }
+    }
+  }
+}
+
+for (const [index, dir] of appDirs.entries()) {
+  const appDir = path.join(root, "apps", dir);
+  for (const file of await walk(path.join(appDir, "src")).catch(() => [])) {
+    const source = await readFile(file, "utf8");
+    for (const [, spec] of source.matchAll(
+      /(?:from|import)\s*\(?\s*["']([^"']+)["']/g,
+    )) {
+      const resolved = spec.startsWith(".")
+        ? path.resolve(path.dirname(file), spec)
+        : "";
+      const other = apps.find(
+        (app, at) =>
+          at !== index && (spec === app || spec.startsWith(`${app}/`)),
+      );
+      if (
+        other ||
+        (resolved.startsWith(path.join(root, "apps")) &&
+          !resolved.startsWith(appDir + path.sep))
+      )
+        problems.push(
+          `${path.relative(root, file)}: imports ${spec} from another app`,
+        );
     }
   }
 }

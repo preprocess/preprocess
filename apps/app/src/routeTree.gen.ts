@@ -58,6 +58,7 @@ import { Route as SettingsOrganizationAuditLogsRouteImport } from "./routes/sett
 import { Route as SettingsOrganizationBillingRouteImport } from "./routes/settings/organization/billing";
 import { Route as SettingsOrganizationDefaultsRouteImport } from "./routes/settings/organization/defaults";
 import { Route as SettingsOrganizationDevelopersRouteImport } from "./routes/settings/organization/developers";
+import { Route as SettingsOrganizationDirectorySyncRouteImport } from "./routes/settings/organization/directory-sync";
 import { Route as SettingsOrganizationGithubRouteImport } from "./routes/settings/organization/github";
 import { Route as SettingsOrganizationGuardrailsRouteImport } from "./routes/settings/organization/guardrails";
 import { Route as SettingsOrganizationIntegrationsRouteImport } from "./routes/settings/organization/integrations";
@@ -69,6 +70,7 @@ import { Route as SettingsOrganizationOpentelemetryRouteImport } from "./routes/
 import { Route as SettingsOrganizationRetentionRouteImport } from "./routes/settings/organization/retention";
 import { Route as SettingsOrganizationSandboxesRouteImport } from "./routes/settings/organization/sandboxes";
 import { Route as SettingsOrganizationSecretsRouteImport } from "./routes/settings/organization/secrets";
+import { Route as SettingsOrganizationSsoRouteImport } from "./routes/settings/organization/sso";
 import { Route as AgentsAgentIdEvaluationsIndexRouteImport } from "./routes/agents/$agentId/evaluations/index";
 import { Route as AgentsAgentIdTrainingIndexRouteImport } from "./routes/agents/$agentId/training/index";
 import { Route as AgentsAgentIdCasesIndexRouteImport } from "./routes/agents/$agentId_/cases/index";
@@ -333,6 +335,12 @@ const SettingsOrganizationDevelopersRoute =
     path: "/developers",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationDirectorySyncRoute =
+  SettingsOrganizationDirectorySyncRouteImport.update({
+    id: "/directory-sync",
+    path: "/directory-sync",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const SettingsOrganizationGithubRoute =
   SettingsOrganizationGithubRouteImport.update({
     id: "/github",
@@ -399,6 +407,11 @@ const SettingsOrganizationSecretsRoute =
     path: "/secrets",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationSsoRoute = SettingsOrganizationSsoRouteImport.update({
+  id: "/sso",
+  path: "/sso",
+  getParentRoute: () => SettingsOrganizationRoute,
+} as any);
 const AgentsAgentIdEvaluationsIndexRoute =
   AgentsAgentIdEvaluationsIndexRouteImport.update({
     id: "/evaluations/",
@@ -500,6 +513,7 @@ export interface FileRoutesByFullPath {
   "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
+  "/settings/organization/directory-sync": typeof SettingsOrganizationDirectorySyncRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
@@ -511,6 +525,7 @@ export interface FileRoutesByFullPath {
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
   "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
   "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
+  "/settings/organization/sso": typeof SettingsOrganizationSsoRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -568,6 +583,7 @@ export interface FileRoutesByTo {
   "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
+  "/settings/organization/directory-sync": typeof SettingsOrganizationDirectorySyncRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
@@ -579,6 +595,7 @@ export interface FileRoutesByTo {
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
   "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
   "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
+  "/settings/organization/sso": typeof SettingsOrganizationSsoRoute;
   "/agents/$agentId": typeof AgentsAgentIdIndexRoute;
   "/settings/account": typeof SettingsAccountIndexRoute;
   "/settings/organization": typeof SettingsOrganizationIndexRoute;
@@ -640,6 +657,7 @@ export interface FileRoutesById {
   "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
+  "/settings/organization/directory-sync": typeof SettingsOrganizationDirectorySyncRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
@@ -651,6 +669,7 @@ export interface FileRoutesById {
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
   "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
   "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
+  "/settings/organization/sso": typeof SettingsOrganizationSsoRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -713,6 +732,7 @@ export interface FileRouteTypes {
     | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
+    | "/settings/organization/directory-sync"
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
@@ -724,6 +744,7 @@ export interface FileRouteTypes {
     | "/settings/organization/retention"
     | "/settings/organization/sandboxes"
     | "/settings/organization/secrets"
+    | "/settings/organization/sso"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -781,6 +802,7 @@ export interface FileRouteTypes {
     | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
+    | "/settings/organization/directory-sync"
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
@@ -792,6 +814,7 @@ export interface FileRouteTypes {
     | "/settings/organization/retention"
     | "/settings/organization/sandboxes"
     | "/settings/organization/secrets"
+    | "/settings/organization/sso"
     | "/agents/$agentId"
     | "/settings/account"
     | "/settings/organization"
@@ -852,6 +875,7 @@ export interface FileRouteTypes {
     | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
+    | "/settings/organization/directory-sync"
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
@@ -863,6 +887,7 @@ export interface FileRouteTypes {
     | "/settings/organization/retention"
     | "/settings/organization/sandboxes"
     | "/settings/organization/secrets"
+    | "/settings/organization/sso"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -1254,6 +1279,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationDevelopersRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/directory-sync": {
+      id: "/settings/organization/directory-sync";
+      path: "/directory-sync";
+      fullPath: "/settings/organization/directory-sync";
+      preLoaderRoute: typeof SettingsOrganizationDirectorySyncRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/settings/organization/github": {
       id: "/settings/organization/github";
       path: "/github";
@@ -1329,6 +1361,13 @@ declare module "@tanstack/react-router" {
       path: "/secrets";
       fullPath: "/settings/organization/secrets";
       preLoaderRoute: typeof SettingsOrganizationSecretsRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
+    "/settings/organization/sso": {
+      id: "/settings/organization/sso";
+      path: "/sso";
+      fullPath: "/settings/organization/sso";
+      preLoaderRoute: typeof SettingsOrganizationSsoRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
     "/agents/$agentId/evaluations/": {
@@ -1415,6 +1454,7 @@ interface SettingsOrganizationRouteChildren {
   SettingsOrganizationBillingRoute: typeof SettingsOrganizationBillingRoute;
   SettingsOrganizationDefaultsRoute: typeof SettingsOrganizationDefaultsRoute;
   SettingsOrganizationDevelopersRoute: typeof SettingsOrganizationDevelopersRoute;
+  SettingsOrganizationDirectorySyncRoute: typeof SettingsOrganizationDirectorySyncRoute;
   SettingsOrganizationGithubRoute: typeof SettingsOrganizationGithubRoute;
   SettingsOrganizationGuardrailsRoute: typeof SettingsOrganizationGuardrailsRoute;
   SettingsOrganizationIntegrationsRoute: typeof SettingsOrganizationIntegrationsRoute;
@@ -1426,6 +1466,7 @@ interface SettingsOrganizationRouteChildren {
   SettingsOrganizationRetentionRoute: typeof SettingsOrganizationRetentionRoute;
   SettingsOrganizationSandboxesRoute: typeof SettingsOrganizationSandboxesRoute;
   SettingsOrganizationSecretsRoute: typeof SettingsOrganizationSecretsRoute;
+  SettingsOrganizationSsoRoute: typeof SettingsOrganizationSsoRoute;
   SettingsOrganizationIndexRoute: typeof SettingsOrganizationIndexRoute;
   SettingsOrganizationGroupsIndexRoute: typeof SettingsOrganizationGroupsIndexRoute;
 }
@@ -1436,6 +1477,8 @@ const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationBillingRoute: SettingsOrganizationBillingRoute,
   SettingsOrganizationDefaultsRoute: SettingsOrganizationDefaultsRoute,
   SettingsOrganizationDevelopersRoute: SettingsOrganizationDevelopersRoute,
+  SettingsOrganizationDirectorySyncRoute:
+    SettingsOrganizationDirectorySyncRoute,
   SettingsOrganizationGithubRoute: SettingsOrganizationGithubRoute,
   SettingsOrganizationGuardrailsRoute: SettingsOrganizationGuardrailsRoute,
   SettingsOrganizationIntegrationsRoute: SettingsOrganizationIntegrationsRoute,
@@ -1448,6 +1491,7 @@ const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationRetentionRoute: SettingsOrganizationRetentionRoute,
   SettingsOrganizationSandboxesRoute: SettingsOrganizationSandboxesRoute,
   SettingsOrganizationSecretsRoute: SettingsOrganizationSecretsRoute,
+  SettingsOrganizationSsoRoute: SettingsOrganizationSsoRoute,
   SettingsOrganizationIndexRoute: SettingsOrganizationIndexRoute,
   SettingsOrganizationGroupsIndexRoute: SettingsOrganizationGroupsIndexRoute,
 };
