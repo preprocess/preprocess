@@ -28,7 +28,6 @@
     "evlog": "2.37.1",
     "hono": "catalog:",
     "pg": "catalog:",
-    "postal-mime": "2.7.6",
     "zod": "catalog:"
   },
   "devDependencies": {

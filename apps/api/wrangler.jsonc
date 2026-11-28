@@ -22,9 +22,6 @@
     "GITHUB_CLIENT_ID": "Iv1.development",
     "GITHUB_API_URL": "http://127.0.0.1:8791",
     "GITHUB_URL": "http://127.0.0.1:8791",
-    "SUPPORT_EMAIL_FROM": "Preprocess Support <support@preprocess.localhost>",
-    "SUPPORT_TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
-    "SUPPORT_TURNSTILE_SECRET_KEY": "1x0000000000000000000000000000000AA",
   },
   "hyperdrive": [
     {

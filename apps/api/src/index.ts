@@ -29,7 +29,7 @@ import { collectSandboxLayers } from "./sandbox-layers.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
-import { authRateLimit, orgRateLimit, supportRateLimit } from "./rate-limit.ts";
+import { authRateLimit, orgRateLimit } from "./rate-limit.ts";
 import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
 import type { Env, Job } from "./env.ts";
@@ -74,10 +74,7 @@ import { modelRoutes } from "./routes/models.ts";
 import { captureRoutes } from "./routes/capture.ts";
 import { datasetRoutes } from "./routes/datasets.ts";
 import { meRoutes } from "./routes/me.ts";
-import { supportRoutes } from "./routes/support.ts";
-import { supportEnabled } from "./support.ts";
-import { receiveSupportEmail, signedOutRequest } from "./support-inbound.ts";
-import { buildTools, handleMcp, TOOLS, type Tool } from "./mcp-server.ts";
+import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
@@ -158,26 +155,6 @@ app.get("/api/invitations/:id", async (c) => {
   return preview ? c.json(preview) : c.json({ error: "not_found" }, 404);
 });
 
-// Support (support.ts) is our cloud's only: a self-hosted install answers 404
-// for every support route, before anyone is asked to sign in.
-const supportNotFound = () =>
-  Response.json(
-    { error: { code: "not_found", message: "Not found." } },
-    { status: 404 },
-  );
-app.use("/v1/orgs/:org/support/*", async (c, next) =>
-  supportEnabled(c.env) ? next() : supportNotFound(),
-);
-
-// A signed-out visitor's support request, behind Turnstile and a limit per
-// client address. Not part of /v1.
-app.post("/api/support/requests", async (c) =>
-  supportEnabled(c.env)
-    ? ((await supportRateLimit(c.env, c.req.raw)) ??
-      signedOutRequest(c.env, c.req.raw))
-    : supportNotFound(),
-);
-
 // The public half of the audit signing key, for checking manifests.
 app.get("/v1/audit/keys", async (c) => c.json(await publicKeys(c.env)));
 
@@ -221,7 +198,6 @@ orgApi.route("/", trainingRoutes);
 orgApi.route("/", modelRoutes);
 orgApi.route("/", captureRoutes);
 orgApi.route("/", datasetRoutes);
-orgApi.route("/", supportRoutes);
 
 // The MCP server (src/mcp-server.ts) takes an organization API key, and each
 // tool call is a request to this API with the same key, so the API's own
@@ -242,7 +218,7 @@ orgApi.post("/mcp", async (c) => {
         v1.getOpenAPI31Document(OPENAPI) as unknown as Parameters<
           typeof buildTools
         >[0],
-      )).filter((tool) => supportEnabled(c.env) || !TOOLS[tool.name]?.hosted),
+      )),
     (request) =>
       app.fetch(
         new Request(
@@ -291,13 +267,6 @@ const watch = (
 
 export default {
   fetch: app.fetch,
-  // Inbound support email (support-inbound.ts), from Email Routing on
-  // SUPPORT_INBOUND_DOMAIN. Locally, wrangler dev feeds a raw message to it
-  // at /cdn-cgi/handler/email (scripts/support-email.ts).
-  async email(message, env) {
-    initLogs("api", (records) => sendLogs(env, records), env);
-    await receiveSupportEmail(env, message);
-  },
   scheduled(controller, env, ctx) {
     initLogs("api", (records) => sendLogs(env, records), env);
     // Every minute: re-send outbox rows a failed queue send left behind.

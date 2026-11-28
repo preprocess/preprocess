@@ -361,9 +361,8 @@ describe("deleting an organization", () => {
       posthogPersons: 1,
     });
     // The case's own capture goes with its object; its run's logs and the
-    // deployments' bundles add to what was seeded, and support attachments
-    // already went with the delete (auth.ts).
-    expect(row?.counts.files).toBe(2);
+    // deployments' bundles add to what was seeded.
+    expect(row?.counts.files).toBe(3);
     expect(row?.counts.logs).toBeGreaterThanOrEqual(1);
     expect(row?.counts.runs).toBe(1);
     expect(row?.counts.bundles).toBe(3);

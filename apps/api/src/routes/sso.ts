@@ -30,6 +30,7 @@ import {
   ssoEntityId,
   withAuth,
 } from "../auth.ts";
+import { trackEvent } from "../analytics.ts";
 import type { SsoTest } from "../auth.ts";
 import { eventBase } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
@@ -952,11 +953,13 @@ export const ssoRoutes = new OpenAPIHono<{
         idpOrigins:
           input.protocol === "oidc" ? [new URL(input.issuer).origin] : [],
       };
+      let created = false;
       await withAuth(c.env, request, async (auth, tx) => {
         const [existing] = await tx
           .select()
           .from(ssoProvider)
           .where(eq(ssoProvider.organizationId, c.var.org));
+        created = !existing;
         if (
           existing &&
           Boolean(existing.samlConfig) !== (input.protocol === "saml")
@@ -1073,6 +1076,14 @@ export const ssoRoutes = new OpenAPIHono<{
           });
         }
       }).catch(authError);
+      if (created)
+        await trackEvent(
+          c.env,
+          "sso_configured",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          { protocol: input.protocol },
+        );
       return c.json((await read(c.env, c.var)).connection!, 200);
     },
     // #217's validation errors kept their default shape on this route.

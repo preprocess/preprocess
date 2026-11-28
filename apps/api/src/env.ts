@@ -344,17 +344,4 @@ export type Env = PostHogEnv & {
   CLOUDFLARE_ACCOUNT_ID?: string;
   LOG_SQL_BUCKET?: string;
   LOG_SQL_TOKEN?: string;
-  // Support requests (support.ts), our cloud only and all optional. With
-  // SUPPORT_ORG_ID and SUPPORT_AGENT_ID each request is also a case for
-  // the support agent in our Preprocess Support organization. Support email
-  // is sent only with SUPPORT_EMAIL_FROM ("Preprocess Support
-  // <support@preprocess.com>" in production), with replies threading back
-  // through r+<token>@SUPPORT_INBOUND_DOMAIN when that is set. The signed-out
-  // form's Turnstile secret; its site key is for the forms.
-  SUPPORT_ORG_ID?: string;
-  SUPPORT_AGENT_ID?: string;
-  SUPPORT_EMAIL_FROM?: string;
-  SUPPORT_INBOUND_DOMAIN?: string;
-  SUPPORT_TURNSTILE_SECRET_KEY?: string;
-  SUPPORT_TURNSTILE_SITE_KEY?: string;
 };

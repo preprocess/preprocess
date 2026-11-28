@@ -16,6 +16,7 @@ import { member, user } from "@preprocess/db/schema/auth";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
+import { trackEvent } from "../analytics.ts";
 import { actor, eventBase, requireAdmin } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
@@ -261,6 +262,13 @@ export const groupRoutes = new OpenAPIHono<{
           });
         throw error;
       });
+      await trackEvent(
+        c.env,
+        "group_created",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        { group_id: id },
+      );
       return c.json(toGroup(created), 201);
     },
   )
@@ -598,6 +606,13 @@ export const groupRoutes = new OpenAPIHono<{
         await syncAgents(tx, c.var.org, [agentId]);
         return row!;
       });
+      await trackEvent(
+        c.env,
+        "grant_changed",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        { agent_id: agentId, group_id: groupId, access },
+      );
       return c.json(toGrant(grant), 200);
     },
   )
@@ -615,7 +630,7 @@ export const groupRoutes = new OpenAPIHono<{
     async (c) => {
       requireAdmin(c.var.caller);
       const { agent: agentId, group: groupId } = c.req.valid("param");
-      await withOrg(c.env, c.var.org, async (tx) => {
+      const revoked = await withOrg(c.env, c.var.org, async (tx) => {
         const group = await findGroup(tx, groupId);
         await refuseInUse(
           tx,
@@ -633,7 +648,7 @@ export const groupRoutes = new OpenAPIHono<{
             ),
           )
           .returning();
-        if (removed.length === 0) return;
+        if (removed.length === 0) return false;
         await audit(tx, {
           ...eventBase(c.var),
           action: "agent.access.revoked",
@@ -641,7 +656,16 @@ export const groupRoutes = new OpenAPIHono<{
           targetId: agentId,
           data: { group: groupId },
         });
+        return true;
       });
+      if (revoked)
+        await trackEvent(
+          c.env,
+          "grant_changed",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          { agent_id: agentId, group_id: groupId, access: "none" },
+        );
       return c.body(null, 204);
     },
   );

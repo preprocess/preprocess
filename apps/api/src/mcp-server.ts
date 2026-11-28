@@ -19,8 +19,6 @@ export const TOOLS: Record<
     path: string;
     destructive?: true;
     fallback?: string;
-    // Our cloud only: not listed or callable on a self-hosted install.
-    hosted?: true;
   }
 > = {
   list_agents: {
@@ -118,26 +116,6 @@ export const TOOLS: Record<
     method: "delete",
     path: "/agents/{agent}/memories/{memory}",
     destructive: true,
-  },
-  create_support_request: {
-    method: "post",
-    path: "/support/requests",
-    hosted: true,
-  },
-  list_support_requests: {
-    method: "get",
-    path: "/support/requests",
-    hosted: true,
-  },
-  get_support_request: {
-    method: "get",
-    path: "/support/requests/{id}",
-    hosted: true,
-  },
-  reply_to_support_request: {
-    method: "post",
-    path: "/support/requests/{id}/messages",
-    hosted: true,
   },
 };
 
