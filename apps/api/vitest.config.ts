@@ -1,6 +1,6 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
@@ -9,6 +9,7 @@ import { buildSync } from "esbuild";
 import { defineConfig } from "vitest/config";
 
 import { fakeGithub, GITHUB_API, GITHUB_WEB } from "./test/fake-github.ts";
+import { fakeIdp, isFakeIdp } from "./test/fake-idp.ts";
 import { fakeMcp } from "./test/fake-mcp.ts";
 import { fakeModel, MODEL_ORIGIN } from "./test/fake-model.ts";
 import { installDatabaseUrl, testDatabaseUrl } from "./test/global-setup.ts";
@@ -98,12 +99,14 @@ export default defineConfig({
           GITHUB_BUILD_TIMEOUT_SECONDS: "1",
         },
         // The internet the API reaches: GitHub, an organization's model
-        // server, and a remote MCP server behind OAuth.
+        // server, an SSO identity provider with the DNS it checks domains
+        // against, and a remote MCP server behind OAuth.
         outboundService: (request: Request) => {
-          const { origin } = new URL(request.url);
-          if ([GITHUB_API, GITHUB_WEB].includes(origin))
+          const url = new URL(request.url);
+          if ([GITHUB_API, GITHUB_WEB].includes(url.origin))
             return fakeGithub(request);
-          if (origin === MODEL_ORIGIN) return fakeModel(request);
+          if (url.origin === MODEL_ORIGIN) return fakeModel(request);
+          if (isFakeIdp(url)) return fakeIdp(request);
           return fakeMcp(request);
         },
         serviceBindings: {
@@ -187,5 +190,19 @@ export default defineConfig({
   },
   test: {
     globalSetup: ["./test/global-setup.ts"],
+    deps: {
+      optimizer: {
+        ssr: {
+          enabled: true,
+          include: ["@better-auth/sso > samlify"],
+          rolldownOptions: {
+            platform: "node",
+            external: [/^node:/, ...builtinModules],
+          },
+        },
+      },
+    },
+    // samlify (the SSO plugin's SAML) is CommonJS that default-imports
+    // CommonJS; prebundling gives it the interop a deploy's bundle does.
   },
 });
