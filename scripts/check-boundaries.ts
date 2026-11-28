@@ -1,8 +1,7 @@
 // Packages under packages/ must stay publishable and reusable by other
 // Preprocess, Inc. products (spec 16): each has its own name, version and
 // exports, and none imports from apps/. Apps deploy on their own, so none
-// imports another app's source either (the help center shares the docs'
-// search through packages/search). Fails listing every violation.
+// imports another app's source either. Fails listing every violation.
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";

@@ -24,6 +24,7 @@ import { and, asc, count, desc, eq, isNotNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
+import { trackEvent } from "../analytics.ts";
 import { createAuth } from "../auth.ts";
 import { eventBase } from "../caller.ts";
 import type { Caller, OrgVariables } from "../caller.ts";
@@ -339,6 +340,7 @@ const issue = (
       });
     if (connection && replace)
       await revoke(c, tx, userId, connection.connectionId, active, true);
+    const enabling = !replace && !current.length;
     const body = {
       provisioningDomainId: org,
       scopes: [...SCIM_SCOPES],
@@ -377,7 +379,11 @@ const issue = (
         ...(replace ? { regenerated: true } : {}),
       },
     });
-    return { ...toToken(credential!), token: created.token };
+    return { ...toToken(credential!), token: created.token, enabling };
+  }).then(async ({ enabling, ...token }) => {
+    if (enabling)
+      await trackEvent(c.env, "scim_enabled", c.var.org, userId, {});
+    return token;
   });
 
 export const scimRoutes = new OpenAPIHono<{

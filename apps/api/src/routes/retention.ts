@@ -7,8 +7,10 @@ import { withOrg } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
 import { cases } from "@preprocess/db/schema/cases";
 import { MIN_RETENTION_DAYS } from "@preprocess/db/schema/retention";
+import type { RetentionKind } from "@preprocess/db/schema/retention";
 import { eq } from "drizzle-orm";
 
+import { trackEvent } from "../analytics.ts";
 import { eventBase } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
@@ -21,6 +23,14 @@ import {
   requireOwner,
   setRetention,
 } from "../retention.ts";
+
+// Each period as retention_changed names it.
+const SETTINGS = {
+  cases: "cases",
+  documents: "documents",
+  runCapture: "run_capture",
+  runLogs: "run_logs",
+} as const satisfies Record<RetentionKind, string>;
 
 const OrgParam = z.object({ org: z.string() });
 const CaseParam = OrgParam.extend({ id: z.string() });
@@ -150,19 +160,37 @@ export const retentionRoutes = new OpenAPIHono<{
           "Only Owners and Admins can change retention.",
         );
       const body = c.req.valid("json");
-      const result = await withOrg(c.env, c.var.org, async (tx) => {
-        await setRetention(tx, c.var, {
-          ...(body.documentsDays !== undefined && {
-            documents: body.documentsDays,
-          }),
-          ...(body.runCaptureDays !== undefined && {
-            runCapture: body.runCaptureDays,
-          }),
-          ...(body.runLogsDays !== undefined && { runLogs: body.runLogsDays }),
-          ...(body.casesDays !== undefined && { cases: body.casesDays }),
-        });
-        return read(tx, c.var);
-      });
+      const { changed, result } = await withOrg(
+        c.env,
+        c.var.org,
+        async (tx) => {
+          const changed = await setRetention(tx, c.var, {
+            ...(body.documentsDays !== undefined && {
+              documents: body.documentsDays,
+            }),
+            ...(body.runCaptureDays !== undefined && {
+              runCapture: body.runCaptureDays,
+            }),
+            ...(body.runLogsDays !== undefined && {
+              runLogs: body.runLogsDays,
+            }),
+            ...(body.casesDays !== undefined && { cases: body.casesDays }),
+          });
+          return { changed, result: await read(tx, c.var) };
+        },
+      );
+      for (const change of changed)
+        await trackEvent(
+          c.env,
+          "retention_changed",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          {
+            setting: SETTINGS[change.kind],
+            days: change.days ?? 0,
+            shortened: change.shortened,
+          },
+        );
       return c.json(result, 200);
     },
   )
