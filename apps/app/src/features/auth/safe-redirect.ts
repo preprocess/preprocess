@@ -11,3 +11,15 @@ export function safeRedirect(value: unknown) {
   const url = new URL(value, BASE);
   return url.origin === BASE ? `${url.pathname}${url.search}${url.hash}` : "/";
 }
+
+const SIGNED_OUT_ONLY = new Set(["/sign-in", "/sign-up"]);
+
+/**
+ * Where a signed-in person who opens sign-in or sign-up goes instead: the
+ * page they were sent to sign in for, unless that is another signed-out page.
+ */
+export function signedInRedirect(value: unknown) {
+  const next = safeRedirect(value);
+  const { pathname } = new URL(next, BASE);
+  return SIGNED_OUT_ONLY.has(pathname.replace(/\/+$/, "") || "/") ? "/" : next;
+}

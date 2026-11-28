@@ -1,4 +1,4 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { AuthLayout, authLinkClass } from "../components/auth-layout";
@@ -7,8 +7,8 @@ import {
   PasswordlessForm,
   linkSentFooter,
 } from "../components/passwordless-form";
-import { safeRedirect } from "../features/auth/safe-redirect";
-import { loadAuthOptions } from "../features/auth/session";
+import { safeRedirect, signedInRedirect } from "../features/auth/safe-redirect";
+import { loadAuthOptions, loadSession } from "../features/auth/session";
 
 export const Route = createFileRoute("/sign-in")({
   validateSearch: (search): { redirect?: string; error?: string } => ({
@@ -17,6 +17,11 @@ export const Route = createFileRoute("/sign-in")({
       : {}),
     ...(typeof search.error === "string" ? { error: search.error } : {}),
   }),
+  // Signed-in people skip the form, before it renders (PRE-175).
+  beforeLoad: async ({ search }) => {
+    if (await loadSession())
+      throw redirect({ href: signedInRedirect(search.redirect) });
+  },
   loader: () => loadAuthOptions(),
   component: SignInPage,
 });

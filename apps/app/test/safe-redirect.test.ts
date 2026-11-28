@@ -3,7 +3,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { safeRedirect } from "../src/features/auth/safe-redirect";
+import {
+  safeRedirect,
+  signedInRedirect,
+} from "../src/features/auth/safe-redirect";
 
 describe("safeRedirect", () => {
   it("keeps a same-origin path with its query and hash", () => {
@@ -31,5 +34,26 @@ describe("safeRedirect", () => {
       "javascript:alert(1)",
     ])
       expect(safeRedirect(value), String(value)).toBe("/");
+  });
+});
+
+// A signed-in person who opens sign-in or sign-up (PRE-175).
+describe("signedInRedirect", () => {
+  it("keeps the page they were signing in for", () => {
+    expect(signedInRedirect("/invitations/inv_1")).toBe("/invitations/inv_1");
+    expect(signedInRedirect("/device?user_code=ABCD-EFGH")).toBe(
+      "/device?user_code=ABCD-EFGH",
+    );
+  });
+
+  it("goes home instead of another signed-out page or another host", () => {
+    for (const value of [
+      undefined,
+      "/sign-in",
+      "/sign-up?redirect=/sign-in",
+      "/sign-in/",
+      "//evil.example/",
+    ])
+      expect(signedInRedirect(value), String(value)).toBe("/");
   });
 });

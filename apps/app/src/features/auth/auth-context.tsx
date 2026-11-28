@@ -19,9 +19,10 @@ export function AuthProvider({
   );
 }
 
-async function signOut() {
+/** Signs out and opens `next`, sign-in unless a page asks to come back. */
+async function signOut(next = "/sign-in") {
   await authPost("/sign-out");
-  window.location.assign("/sign-in");
+  window.location.assign(next);
 }
 
 async function switchToOrganization(organizationId: string) {
