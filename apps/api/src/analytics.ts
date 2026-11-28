@@ -1,6 +1,6 @@
 import { orgId, withOrg, withoutOrgRead } from "@preprocess/db/client";
 import { agents } from "@preprocess/db/schema/access";
-import { organization, ssoProvider } from "@preprocess/db/schema/auth";
+import { organization, ssoProvider, user } from "@preprocess/db/schema/auth";
 import { cases } from "@preprocess/db/schema/cases";
 import {
   amountBucket,
@@ -15,7 +15,7 @@ import {
 } from "@preprocess/logs";
 import { runMode } from "@preprocess/runmode";
 import { isOrgModel } from "@preprocess/sdk/protocol";
-import { and, count, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 
 import { creditsRemaining } from "./billing.ts";
 import type { Env } from "./env.ts";
@@ -31,8 +31,91 @@ export type ProductMessage = { product: ProductEvent };
 export const isProductMessage = (body: unknown): body is ProductMessage =>
   typeof body === "object" && body !== null && "product" in body;
 
+// Our own test runs in production (ANALYTICS_TEST_EMAILS, set per stage in
+// infra): everything a listed address does, and everything in an
+// organization one of them created, carries test=true, and so do that
+// person and that organization's group. Ids are looked up once per isolate.
+const testIds = new Map<string, boolean>();
+
+const testPatterns = (env: Env) =>
+  (env.ANALYTICS_TEST_EMAILS ?? "")
+    .split(",")
+    .map((pattern) => pattern.trim())
+    .filter(Boolean)
+    .map(
+      (pattern) =>
+        new RegExp(
+          `^${pattern
+            .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+            .replaceAll("*", "[^@]*")}$`,
+          "i",
+        ),
+    );
+
+const markTests = async (env: Env, events: ProductEvent[]) => {
+  const patterns = testPatterns(env);
+  if (!patterns.length) return;
+  const idsOf = (event: ProductEvent) =>
+    [
+      event.distinctId,
+      event.properties.organization_id,
+      event.properties.$group_key,
+    ].filter((id): id is string => typeof id === "string");
+  const unknown = [...new Set(events.flatMap(idsOf))].filter(
+    (id) => !testIds.has(id),
+  );
+  const users = unknown.filter((id) => id.startsWith("usr_"));
+  const orgs = unknown.filter((id) => id.startsWith("org_"));
+  if (users.length || orgs.length) {
+    const rows = await withoutOrgRead(
+      env,
+      "analytics: test runs",
+      async (tx) => [
+        ...(users.length
+          ? await tx
+              .select({ id: user.id, email: user.email })
+              .from(user)
+              .where(inArray(user.id, users))
+          : []),
+        ...(orgs.length
+          ? await tx
+              .select({ id: organization.id, email: user.email })
+              .from(organization)
+              .innerJoin(user, eq(user.id, organization.createdBy))
+              .where(inArray(organization.id, orgs))
+          : []),
+      ],
+    );
+    for (const row of rows)
+      testIds.set(
+        row.id,
+        patterns.some((pattern) => pattern.test(row.email)),
+      );
+  }
+  for (const event of events) {
+    if (!idsOf(event).some((id) => testIds.get(id))) continue;
+    const { properties } = event;
+    properties.test = true;
+    if (event.event === "$groupidentify")
+      properties.$group_set = {
+        ...(properties.$group_set as object),
+        test: true,
+      };
+    else if (testIds.get(event.distinctId))
+      properties.$set = { ...(properties.$set as object), test: true };
+  }
+};
+
 export const track = async (env: Env, events: ProductEvent[]) => {
   if (!env.POSTHOG_KEY || !events.length) return;
+  await markTests(env, events).catch((error: unknown) =>
+    console.error(
+      JSON.stringify({
+        event: "product.test_lookup_failed",
+        error: String(error),
+      }),
+    ),
+  );
   try {
     await env.LOGS.sendBatch(events.map((product) => ({ body: { product } })));
   } catch (error) {

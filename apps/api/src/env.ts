@@ -241,6 +241,10 @@ export type Env = PostHogEnv & {
   // Organizations billed like customers now, whatever BILLING_REQUIRED_FROM
   // says, comma-separated ids: a test organization before go-live.
   BILLING_ENFORCED_ORGS?: string;
+  // Our own test runs' addresses, comma-separated, `*` for any characters
+  // before the @: their events, their organizations' events and both their
+  // person and group carry test=true in PostHog (analytics.ts).
+  ANALYTICS_TEST_EMAILS?: string;
   // Self-hosted only: the signed license key (license.ts). Without a valid
   // one the install runs the free plan.
   PREPROCESS_LICENSE_KEY?: string;

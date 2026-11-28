@@ -185,6 +185,11 @@ export const billingOrgs: Partial<
     enforced: [],
   },
 };
+// The addresses our test runs sign up with, comma-separated, `*` for any
+// characters before the @ (apps/api/src/analytics.ts): PostHog marks
+// everything they and their organizations do test=true. Optional and on our
+// cloud only, set by the deploy environment; unset, nothing is marked.
+export const analyticsVars = ["ANALYTICS_TEST_EMAILS"] as const;
 // The license key (spec 16), optional and on selfhost stages only: without a
 // valid one the install runs the free plan. Our cloud never binds it.
 export const licenseSecrets = ["PREPROCESS_LICENSE_KEY"] as const;
