@@ -100,6 +100,21 @@ describe("manifest", () => {
       agent({ instructions: "x", secrets: ["lower"], tools: {} }),
     ).toThrow(/must match/);
   });
+
+  it("runs on an organization model by its org:<slug> id", async () => {
+    const own = agent({
+      instructions: "x",
+      model: "org:invoices-v2",
+      tools: {},
+    });
+    const manifest = await (
+      await own.fetch(new Request("https://agent/manifest"), {})
+    ).json<Manifest>();
+    expect(manifest.model).toBe("org:invoices-v2");
+    expect(() =>
+      agent({ instructions: "x", model: "org:Not Valid", tools: {} }),
+    ).toThrow(/org:<slug>/);
+  });
 });
 
 describe("settings", () => {
