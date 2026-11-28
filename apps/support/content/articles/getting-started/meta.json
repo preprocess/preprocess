@@ -1,4 +1,9 @@
 {
   "title": "Getting started",
-  "pages": ["what-is-preprocess"]
+  "pages": [
+    "create-account-and-organization",
+    "resend-verification-email",
+    "invite-and-manage-team-members",
+    "contact-support-and-response-times"
+  ]
 }

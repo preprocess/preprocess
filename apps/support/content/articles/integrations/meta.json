@@ -1,4 +1,9 @@
 {
   "title": "Integrations (GitHub, MCP)",
-  "pages": ["connect-github"]
+  "pages": [
+    "connect-github-for-automatic-deploys",
+    "connect-mcp-servers",
+    "set-up-webhooks-and-verify-signatures",
+    "authenticate-the-cli-and-api-keys"
+  ]
 }
