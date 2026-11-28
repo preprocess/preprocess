@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { currentScenario } from "../../scenarios/current-scenario";
 import { useOrganizationId } from "../auth/auth-context";
 import { ApiError, apiFetch, orgApi } from "../auth/client";
+import { seededRemovedGroups } from "../settings/directory-sync-api";
+import type { RemovedGroup } from "../settings/directory-sync-seed";
 import type { License } from "../settings/license-seed";
 import { useAdministers } from "../settings/use-role";
 import { buildNotices, seededNotices, type Billing } from "./notices";
@@ -44,6 +46,22 @@ export function useNotices() {
       }
     },
   });
+  // Owners, Admins and Developers get the groups; everyone else an empty list.
+  const syncState = currentScenario()["directory-sync"];
+  const removedGroups = useQuery({
+    queryKey: ["removed-groups", organizationId, syncState],
+    enabled: syncState !== "live" || !seeded,
+    retry: false,
+    queryFn: async () =>
+      syncState !== "live"
+        ? seededRemovedGroups(syncState)
+        : (
+        await orgApi<{ groups: RemovedGroup[] }>(
+          organizationId,
+          "/scim/removed-groups",
+        )
+      ).groups,
+  });
   const dismissed = useQuery({
     queryKey: DISMISSED,
     queryFn: () => apiFetch<Dismissed>("/v1/me/notices/dismissed"),
@@ -67,6 +85,7 @@ export function useNotices() {
     administers: manager === true,
     dismissed: new Set(dismissed.data?.ids),
     announcements: Boolean(dismissed.data) && (seeded?.announcements ?? true),
+    removedGroups: removedGroups.data ?? [],
   });
 
   const dismiss = (id: string) => {

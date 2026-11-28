@@ -4,6 +4,7 @@ import {
   seededLicense,
   type License,
 } from "../settings/license-seed";
+import type { RemovedGroup } from "../settings/directory-sync-seed";
 import { ANNOUNCEMENTS } from "./announcements";
 
 export type NoticeLevel = "error" | "warning" | "announcement";
@@ -184,6 +185,30 @@ const licenseNotice = (license: License): Notice | null => {
   }
 };
 
+const DIRECTORY_SYNC_HREF = "/settings/organization/directory-sync";
+
+/**
+ * A dismissal id for a removed group. Dismissal ids allow only lowercase
+ * letters, digits and hyphens, and group ids carry underscores.
+ */
+export const removedGroupNoticeId = (groupId: string) =>
+  `group-removed-${groupId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`.slice(
+    0,
+    64,
+  );
+
+// Owners, Admins and the Developers group, when the identity provider removed
+// a synced group; the API answers nobody else.
+const removedGroupNotice = (group: RemovedGroup): Notice => ({
+  id: removedGroupNoticeId(group.id),
+  level: "warning",
+  title: `${group.name} was removed`,
+  detail: `Removed by IdP · ${group.agents} ${group.agents === 1 ? "agent names" : "agents name"} it`,
+  href: DIRECTORY_SYNC_HREF,
+  date: group.removedAt,
+  dismissible: true,
+});
+
 const LEVELS: readonly NoticeLevel[] = ["error", "warning", "announcement"];
 
 /**
@@ -196,6 +221,7 @@ export function buildNotices({
   administers,
   dismissed,
   announcements = true,
+  removedGroups = [],
 }: {
   billing: Billing | null;
   /** Self-hosted only; null on our cloud and for Members. */
@@ -203,6 +229,8 @@ export function buildNotices({
   administers: boolean;
   dismissed: ReadonlySet<string>;
   announcements?: boolean;
+  /** Synced groups the identity provider removed. */
+  removedGroups?: readonly RemovedGroup[];
 }): Notice[] {
   const fromBilling = billing?.started
     ? (administers ? MANAGER_NOTICES : MEMBER_NOTICES)
@@ -226,8 +254,16 @@ export function buildNotices({
         }),
       )
     : [];
+  const fromDirectorySync = removedGroups
+    .map(removedGroupNotice)
+    .filter(({ id }) => !dismissed.has(id));
   const newest = (notice: Notice) => notice.date ?? "9999-12-31";
-  return [...fromBilling, ...fromLicense, ...fromAnnouncements].sort(
+  return [
+    ...fromBilling,
+    ...fromLicense,
+    ...fromDirectorySync,
+    ...fromAnnouncements,
+  ].sort(
     (a, b) =>
       LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level) ||
       (newest(b) > newest(a) ? 1 : newest(b) < newest(a) ? -1 : 0),

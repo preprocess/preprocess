@@ -4,7 +4,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { buildNotices, type Billing } from "../src/features/notices/notices";
+import {
+  buildNotices,
+  removedGroupNoticeId,
+  type Billing,
+} from "../src/features/notices/notices";
 import { seededLicense } from "../src/features/settings/license-seed";
 
 const RELOAD = {
@@ -176,5 +180,51 @@ describe("license notices", () => {
     expect(withLicense("none")).toEqual([]);
     expect(withLicense("grace", false)).toEqual([]);
     expect(withLicense("expired", false)).toEqual([]);
+  });
+});
+
+describe("removed group notices", () => {
+  const contractors = {
+    id: "grp_01m8_contractors",
+    slug: "contractors",
+    name: "Contractors",
+    removedAt: "2026-11-27T15:10:00.000Z",
+    agents: 2,
+  };
+  const withGroups = (
+    removedGroups: (typeof contractors)[],
+    dismissed: string[] = [],
+  ) =>
+    buildNotices({
+      billing: null,
+      administers: false,
+      dismissed: new Set(dismissed),
+      announcements: false,
+      removedGroups,
+    });
+
+  it("warns that the identity provider removed a group, linking to Directory sync", () => {
+    expect(withGroups([contractors])).toEqual([
+      {
+        id: "group-removed-grp-01m8-contractors",
+        level: "warning",
+        title: "Contractors was removed",
+        detail: "Removed by IdP · 2 agents name it",
+        href: "/settings/organization/directory-sync",
+        date: contractors.removedAt,
+        dismissible: true,
+      },
+    ]);
+    expect(withGroups([{ ...contractors, agents: 1 }])[0]?.detail).toBe(
+      "Removed by IdP · 1 agent names it",
+    );
+  });
+
+  it("uses a dismissal id the API accepts and hides a dismissed group", () => {
+    const id = removedGroupNoticeId("grp_" + "X".repeat(80));
+    expect(id).toMatch(/^[a-z0-9][a-z0-9-]{0,63}$/);
+    expect(
+      withGroups([contractors], [removedGroupNoticeId(contractors.id)]),
+    ).toEqual([]);
   });
 });
