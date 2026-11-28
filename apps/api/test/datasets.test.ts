@@ -471,6 +471,59 @@ describe("a dataset's preview", () => {
   });
 });
 
+describe("a draft query's preview", () => {
+  let saved: string;
+  beforeAll(async () => {
+    saved = (await create(owner, a, "Saved everything")).body.id;
+  });
+  const draft = (client: Client, query: string, s = a, id = saved) =>
+    client.call<Preview>(
+      `${base(s)}/${id}/preview?query=${encodeURIComponent(query)}`,
+    );
+
+  it("previews the unsaved query in place of the saved one, for this call only", async () => {
+    const res = await viewer.call<Preview>(
+      `${base(a)}/${saved}/preview?query=${encodeURIComponent(JSON.stringify({ outcome: "corrected" }))}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.cases.map((c) => c.id)).toEqual([a.corrected]);
+    expect(
+      (
+        await draft(
+          viewer,
+          JSON.stringify({ period: "30d", status: ["completed"] }),
+        )
+      ).body.count,
+    ).toBe(2);
+    expect(
+      (await viewer.call<Preview>(`${base(a)}/${saved}/preview`)).body.count,
+    ).toBe(4);
+    expect(
+      (await viewer.call<Dataset>(`${base(a)}/${saved}`)).body.query,
+    ).toEqual({});
+  });
+
+  it("refuses a draft that is not a dataset query as JSON", async () => {
+    for (const bad of [
+      "{not json",
+      JSON.stringify({ status: ["running"] }),
+      JSON.stringify({ period: "7d", from: ago(3).toISOString() }),
+      JSON.stringify({ since: "yesterday" }),
+      JSON.stringify(["completed"]),
+    ])
+      expect((await draft(owner, bad)).status, bad).toBe(400);
+  });
+
+  it("keeps the preview's access rule", async () => {
+    const query = JSON.stringify({ outcome: "corrected" });
+    expect((await draft(outsider, query)).status).toBe(404);
+    expect((await draft(otherOwner, query)).status).toBe(403);
+    expect((await draft(otherOwner, query, b)).status).toBe(404);
+    expect((await draft(keyed, query)).status).toBe(200);
+  });
+});
+
 describe("the agent's answer fields", () => {
   it("are the answers' fields and every field a person edited, for anyone who can see the cases", async () => {
     const res = await viewer.call<{ fields: string[] }>(

@@ -95,6 +95,19 @@ const Query = z
     description: "Which of the agent's closed cases the dataset holds",
   });
 
+// A query passed as a JSON string in a URL, checked like a saved one.
+const DraftQuery = z
+  .string()
+  .transform((text, ctx) => {
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "query is not valid JSON." });
+      return z.NEVER;
+    }
+  })
+  .pipe(Query);
+
 const Dataset = z
   .object({
     id: z.string(),
@@ -437,6 +450,11 @@ export const datasetRoutes = new OpenAPIHono<{
         params: DatasetParam,
         query: z.object({
           limit: z.coerce.number().int().min(1).max(100).default(20),
+          query: DraftQuery.optional().openapi({
+            description:
+              "An unsaved query, as JSON, to preview in place of the saved one",
+            example: '{"period":"30d","status":["completed"]}',
+          }),
         }),
       },
       responses: {
@@ -455,16 +473,20 @@ export const datasetRoutes = new OpenAPIHono<{
           }),
           "The count and the newest cases",
         ),
+        400: { description: "A query that is not a dataset query as JSON" },
         404: error("No such agent or dataset"),
       },
     }),
     async (c) => {
       const { agent: ref, dataset: id } = c.req.valid("param");
-      const { limit } = c.req.valid("query");
+      const { limit, query: draft } = c.req.valid("query");
       const preview = await withOrg(c.env, c.var.org, async (tx) => {
         const agent = await agentFor(tx, c.var.caller, ref, false);
         const dataset = await findDataset(tx, agent.id, id);
-        const where = closedCases(agent.id, datasetFilter(dataset.query));
+        const where = closedCases(
+          agent.id,
+          datasetFilter(draft ?? dataset.query),
+        );
         const [total] = await tx
           .select({ n: count() })
           .from(cases)
