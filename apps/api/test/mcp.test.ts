@@ -8,6 +8,11 @@ import { Client, createOrganization, signUp, testEnv } from "./helpers.ts";
 import crmAgent from "./dist/crm-agent.js?raw";
 
 type Who = { org: OrgId; client: Client };
+// The fake CRM's tokens (fake-mcp.ts), exactly, so a random org slug such as
+// "…-mwzmyort-1cf…" in the same JSON can't match (PRE-147).
+const TOKEN =
+  /[ar]t-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
+
 const seedOrg = async (name: string): Promise<Who> => {
   const { client } = await signUp(name);
   const org = orgId(await createOrganization(client, name));
@@ -194,7 +199,7 @@ describe("MCP servers and the organization's connection", () => {
       agents: ["crm-agent"],
       connection: { status: "active" },
     });
-    expect(JSON.stringify(server)).not.toMatch(/at-|rt-/);
+    expect(JSON.stringify(server)).not.toMatch(TOKEN);
     const tools = await call<Array<{ name: string }>>(
       a,
       "GET",
@@ -235,7 +240,7 @@ describe("MCP servers and the organization's connection", () => {
         content: [{ type: "text", text: "Ada Lovelace, buyer (Acme buyer)" }],
       },
     });
-    expect(JSON.stringify(view)).not.toMatch(/at-|rt-/);
+    expect(JSON.stringify(view)).not.toMatch(TOKEN);
   });
 
   it("refreshes an expired token and retries", async () => {
@@ -316,7 +321,7 @@ describe("MCP servers and the organization's connection", () => {
         "mcp_server.revoked",
       ]),
     );
-    expect(JSON.stringify(events)).not.toMatch(/at-[0-9a-f]|rt-[0-9a-f]/);
+    expect(JSON.stringify(events)).not.toMatch(TOKEN);
   });
 });
 
