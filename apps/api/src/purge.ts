@@ -2,7 +2,8 @@
 // your Team plan or delete an organization"). Its Postgres rows go by cascade
 // in the delete's own transaction. What lives outside Postgres goes after the
 // commit, from the JOBS queue, in bounded steps: first each Durable Object it
-// owns (cases with their sandboxes, schedulers, build queues), then its R2
+// owns (cases with their sandboxes, schedulers, build queues) with the
+// PostHog persons of members it leaves in no organization, then its R2
 // objects (files, job results, support attachments, run logs, run capture,
 // agent bundles and custom environment layers).
 //
@@ -15,11 +16,12 @@
 
 import { withoutOrg } from "@preprocess/db/client";
 import type { SystemTx } from "@preprocess/db/client";
+import { member } from "@preprocess/db/schema/auth";
 import {
   organizationPurgeObjects,
   organizationPurges,
 } from "@preprocess/db/schema/purges";
-import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { queueName } from "./builds.ts";
 import type { Env, Job } from "./env.ts";
@@ -68,6 +70,9 @@ export const snapshotPurge = async (tx: SystemTx, org: string) => {
     union
     select organization_id, 'builds', agent_slug, branch from github_builds
       where organization_id = ${org}
+    union
+    select organization_id, 'person', '', user_id from member
+      where organization_id = ${org}
     on conflict do nothing`);
 };
 
@@ -85,6 +90,45 @@ const addCounts = (tx: SystemTx, org: string, counts: Record<string, number>) =>
     .where(eq(organizationPurges.organizationId, org));
 
 type Named = { kind: string; agent: string; name: string };
+
+// PostHog's API host for its ingestion host (us.i.posthog.com is
+// us.posthog.com); a self-hosted PostHog serves both on one host.
+const posthogApi = (env: Env) =>
+  (env.POSTHOG_HOST || "https://us.i.posthog.com").replace(
+    /^https:\/\/(us|eu)\.i\.posthog\.com/,
+    "https://$1.posthog.com",
+  );
+
+// The PostHog persons (their distinct id is the user id) of these members
+// that belong to no organization any more, with their events. Returns how
+// many were deleted; none when PostHog deletion isn't configured.
+const deletePersons = async (env: Env, users: string[]) => {
+  if (!users.length || !env.POSTHOG_PERSONAL_API_KEY || !env.POSTHOG_PROJECT_ID)
+    return 0;
+  const members = await withoutOrg(env, "organization purge: members", (tx) =>
+    tx
+      .selectDistinct({ userId: member.userId })
+      .from(member)
+      .where(inArray(member.userId, users)),
+  );
+  const still = new Set(members.map((m) => m.userId));
+  const gone = users.filter((u) => !still.has(u));
+  if (!gone.length) return 0;
+  const response = await fetch(
+    `${posthogApi(env)}/api/projects/${env.POSTHOG_PROJECT_ID}/persons/bulk_delete/`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${env.POSTHOG_PERSONAL_API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ distinct_ids: gone, delete_events: true }),
+    },
+  );
+  if (!response.ok)
+    throw new Error(`PostHog person deletion answered ${response.status}`);
+  return gone.length;
+};
 
 const wipe = (env: Env, org: string, o: Named) => {
   if (o.kind === "case")
@@ -116,11 +160,17 @@ const purgeObjects = async (env: Env, org: string) => {
       .limit(OBJECTS_PER_STEP),
   );
   if (!due.length) return true;
-  for (let i = 0; i < due.length; i += CONCURRENCY)
+  const objects = due.filter((o) => o.kind !== "person");
+  for (let i = 0; i < objects.length; i += CONCURRENCY)
     await Promise.all(
-      due.slice(i, i + CONCURRENCY).map((o) => wipe(env, org, o)),
+      objects.slice(i, i + CONCURRENCY).map((o) => wipe(env, org, o)),
     );
-  const counts: Record<string, number> = {};
+  const counts: Record<string, number> = {
+    posthogPersons: await deletePersons(
+      env,
+      due.filter((o) => o.kind === "person").map((o) => o.name),
+    ),
+  };
   for (const o of due) counts[o.kind] = (counts[o.kind] ?? 0) + 1;
   await withoutOrg(env, "organization purge: objects wiped", async (tx) => {
     for (const o of due)

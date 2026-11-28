@@ -25,7 +25,7 @@ what agent code may reach.
 | `codeload.github.com`                                                  | Downloading a commit's code to build a deployment          | The `GITHUB_*` variables                      |
 | `registry.npmjs.org`, and any registry the repository's lockfile names | Installing an agent's dependencies in the build sandbox    | The `GITHUB_*` variables                      |
 | `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`   | Google sign-in                                             | `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` |
-| `api.sql.cloudflarestorage.com`                                        | Querying run logs in an R2 Data Catalog table              | `LOG_CATALOG_TOKEN`                           |
+| `api.sql.cloudflarestorage.com`                                        | Querying run logs in an R2 Data Catalog table              | `LOG_CATALOG_TOKEN` (not supported yet)       |
 
 Qwen 3.8 27B on Workers AI, email, queues, R2 and Durable Objects are reached
 through Cloudflare bindings inside your account, not over the public internet.
