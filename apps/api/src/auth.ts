@@ -45,6 +45,7 @@ import { endBillingForDeletion } from "./billing.ts";
 import { deleteSupportObjects } from "./support.ts";
 import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
+import { purgeJob, snapshotPurge } from "./purge.ts";
 import { refuseWithoutPlan, SCIM_PATH, scimDirectory } from "./scim.ts";
 
 // The deploy smoke test (infra/scripts/smoke.ts) has no mailbox. On staging
@@ -249,17 +250,18 @@ export const requestContext = (request: Request): RequestContext => ({
   ssoTest: null,
 });
 
-// Product events a request's hooks decide, sent once its transaction
-// commits (withAuth); a rolled-back request sends none.
+// Product events a request's hooks decide, and the purges of organizations
+// it deletes (purge.ts), sent once its transaction commits (withAuth); a
+// rolled-back request sends none.
 const pending = new WeakMap<
   RequestContext,
-  { events: ProductEvent[]; organizations: Set<string> }
+  { events: ProductEvent[]; organizations: Set<string>; purges: string[] }
 >();
 
 const pendingFor = (request: RequestContext) => {
   let found = pending.get(request);
   if (!found) {
-    found = { events: [], organizations: new Set() };
+    found = { events: [], organizations: new Set(), purges: [] };
     pending.set(request, found);
   }
   return found;
@@ -795,6 +797,8 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             await tx.execute(sql`
               insert into deleted_organizations (organization_id, deleted_at, final_seq, final_hash)
               select organization_id, now(), seq, hash from audit_heads where organization_id = ${org.id}`);
+            await snapshotPurge(tx, org.id);
+            pendingFor(request).purges.push(org.id);
           },
           // Its support rows go by cascade; their attachments' objects here.
           async afterDeleteOrganization({ organization: org }) {
@@ -1080,6 +1084,17 @@ export const withAuth = async <T>(
     if (decided) {
       await track(env, decided.events);
       await identifyOrganizations(env, [...decided.organizations]);
+      // A failed send is sent again by the minute cron (resumePurges).
+      for (const org of decided.purges)
+        await env.JOBS.send(purgeJob(org)).catch((error: unknown) =>
+          console.error(
+            JSON.stringify({
+              event: "organization.purge_send_failed",
+              organizationId: org,
+              error: String(error),
+            }),
+          ),
+        );
     }
     return result;
   } catch (error) {

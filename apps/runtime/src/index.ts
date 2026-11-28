@@ -11,7 +11,12 @@ import type {
   MemoryRule,
   StartCase,
 } from "./env.ts";
-import { layerBuilderName, ownsLayer, type LayerJob } from "./layers.ts";
+import {
+  layerBuilderName,
+  layerPrefix,
+  ownsLayer,
+  type LayerJob,
+} from "./layers.ts";
 import type { WriteResult } from "./schema-state.ts";
 
 export { CaseRuntime } from "./case-runtime.ts";
@@ -136,6 +141,37 @@ export default class Runtime extends WorkerEntrypoint<Env> {
   async deleteCase(c: CaseKey) {
     await this.env.RUNS.delete(captureKey(c));
     await runtimeFor(this.env, c).wipe();
+  }
+
+  // Deleting an organization (the API's purge.ts): up to `pages` listings of
+  // its objects in RUNS and BUNDLES (custom environment layers included),
+  // deleted. Safe to repeat; done once nothing is left under its prefixes.
+  async deleteOrganizationObjects(organizationId: string, pages: number) {
+    if (!/^[\w-]+$/.test(organizationId))
+      throw new Error(`refusing to purge objects of "${organizationId}"`);
+    const deleted = { runs: 0, bundles: 0 };
+    const prefixes = [
+      { bucket: this.env.RUNS, prefix: `${organizationId}/`, count: "runs" },
+      {
+        bucket: this.env.BUNDLES,
+        prefix: `${organizationId}/`,
+        count: "bundles",
+      },
+      {
+        bucket: this.env.BUNDLES,
+        prefix: layerPrefix(organizationId),
+        count: "bundles",
+      },
+    ] as const;
+    for (const { bucket, prefix, count } of prefixes)
+      for (;;) {
+        if (pages-- <= 0) return { ...deleted, done: false };
+        const page = await bucket.list({ prefix });
+        if (!page.objects.length) break;
+        await bucket.delete(page.objects.map((o) => o.key));
+        deleted[count] += page.objects.length;
+      }
+    return { ...deleted, done: true };
   }
 
   decideApproval(

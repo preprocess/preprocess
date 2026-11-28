@@ -80,6 +80,12 @@ export class Scheduler extends DurableObject<Env> {
     else await this.ctx.storage.setAlarm(next);
   }
 
+  // Deleting the organization (purge.ts): its schedules and alarm.
+  async wipe() {
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+  }
+
   // On promotion (production) or deploy (preview): the deployment's
   // schedules replace the old ones. Pauses of names that remain are kept.
   async replace(plan: Plan) {

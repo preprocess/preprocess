@@ -91,6 +91,10 @@ import {
   githubRepositories,
 } from "../src/schema/github.ts";
 import { modelEndpoints } from "../src/schema/models.ts";
+import {
+  organizationPurgeObjects,
+  organizationPurges,
+} from "../src/schema/purges.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
 import { ssoDomains } from "../src/schema/sso.ts";
 
@@ -600,6 +604,13 @@ export const seedOrganization = async (name: string) =>
       bytes: 1,
       unpackedBytes: 1,
     });
+    await tx.insert(organizationPurges).values({ organizationId: org });
+    await tx.insert(organizationPurgeObjects).values({
+      organizationId: org,
+      kind: "case",
+      agent: agentId,
+      name: caseId,
+    });
     await audit(tx, {
       organizationId: org,
       actorType: "person",
@@ -686,6 +697,8 @@ export const tenantTables = {
   support_requests: "organization_id",
   support_messages: "organization_id",
   support_attachments: "organization_id",
+  organization_purges: "organization_id",
+  organization_purge_objects: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

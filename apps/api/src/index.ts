@@ -23,6 +23,7 @@ import {
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { reportDaily, reportUsage } from "./billing.ts";
 import { runPlanChanges } from "./plan-change.ts";
+import { resumePurges, runPurgeJob } from "./purge.ts";
 import { closeSilentSandboxes } from "./sandbox.ts";
 import { collectSandboxLayers } from "./sandbox-layers.ts";
 import { handleAuthRequest } from "./auth.ts";
@@ -300,9 +301,10 @@ export default {
   scheduled(controller, env, ctx) {
     initLogs("api", (records) => sendLogs(env, records), env);
     // Every minute: re-send outbox rows a failed queue send left behind.
-    // Every minute, too: report metered usage to billing, close the awake
-    // intervals of sandboxes gone silent, report dead-letter queues that hold
-    // messages, and warn about or apply moves down to Free (our cloud only).
+    // Every minute, too: report metered usage to billing, send again deleted
+    // organizations' purges that stalled, close the awake intervals of
+    // sandboxes gone silent, report dead-letter queues that hold messages,
+    // and warn about or apply moves down to Free (our cloud only).
     if (controller.cron === "* * * * *") {
       watch(
         ctx,
@@ -310,6 +312,7 @@ export default {
         sweepOutbox(env).then(() => heartbeat(env, "tick")),
       );
       watch(ctx, "cron.usage", reportUsage(env));
+      watch(ctx, "cron.purges", resumePurges(env));
       watch(ctx, "cron.sandboxes", closeSilentSandboxes(env));
       watch(ctx, "cron.dead-letters", reportDeadLetters(env));
       watch(
@@ -431,8 +434,13 @@ const consume = async (
     return;
   }
   for (const message of batch.messages as Message<Job>[]) {
-    // A job's result goes to R2 under its organization.
     const job = message.body;
+    if ("kind" in job) {
+      await runPurgeJob(env, job);
+      message.ack();
+      continue;
+    }
+    // A job's result goes to R2 under its organization.
     await env.FILES.put(
       `${job.organizationId}/jobs/${job.id}.json`,
       JSON.stringify({
