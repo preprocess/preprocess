@@ -136,7 +136,9 @@ export const validValue = (spec: PropertySpec, value: unknown) => {
 };
 
 // One event. The person who acted is its distinct id; an event nobody did
-// (a case completing) is the organization's and makes no person profile.
+// (a case completing) has the organization's id as its distinct id. Both
+// keep a person profile, since PostHog drops groups from personless events.
+// The Worker's IP says nothing about the person, so no GeoIP either.
 // Only signed_up has no organization yet.
 export const productEvent = <N extends ProductEventName>(
   env: PostHogEnv,
@@ -168,7 +170,7 @@ export const productEvent = <N extends ProductEventName>(
       }),
       stage: env.STAGE ?? "unknown",
       service: "api",
-      ...(!actor && { $process_person_profile: false }),
+      $geoip_disable: true,
     },
   };
 };
@@ -186,7 +188,7 @@ export const organizationIdentify = (
     $group_type: "organization",
     $group_key: organizationId,
     $group_set: traits,
-    $process_person_profile: false,
+    $geoip_disable: true,
   },
 });
 

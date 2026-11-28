@@ -41,13 +41,28 @@ export const track = async (env: Env, events: ProductEvent[]) => {
 
 // One event. `actor` is the person who acted; an API key, the platform or
 // nobody passes null, and the event is the organization's alone.
-export const trackEvent = <N extends ProductEventName>(
+export const trackEvent = async <N extends ProductEventName>(
   env: Env,
   name: N,
   organizationId: string | null,
   actor: string | null,
   properties: ProductProperties<N>,
-) => track(env, [productEvent(env, name, organizationId, actor, properties)]);
+) => {
+  const events = [productEvent(env, name, organizationId, actor, properties)];
+  await track(env, events);
+  if (organizationId) await identifyNow(env, organizationId);
+};
+
+// An organization's group properties once an hour per isolate as its events
+// arrive, so a group never waits for the daily refresh to have them.
+const identifiedAt = new Map<string, number>();
+const identifyNow = async (env: Env, organizationId: string) => {
+  if (!env.POSTHOG_KEY) return;
+  const last = identifiedAt.get(organizationId);
+  if (last && Date.now() - last < 3_600_000) return;
+  identifiedAt.set(organizationId, Date.now());
+  await identifyOrganizations(env, [organizationId]);
+};
 
 const traits = async (env: Env, org: string) => {
   const id = orgId(org);
