@@ -40,11 +40,16 @@ const URL_PROPERTIES = [
 const withoutQuery = (value: unknown) =>
   typeof value === "string" ? value.replace(/[?#].*$/, "") : value;
 
+// The browser sets no person properties: identify carries the user id and
+// nothing else, and role, sign-up method and first seen come from the
+// server's product events (@preprocess/logs product.ts).
 export const scrubEvent = (
   event: CaptureResult | null,
 ): CaptureResult | null => {
   if (!event) return null;
   const properties = { ...event.properties };
+  delete properties.$set;
+  delete properties.$set_once;
   for (const name of URL_PROPERTIES)
     if (name in properties) properties[name] = withoutQuery(properties[name]);
   const exceptions = properties.$exception_list as

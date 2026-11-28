@@ -4,6 +4,7 @@ import {
   amountBucket,
   durationBucket,
   organizationIdentify,
+  personIdentify,
   PRODUCT_EVENTS,
   productEvent,
   type PropertySpec,
@@ -123,6 +124,42 @@ describe("productEvent", () => {
     expect(event.distinctId).toBe(org);
     expect(event.properties.$process_person_profile).toBeUndefined();
     expect(event.properties.$groups).toEqual({ organization: org });
+  });
+
+  it("sets only the listed person properties, and only for a person", () => {
+    const event = productEvent(
+      {},
+      "signed_up",
+      null,
+      user,
+      { method: "google" },
+      {
+        $set_once: {
+          signup_method: "google",
+          first_seen: "2026-11-28T05:00:00.000Z",
+        },
+        $set: { role: "chief", email: "jane@example.com" } as never,
+      },
+    );
+    expect(event.properties.$set_once).toEqual({
+      signup_method: "google",
+      first_seen: "2026-11-28T05:00:00.000Z",
+    });
+    expect(event.properties.$set).toBeUndefined();
+    const nobody = productEvent(
+      {},
+      "case_completed",
+      org,
+      null,
+      { case_id: kase, agent_id: agent, outcome: "completed" },
+      { $set: { role: "owner" } },
+    );
+    expect(nobody.properties.$set).toBeUndefined();
+    expect(personIdentify(user, { role: "admin" })).toMatchObject({
+      event: "$set",
+      distinctId: user,
+      properties: { $set: { role: "admin" } },
+    });
   });
 
   it("sets the organization group's plan, seats and created_at", () => {

@@ -27,7 +27,7 @@ import type {
   SupportCategory,
   SupportChannel,
 } from "@preprocess/db/schema/support";
-import type { ProductProperties } from "@preprocess/logs";
+import { durationBucket, type ProductProperties } from "@preprocess/logs";
 import { runMode } from "@preprocess/runmode";
 import { and, asc, eq, inArray, lt } from "drizzle-orm";
 
@@ -552,31 +552,60 @@ export const postCustomerMessage = async (
     },
   );
 
+// A request solved, by whom, and how long it was open.
+const trackSolved = (
+  env: Env,
+  row: SupportRequestRow,
+  by: "customer" | "agent" | "operator",
+  actor: string | null,
+) => {
+  const open = Math.max(0, Date.now() - row.createdAt.getTime());
+  return trackEvent(env, "support_request_solved", row.organizationId, actor, {
+    request_id: row.id,
+    by,
+    open_seconds: Math.floor(open / 1000),
+    open_for: durationBucket(open),
+  });
+};
+
 // The customer marks their request solved.
-export const solveSupportRequest = (
+export const solveSupportRequest = async (
   env: Env,
   row: SupportRequestRow,
   by: AuditActor,
-) =>
-  inScope(env, row.organizationId, "support: solve", async (tx) => {
-    const [updated] = await tx
-      .update(supportRequests)
-      .set({ status: "solved", solvedAt: new Date(), updatedAt: new Date() })
-      .where(eq(supportRequests.id, row.id))
-      .returning();
-    if (row.organizationId)
-      await audit(tx, {
-        organizationId: row.organizationId,
-        actorType: by.actorType,
-        actorId: by.actorId,
-        ip: by.ip ?? null,
-        requestId: by.requestId ?? null,
-        action: "support.request.solved",
-        targetType: "support_request",
-        targetId: row.id,
-      });
-    return updated!;
-  });
+) => {
+  const solved = await inScope(
+    env,
+    row.organizationId,
+    "support: solve",
+    async (tx) => {
+      const [updated] = await tx
+        .update(supportRequests)
+        .set({ status: "solved", solvedAt: new Date(), updatedAt: new Date() })
+        .where(eq(supportRequests.id, row.id))
+        .returning();
+      if (row.organizationId)
+        await audit(tx, {
+          organizationId: row.organizationId,
+          actorType: by.actorType,
+          actorId: by.actorId,
+          ip: by.ip ?? null,
+          requestId: by.requestId ?? null,
+          action: "support.request.solved",
+          targetType: "support_request",
+          targetId: row.id,
+        });
+      return updated!;
+    },
+  );
+  await trackSolved(
+    env,
+    row,
+    "customer",
+    by.actorType === "person" ? by.actorId : null,
+  );
+  return solved;
+};
 
 // For the support agent layer: our reply to a request, by the support agent
 // or an operator. It is stored, waits on the customer (or is solved), is
@@ -644,6 +673,7 @@ export const postSupportReply = async (
       return { request: next!, message: message! };
     },
   );
+  if (solves) await trackSolved(env, row, reply.authorKind, null);
   await sendSupportEmail(
     env,
     updated.request,

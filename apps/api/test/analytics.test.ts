@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addMember,
+  Client,
   createOrganization,
   signUp,
   testEnv,
@@ -88,5 +89,201 @@ describe("product analytics", () => {
     });
     expect(again.status).toBeGreaterThanOrEqual(400);
     expect(since(start).filter((e) => e.event === "org_created")).toEqual([]);
+  });
+});
+
+// PRE-160: onboarding, collaboration and admin events, and the person and
+// group properties they carry.
+describe("product analytics, round 2", () => {
+  const env = () => testEnv({ POSTHOG_KEY: "phc_test", STAGE: "test" });
+  const named = (start: number, event: string) =>
+    since(start).filter((e) => e.event === event);
+
+  it("sets the person's sign-up method, first seen and role, and the onboarding steps", async () => {
+    const start = tracked.length;
+    const { client, userId } = await signUp("Onboarding Person", env());
+    const org = await createOrganization(client, "Onboarding Org");
+
+    expect(named(start, "signed_up")[0]?.properties.$set_once).toEqual({
+      signup_method: "email",
+      first_seen: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) as string,
+    });
+    expect(
+      named(start, "onboarding_step_completed").map((e) => [
+        e.distinctId,
+        e.properties.step,
+      ]),
+    ).toEqual([
+      [userId, "name"],
+      [userId, "organization"],
+    ]);
+    expect(named(start, "org_created")[0]?.properties.$set).toEqual({
+      role: "owner",
+    });
+
+    // Renaming oneself, or a second organization, is no onboarding step.
+    const again = tracked.length;
+    await client.call("/api/auth/update-user", {
+      body: { firstName: "Renamed", lastName: "Person" },
+    });
+    await createOrganization(client, "Second Onboarding Org");
+    expect(named(again, "onboarding_step_completed")).toEqual([]);
+
+    const identified = since(start).filter(
+      (e) => e.event === "$groupidentify" && e.properties.$group_key === org,
+    );
+    expect(identified.at(-1)?.properties.$group_set).toMatchObject({
+      agents_count: 0,
+      cases_30d: 0,
+      has_sso: false,
+      self_hosted: false,
+    });
+  });
+
+  it("times an accepted invitation and follows role changes and removals", async () => {
+    const { client: owner, userId: ownerId } = await signUp(
+      "Team Owner",
+      env(),
+    );
+    const org = await createOrganization(owner, "Team Org");
+    const start = tracked.length;
+    const { userId, invitationId } = await addMember(owner, org, "Team Mate");
+
+    expect(named(start, "invitation_accepted")[0]).toMatchObject({
+      distinctId: userId,
+      properties: {
+        invitation_id: invitationId,
+        role: "member",
+        seconds_to_accept: expect.any(Number) as number,
+        accept_wait: "lt_10s",
+      },
+    });
+    expect(named(start, "member_joined")[0]?.properties.$set).toEqual({
+      role: "member",
+    });
+
+    const members = await owner.call<{
+      members: { id: string; userId: string }[];
+    }>(`/api/auth/organization/list-members?organizationId=${org}`);
+    const memberId = members.body.members.find((m) => m.userId === userId)!.id;
+    const changed = await owner.call(
+      "/api/auth/organization/update-member-role",
+      {
+        body: { memberId, role: "admin", organizationId: org },
+      },
+    );
+    expect(changed.status).toBe(200);
+    expect(named(start, "role_changed")[0]).toMatchObject({
+      distinctId: ownerId,
+      properties: { member_user_id: userId, from: "member", to: "admin" },
+    });
+    expect(
+      named(start, "$set").find((e) => e.distinctId === userId)?.properties
+        .$set,
+    ).toEqual({ role: "admin" });
+
+    const removed = await owner.call("/api/auth/organization/remove-member", {
+      body: { memberIdOrEmail: memberId, organizationId: org },
+    });
+    expect(removed.status).toBe(200);
+    expect(named(start, "member_removed")[0]).toMatchObject({
+      distinctId: ownerId,
+      properties: { member_user_id: userId, role: "admin", via: "removed" },
+    });
+  });
+
+  it("marks the organization's first API key and its revocation", async () => {
+    const { client, userId } = await signUp("Key Maker", env());
+    const org = await createOrganization(client, "Key Org");
+    const start = tracked.length;
+    const first = await client.call<{ id: string }>(
+      "/api/auth/api-key/create",
+      {
+        body: { name: "ci", organizationId: org },
+      },
+    );
+    const second = await client.call<{ id: string }>(
+      "/api/auth/api-key/create",
+      { body: { name: "cli", organizationId: org } },
+    );
+    await client.call("/api/auth/api-key/delete", {
+      body: { keyId: first.body.id },
+    });
+    expect(
+      named(start, "api_key_created").map((e) => e.properties.first),
+    ).toEqual([true, false]);
+    expect(named(start, "api_key_created")[1]?.properties.api_key_id).toBe(
+      second.body.id,
+    );
+    expect(named(start, "api_key_revoked")[0]).toMatchObject({
+      distinctId: userId,
+      properties: { api_key_id: first.body.id, $groups: { organization: org } },
+    });
+    // A third key, after a revoke, is still not the first.
+    const later = tracked.length;
+    await client.call("/api/auth/api-key/create", {
+      body: { name: "again", organizationId: org },
+    });
+    expect(named(later, "api_key_created")[0]?.properties.first).toBe(false);
+  });
+
+  it("tracks preprocess login: the approval, then the CLI's session", async () => {
+    const { client: person, userId } = await signUp("Device Person", env());
+    await createOrganization(person, "Device Analytics Org");
+    const cli = new Client(env());
+    const code = await cli.call<{ device_code: string; user_code: string }>(
+      "/api/auth/device/code",
+      { body: { client_id: "preprocess-cli" } },
+    );
+    const start = tracked.length;
+    await person.call(
+      `/api/auth/device?user_code=${encodeURIComponent(code.body.user_code)}`,
+    );
+    await person.call("/api/auth/device/approve", {
+      body: { userCode: code.body.user_code },
+    });
+    const token = await cli.call("/api/auth/device/token", {
+      body: {
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        device_code: code.body.device_code,
+        client_id: "preprocess-cli",
+      },
+    });
+    expect(token.status).toBe(200);
+    expect(named(start, "device_authorized")[0]?.distinctId).toBe(userId);
+    expect(named(start, "cli_login")[0]?.distinctId).toBe(userId);
+  });
+
+  it("tracks a group once it commits, and not a refused duplicate", async () => {
+    const { client } = await signUp("Group Maker", env());
+    const org = await createOrganization(client, "Group Org");
+    const start = tracked.length;
+    const body = { name: "Finance", slug: "finance" };
+    const created = await client.call<{ id: string }>(
+      `/v1/orgs/${org}/groups`,
+      { body },
+    );
+    expect(created.status).toBe(201);
+    const again = await client.call(`/v1/orgs/${org}/groups`, { body });
+    expect(again.status).toBe(409);
+    expect(
+      named(start, "group_created").map((e) => e.properties.group_id),
+    ).toEqual([created.body.id]);
+  });
+
+  it("tracks each retention period changed", async () => {
+    const { client } = await signUp("Retention Owner", env());
+    const org = await createOrganization(client, "Retention Analytics Org");
+    const start = tracked.length;
+    const changed = await client.call(`/v1/orgs/${org}/retention`, {
+      method: "PUT",
+      body: { documentsDays: 30 },
+    });
+    expect(changed.status).toBe(200);
+    expect(named(start, "retention_changed")[0]?.properties).toMatchObject({
+      setting: "documents",
+      days: 30,
+      shortened: true,
+    });
   });
 });

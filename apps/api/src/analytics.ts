@@ -1,15 +1,22 @@
 import { orgId, withOrg, withoutOrgRead } from "@preprocess/db/client";
-import { organization } from "@preprocess/db/schema/auth";
+import { agents } from "@preprocess/db/schema/access";
+import { organization, ssoProvider } from "@preprocess/db/schema/auth";
+import { cases } from "@preprocess/db/schema/cases";
 import {
+  amountBucket,
   organizationIdentify,
   productEvent,
   sendProductEvents,
+  type OrganizationTraits,
+  type PersonTraits,
   type ProductEvent,
   type ProductEventName,
   type ProductProperties,
 } from "@preprocess/logs";
-import { eq } from "drizzle-orm";
+import { runMode } from "@preprocess/runmode";
+import { and, count, eq, gte, isNull, sql } from "drizzle-orm";
 
+import { creditsRemaining } from "./billing.ts";
 import type { Env } from "./env.ts";
 import { getPlan } from "./plan.ts";
 import { countSeats } from "./seats.ts";
@@ -47,8 +54,11 @@ export const trackEvent = async <N extends ProductEventName>(
   organizationId: string | null,
   actor: string | null,
   properties: ProductProperties<N>,
+  person?: PersonTraits,
 ) => {
-  const events = [productEvent(env, name, organizationId, actor, properties)];
+  const events = [
+    productEvent(env, name, organizationId, actor, properties, person),
+  ];
   await track(env, events);
   if (organizationId) await identifyNow(env, organizationId);
 };
@@ -64,24 +74,59 @@ const identifyNow = async (env: Env, organizationId: string) => {
   await identifyOrganizations(env, [organizationId]);
 };
 
-const traits = async (env: Env, org: string) => {
+// Counts run in the organization's own transaction, so RLS scopes them;
+// cases_30d reads the (organization, agent, created_at) index.
+const traits = async (
+  env: Env,
+  org: string,
+): Promise<Partial<OrganizationTraits> | null> => {
   const id = orgId(org);
-  const [plan, seats, [row]] = await Promise.all([
+  const [plan, counts, credits, [row]] = await Promise.all([
     getPlan(env, id),
-    withOrg(env, id, countSeats),
+    withOrg(env, id, async (tx) => {
+      const seats = await countSeats(tx);
+      const [live] = await tx
+        .select({ n: count() })
+        .from(agents)
+        .where(isNull(agents.archivedAt));
+      const [recent] = await tx
+        .select({ n: count() })
+        .from(cases)
+        .where(
+          and(
+            eq(cases.organizationId, org),
+            gte(cases.createdAt, new Date(Date.now() - 30 * 86_400_000)),
+          ),
+        );
+      return { seats, agents: live?.n ?? 0, cases: recent?.n ?? 0 };
+    }),
+    creditsRemaining(env, id),
     withoutOrgRead(env, "analytics: organization", (tx) =>
       tx
-        .select({ createdAt: organization.createdAt })
+        .select({
+          createdAt: organization.createdAt,
+          hasSso: sql<boolean>`exists (select 1 from ${ssoProvider} where ${ssoProvider.organizationId} = ${org})`,
+        })
         .from(organization)
         .where(eq(organization.id, org)),
     ),
   ]);
   if (!row) return null;
-  return { plan: plan.name, seats, created_at: row.createdAt.toISOString() };
+  return {
+    plan: plan.name,
+    seats: counts.seats,
+    created_at: row.createdAt.toISOString(),
+    agents_count: counts.agents,
+    cases_30d: counts.cases,
+    ...(credits !== null && { credit_balance_bucket: amountBucket(credits) }),
+    has_sso: row.hasSso,
+    self_hosted: runMode(env).kind !== "cloud",
+  };
 };
 
-// The organization group's plan, seats and created_at: when it is created,
-// when people join, when its plan changes, and daily for every organization.
+// The organization group's properties: when it is created, when people
+// join, when its plan changes, once an hour per isolate as its events
+// arrive, and daily for every organization.
 export const identifyOrganizations = async (env: Env, orgs: string[]) => {
   if (!env.POSTHOG_KEY) return;
   const events: ProductEvent[] = [];

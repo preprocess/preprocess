@@ -10,6 +10,7 @@
 import { apiKey } from "@better-auth/api-key";
 import { sso } from "@better-auth/sso";
 import { audit, startAuditChain } from "@preprocess/db/audit";
+import { auditEvents } from "@preprocess/db/schema/audit";
 import type { AuditInput } from "@preprocess/db/audit";
 import { withoutOrg, withoutOrgRead } from "@preprocess/db/client";
 import type { SystemTx } from "@preprocess/db/client";
@@ -38,7 +39,12 @@ import {
 } from "better-auth/plugins/organization/access";
 import { and, count, eq, gt, sql } from "drizzle-orm";
 
-import { productEvent, type ProductEvent } from "@preprocess/logs";
+import {
+  durationBucket,
+  personIdentify,
+  productEvent,
+  type ProductEvent,
+} from "@preprocess/logs";
 
 import { identifyOrganizations, track } from "./analytics.ts";
 import { endBillingForDeletion } from "./billing.ts";
@@ -291,8 +297,11 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
   let creatingOrganization = false;
   let revoking:
     { id: string; referenceId: string; name: string | null } | undefined;
+  // Whether the person had a name before /update-user, so naming
+  // themselves the first time completes that onboarding step.
+  let namedBefore = true;
   const person = (fallback: string) => request.actorId ?? fallback;
-  const directory = scimDirectory(env, tx, record);
+  const directory = scimDirectory(env, tx, record, later);
 
   // Sign-up is open on our cloud. A self-hosted install takes its first
   // person, then only people with a pending invitation.
@@ -529,10 +538,21 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             return { data: { ...user, ...fullName(user) } };
           },
           after(user, ctx) {
+            const method = signUpMethod(ctx?.path ?? "");
             later(
-              productEvent(env, "signed_up", null, user.id, {
-                method: signUpMethod(ctx?.path ?? ""),
-              }),
+              productEvent(
+                env,
+                "signed_up",
+                null,
+                user.id,
+                { method },
+                {
+                  $set_once: {
+                    signup_method: method,
+                    first_seen: user.createdAt.toISOString(),
+                  },
+                },
+              ),
             );
             return Promise.resolve();
           },
@@ -584,6 +604,13 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               (await ssoRequired(found.email))
             )
               throw useSso();
+          },
+          // The session `preprocess login` receives once its code is
+          // approved.
+          after(session, ctx) {
+            if (ctx?.path === "/device/token")
+              later(productEvent(env, "cli_login", null, session.userId, {}));
+            return Promise.resolve();
           },
         },
       },
@@ -641,6 +668,14 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
           if (await ssoRequired(email)) throw useSso();
           return;
         }
+        if (ctx.path === "/update-user" && request.actorId) {
+          const [found] = await tx
+            .select({ firstName: authSchema.user.firstName })
+            .from(authSchema.user)
+            .where(eq(authSchema.user.id, request.actorId));
+          namedBefore = Boolean(found?.firstName);
+          return;
+        }
         if (ctx.path !== "/api-key/delete") return;
         const keyId = (ctx.body as { keyId?: unknown } | undefined)?.keyId;
         if (typeof keyId !== "string") return;
@@ -668,7 +703,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
           | undefined;
         if (!returned || returned instanceof Response || !request.actorId)
           return;
-        if (ctx.path === "/api-key/create" && returned.referenceId)
+        if (ctx.path === "/api-key/create" && returned.referenceId) {
           await record({
             organizationId: returned.referenceId,
             actorType: "person",
@@ -678,7 +713,28 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             targetId: returned.id ?? null,
             data: { name: returned.name ?? null },
           });
-        if (ctx.path === "/api-key/delete" && returned.success && revoking)
+          const created = await tx
+            .select({ seq: auditEvents.seq })
+            .from(auditEvents)
+            .where(
+              and(
+                eq(auditEvents.organizationId, returned.referenceId),
+                eq(auditEvents.action, "api_key.created"),
+              ),
+            )
+            .limit(2);
+          if (returned.id)
+            later(
+              productEvent(
+                env,
+                "api_key_created",
+                returned.referenceId,
+                request.actorId,
+                { api_key_id: returned.id, first: created.length === 1 },
+              ),
+            );
+        }
+        if (ctx.path === "/api-key/delete" && returned.success && revoking) {
           await record({
             organizationId: revoking.referenceId,
             actorType: "person",
@@ -688,6 +744,36 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             targetId: revoking.id,
             data: { name: revoking.name },
           });
+          later(
+            productEvent(
+              env,
+              "api_key_revoked",
+              revoking.referenceId,
+              request.actorId,
+              { api_key_id: revoking.id },
+            ),
+          );
+        }
+        if (ctx.path === "/device/approve" && returned.success)
+          later(
+            productEvent(env, "device_authorized", null, request.actorId, {}),
+          );
+        if (ctx.path === "/update-user" && !namedBefore) {
+          const [found] = await tx
+            .select({ firstName: authSchema.user.firstName })
+            .from(authSchema.user)
+            .where(eq(authSchema.user.id, request.actorId));
+          if (found?.firstName)
+            later(
+              productEvent(
+                env,
+                "onboarding_step_completed",
+                null,
+                request.actorId,
+                { step: "name" },
+              ),
+            );
+        }
       }),
     },
     plugins: [
@@ -758,9 +844,32 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               },
             });
             later(
-              productEvent(env, "org_created", org.id, user.id, {}),
+              productEvent(
+                env,
+                "org_created",
+                org.id,
+                user.id,
+                {},
+                { $set: { role: "owner" } },
+              ),
               org.id,
             );
+            // Better Auth has added the creator as owner by now, so one
+            // membership is this one.
+            const [{ memberships = 0 } = {}] = await tx
+              .select({ memberships: count() })
+              .from(authSchema.member)
+              .where(eq(authSchema.member.userId, user.id));
+            if (memberships === 1)
+              later(
+                productEvent(
+                  env,
+                  "onboarding_step_completed",
+                  org.id,
+                  user.id,
+                  { step: "organization" },
+                ),
+              );
           },
           async afterUpdateOrganization({ organization: org, user }) {
             if (!org) return;
@@ -810,19 +919,35 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               targetId: user.id,
               data: { role: member.role, invitation: invitation.id },
             });
+            const role = member.role as "member";
             later(
               productEvent(
                 env,
                 "member_joined",
                 member.organizationId,
                 user.id,
-                {
-                  member_user_id: user.id,
-                  role: member.role as "member",
-                  via: "invitation",
-                },
+                { member_user_id: user.id, role, via: "invitation" },
+                { $set: { role } },
               ),
               member.organizationId,
+            );
+            const waited = Math.max(
+              0,
+              Date.now() - new Date(invitation.createdAt).getTime(),
+            );
+            later(
+              productEvent(
+                env,
+                "invitation_accepted",
+                member.organizationId,
+                user.id,
+                {
+                  invitation_id: invitation.id,
+                  role,
+                  seconds_to_accept: Math.floor(waited / 1000),
+                  accept_wait: durationBucket(waited),
+                },
+              ),
             );
           },
           async afterAddMember({ member, user }) {
@@ -847,6 +972,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
                   role: member.role as "member",
                   via: request.actorId ? "added" : "provisioned",
                 },
+                { $set: { role: member.role as "member" } },
               ),
               member.organizationId,
             );
@@ -861,9 +987,39 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               targetId: member.userId,
               data: { from: previousRole, to: member.role },
             });
+            later(
+              productEvent(
+                env,
+                "role_changed",
+                member.organizationId,
+                request.actorId,
+                {
+                  member_user_id: member.userId,
+                  from: previousRole as "member",
+                  to: member.role as "member",
+                },
+              ),
+              member.organizationId,
+            );
+            later(
+              personIdentify(member.userId, { role: member.role as "member" }),
+            );
           },
           async afterRemoveMember({ member }) {
-            later(null, member.organizationId);
+            later(
+              productEvent(
+                env,
+                "member_removed",
+                member.organizationId,
+                request.actorId,
+                {
+                  member_user_id: member.userId,
+                  role: member.role as "member",
+                  via: request.actorId === member.userId ? "left" : "removed",
+                },
+              ),
+              member.organizationId,
+            );
             await record({
               organizationId: member.organizationId,
               actorType: "person",
@@ -1014,11 +1170,14 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             data: { role: "member", via: "sso", provider: provider.providerId },
           });
           later(
-            productEvent(env, "member_joined", organizationId, user.id, {
-              member_user_id: user.id,
-              role: "member",
-              via: "provisioned",
-            }),
+            productEvent(
+              env,
+              "member_joined",
+              organizationId,
+              user.id,
+              { member_user_id: user.id, role: "member", via: "provisioned" },
+              { $set: { role: "member" } },
+            ),
             organizationId,
           );
           // A default group that has since been deleted adds nobody.

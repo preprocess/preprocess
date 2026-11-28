@@ -66,6 +66,63 @@ export const PRODUCT_EVENTS = {
     role: ROLES,
     via: ["invitation", "added", "provisioned"],
   },
+  // Onboarding, collaboration and admin, support (PRE-160). Each fires on
+  // the server once its action commits; the auth ones through withAuth.
+  // The first name and the first organization a person saves.
+  onboarding_step_completed: { step: ["name", "organization"] },
+  // Beside member_joined via invitation: how long the invitation waited.
+  invitation_accepted: {
+    invitation_id: ID,
+    role: ROLES,
+    seconds_to_accept: COUNT,
+    accept_wait: DURATION_BUCKETS,
+  },
+  // `left` is a person removing themselves; `deprovisioned` is SCIM.
+  member_removed: {
+    member_user_id: ID,
+    role: ROLES,
+    via: ["removed", "left", "deprovisioned"],
+  },
+  role_changed: { member_user_id: ID, from: ROLES, to: ROLES },
+  group_created: { group_id: ID },
+  // An agent's access for a group; `none` is the grant removed.
+  grant_changed: {
+    agent_id: ID,
+    group_id: ID,
+    access: ["operator", "viewer", "none"],
+  },
+  // A new connection; saving an existing one again sends nothing.
+  sso_configured: { protocol: ["saml", "oidc"] },
+  // Directory sync's first token, when none was live.
+  scim_enabled: {},
+  // `first` is the organization's first key ever, by its audit log.
+  api_key_created: { api_key_id: ID, first: FLAG },
+  api_key_revoked: { api_key_id: ID },
+  audit_exported: { format: ["csv", "ndjson"], days: COUNT },
+  // One per period changed; days 0 is kept forever.
+  retention_changed: {
+    setting: ["cases", "documents", "run_capture", "run_logs"],
+    days: COUNT,
+    shortened: FLAG,
+  },
+  dataset_created: { dataset_id: ID, agent_id: ID },
+  // One page of an export; cases counts the lines it held.
+  dataset_exported: {
+    dataset_id: ID,
+    agent_id: ID,
+    format: ["sft", "preference", "replay"],
+    cases: COUNT,
+  },
+  // `preprocess login`: the person approves the code in the app, then the
+  // CLI receives its session. Neither names an organization.
+  device_authorized: {},
+  cli_login: {},
+  support_request_solved: {
+    request_id: ID,
+    by: ["customer", "agent", "operator"],
+    open_seconds: COUNT,
+    open_for: DURATION_BUCKETS,
+  },
   agent_created: { agent_id: ID },
   agent_deployed: {
     agent_id: ID,
@@ -148,12 +205,47 @@ export type OrganizationTraits = {
   plan: string;
   seats: number;
   created_at: string;
+  agents_count: number;
+  cases_30d: number;
+  credit_balance_bucket: (typeof AMOUNT_BUCKETS)[number];
+  has_sso: boolean;
+  self_hosted: boolean;
+};
+
+// The person properties a product event may set (PRE-160): `$set` for
+// what can change, `$set_once` for what was true when they first came.
+// first_seen is an ISO timestamp. Nothing else reaches a person.
+export type PersonTraits = {
+  $set?: { role?: (typeof ROLES)[number] };
+  $set_once?: {
+    signup_method?: (typeof PRODUCT_EVENTS)["signed_up"]["method"][number];
+    first_seen?: string;
+  };
+};
+
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+const PERSON_SPECS: Record<string, (value: unknown) => boolean> = {
+  role: (value) => validValue(ROLES, value),
+  signup_method: (value) => validValue(PRODUCT_EVENTS.signed_up.method, value),
+  first_seen: (value) => typeof value === "string" && ISO_TIME.test(value),
+};
+
+const personSet = (traits: Record<string, unknown> | undefined) => {
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(traits ?? {}))
+    if (PERSON_SPECS[key]?.(value)) kept[key] = value;
+    else
+      console.warn(
+        JSON.stringify({ event: "product.person_property_dropped", key }),
+      );
+  return Object.keys(kept).length ? kept : undefined;
 };
 
 // What the run-log queue carries: a finished PostHog event.
 export type ProductEvent = {
   uuid: string;
-  event: ProductEventName | "$groupidentify";
+  event: ProductEventName | "$groupidentify" | "$set";
   distinctId: string;
   timestamp: string;
   properties: Record<string, unknown>;
@@ -179,14 +271,18 @@ export const validValue = (spec: PropertySpec, value: unknown) => {
 // (a case completing) has the organization's id as its distinct id. Both
 // keep a person profile, since PostHog drops groups from personless events.
 // The Worker's IP says nothing about the person, so no GeoIP either.
-// Only signed_up has no organization yet.
+// Only signed_up has no organization yet. `person` sets the actor's
+// person properties, and only with a person as the actor.
 export const productEvent = <N extends ProductEventName>(
   env: PostHogEnv,
   name: N,
   organizationId: string | null,
   actor: string | null,
   properties: ProductProperties<N>,
+  person?: PersonTraits,
 ): ProductEvent => {
+  const $set = actor ? personSet(person?.$set) : undefined;
+  const $set_once = actor ? personSet(person?.$set_once) : undefined;
   const spec = PRODUCT_EVENTS[name] as Record<string, PropertySpec>;
   const kept: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(properties)) {
@@ -208,12 +304,26 @@ export const productEvent = <N extends ProductEventName>(
         organization_id: organizationId,
         $groups: { organization: organizationId },
       }),
+      ...($set && { $set }),
+      ...($set_once && { $set_once }),
       stage: env.STAGE ?? "unknown",
       service: "api",
       $geoip_disable: true,
     },
   };
 };
+
+// Another person's properties, such as the role an Admin gave them.
+export const personIdentify = (
+  userId: string,
+  traits: PersonTraits["$set"],
+): ProductEvent => ({
+  uuid: crypto.randomUUID(),
+  event: "$set",
+  distinctId: userId,
+  timestamp: new Date().toISOString(),
+  properties: { $set: personSet(traits) ?? {}, $geoip_disable: true },
+});
 
 // `$group_set` merges, so a change can name only what changed.
 export const organizationIdentify = (

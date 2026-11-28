@@ -87,7 +87,7 @@ const shortens = (before: number | null, after: number | null) =>
 
 // Only Owners shorten a period (or end keep-forever); Admins, and API keys,
 // which act as Admin, may lengthen one. Every change is audited with its
-// before and after values.
+// before and after values. Returns the periods it changed.
 export const setRetention = async (
   tx: Tx,
   vars: OrgVariables,
@@ -96,7 +96,7 @@ export const setRetention = async (
   const { periods: before } = await readRetention(tx, vars.org);
   const after = { ...before, ...change };
   const changed = RETENTION_KINDS.filter((k) => before[k] !== after[k]);
-  if (!changed.length) return;
+  if (!changed.length) return [];
   const shortened = changed.filter((k) => shortens(before[k], after[k]));
   if (shortened.length && vars.caller.role !== "owner")
     throw new ApiError(
@@ -126,6 +126,11 @@ export const setRetention = async (
     targetId: vars.org,
     data: { before, after, shortened },
   });
+  return changed.map((kind) => ({
+    kind,
+    days: after[kind],
+    shortened: shortened.includes(kind),
+  }));
 };
 
 export const requireOwner = (caller: Caller) => {
