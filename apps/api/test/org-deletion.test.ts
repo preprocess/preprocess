@@ -1,10 +1,11 @@
 // Deleting an organization (purge.ts): every R2 object and Durable Object
-// it owns is gone once its purge completes, another organization's are
-// untouched, the purge is safe to run again, a stalled one is sent again, and
+// it owns is gone once its purge completes, with the PostHog persons of
+// members it leaves in no organization, another organization's are untouched, the purge is safe to run again, a stalled one is sent again, and
 // completion is one log line with ids and counts only.
 
 import { orgId, withoutOrg, type OrgId } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
+import { member } from "@preprocess/db/schema/auth";
 import { cases } from "@preprocess/db/schema/cases";
 import {
   githubBuilds,
@@ -45,11 +46,18 @@ const environment: Env = testEnv({
       return Promise.resolve();
     },
   } as unknown as Env["JOBS"],
+  POSTHOG_HOST: "https://us.i.posthog.com",
+  POSTHOG_PERSONAL_API_KEY: "phx_test",
+  POSTHOG_PROJECT_ID: "1",
 });
+
+// PostHog's person deletions, answered here instead of by PostHog.
+const deletions: { url: string; auth: string | null; body: unknown }[] = [];
 
 type Seeded = {
   org: OrgId;
   owner: Client;
+  userId: string;
   agentId: string;
   previewId: string;
   caseId: string;
@@ -137,6 +145,7 @@ const seed = async (name: string): Promise<Seeded> => {
   const s: Seeded = {
     org,
     owner,
+    userId,
     agentId,
     previewId: preview.body.id,
     caseId: made!.id,
@@ -235,6 +244,16 @@ let logged: unknown[] = [];
 beforeAll(async () => {
   doomed = await seed("Doomed");
   kept = await seed("Kept");
+  // Kept's owner is in Doomed too, so still belongs to an organization after.
+  await withoutOrg(environment, "test: purge", (tx) =>
+    tx.insert(member).values({
+      id: newId("member"),
+      organizationId: doomed.org,
+      userId: kept.userId,
+      role: "member",
+      createdAt: new Date(),
+    }),
+  );
 });
 
 describe("deleting an organization", () => {
@@ -268,6 +287,8 @@ describe("deleting an organization", () => {
         ["case", doomed.agentId, doomed.caseId],
         ["scheduler", doomed.agentId, ""],
         ["scheduler", doomed.agentId, doomed.previewId],
+        ["person", "", doomed.userId],
+        ["person", "", kept.userId],
       ].sort(),
     );
     expect((await purgeRow(doomed.org))?.completedAt).toBeNull();
@@ -275,7 +296,21 @@ describe("deleting an organization", () => {
 
   it("removes every R2 object and Durable Object state it owned", async () => {
     const log = vi.spyOn(console, "log");
+    const posthog = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input, init) => {
+        const request = new Request(input, init);
+        return request.text().then((body) => {
+          deletions.push({
+            url: request.url,
+            auth: request.headers.get("authorization"),
+            body: JSON.parse(body) as unknown,
+          });
+          return new Response("{}", { status: 202 });
+        });
+      });
     await runPurgeJob(environment, jobs[0] as Extract<Job, { kind: string }>);
+    posthog.mockRestore();
     logged = log.mock.calls
       .map(([line]) => String(line))
       .filter((line) => line.includes('"organization.purged"'))
@@ -305,6 +340,16 @@ describe("deleting an organization", () => {
     expect(named).toEqual([]);
   });
 
+  it("deletes the PostHog persons of members it left in no organization", () => {
+    expect(deletions).toEqual([
+      {
+        url: "https://us.posthog.com/api/projects/1/persons/bulk_delete/",
+        auth: "Bearer phx_test",
+        body: { distinct_ids: [doomed.userId], delete_events: true },
+      },
+    ]);
+  });
+
   it("records completion with ids and counts only", async () => {
     const row = await purgeRow(doomed.org);
     expect(row?.completedAt).toBeInstanceOf(Date);
@@ -312,6 +357,8 @@ describe("deleting an organization", () => {
       case: 1,
       scheduler: 2,
       builds: 1,
+      person: 2,
+      posthogPersons: 1,
     });
     // The case's own capture goes with its object; its run's logs and the
     // deployments' bundles add to what was seeded, and support attachments

@@ -93,6 +93,8 @@ import {
   type Stage,
   publicDocsUrl,
   publicStatusUrl,
+  posthogPersonSecrets,
+  posthogPersonVars,
   posthogProject,
   posthogVars,
 } from "./src/stages.ts";
@@ -865,6 +867,16 @@ export default Alchemy.Stack(
             ),
           )),
         ...(region && optionalSecrets(statusHeartbeatSecrets)),
+        ...Object.fromEntries(
+          posthogPersonVars.map(
+            (name) =>
+              [
+                name,
+                Config.String(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        ),
+        ...optionalSecrets(posthogPersonSecrets),
         ...(region &&
           Object.fromEntries(
             supportVars.map(
