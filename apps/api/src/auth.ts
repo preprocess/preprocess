@@ -904,6 +904,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             await tx.execute(sql`
               insert into deleted_organizations (organization_id, deleted_at, final_seq, final_hash)
               select organization_id, now(), seq, hash from audit_heads where organization_id = ${org.id}`);
+            later(productEvent(env, "org_deleted", org.id, user.id, {}));
           },
           // Its support rows go by cascade; their attachments' objects here.
           async afterDeleteOrganization({ organization: org }) {
