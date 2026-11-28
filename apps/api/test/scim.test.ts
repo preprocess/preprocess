@@ -50,7 +50,7 @@ const license = async (features: string[]) => {
   const now = Date.now();
   const bytes = new TextEncoder().encode(
     JSON.stringify({
-      kid: "test-only",
+      kid: "test-scim",
       customer: "Directory Corp",
       features,
       seats: 100,
@@ -196,7 +196,7 @@ beforeAll(async () => {
       (await crypto.subtle.exportKey("raw", signing.publicKey)) as ArrayBuffer,
     ),
   );
-  licenseKeys.push(signingPublic);
+  licenseKeys["test-scim"] = signingPublic;
   licensed = testEnv({
     PREPROCESS_REGION: undefined,
     PREPROCESS_LICENSE_KEY: await license(["scim", "synced_groups"]),
@@ -204,7 +204,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  licenseKeys.splice(licenseKeys.indexOf(signingPublic), 1);
+  delete licenseKeys["test-scim"];
   vi.restoreAllMocks();
 });
 

@@ -7,7 +7,7 @@ import {
   createExecutionContext,
   waitOnExecutionContext,
 } from "cloudflare:test";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Env } from "../src/env.ts";
 import worker from "../src/index.ts";
@@ -75,20 +75,15 @@ beforeAll(async () => {
     "sign",
     "verify",
   ])) as CryptoKeyPair;
-  licenseKeys.push(
-    base64url(
-      new Uint8Array(
-        (await crypto.subtle.exportKey(
-          "raw",
-          signing.publicKey,
-        )) as ArrayBuffer,
-      ),
+  licenseKeys["test-scim-conformance"] = base64url(
+    new Uint8Array(
+      (await crypto.subtle.exportKey("raw", signing.publicKey)) as ArrayBuffer,
     ),
   );
   const now = Date.now();
   const payload = new TextEncoder().encode(
     JSON.stringify({
-      kid: "test-only",
+      kid: "test-scim-conformance",
       customer: "Conformance Corp",
       features: ["scim", "synced_groups"],
       seats: 100,
@@ -114,6 +109,10 @@ beforeAll(async () => {
     { body: {} },
   );
   token = issued.body.token;
+});
+
+afterAll(() => {
+  delete licenseKeys["test-scim-conformance"];
 });
 
 describe("discovery", () => {
