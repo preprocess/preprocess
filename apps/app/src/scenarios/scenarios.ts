@@ -83,6 +83,28 @@ export const SCENARIO_SURFACES = {
     label: "Retention",
     states: ["live", "forever", "custom", "admin", "error", "loading"],
   },
+  // Single sign-on settings (PRE-137): "live" reads the API; the rest are
+  // seeded states named after Design's frames. "admin" is an Admin's
+  // read-only view, "member" a Member's 403.
+  sso: {
+    label: "Single sign-on",
+    states: [
+      "live",
+      "configured",
+      "oidc",
+      "empty",
+      "test-passed",
+      "test-failed",
+      "required",
+      "admin",
+      "expired",
+      "locked",
+      "locked-selfhost",
+      "member",
+      "loading",
+      "error",
+    ],
+  },
   // Settings → Models: "live" reads the API; the rest are seeded catalogues,
   // roles and failures (PRE-145's frames).
   models: {
@@ -164,6 +186,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   billing: "live",
   "billing-result": "ok",
   retention: "live",
+  sso: "live",
   models: "live",
   license: "live",
   notices: "live",
@@ -179,6 +202,7 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   billing: "live",
   "billing-result": "ok",
   retention: "live",
+  sso: "live",
   models: "live",
   license: "live",
   notices: "live",

@@ -69,6 +69,7 @@ import { Route as SettingsOrganizationOpentelemetryRouteImport } from "./routes/
 import { Route as SettingsOrganizationRetentionRouteImport } from "./routes/settings/organization/retention";
 import { Route as SettingsOrganizationSandboxesRouteImport } from "./routes/settings/organization/sandboxes";
 import { Route as SettingsOrganizationSecretsRouteImport } from "./routes/settings/organization/secrets";
+import { Route as SettingsOrganizationSsoRouteImport } from "./routes/settings/organization/sso";
 import { Route as AgentsAgentIdEvaluationsIndexRouteImport } from "./routes/agents/$agentId/evaluations/index";
 import { Route as AgentsAgentIdTrainingIndexRouteImport } from "./routes/agents/$agentId/training/index";
 import { Route as AgentsAgentIdCasesIndexRouteImport } from "./routes/agents/$agentId_/cases/index";
@@ -399,6 +400,11 @@ const SettingsOrganizationSecretsRoute =
     path: "/secrets",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationSsoRoute = SettingsOrganizationSsoRouteImport.update({
+  id: "/sso",
+  path: "/sso",
+  getParentRoute: () => SettingsOrganizationRoute,
+} as any);
 const AgentsAgentIdEvaluationsIndexRoute =
   AgentsAgentIdEvaluationsIndexRouteImport.update({
     id: "/evaluations/",
@@ -511,6 +517,7 @@ export interface FileRoutesByFullPath {
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
   "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
   "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
+  "/settings/organization/sso": typeof SettingsOrganizationSsoRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -579,6 +586,7 @@ export interface FileRoutesByTo {
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
   "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
   "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
+  "/settings/organization/sso": typeof SettingsOrganizationSsoRoute;
   "/agents/$agentId": typeof AgentsAgentIdIndexRoute;
   "/settings/account": typeof SettingsAccountIndexRoute;
   "/settings/organization": typeof SettingsOrganizationIndexRoute;
@@ -651,6 +659,7 @@ export interface FileRoutesById {
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
   "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
   "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
+  "/settings/organization/sso": typeof SettingsOrganizationSsoRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -724,6 +733,7 @@ export interface FileRouteTypes {
     | "/settings/organization/retention"
     | "/settings/organization/sandboxes"
     | "/settings/organization/secrets"
+    | "/settings/organization/sso"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -792,6 +802,7 @@ export interface FileRouteTypes {
     | "/settings/organization/retention"
     | "/settings/organization/sandboxes"
     | "/settings/organization/secrets"
+    | "/settings/organization/sso"
     | "/agents/$agentId"
     | "/settings/account"
     | "/settings/organization"
@@ -863,6 +874,7 @@ export interface FileRouteTypes {
     | "/settings/organization/retention"
     | "/settings/organization/sandboxes"
     | "/settings/organization/secrets"
+    | "/settings/organization/sso"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -1331,6 +1343,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationSecretsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/sso": {
+      id: "/settings/organization/sso";
+      path: "/sso";
+      fullPath: "/settings/organization/sso";
+      preLoaderRoute: typeof SettingsOrganizationSsoRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/agents/$agentId/evaluations/": {
       id: "/agents/$agentId/evaluations/";
       path: "/evaluations";
@@ -1426,6 +1445,7 @@ interface SettingsOrganizationRouteChildren {
   SettingsOrganizationRetentionRoute: typeof SettingsOrganizationRetentionRoute;
   SettingsOrganizationSandboxesRoute: typeof SettingsOrganizationSandboxesRoute;
   SettingsOrganizationSecretsRoute: typeof SettingsOrganizationSecretsRoute;
+  SettingsOrganizationSsoRoute: typeof SettingsOrganizationSsoRoute;
   SettingsOrganizationIndexRoute: typeof SettingsOrganizationIndexRoute;
   SettingsOrganizationGroupsIndexRoute: typeof SettingsOrganizationGroupsIndexRoute;
 }
@@ -1448,6 +1468,7 @@ const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationRetentionRoute: SettingsOrganizationRetentionRoute,
   SettingsOrganizationSandboxesRoute: SettingsOrganizationSandboxesRoute,
   SettingsOrganizationSecretsRoute: SettingsOrganizationSecretsRoute,
+  SettingsOrganizationSsoRoute: SettingsOrganizationSsoRoute,
   SettingsOrganizationIndexRoute: SettingsOrganizationIndexRoute,
   SettingsOrganizationGroupsIndexRoute: SettingsOrganizationGroupsIndexRoute,
 };
