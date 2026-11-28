@@ -8,12 +8,11 @@ import {
 import type { ReactNode } from "react";
 
 import {
-  AllCaughtUpArt,
   FillsOnItsOwnArt,
   NothingSelectedArt,
 } from "../../components/empty-art";
 
-export type InboxEmptyKind = "list" | "all-read" | "pick";
+export type InboxEmptyKind = "list" | "pick" | "pick-empty-list";
 
 export function InboxEmpty({ kind }: { kind: InboxEmptyKind }) {
   let art: ReactNode;
@@ -26,17 +25,15 @@ export function InboxEmpty({ kind }: { kind: InboxEmptyKind }) {
       description =
         "Reviews, approvals, memory proposals and mentions show up here.";
       break;
-    case "all-read":
-      art = <AllCaughtUpArt />;
-      title = "All caught up";
-      description =
-        "No unread items. Reviews, approvals and mentions show up here.";
-      break;
     case "pick":
       art = <NothingSelectedArt />;
-      title = "Select an item";
-      description =
-        "Pick a notification from the list to read it and act on it.";
+      title = "No message selected";
+      description = "Choose a message from the list to read it here.";
+      break;
+    case "pick-empty-list":
+      art = null;
+      title = "No message selected";
+      description = "Messages you open from the list show up here.";
       break;
     default: {
       const _exhaustive: never = kind;
@@ -50,7 +47,7 @@ export function InboxEmpty({ kind }: { kind: InboxEmptyKind }) {
       initial={false}
     >
       <EmptyHeader className="pointer-events-auto group">
-        <EmptyMedia variant="graphic">{art}</EmptyMedia>
+        {art ? <EmptyMedia variant="graphic">{art}</EmptyMedia> : null}
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
