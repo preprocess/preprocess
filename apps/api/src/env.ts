@@ -313,6 +313,9 @@ export type Env = PostHogEnv & {
   // Google sign-in. Without both, the app shows only the emailed link.
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  // The sign-in Turnstile widget's secret (signup-protection.ts). Without it
+  // sign-in links are sent with no bot check.
+  SIGN_IN_TURNSTILE_SECRET?: string;
   // Default https://api.github.com and https://github.com; the local GitHub
   // stub in development.
   GITHUB_API_URL?: string;

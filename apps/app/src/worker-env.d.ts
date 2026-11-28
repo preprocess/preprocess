@@ -7,6 +7,8 @@ declare global {
       PREPROCESS_REGION?: string;
       /** Set when Google sign-in is configured; shows its button. */
       GOOGLE_CLIENT_ID?: string;
+      /** Set where sign-in links need the Turnstile bot check. */
+      SIGN_IN_TURNSTILE_SITEKEY?: string;
       /** PostHog's public project key and host (features/monitoring). */
       POSTHOG_KEY?: string;
       POSTHOG_HOST?: string;

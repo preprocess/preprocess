@@ -60,7 +60,7 @@ export const Route = createFileRoute("/sign-up")({
 // in ask for them the same way.
 function SignUpPage() {
   const search = Route.useSearch();
-  const { signUpOpen, google } = Route.useLoaderData();
+  const { signUpOpen, google, turnstile } = Route.useLoaderData();
   const [sent, setSent] = useState<string | null>(null);
   const next = safeRedirect(search.redirect);
   const invited = next.startsWith("/invitations/");
@@ -105,6 +105,7 @@ function SignUpPage() {
       <PasswordlessForm
         defaultEmail={search.email}
         google={google}
+        turnstile={turnstile}
         next={next}
         onSent={setSent}
         submitLabel="Sign up"
