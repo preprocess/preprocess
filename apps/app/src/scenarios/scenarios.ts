@@ -10,6 +10,25 @@
 export const SCENARIO_COOKIE_NAME = "preprocess-scenario";
 
 export const SCENARIO_SURFACES = {
+  // The home page (PRE-178): "live" reads the API; the rest are seeded
+  // personas, "empty" an Owner and Developer whose every tile is empty, and
+  // "loading" a read that never settles.
+  home: {
+    label: "Home",
+    states: [
+      "live",
+      "new-owner",
+      "owner",
+      "new-developer",
+      "developer",
+      "new-operator",
+      "operator",
+      "viewer",
+      "multi-role",
+      "empty",
+      "loading",
+    ],
+  },
   inbox: {
     label: "Inbox",
     // "live" reads the API; the rest are seeded.
@@ -202,6 +221,7 @@ export const SCENARIO_SURFACE_IDS = Object.keys(
 
 /** Development default: the API where a surface has one, else seeded. */
 export const SEEDED_SCENARIO: ScenarioSelection = {
+  home: "live",
   inbox: "seeded",
   cases: "live",
   "case-room": "conversation",
@@ -219,6 +239,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
 
 /** Builds without `import.meta.env.DEV` never serve seeded records. */
 export const UNSEEDED_SCENARIO: ScenarioSelection = {
+  home: "live",
   inbox: "live",
   cases: "live",
   "case-room": "empty",
