@@ -87,6 +87,23 @@ export const getPlan = async (env: Env, org: OrgId): Promise<Plan> => {
   );
 };
 
+// Why a paid feature is off, for settings pages to say so: the plan on our
+// cloud; self-hosted, a license that doesn't carry it, or one past its grace.
+export type Unavailable = "plan" | "license_missing" | "license_expired";
+
+export const unavailable = (
+  plan: Plan,
+  feature: Feature,
+): Unavailable | null => {
+  if (plan.has(feature)) return null;
+  const license = plan.license;
+  if (!license) return "plan";
+  return license.status === "expired" &&
+    license.license.features.includes(feature)
+    ? "license_expired"
+    : "license_missing";
+};
+
 // Whether the organization's agents may build custom sandbox environments
 // (sandbox.setup; Team, Enterprise and Internal). Presets and a plain package
 // list work on every plan.

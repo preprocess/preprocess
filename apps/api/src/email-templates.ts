@@ -467,3 +467,44 @@ export const planSwitchedEmail = (
     text: `${lines.join("\n\n")}\n\nOpen Billing: ${data.url}\n\n--\n${sentTo}\n`,
   };
 };
+
+// A synced group the identity provider removed (PRE-138, decision 2), to
+// the Developers, Owners and Admins.
+export const groupRemovedEmail = (
+  brand: Brand,
+  data: {
+    url: string;
+    orgName: string;
+    groupName: string;
+    at: Date;
+    people: number;
+    agents: number;
+  },
+): RenderedEmail => {
+  const subject = `${data.groupName} was removed from ${data.orgName}`;
+  const people = data.people === 1 ? "1 person" : `${data.people} people`;
+  const agents =
+    data.agents === 1
+      ? "1 agent still names it"
+      : `${data.agents} agents still name it`;
+  const lines = [
+    `Your identity provider removed ${data.groupName} on ${longDate(data.at)}.${data.people ? ` Its ${people} lost the access it gave.` : ""}`,
+    data.agents
+      ? `${agents}, so cases that wait on it have nobody to pick them up. Review the group in Directory sync.`
+      : "No agents name it. Review the group in Directory sync.",
+  ];
+  const sentTo = `Sent to the owners, admins and developers of ${data.orgName}${onPreprocess(brand)}.`;
+  return {
+    subject,
+    html: page(
+      brand,
+      subject,
+      clip(lines[0]!),
+      heading(escapeHtml(`${data.groupName} was removed`)) +
+        lines.map((l) => paragraph(escapeHtml(l))).join("") +
+        button("Open Directory sync", data.url) +
+        footer(escapeHtml(sentTo)),
+    ),
+    text: `${lines.join("\n\n")}\n\nOpen Directory sync: ${data.url}\n\n--\n${sentTo}\n`,
+  };
+};
