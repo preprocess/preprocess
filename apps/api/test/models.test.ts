@@ -10,6 +10,7 @@ import { modelEndpoints } from "@preprocess/db/schema/models";
 import { like } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import type { Env } from "../src/env.ts";
 import { registeredEndpoints } from "../src/model-endpoints.ts";
 import { MODEL_KEY, MODEL_ORIGIN } from "./fake-model.ts";
 import {
@@ -26,7 +27,7 @@ type Endpoint = {
   id: string;
   model: string;
   kind: string;
-  url: string;
+  host: string;
   providerModel: string;
   hasKey: boolean;
 };
@@ -35,6 +36,7 @@ type Listed = {
   kind: string;
   serving: string;
   allowed: boolean;
+  isDefault: boolean;
   label: string;
   baseModel?: string | null;
   endpoint: Endpoint | null;
@@ -49,6 +51,16 @@ let member: Client;
 let key: Client;
 let other: Client;
 let otherOrg: OrgId;
+let cloudOwner: Client;
+
+const selfHosted = testEnv({
+  PREPROCESS_REGION: undefined,
+} as unknown as Partial<Env>);
+const selfHost = (client: Client) => {
+  const moved = new Client(selfHosted, client.headers);
+  moved.cookie = client.cookie;
+  return moved;
+};
 
 const path = (rest: string, o: string = org) => `/v1/orgs/${o}${rest}`;
 
@@ -72,6 +84,16 @@ beforeAll(async () => {
   });
   other = (await signUp("Rival")).client;
   otherOrg = orgId(await createOrganization(other, "Rivalco"));
+  // Serving a built-in model from an organization's own URL is self-hosted
+  // only, so the rest of this file runs as a self-hosted install; the people
+  // signed up on our cloud, where sign-up is open.
+  cloudOwner = owner;
+  owner = selfHost(owner);
+  admin = selfHost(admin);
+  developer = selfHost(developer);
+  member = selfHost(member);
+  key = selfHost(key);
+  other = selfHost(other);
 });
 
 describe("model catalogue", () => {
@@ -86,11 +108,39 @@ describe("model catalogue", () => {
     ]);
     expect(listed.body[3]).toMatchObject({
       kind: "catalog",
-      serving: "workers-ai",
+      serving: "hosted",
       allowed: true,
+      isDefault: false,
       trainable: false,
       endpoint: null,
     });
+    expect(listed.body.filter((m) => m.isDefault).map((m) => m.id)).toEqual([
+      "deepseek-v4.1-flash",
+    ]);
+    expect(JSON.stringify(listed.body)).not.toMatch(/baseten|workers-ai/);
+  });
+
+  it("refuses serving a built-in model from your own URL on our cloud", async () => {
+    const refused = await register(cloudOwner, {
+      model: "kimi-k3.1-pro",
+      url: MODEL_ORIGIN,
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error?.code).toBe("self_hosted_only");
+    const own = await register(cloudOwner, {
+      model: "org:cloud-tuned",
+      label: "Cloud tuned",
+      url: MODEL_ORIGIN,
+      providerModel: "cloud-tuned",
+    });
+    expect(own.status).toBe(201);
+    expect(
+      (
+        await cloudOwner.call(path(`/models/endpoints/${own.body.id}`), {
+          method: "DELETE",
+        })
+      ).status,
+    ).toBe(204);
   });
 
   it("lets only Owners and Admins register an endpoint", async () => {
@@ -109,7 +159,7 @@ describe("model catalogue", () => {
     expect(created.body).toMatchObject({
       model: "kimi-k3.1-pro",
       kind: "override",
-      url: MODEL_ORIGIN,
+      host: "models.test",
       providerModel: "moonshotai/Kimi-K3.1-Pro",
       hasKey: true,
     });
@@ -161,6 +211,7 @@ describe("model catalogue", () => {
     });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ kind: "model", hasKey: false });
+    expect(created.body).not.toHaveProperty("url");
     const listed = await member.call<Listed[]>(path("/models"));
     expect(listed.body.find((m) => m.id === "org:invoices-v2")).toMatchObject({
       kind: "model",
@@ -172,8 +223,9 @@ describe("model catalogue", () => {
     });
     expect(listed.body.find((m) => m.id === "kimi-k3.1-pro")).toMatchObject({
       serving: "endpoint",
-      endpoint: { hasKey: true },
+      endpoint: { hasKey: true, host: "models.test" },
     });
+    expect(JSON.stringify(listed.body)).not.toContain(MODEL_ORIGIN);
     expect(JSON.stringify(listed.body)).not.toContain(MODEL_KEY);
   });
 
@@ -221,14 +273,23 @@ describe("model catalogue", () => {
     expect((await test(member)).status).toBe(403);
     const passed = await test(owner);
     expect(passed.status).toBe(200);
-    expect(passed.body).toMatchObject({ ok: true, status: 200, error: null });
+    expect(passed.body).toMatchObject({
+      ok: true,
+      status: 200,
+      reason: null,
+      error: null,
+    });
     const changed = await admin.call<Endpoint>(
       path(`/models/endpoints/${kimi.id}`),
       { method: "PATCH", body: { key: null } },
     );
     expect(changed.body.hasKey).toBe(false);
     const refused = await test(owner);
-    expect(refused.body).toMatchObject({ ok: false, status: 401 });
+    expect(refused.body).toMatchObject({
+      ok: false,
+      status: 401,
+      reason: "unauthorized",
+    });
     expect(
       (
         await owner.call(path(`/models/endpoints/${kimi.id}`), {
@@ -238,6 +299,18 @@ describe("model catalogue", () => {
       ).status,
     ).toBe(200);
     expect((await test(owner)).body.ok).toBe(true);
+
+    const patch = (body: unknown) =>
+      owner.call(path(`/models/endpoints/${kimi.id}`), {
+        method: "PATCH",
+        body,
+      });
+    await patch({ providerModel: "missing" });
+    expect((await test(owner)).body).toMatchObject({
+      status: 404,
+      reason: "model_not_found",
+    });
+    await patch({ providerModel: "moonshotai/Kimi-K3.1-Pro" });
   });
 
   it("hands the runtime the decrypted endpoints of its own organization only", async () => {

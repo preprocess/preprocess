@@ -7,14 +7,14 @@
 import { orgId, withOrg, type Tx } from "@preprocess/db/client";
 import { agents } from "@preprocess/db/schema/access";
 import { deployments } from "@preprocess/db/schema/deployments";
-import { evalRuns } from "@preprocess/db/schema/evals";
+import { evalRuns, evalSuites } from "@preprocess/db/schema/evals";
 import { modelEndpoints } from "@preprocess/db/schema/models";
 import {
   agentOverrides,
   organizationDefaults,
 } from "@preprocess/db/schema/settings";
 import { isOrgModel } from "@preprocess/sdk/protocol";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { ApiError } from "./cases.ts";
 import { decrypt, encrypt, orgKey, orgKeyVersion } from "./crypto.ts";
@@ -87,45 +87,93 @@ export const openKey = async (
   return decrypt(dataKey, row.keyCiphertext, aad(row.organizationId, row.id));
 };
 
-// What still names an organization model, which keeps it from being deleted:
-// a live deployment's code, an agent override, the organization default, or
-// an eval run that has not finished.
-export const modelUsers = async (tx: Tx, model: string) => {
-  const named = sql`${deployments.manifest}->>'model' = ${model}`;
+// What still names an organization model, which keeps it from being deleted
+// (design doc 10): a live deployment's code, an agent override, the
+// organization default, or an eval suite with a run that has not finished.
+export type ModelRef =
+  | {
+      type: "deployment";
+      agentId: string;
+      agentName: string;
+      deploymentId: string;
+      production: boolean;
+    }
+  | { type: "settings"; agentId: string; agentName: string }
+  | { type: "organization_default" }
+  | { type: "eval_suite"; suiteId: string; suiteName: string };
+
+export const modelUsers = async (
+  tx: Tx,
+  model: string,
+): Promise<ModelRef[]> => {
   const coded = await tx
-    .select({ id: deployments.id, agentId: deployments.agentId })
+    .select({
+      id: deployments.id,
+      agentId: deployments.agentId,
+      agentName: agents.slug,
+    })
     .from(deployments)
-    .where(named);
-  const live: string[] = [];
+    .innerJoin(agents, eq(agents.id, deployments.agentId))
+    .where(sql`${deployments.manifest}->>'model' = ${model}`)
+    .orderBy(deployments.createdAt);
+  const refs: ModelRef[] = [];
   for (const agentId of new Set(coded.map((d) => d.agentId))) {
-    const ids = new Set((await liveDeployments(tx, agentId)).map((d) => d.id));
-    live.push(...coded.filter((d) => ids.has(d.id)).map((d) => d.id));
+    const live = new Set((await liveDeployments(tx, agentId)).map((d) => d.id));
+    const [production] = await tx
+      .select({ id: deployments.id })
+      .from(deployments)
+      .where(
+        and(
+          eq(deployments.agentId, agentId),
+          isNotNull(deployments.promotedAt),
+        ),
+      )
+      .orderBy(desc(deployments.promotedAt))
+      .limit(1);
+    for (const d of coded)
+      if (d.agentId === agentId && live.has(d.id))
+        refs.push({
+          type: "deployment",
+          agentId,
+          agentName: d.agentName,
+          deploymentId: d.id,
+          production: d.id === production?.id,
+        });
   }
-  const overridden = await tx
-    .select({ slug: agents.slug })
+  for (const a of await tx
+    .select({ agentId: agents.id, agentName: agents.slug })
     .from(agentOverrides)
     .innerJoin(agents, eq(agents.id, agentOverrides.agentId))
-    .where(sql`${agentOverrides.values}->>'model' = ${model}`);
+    .where(sql`${agentOverrides.values}->>'model' = ${model}`))
+    refs.push({ type: "settings", ...a });
   const [defaulted] = await tx
     .select({ organizationId: organizationDefaults.organizationId })
     .from(organizationDefaults)
     .where(sql`${organizationDefaults.values}->>'model' = ${model}`);
-  const runs = await tx
-    .select({ id: evalRuns.id })
+  if (defaulted) refs.push({ type: "organization_default" });
+  for (const suite of await tx
+    .selectDistinct({ suiteId: evalSuites.id, suiteName: evalSuites.name })
     .from(evalRuns)
+    .innerJoin(evalSuites, eq(evalSuites.id, evalRuns.suiteId))
     .where(
       and(
         eq(evalRuns.model, model),
         inArray(evalRuns.status, ["queued", "running"]),
       ),
-    );
-  return [
-    ...live.map((id) => `deployment ${id}`),
-    ...overridden.map((a) => `the ${a.slug} agent's settings`),
-    ...(defaulted ? ["the organization default"] : []),
-    ...runs.map((r) => `eval run ${r.id}`),
-  ];
+    ))
+    refs.push({ type: "eval_suite", ...suite });
+  return refs;
 };
+
+// How a refusal names a ref.
+export const describeRef = (ref: ModelRef) =>
+  ref.type === "deployment"
+    ? `the ${ref.agentName} agent's ${ref.production ? "production" : "preview"} deployment ${ref.deploymentId}`
+    : ref.type === "settings"
+      ? `the ${ref.agentName} agent's settings`
+      : ref.type === "organization_default"
+        ? "the organization default"
+        : `the eval suite ${ref.suiteName}`;
 
 // Every endpoint the organization registered, by model, for the runtime at
 // case start (Platform.modelEndpoints).

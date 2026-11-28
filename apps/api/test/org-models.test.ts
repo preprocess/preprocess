@@ -57,6 +57,7 @@ let b: Who;
 let endpointId: string;
 let deploymentId: string;
 let suiteId: string;
+let invoicesDeployment: string;
 
 beforeAll(async () => {
   a = await seedOrg("Orgmodelco");
@@ -113,6 +114,7 @@ describe("choosing an organization model", () => {
     const deployed = await deploy(a, "invoices", orgModelAgent);
     expect(deployed.status).toBe(201);
     expect(deployed.body.status).toBe("ready");
+    invoicesDeployment = deployed.body.id;
   });
 
   it("takes one as an agent setting and an eval run's model", async () => {
@@ -210,10 +212,9 @@ describe("running on an organization model", () => {
 describe("deleting an organization model", () => {
   it("is refused while a deployment, a setting or an eval run names it", async () => {
     // A run still going (the suite's runs above had no cases to wait on).
-    const runId = newId("evalRun");
     await withOrg(testEnv(), a.org, (tx) =>
       tx.insert(evalRuns).values({
-        id: runId,
+        id: newId("evalRun"),
         organizationId: a.org,
         suiteId,
         deploymentId,
@@ -223,14 +224,42 @@ describe("deleting an organization model", () => {
         createdBy: "test",
       }),
     );
-    const refused = await call(a, `/models/endpoints/${endpointId}`, {
-      method: "DELETE",
-    });
+    const refused = await call<{ error: { refs: unknown[] } }>(
+      a,
+      `/models/endpoints/${endpointId}`,
+      { method: "DELETE" },
+    );
     expect(refused.status).toBe(409);
     expect(refused.body.error?.code).toBe("model_in_use");
-    expect(refused.body.error?.message).toContain("network-agent");
-    expect(refused.body.error?.message).toContain("deployment ");
-    expect(refused.body.error?.message).toContain(`eval run ${runId}`);
+    const anyId: unknown = expect.any(String);
+    const refs = [
+      {
+        type: "deployment",
+        agentId: anyId,
+        agentName: "invoices",
+        deploymentId: invoicesDeployment,
+        production: true,
+      },
+      {
+        type: "settings",
+        agentId: anyId,
+        agentName: "network-agent",
+      },
+      { type: "eval_suite", suiteId, suiteName: "Compare" },
+    ];
+    expect(refused.body.error.refs).toEqual(refs);
+    expect(refused.body.error.message).toBe(
+      `The model ${MODEL} is still in use by the invoices agent's production deployment ${invoicesDeployment}, the network-agent agent's settings, the eval suite Compare. Move those to another model first.`,
+    );
+    // The Models page opens the dialog in the same state.
+    const listed = await call<{ id: string; usedBy?: unknown[] }[]>(
+      a,
+      "/models",
+    );
+    expect(listed.body.find((m) => m.id === MODEL)?.usedBy).toEqual(refs);
+    expect(
+      listed.body.find((m) => m.id === "kimi-k3.1-pro"),
+    ).not.toHaveProperty("usedBy");
   });
 
   it("is not reachable from another organization", async () => {

@@ -38,13 +38,19 @@ import { notifyLater } from "./notify.ts";
 import { queueWebhooks } from "./webhooks.ts";
 import type { OutboxKind, OutboxMessage } from "./outbox.ts";
 
-// Errors in doc 04's shape: { error: { code, message } }.
+// Errors in doc 04's shape: { error: { code, message } }, with any details
+// a client acts on beside them (model_in_use's refs).
 export class ApiError extends HTTPException {
   readonly code: string;
-  constructor(status: ContentfulStatusCode, code: string, message: string) {
+  constructor(
+    status: ContentfulStatusCode,
+    code: string,
+    message: string,
+    details: Record<string, unknown> = {},
+  ) {
     super(status, {
       message,
-      res: Response.json({ error: { code, message } }, { status }),
+      res: Response.json({ error: { code, message, ...details } }, { status }),
     });
     this.code = code;
   }
