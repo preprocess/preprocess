@@ -9,14 +9,17 @@ import type { Env } from "./env.ts";
 // Per-organization rate limits (spec 15), counted in one-minute windows: every
 // /v1 request in an organization, every request with one API key, and every
 // sign-in attempt from one client address. Our own organizations
-// (BILLING_INTERNAL_ORGS) are never limited.
+// (BILLING_INTERNAL_ORGS) are never limited by these. Feedback is counted
+// per API key or person by the hour (FEEDBACK_WINDOW_MS).
 export const LIMITS = {
   org: 2400,
   apiKey: 600,
   auth: 30,
+  feedback: 20,
 } as const;
 
 const WINDOW_MS = 60_000;
+export const FEEDBACK_WINDOW_MS = 3_600_000;
 
 // One object per organization holds its own count and each of its API keys';
 // one per client address holds that address's sign-in attempts.
@@ -25,33 +28,47 @@ export const rateLimitName = {
   auth: (ip: string) => `auth:rate:${ip}`,
 };
 
-type Bucket = { name: string; limit: number };
+// A bucket counts in one-minute windows unless it names its own.
+type Bucket = { name: string; limit: number; windowMs?: number };
 
 // The counts live in memory: an object evicted while idle has nothing left
 // worth counting. A request is counted in every bucket or in none, and the
 // answer names the buckets that are full.
 export class RateLimiter extends DurableObject<Env> {
-  #window = 0;
-  #counts = new Map<string, number>();
+  #counts = new Map<
+    string,
+    { windowMs: number; window: number; count: number }
+  >();
 
   take(buckets: Bucket[]): { over: string[]; retryAfter: number } {
     const now = Date.now();
-    const window = Math.floor(now / WINDOW_MS);
-    if (window !== this.#window) {
-      this.#window = window;
-      this.#counts.clear();
-    }
-    const over = buckets
-      .filter((b) => (this.#counts.get(b.name) ?? 0) >= b.limit)
-      .map((b) => b.name);
-    if (over.length)
+    for (const [name, entry] of this.#counts)
+      if (entry.window !== Math.floor(now / entry.windowMs))
+        this.#counts.delete(name);
+    const counted = buckets.map((b) => {
+      const windowMs = b.windowMs ?? WINDOW_MS;
+      const window = Math.floor(now / windowMs);
+      const entry = this.#counts.get(b.name);
+      const count = entry?.windowMs === windowMs ? entry.count : 0;
+      return { ...b, windowMs, window, count };
+    });
+    const full = counted.filter((b) => b.count >= b.limit);
+    if (full.length)
       return {
-        over,
-        retryAfter: Math.ceil(((window + 1) * WINDOW_MS - now) / 1000),
+        over: full.map((b) => b.name),
+        retryAfter: Math.max(
+          ...full.map((b) =>
+            Math.ceil(((b.window + 1) * b.windowMs - now) / 1000),
+          ),
+        ),
       };
-    for (const b of buckets)
-      this.#counts.set(b.name, (this.#counts.get(b.name) ?? 0) + 1);
-    return { over, retryAfter: 0 };
+    for (const b of counted)
+      this.#counts.set(b.name, {
+        windowMs: b.windowMs,
+        window: b.window,
+        count: b.count + 1,
+      });
+    return { over: [], retryAfter: 0 };
   }
 }
 
@@ -156,4 +173,27 @@ export const authRateLimit = async (
   if (!result.over.length) return null;
   reportLimited(env, waitUntil, `auth:${ip}`, "sign_in");
   return tooManyRequests(result.retryAfter);
+};
+
+// Feedback (routes/feedback.ts): per API key, or per person for a session,
+// in the organization's own object. Asked before the request, so the limit
+// holds exactly; the answer is the seconds to wait, or 0.
+export const feedbackBucket = (caller: OrgVariables["caller"]) =>
+  caller.type === "api_key"
+    ? `feedback:key:${caller.keyId}`
+    : `feedback:user:${caller.userId}`;
+
+export const feedbackRateLimit = async (
+  env: Env,
+  org: string,
+  caller: OrgVariables["caller"],
+) => {
+  const result = await take(env, rateLimitName.org(org), [
+    {
+      name: feedbackBucket(caller),
+      limit: LIMITS.feedback,
+      windowMs: FEEDBACK_WINDOW_MS,
+    },
+  ]);
+  return result.over.length ? result.retryAfter : 0;
 };

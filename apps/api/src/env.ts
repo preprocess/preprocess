@@ -338,4 +338,7 @@ export type Env = PostHogEnv & {
   CLOUDFLARE_ACCOUNT_ID?: string;
   LOG_SQL_BUCKET?: string;
   LOG_SQL_TOKEN?: string;
+  // Where feedback about Preprocess goes (routes/feedback.ts), our cloud
+  // only: support@preprocess.com in production. Unset, nothing is emailed.
+  FEEDBACK_EMAIL_TO?: string;
 };

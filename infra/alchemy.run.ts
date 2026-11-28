@@ -80,6 +80,7 @@ import {
   runtimeModelSecrets,
   statusHeartbeatSecrets,
   statusHeartbeatVars,
+  feedbackProductionVars,
   trainingVars,
   type SelfHostStage,
   type Stage,
@@ -804,6 +805,17 @@ export default Alchemy.Stack(
             ),
           )),
         ...(region && optionalSecrets(statusHeartbeatSecrets)),
+        ...(region &&
+          stage === "production" &&
+          Object.fromEntries(
+            feedbackProductionVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
         ...(region &&
           billingOrgs[stage] && {
             BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),

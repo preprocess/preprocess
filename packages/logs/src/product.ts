@@ -397,6 +397,9 @@ export const PRODUCT_EVENTS = {
       "developers_opentelemetry",
     ],
   },
+  // Feedback about Preprocess (apps/api routes/feedback.ts). The category
+  // only: never the message, its ids or the client.
+  feedback_submitted: { category: ["bug", "idea", "question", "other"] },
 } as const satisfies Record<string, Record<string, PropertySpec>>;
 
 export type ProductEventName = keyof typeof PRODUCT_EVENTS;

@@ -67,6 +67,7 @@ import {
   evalSuites,
 } from "../src/schema/evals.ts";
 import { directorySync } from "../src/schema/directory-sync.ts";
+import { feedback } from "../src/schema/feedback.ts";
 import { otelExports } from "../src/schema/otel.ts";
 import {
   organizationRetention,
@@ -426,6 +427,16 @@ export const seedOrganization = async (name: string) =>
       organizationId: org,
       lastSyncAt: new Date(),
     });
+    await tx.insert(feedback).values({
+      id: newId("feedback"),
+      organizationId: org,
+      createdByUserId: userId,
+      category: "bug",
+      message: "The deploy log stops at the build step.",
+      agentId,
+      caseId,
+      client: "fixture",
+    });
     await tx.insert(organizationRetention).values({
       organizationId: org,
       runCaptureDays: 30,
@@ -660,6 +671,7 @@ export const tenantTables = {
   directory_sync: "organization_id",
   organization_purges: "organization_id",
   organization_purge_objects: "organization_id",
+  feedback: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

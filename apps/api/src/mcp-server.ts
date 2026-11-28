@@ -117,6 +117,7 @@ export const TOOLS: Record<
     path: "/agents/{agent}/memories/{memory}",
     destructive: true,
   },
+  send_feedback: { method: "post", path: "/feedback" },
 };
 
 type Schema = Record<string, unknown>;
