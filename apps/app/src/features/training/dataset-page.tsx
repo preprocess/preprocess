@@ -62,7 +62,7 @@ import { SettingsStacked } from "../settings/settings-widgets";
 import {
   CLOSED,
   deploymentLabel,
-  seededFields,
+  useAnswerFields,
   useCanExport,
   useDataset,
   useDatasetExport,
@@ -288,7 +288,6 @@ function DatasetView({
           change={change}
           draft={draft}
           errors={showErrors ? errors : { range: null, status: null }}
-          fieldsSeen={preview.data?.cases.flatMap((c) => c.editedFields) ?? []}
           readOnly={!canExport}
         />
       </SettingsSection>
@@ -541,20 +540,17 @@ function QueryRows({
   draft,
   change,
   errors,
-  fieldsSeen,
   readOnly,
 }: {
   agentSlug: string;
   draft: Draft;
   change: (next: Partial<Draft>) => void;
   errors: { range: string | null; status: string | null };
-  fieldsSeen: string[];
   readOnly: boolean;
 }) {
   const deployments = useDeployments(agentSlug);
-  const fields = [
-    ...new Set([...seededFields(), ...fieldsSeen, ...draft.fields]),
-  ];
+  const answerFields = useAnswerFields(agentSlug);
+  const fields = [...new Set([...(answerFields.data ?? []), ...draft.fields])];
   return (
     <SettingsRows>
       <SettingsRow

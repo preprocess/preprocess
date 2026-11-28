@@ -350,10 +350,22 @@ export function useDeployments(agent: string) {
   });
 }
 
-/** Output fields to offer for "These fields": seeded names in development;
- *  live, the fields the preview shows edited, plus any already picked. */
-export function seededFields() {
-  return scenario() === "live" ? [] : SEEDED_FIELDS;
+/** The answer fields to offer for "These fields". */
+export function useAnswerFields(agent: string) {
+  const organizationId = useOrganizationId();
+  const state = scenario();
+  return useQuery({
+    queryKey: ["training", organizationId, agent, "answer-fields", state],
+    queryFn: async (): Promise<string[]> =>
+      state === "live"
+        ? (
+            await orgApi<{ fields: string[] }>(
+              organizationId,
+              agentPath(agent) + "/answer-fields",
+            )
+          ).fields
+        : SEEDED_FIELDS,
+  });
 }
 
 export const deploymentLabel = (deployment: TrainingDeployment) =>
