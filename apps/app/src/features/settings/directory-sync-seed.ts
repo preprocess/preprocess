@@ -123,7 +123,11 @@ const NEVER: DirectorySync = {
   ...SYNCED,
   lastSyncAt: null,
   token: null,
-  sync: { running: false, received: null, people: { synced: 0, deactivated: 0 } },
+  sync: {
+    running: false,
+    received: null,
+    people: { synced: 0, deactivated: 0 },
+  },
   groups: [],
 };
 
@@ -189,4 +193,3 @@ export function seededDirectorySync(
       return owner({ ...LOCKED, reason: "license_missing" });
   }
 }
-

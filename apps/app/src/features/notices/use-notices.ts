@@ -56,11 +56,11 @@ export function useNotices() {
       syncState !== "live"
         ? seededRemovedGroups(syncState)
         : (
-        await orgApi<{ groups: RemovedGroup[] }>(
-          organizationId,
-          "/scim/removed-groups",
-        )
-      ).groups,
+            await orgApi<{ groups: RemovedGroup[] }>(
+              organizationId,
+              "/scim/removed-groups",
+            )
+          ).groups,
   });
   const dismissed = useQuery({
     queryKey: DISMISSED,

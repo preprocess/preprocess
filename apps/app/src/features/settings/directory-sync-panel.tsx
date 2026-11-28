@@ -130,7 +130,8 @@ function Loaded({
   const [dialog, setDialog] = useState<Dialog | null>(initialDialog);
   const actions = useDirectorySyncActions();
   const close = (kind: Dialog["kind"]) => (open: boolean) => {
-    if (!open) setDialog((current) => (current?.kind === kind ? null : current));
+    if (!open)
+      setDialog((current) => (current?.kind === kind ? null : current));
   };
   const readOnly = !settings.canEdit;
   return (

@@ -23,8 +23,7 @@ import { useOwns } from "./use-role";
 
 type Method = "POST" | "DELETE";
 type Result<T> =
-  | { ok: true; data: T }
-  | { ok: false; status: number; message: string };
+  { ok: true; data: T } | { ok: false; status: number; message: string };
 
 async function settle<T>(response: Response): Promise<Result<T>> {
   if (response.ok)
@@ -69,9 +68,7 @@ const liveWrite = createServerFn({ method: "POST" })
     return settle(
       await activeOrgRequest(data.path, {
         method: data.method,
-        ...(data.body === undefined
-          ? {}
-          : { body: JSON.stringify(data.body) }),
+        ...(data.body === undefined ? {} : { body: JSON.stringify(data.body) }),
       }),
     );
   });
@@ -97,8 +94,7 @@ function seeded(state: DirectorySyncSeedState): DirectorySyncView | undefined {
 export function seededRemovedGroups(
   state: DirectorySyncSeedState,
 ): RemovedGroup[] {
-  if (state === "member" || state === "loading" || state === "error")
-    return [];
+  if (state === "member" || state === "loading" || state === "error") return [];
   const { settings } = seededWrites.get(state) ?? seededDirectorySync(state);
   return settings.groups.flatMap((group) =>
     group.removedAt
