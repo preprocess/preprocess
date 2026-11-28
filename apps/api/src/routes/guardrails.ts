@@ -42,7 +42,13 @@ import {
 } from "../network.ts";
 import type { NetworkRules } from "../network.ts";
 import { sandboxMaxSize, setSandboxMaxSize, sizeAllowed } from "../sandbox.ts";
-import { setSpendingLimit, toMicro } from "./spending.ts";
+import { spendingLimit } from "../spend.ts";
+import {
+  limitChange,
+  setSpendingLimit,
+  toMicro,
+  trackLimitChange,
+} from "./spending.ts";
 
 const OrgParam = z.object({ org: z.string() });
 const AgentParam = OrgParam.extend({ agent: z.string() });
@@ -356,6 +362,7 @@ const decide = async (
   approve: boolean,
 ) => {
   requireAdmin(vars.caller);
+  let limitSet: ReturnType<typeof limitChange> = null;
   const body = await withOrg(env, vars.org, async (tx) => {
     const [request] = await requestRows(tx).where(eq(guardrailRequests.id, id));
     if (!request) throw new ApiError(404, "not_found", "No such request.");
@@ -373,12 +380,18 @@ const decide = async (
       .update(guardrailRequests)
       .set({ status, decidedBy, decidedAt })
       .where(eq(guardrailRequests.id, id));
+    const limitBefore =
+      approve && request.change.kind === "spending_limit"
+        ? await spendingLimit(tx)
+        : undefined;
     if (approve)
       await syncAgents(
         tx,
         vars.org,
         await applyChange(tx, vars, request.agentId, request.change),
       );
+    if (limitBefore !== undefined)
+      limitSet = limitChange(limitBefore, await spendingLimit(tx), "request");
     await audit(tx, {
       ...eventBase(vars),
       action: approve
@@ -390,6 +403,7 @@ const decide = async (
     });
     return toRequest({ ...request, status, decidedBy, decidedAt });
   });
+  await trackLimitChange(env, vars, limitSet);
   return body;
 };
 

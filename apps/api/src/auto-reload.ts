@@ -7,8 +7,10 @@
 import { orgId, withOrg, type Tx } from "@preprocess/db/client";
 import { organization } from "@preprocess/db/schema/auth";
 import { autoReloadStates } from "@preprocess/db/schema/billing";
+import { amountBucket } from "@preprocess/logs";
 import { eq } from "drizzle-orm";
 
+import { trackEvent } from "./analytics.ts";
 import { CREDITS } from "./billing.ts";
 import type { Env } from "./env.ts";
 
@@ -69,6 +71,8 @@ export type AutumnEvent = {
     customer_id?: string;
     feature_id?: string;
     reason?: string;
+    quantity?: number;
+    quantity_granted?: number;
     error?: { code?: string | null; decline_code?: string | null } | null;
   };
 };
@@ -90,7 +94,7 @@ const nextMonthStart = (at: Date) =>
 const clearFailure = { failedAt: null, failedReason: null };
 
 // Runs fn for one of our organizations, or logs and skips a customer that
-// isn't one, so Autumn doesn't retry it.
+// isn't one, so Autumn doesn't retry it. True once fn's transaction commits.
 const onOrganization = (
   env: Env,
   customer: string,
@@ -106,7 +110,11 @@ const onOrganization = (
       console.log(
         JSON.stringify({ event: "autumn.webhook.unknown_customer", customer }),
       );
+    return Boolean(known);
   });
+
+const whole = (n: number | undefined) =>
+  typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
 
 // Records what a webhook says about an organization's credits auto-reload.
 export const recordAutumnEvent = async (env: Env, event: AutumnEvent) => {
@@ -114,12 +122,19 @@ export const recordAutumnEvent = async (env: Env, event: AutumnEvent) => {
   const org = data?.customer_id;
   if (!data || !org || data.feature_id !== CREDITS) return;
   if (event.type === "billing.auto_topup_succeeded") {
-    await onOrganization(env, org, (tx) =>
+    const known = await onOrganization(env, org, (tx) =>
       tx
         .update(autoReloadStates)
         .set({ ...clearFailure, capReachedUntil: null, updatedAt: new Date() })
         .where(eq(autoReloadStates.organizationId, org)),
     );
+    const credits = whole(data.quantity_granted ?? data.quantity);
+    if (known)
+      await trackEvent(env, "credits_topped_up", org, null, {
+        credits,
+        credits_bucket: amountBucket(credits),
+        source: "auto_reload",
+      });
     return;
   }
   if (event.type !== "billing.auto_topup_failed") return;
@@ -146,7 +161,7 @@ export const recordAutumnEvent = async (env: Env, event: AutumnEvent) => {
     );
     return;
   }
-  await onOrganization(env, org, (tx) =>
+  const known = await onOrganization(env, org, (tx) =>
     tx
       .insert(autoReloadStates)
       .values({ organizationId: org, ...change })
@@ -155,6 +170,18 @@ export const recordAutumnEvent = async (env: Env, event: AutumnEvent) => {
         set: { ...change, updatedAt: new Date() },
       }),
   );
+  const credits = whole(data.quantity);
+  if (known)
+    await trackEvent(env, "auto_reload_failed", org, null, {
+      cause:
+        "capReachedUntil" in change
+          ? "monthly_cap"
+          : change.failedReason === "card_declined"
+            ? "card_declined"
+            : "card",
+      credits,
+      credits_bucket: amountBucket(credits),
+    });
 };
 
 // A successful Retry or top-up resolves a failed reload.
