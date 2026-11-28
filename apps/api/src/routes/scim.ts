@@ -59,7 +59,7 @@ const SyncedGroup = z
 
 const Status = z
   .object({
-    included: z.boolean().openapi({ description: "Whether the plan has scim" }),
+    allowed: z.boolean().openapi({ description: "Whether the plan has scim" }),
     baseUrl: z.string(),
     connection: z.object({ id: z.string(), createdAt: z.string() }).nullable(),
     lastSyncAt: z.string().nullable().openapi({
@@ -154,7 +154,7 @@ export const scimRoutes = new OpenAPIHono<{
     async (c) => {
       requireOwner(c.var.caller);
       const org = c.var.org;
-      const included = (await getPlan(c.env, org)).has("scim");
+      const allowed = (await getPlan(c.env, org)).has("scim");
       const status = await withoutOrg(c.env, "scim: status", async (tx) => {
         const connection = await activeConnection(tx, org);
         const tokens = await credentials(tx, org).orderBy(
@@ -203,7 +203,7 @@ export const scimRoutes = new OpenAPIHono<{
       });
       return c.json(
         {
-          included,
+          allowed,
           baseUrl: new URL(SCIM_PATH, c.env.APP_URL).toString(),
           ...status,
         },
@@ -241,7 +241,10 @@ export const scimRoutes = new OpenAPIHono<{
     async (c) => {
       const userId = requireOwner(c.var.caller);
       const org = c.var.org;
-      (await getPlan(c.env, org)).assert("scim");
+      if (!(await getPlan(c.env, org)).has("scim"))
+        throw new HTTPException(403, {
+          message: "Directory sync isn't included in this organization's plan.",
+        });
       const { expiresInDays } = c.req.valid("json");
       const issued = await withoutOrg(
         c.env,

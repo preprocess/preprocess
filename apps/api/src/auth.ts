@@ -8,6 +8,7 @@
 // an error status rolls the transaction back.
 
 import { apiKey } from "@better-auth/api-key";
+import { sso } from "@better-auth/sso";
 import { audit, startAuditChain } from "@preprocess/db/audit";
 import type { AuditInput } from "@preprocess/db/audit";
 import { withoutOrg, withoutOrgRead } from "@preprocess/db/client";
@@ -98,7 +99,33 @@ const idKinds: Record<string, IdKind> = {
   member: "member",
   invitation: "invitation",
   apikey: "apikey",
+  ssoProvider: "ssoProvider",
 };
+
+// Where an SSO sign-in lands: the OIDC callback and the SAML assertion
+// consumer, each with the provider in the path.
+const SSO_CALLBACK = /^\/sso\/(callback|saml2\/sp\/acs)\//;
+// The plugin's management routes. The app manages a connection through
+// /v1/orgs/{org}/sso (routes/sso.ts), which checks the plan and the Owner and
+// writes the audit event; these HTTP routes are off.
+export const SSO_MANAGEMENT_PATHS = [
+  "/sso/register",
+  "/sso/update-provider",
+  "/sso/delete-provider",
+  "/sso/providers",
+  "/sso/get-provider",
+  "/sso/request-domain-verification",
+  "/sso/verify-domain",
+];
+// The DNS TXT record that proves a domain: _preprocess-sso-<provider>.<domain>.
+export const SSO_TOKEN_PREFIX = "preprocess-sso";
+
+// The domains a connection signs in, as stored (comma-separated).
+export const ssoDomains = (domain: string) =>
+  domain
+    .split(",")
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
 
 // Who is acting and from where, for the audit events this request writes.
 export type RequestContext = {
@@ -107,12 +134,18 @@ export type RequestContext = {
   // The signed-in person, looked up before the handler runs; null on sign-up
   // and sign-in.
   actorId: string | null;
+  // An OIDC identity provider this one request may reach (Better Auth only
+  // fetches discovery from trusted origins): the issuer an Owner is saving
+  // (routes/sso.ts), or the connection an SSO callback names. Never trusted
+  // for anything else, so one organization's IdP is no origin of ours.
+  idpOrigins: string[];
 };
 
 export const requestContext = (request: Request): RequestContext => ({
   ip: request.headers.get("cf-connecting-ip"),
   requestId: request.headers.get("cf-ray") ?? crypto.randomUUID(),
   actorId: null,
+  idpOrigins: [],
 });
 
 export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
@@ -135,18 +168,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       .select({ users: count() })
       .from(authSchema.user);
     if (users === 0) return true;
-    const [invited] = await tx
-      .select({ id: authSchema.invitation.id })
-      .from(authSchema.invitation)
-      .where(
-        and(
-          sql`lower(${authSchema.invitation.email}) = lower(${email})`,
-          eq(authSchema.invitation.status, "pending"),
-          gt(authSchema.invitation.expiresAt, new Date()),
-        ),
-      )
-      .limit(1);
-    return Boolean(invited);
+    return pendingInvitation(email);
   };
   // A first or last name, when set, is set together and spelled out as
   // `name`, which every other reader uses.
@@ -175,10 +197,82 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       message: "Sign-up on this install needs an invitation.",
     });
 
+  const pendingInvitation = async (email: string, organizationId?: string) => {
+    const [invited] = await tx
+      .select({ id: authSchema.invitation.id })
+      .from(authSchema.invitation)
+      .where(
+        and(
+          sql`lower(${authSchema.invitation.email}) = lower(${email})`,
+          eq(authSchema.invitation.status, "pending"),
+          gt(authSchema.invitation.expiresAt, new Date()),
+          organizationId
+            ? eq(authSchema.invitation.organizationId, organizationId)
+            : undefined,
+        ),
+      )
+      .limit(1);
+    return Boolean(invited);
+  };
+  const ssoConnection = async (providerId: unknown) => {
+    if (typeof providerId !== "string") return undefined;
+    const [found] = await tx
+      .select()
+      .from(authSchema.ssoProvider)
+      .where(eq(authSchema.ssoProvider.providerId, providerId));
+    return found;
+  };
+  // The organization whose verified, enforced connection covers this
+  // address, unless the person is one of its Owners: Owners keep every way in
+  // so a broken connection can't lock the organization out.
+  const ssoRequired = async (email: string) => {
+    const domain = email.split("@").at(-1)?.toLowerCase();
+    if (!domain) return undefined;
+    const enforced = await tx
+      .select({
+        organizationId: authSchema.ssoProvider.organizationId,
+        domain: authSchema.ssoProvider.domain,
+      })
+      .from(authSchema.ssoProvider)
+      .where(
+        and(
+          eq(authSchema.ssoProvider.enforced, true),
+          eq(authSchema.ssoProvider.domainVerified, true),
+        ),
+      );
+    const covering = enforced.find(
+      (c) => c.organizationId && ssoDomains(c.domain).includes(domain),
+    );
+    if (!covering?.organizationId) return undefined;
+    const [owner] = await tx
+      .select({ id: authSchema.member.id })
+      .from(authSchema.member)
+      .innerJoin(
+        authSchema.user,
+        eq(authSchema.user.id, authSchema.member.userId),
+      )
+      .where(
+        and(
+          eq(authSchema.member.organizationId, covering.organizationId),
+          eq(authSchema.member.role, "owner"),
+          sql`lower(${authSchema.user.email}) = lower(${email})`,
+        ),
+      )
+      .limit(1);
+    return owner ? undefined : covering.organizationId;
+  };
+  const useSso = () =>
+    new APIError("FORBIDDEN", {
+      code: "SSO_REQUIRED",
+      message:
+        "Your organization signs in with single sign-on. Continue with SSO.",
+    });
+
   return betterAuth({
     baseURL: env.APP_URL,
     secret: env.BETTER_AUTH_SECRET,
-    trustedOrigins: [env.APP_URL],
+    trustedOrigins: () => [env.APP_URL, ...request.idpOrigins],
+    disabledPaths: SSO_MANAGEMENT_PATHS,
     // Native transactions (savepoints in the request's transaction): the
     // SCIM plugin refuses to run without them.
     database: drizzleAdapter(tx, {
@@ -236,12 +330,29 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     databaseHooks: {
       user: {
         create: {
-          // A directory provisions people without an invitation: its token
-          // was issued by an Owner.
-          async before(user, context) {
-            const provisioned = context?.path?.startsWith("/scim/v2") === true;
-            if (!provisioned && !(await mayJoin(user.email)))
-              throw needsInvitation();
+          async before(user, ctx) {
+            // A directory provisions people without an invitation: its token
+            // was issued by an Owner.
+            if (ctx?.path?.startsWith("/scim/v2")) {
+              return { data: { ...user, ...fullName(user) } };
+            }
+            // A first SSO sign-in joins through its connection: with JIT on,
+            // or an invitation to the connection's organization.
+            if (ctx?.path && SSO_CALLBACK.test(ctx.path)) {
+              const connection = await ssoConnection(ctx.params?.providerId);
+              if (
+                !connection?.jit &&
+                !(await pendingInvitation(
+                  user.email,
+                  connection?.organizationId ?? undefined,
+                ))
+              )
+                throw new APIError("FORBIDDEN", {
+                  code: "SSO_NOT_INVITED",
+                  message:
+                    "Ask an Owner of your organization to invite you first.",
+                });
+            } else if (!(await mayJoin(user.email))) throw needsInvitation();
             return { data: { ...user, ...fullName(user) } };
           },
         },
@@ -254,15 +365,29 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
         create: {
           // A deactivated person cannot start a session by any sign-in method
           // (PLAT-27: Better Auth only deletes their sessions).
-          async before(session) {
+          async before(session, ctx) {
             const [found] = await tx
-              .select({ deactivatedAt: authSchema.user.deactivatedAt })
+              .select({
+                deactivatedAt: authSchema.user.deactivatedAt,
+                email: authSchema.user.email,
+              })
               .from(authSchema.user)
               .where(eq(authSchema.user.id, session.userId));
             if (found?.deactivatedAt)
               throw new APIError("FORBIDDEN", {
                 message: "This account is deactivated.",
               });
+            // Enforced SSO: only an SSO sign-in starts a session for an
+            // address at the domain. `preprocess login` is approved from a
+            // session in the app, which already went through SSO.
+            const path = ctx?.path ?? "";
+            if (
+              found &&
+              !SSO_CALLBACK.test(path) &&
+              path !== "/device/token" &&
+              (await ssoRequired(found.email))
+            )
+              throw useSso();
           },
         },
       },
@@ -317,6 +442,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             .where(sql`lower(${authSchema.user.email}) = lower(${email})`)
             .limit(1);
           if (!known && !(await mayJoin(email))) throw needsInvitation();
+          if (await ssoRequired(email)) throw useSso();
           return;
         }
         if (ctx.path !== "/api-key/delete") return;
@@ -569,6 +695,65 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
         interval: "5s",
       }),
       bearer(),
+      sso({
+        domainVerification: { enabled: true, tokenPrefix: SSO_TOKEN_PREFIX },
+        // Joining the organization is ours (provisionUser below), so it is
+        // audited and follows the connection's JIT switch.
+        organizationProvisioning: { disabled: true },
+        provisionUserOnEveryLogin: true,
+        saml: { requireTimestamps: true },
+        schema: {
+          ssoProvider: {
+            additionalFields: {
+              enforced: {
+                type: "boolean",
+                required: false,
+                defaultValue: false,
+                input: true,
+              },
+              jit: {
+                type: "boolean",
+                required: false,
+                defaultValue: true,
+                input: true,
+              },
+            },
+          },
+        },
+        async provisionUser({ user, provider }) {
+          const connection = await ssoConnection(provider.providerId);
+          const organizationId = connection?.organizationId;
+          if (!organizationId || !connection.jit) return;
+          const [already] = await tx
+            .select({ id: authSchema.member.id })
+            .from(authSchema.member)
+            .where(
+              and(
+                eq(authSchema.member.organizationId, organizationId),
+                eq(authSchema.member.userId, user.id),
+              ),
+            );
+          // An invitation keeps its own role: the person accepts it.
+          if (already || (await pendingInvitation(user.email, organizationId)))
+            return;
+          await tx.insert(authSchema.member).values({
+            id: newId("member"),
+            organizationId,
+            userId: user.id,
+            role: "member",
+            createdAt: new Date(),
+          });
+          await record({
+            organizationId,
+            actorType: "platform",
+            actorId: "platform:sso",
+            action: "member.added",
+            targetType: "user",
+            targetId: user.id,
+            data: { role: "member", via: "sso", provider: provider.providerId },
+          });
+        },
+      }),
       directory.plugin,
     ],
   });
@@ -587,11 +772,11 @@ class Rollback extends Error {
 export const withAuth = async <T>(
   env: Env,
   request: RequestContext,
-  fn: (auth: Auth) => Promise<T>,
+  fn: (auth: Auth, tx: SystemTx) => Promise<T>,
 ): Promise<T> => {
   try {
     return await withoutOrg(env, "better-auth", async (tx) => {
-      const result = await fn(createAuth(env, tx, request));
+      const result = await fn(createAuth(env, tx, request), tx);
       if (result instanceof Response && result.status >= 400)
         throw new Rollback(result);
       return result;
@@ -629,9 +814,24 @@ export const handleAuthRequest = async (env: Env, request: Request) => {
     return withoutOrgRead(env, "better-auth", (tx) =>
       createAuth(env, tx, context).handler(request),
     );
-  return withAuth(env, context, async (auth) => {
+  return withAuth(env, context, async (auth, tx) => {
     const session = await auth.api.getSession({ headers: request.headers });
     context.actorId = session?.user.id ?? null;
+    const callback = /^\/api\/auth\/sso\/callback\/([^/]+)$/.exec(
+      new URL(request.url).pathname,
+    );
+    if (callback) {
+      const [connection] = await tx
+        .select({ issuer: authSchema.ssoProvider.issuer })
+        .from(authSchema.ssoProvider)
+        .where(
+          eq(
+            authSchema.ssoProvider.providerId,
+            decodeURIComponent(callback[1]!),
+          ),
+        );
+      if (connection) context.idpOrigins = [new URL(connection.issuer).origin];
+    }
     return auth.handler(request);
   });
 };

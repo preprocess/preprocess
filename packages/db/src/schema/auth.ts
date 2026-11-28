@@ -449,3 +449,28 @@ export const scimGroupMember = pgTable(
     index("scimGroupMember_scimUserId_idx").on(table.scimUserId),
   ],
 );
+
+// SSO plugin: one connection per organization (spec 13), SAML or OIDC. The
+// domain proves itself by a DNS TXT record before anyone signs in through it.
+// `enforced` turns every other way in off for addresses at the domain, except
+// for the organization's Owners; `jit` adds a person to the organization the
+// first time they sign in through it.
+export const ssoProvider = pgTable(
+  "sso_provider",
+  {
+    id: text("id").primaryKey(),
+    issuer: text("issuer").notNull(),
+    oidcConfig: text("oidc_config"),
+    samlConfig: text("saml_config"),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    providerId: text("provider_id").notNull().unique(),
+    organizationId: text("organization_id"),
+    domain: text("domain").notNull(),
+    domainVerified: boolean("domain_verified"),
+    enforced: boolean("enforced").default(false).notNull(),
+    jit: boolean("jit").default(true).notNull(),
+  },
+  (table) => [
+    index("sso_provider_organizationId_idx").on(table.organizationId),
+  ],
+);

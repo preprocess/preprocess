@@ -1,6 +1,6 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
@@ -9,7 +9,9 @@ import { buildSync } from "esbuild";
 import { defineConfig } from "vitest/config";
 
 import { fakeGithub, GITHUB_API, GITHUB_WEB } from "./test/fake-github.ts";
+import { fakeIdp, isFakeIdp } from "./test/fake-idp.ts";
 import { fakeMcp } from "./test/fake-mcp.ts";
+import { fakeModel, MODEL_ORIGIN } from "./test/fake-model.ts";
 
 const require = createRequire(import.meta.url);
 // pg require()s pg-protocol, and Vitest resolves that require with the
@@ -90,12 +92,17 @@ export default defineConfig({
           GITHUB_URL: GITHUB_WEB,
           GITHUB_BUILD_TIMEOUT_SECONDS: "1",
         },
-        // The internet the API reaches: GitHub, and a remote MCP server
-        // behind OAuth.
-        outboundService: (request: Request) =>
-          [GITHUB_API, GITHUB_WEB].includes(new URL(request.url).origin)
-            ? fakeGithub(request)
-            : fakeMcp(request),
+        // The internet the API reaches: GitHub, an organization's model
+        // server, an SSO identity provider with the DNS it checks domains
+        // against, and a remote MCP server behind OAuth.
+        outboundService: (request: Request) => {
+          const url = new URL(request.url);
+          if ([GITHUB_API, GITHUB_WEB].includes(url.origin))
+            return fakeGithub(request);
+          if (url.origin === MODEL_ORIGIN) return fakeModel(request);
+          if (isFakeIdp(url)) return fakeIdp(request);
+          return fakeMcp(request);
+        },
         serviceBindings: {
           RUNTIME: "preprocess-runtime-development",
           BUILDER: { name: "fake-builder", entrypoint: "Builder" },
@@ -177,5 +184,19 @@ export default defineConfig({
   },
   test: {
     globalSetup: ["./test/global-setup.ts"],
+    deps: {
+      optimizer: {
+        ssr: {
+          enabled: true,
+          include: ["@better-auth/sso > samlify"],
+          rolldownOptions: {
+            platform: "node",
+            external: [/^node:/, ...builtinModules],
+          },
+        },
+      },
+    },
+    // samlify (the SSO plugin's SAML) is CommonJS that default-imports
+    // CommonJS; prebundling gives it the interop a deploy's bundle does.
   },
 });

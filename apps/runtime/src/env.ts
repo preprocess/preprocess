@@ -247,6 +247,20 @@ export type Platform = {
   secretValues(
     d: DeploymentRef,
   ): Promise<{ version: string; values: Record<string, string> }>;
+  // The organization's registered model endpoints by model (design doc 10),
+  // read at case start and held in memory only: never in storage, capture or
+  // logs.
+  modelEndpoints(
+    organizationId: string,
+  ): Promise<Record<string, RegisteredEndpoint>>;
+};
+
+// An endpoint's id, which capture records, and its route.
+export type RegisteredEndpoint = {
+  id: string;
+  url: string;
+  key: string;
+  model: string;
 };
 
 export type DeploymentRef = Pick<

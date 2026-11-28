@@ -1,7 +1,8 @@
 // The API's internal entrypoint for the platform's other Workers. The runtime
 // reports case events here (the API is the one writer of the case index),
-// OCRs a case's files through it (design doc 04), and reads the secrets agent
-// code receives when it loads that code (design doc 03).
+// OCRs a case's files through it (design doc 04), reads the secrets agent
+// code receives when it loads that code (design doc 03) and the
+// organization's model endpoints at case start (design doc 10).
 
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { LogRecord } from "@preprocess/logs";
@@ -17,6 +18,7 @@ import { deploymentLayer, layerBuilt } from "./sandbox-layers.ts";
 import { recordEvalEvent } from "./evals.ts";
 import type { EvalEvent } from "./evals.ts";
 import { sendLogs } from "./logs.ts";
+import { registeredEndpoints } from "./model-endpoints.ts";
 import { proposeMemory, type MemoryProposal } from "./memories.ts";
 import { ocrFile } from "./ocr.ts";
 import { recordSandboxEvent, sandboxMaxSize, sizeAllowed } from "./sandbox.ts";
@@ -113,6 +115,13 @@ export class Platform extends WorkerEntrypoint<Env> {
   // so a rotated or revoked secret takes effect on the next call.
   secretsVersion(deployment: DeploymentRef) {
     return secretsVersion(this.env, deployment);
+  }
+
+  // At case start: the organization's registered model endpoints with their
+  // keys (design doc 10), which the runtime holds in memory only, never in
+  // its storage, capture or logs.
+  modelEndpoints(organizationId: string) {
+    return registeredEndpoints(this.env, organizationId);
   }
 
   // Only while an isolate loads; the values go straight into its env.

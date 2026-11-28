@@ -215,14 +215,14 @@ describe("directory sync tokens", () => {
     expect(prefix).toMatch(/^ba_scim_credential_/);
 
     const status = await owner.client.call<{
-      included: boolean;
+      allowed: boolean;
       baseUrl: string;
       connection: { id: string } | null;
       tokens: { prefix: string; status: string; lastUsedAt: string | null }[];
     }>(`/v1/orgs/${org}/scim`);
     expect(status.status).toBe(200);
     expect(status.body).toMatchObject({
-      included: true,
+      allowed: true,
       baseUrl: new URL("/api/auth/scim/v2", licensed.APP_URL).toString(),
       tokens: [{ prefix, status: "active", lastUsedAt: null }],
     });
@@ -339,7 +339,7 @@ describe("plans", () => {
     expect(refused.body).toEqual({
       schemas: [ERROR],
       status: "403",
-      detail: "Directory sync is not included in this organization's plan.",
+      detail: "Directory sync isn't included in this organization's plan.",
     });
     expect(refused.headers.get("content-type")).toBe("application/scim+json");
     const issue = await asEnv(owner.client, free).call(
@@ -348,10 +348,10 @@ describe("plans", () => {
     );
     expect(issue.status).toBe(403);
     const status = await asEnv(owner.client, free).call<{
-      included: boolean;
+      allowed: boolean;
       tokens: unknown[];
     }>(`/v1/orgs/${org}/scim`);
-    expect(status.body).toMatchObject({ included: false });
+    expect(status.body).toMatchObject({ allowed: false });
     expect(status.body.tokens).toHaveLength(1);
 
     // Back on a licensed plan, the same token and user are there.
@@ -417,7 +417,7 @@ describe("plans", () => {
       );
       expect(refused.status).toBe(403);
       expect(refused.body).toMatchObject({
-        error: "scim is not included in the free plan",
+        error: "Directory sync isn't included in this organization's plan.",
       });
     } finally {
       vi.restoreAllMocks();

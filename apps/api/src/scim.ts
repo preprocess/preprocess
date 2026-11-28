@@ -105,7 +105,7 @@ export const refuseWithoutPlan = async (env: Env, request: Request) => {
     return null;
   return scimError(
     403,
-    "Directory sync is not included in this organization's plan.",
+    "Directory sync isn't included in this organization's plan.",
   );
 };
 
