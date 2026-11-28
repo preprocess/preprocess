@@ -101,24 +101,6 @@ export const PRODUCT_EVENTS = {
   training_job_started: { job_id: ID },
   credits_topped_up: { credits: COUNT },
   plan_changed: { from: PLANS, to: PLANS, timing: ["now", "period_end"] },
-  // A support request on any channel (apps/api support.ts). The category
-  // is its token with underscores; severity is 1 to 3; plan is the
-  // organization's when it came in, none for a signed-out request.
-  support_request_created: {
-    request_id: ID,
-    channel: ["form", "email", "api", "mcp", "slack"],
-    category: [
-      "getting_started",
-      "agents",
-      "billing_and_credits",
-      "integrations",
-      "security_and_sso",
-      "self_hosting",
-      "other",
-    ],
-    severity: COUNT,
-    plan: [...PLANS, "none"],
-  },
 } as const satisfies Record<string, Record<string, PropertySpec>>;
 
 export type ProductEventName = keyof typeof PRODUCT_EVENTS;

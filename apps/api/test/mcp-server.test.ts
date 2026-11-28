@@ -7,7 +7,6 @@ import { newId } from "@preprocess/db/ids";
 import { agents } from "@preprocess/db/schema/access";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import type { Env } from "../src/env.ts";
 import { TOOLS } from "../src/mcp-server.ts";
 import { Client, createOrganization, signUp, testEnv } from "./helpers.ts";
 
@@ -142,53 +141,5 @@ describe("the MCP server", () => {
       arguments: {},
     });
     expect(noSuchTool.body.error?.code).toBe(-32602);
-  });
-  it("asks Preprocess Support and follows the request through MCP", async () => {
-    const created = await callTool("create_support_request", {
-      subject: "Deploy stuck",
-      body: "Our deploy has been building for an hour.",
-      category: "agents",
-      severity: 2,
-      email: "ops@acme.test",
-    });
-    expect(created.isError).toBe(false);
-    const request = JSON.parse(created.content[0]!.text) as {
-      id: string;
-      channel: string;
-      status: string;
-    };
-    expect(request).toMatchObject({ channel: "mcp", status: "open" });
-    const listed = await callTool("list_support_requests");
-    expect(listed.content[0]!.text).toContain(request.id);
-    const replied = await callTool("reply_to_support_request", {
-      id: request.id,
-      body: "It finished, but slowly.",
-    });
-    expect(replied.isError).toBe(false);
-    const detail = JSON.parse(
-      (await callTool("get_support_request", { id: request.id })).content[0]!
-        .text,
-    ) as { status: string; messages: { via: string }[] };
-    expect(detail.status).toBe("waiting_on_us");
-    expect(detail.messages.map((m) => m.via)).toEqual(["mcp", "mcp"]);
-  });
-
-  it("leaves the support tools out on a self-hosted install", async () => {
-    const selfHosted = new Client(
-      testEnv({ PREPROCESS_REGION: undefined } as unknown as Partial<Env>),
-      keyed.headers,
-    );
-    const list = await rpc<{ tools: { name: string }[] }>(
-      selfHosted,
-      "tools/list",
-    );
-    const names = list.body.result!.tools.map((t) => t.name);
-    expect(names).toContain("list_cases");
-    expect(names.filter((n) => n.includes("support"))).toEqual([]);
-    const call = await rpc(selfHosted, "tools/call", {
-      name: "list_support_requests",
-      arguments: {},
-    });
-    expect(call.body.error?.code).toBe(-32602);
   });
 });

@@ -14,7 +14,6 @@ import {
   durableObjects,
   LOCAL,
   localAppUrl,
-  localDocsUrl,
   publicDocsUrl,
   publicStatusUrl,
   localAuditKeyId,
@@ -23,11 +22,9 @@ import {
   localModelService,
   localRoleDatabaseUrl,
   localSecretsMasterKey,
-  localSupportEmailFrom,
   names,
   runtimeDurableObjects,
   sandboxDurableObjects,
-  turnstileTestKeys,
 } from "../src/stages.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -63,19 +60,6 @@ const configs: Record<string, object> = {
     ...common,
     vars: { API_URL: `${localAppUrl}/v1`, STATUS_URL: publicStatusUrl },
   },
-  // The help center links into the app and merges the docs' search index.
-  "apps/support": {
-    $schema: "node_modules/wrangler/config-schema.json",
-    name: local.support,
-    main: "src/server.ts",
-    ...common,
-    services: [{ binding: "DOCS", service: local.docs }],
-    vars: {
-      APP_URL: localAppUrl,
-      DOCS_URL: localDocsUrl,
-      STATUS_URL: publicStatusUrl,
-    },
-  },
   "apps/api": {
     $schema: "node_modules/wrangler/config-schema.json",
     name: local.api,
@@ -94,8 +78,6 @@ const configs: Record<string, object> = {
       GITHUB_CLIENT_ID: localGitHub.clientId,
       GITHUB_API_URL: localGitHub.url,
       GITHUB_URL: localGitHub.url,
-      SUPPORT_EMAIL_FROM: localSupportEmailFrom,
-      ...turnstileTestKeys,
     },
     hyperdrive: [
       {

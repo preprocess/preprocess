@@ -2,7 +2,7 @@
   "name": "@preprocess/search",
   "version": "0.1.0",
   "private": true,
-  "description": "The docs search index (Orama) and the page text it indexes, shared by the docs site and the help center.",
+  "description": "The docs search index (Orama) and the page text it indexes, for the docs site.",
   "author": "Preprocess, Inc.",
   "license": "Elastic-2.0",
   "type": "module",
