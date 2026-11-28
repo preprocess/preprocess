@@ -111,6 +111,36 @@ function testOutcome(result: TestResult, providerModel: string): Outcome {
   }
 }
 
+/** A row of the Can't delete dialog: what still names the model. */
+function describeUse(use: ModelUse) {
+  switch (use.type) {
+    case "deployment":
+      return {
+        key: `deployment:${use.deploymentId}`,
+        label: use.agentName,
+        description: `${use.production ? "Production" : "Preview"} deployment ${use.deploymentId}`,
+      };
+    case "settings":
+      return {
+        key: `settings:${use.agentId}`,
+        label: use.agentName,
+        description: "Agent settings",
+      };
+    case "organization_default":
+      return {
+        key: "organization_default",
+        label: "Defaults",
+        description: "Organization default model",
+      };
+    case "eval_suite":
+      return {
+        key: `suite:${use.suiteId}`,
+        label: use.suiteName,
+        description: "Eval suite",
+      };
+  }
+}
+
 function Strong({ children }: { children: ReactNode }) {
   return (
     <span
@@ -124,7 +154,7 @@ function Strong({ children }: { children: ReactNode }) {
 
 function Mono({ children }: { children: ReactNode }) {
   return (
-    <span className="truncate font-mono text-caption text-muted-foreground">
+    <span className="block truncate font-mono text-caption text-muted-foreground">
       {children}
     </span>
   );
@@ -349,25 +379,16 @@ function Loaded({
           title={`Can't delete ${blocked.model.label}`}
         >
           <div className="flex flex-col divide-y divide-border">
-            {blocked.usedBy.map((use) => (
-              <SettingsRow
-                description={
-                  use.type === "deployment"
-                    ? `${use.production ? "Production" : "Preview"} deployment ${use.deploymentId}`
-                    : use.type === "settings"
-                      ? "Agent settings"
-                      : "Eval suite"
-                }
-                key={
-                  use.type === "eval_suite"
-                    ? `suite:${use.suiteId}`
-                    : `${use.type}:${use.agentId}:${use.type === "deployment" ? use.deploymentId : ""}`
-                }
-                label={
-                  use.type === "eval_suite" ? use.suiteName : use.agentName
-                }
-              />
-            ))}
+            {blocked.usedBy.map((use) => {
+              const row = describeUse(use);
+              return (
+                <SettingsRow
+                  description={row.description}
+                  key={row.key}
+                  label={row.label}
+                />
+              );
+            })}
           </div>
         </SettingsDialogShell>
       ) : null}
@@ -564,7 +585,10 @@ function OwnSection({
   );
   const name = (model: OrgModel) => (
     <div className="flex min-w-0 flex-col gap-0.5 py-2">
-      <Strong>{model.label}</Strong>
+      <span className="flex min-w-0 items-center gap-2">
+        <Strong>{model.label}</Strong>
+        {model.isDefault ? <Badge size="compact">Default</Badge> : null}
+      </span>
       <Mono>{model.id}</Mono>
     </div>
   );
@@ -714,9 +738,7 @@ function EndpointDialog({
   const model = editing.mode === "register" ? null : editing.model;
   const endpoint = model?.endpoint ?? null;
   const own = editing.mode !== "serve";
-  const initialUrl = endpoint
-    ? (endpoint.url ?? `https://${endpoint.host}`)
-    : "";
+  const initialUrl = endpoint ? `https://${endpoint.host}` : "";
   const nameRef = useRef<ValidatedFieldHandle>(null);
   const urlRef = useRef<ValidatedFieldHandle>(null);
   const providerRef = useRef<ValidatedFieldHandle>(null);

@@ -18,7 +18,6 @@ export type ModelEndpoint = {
   host: string;
   hasKey: boolean;
   providerModel: string;
-  url?: string;
 };
 
 export type CatalogModel = {
@@ -41,6 +40,7 @@ export type ModelUse =
       production: boolean;
     }
   | { type: "settings"; agentId: string; agentName: string }
+  | { type: "organization_default" }
   | { type: "eval_suite"; suiteId: string; suiteName: string };
 
 export type OrgModel = {
@@ -51,6 +51,7 @@ export type OrgModel = {
   checkpoint: string | null;
   serving: "endpoint";
   allowed: boolean;
+  isDefault: boolean;
   endpoint: ModelEndpoint;
   usedBy: ModelUse[];
 };
@@ -93,7 +94,7 @@ async function settle<T>(response: Response): Promise<Result<T>> {
     };
   const body = await response
     .json<{
-      error?: { code?: string; message?: string; usedBy?: ModelUse[] };
+      error?: { code?: string; message?: string; refs?: ModelUse[] };
     }>()
     .catch(() => null);
   return {
@@ -101,7 +102,7 @@ async function settle<T>(response: Response): Promise<Result<T>> {
     status: response.status,
     code: body?.error?.code,
     message: body?.error?.message ?? `The request failed (${response.status}).`,
-    usedBy: body?.error?.usedBy,
+    usedBy: body?.error?.refs,
   };
 }
 
@@ -188,7 +189,6 @@ const catalog = (selfHosted: boolean): CatalogModel[] => [
       ? {
           id: "mep_seed_kimi",
           host: "kimi.acme.internal",
-          url: "https://kimi.acme.internal/v1",
           hasKey: true,
           providerModel: "kimi-k3.1-pro",
         }
@@ -214,10 +214,10 @@ const ORG_MODELS: OrgModel[] = [
     checkpoint: "runs/renewals/step-400",
     serving: "endpoint",
     allowed: true,
+    isDefault: false,
     endpoint: {
       id: "mep_seed_renewals",
       host: "models.acme.com",
-      url: "https://models.acme.com/v1",
       hasKey: true,
       providerModel: "renewals-v3",
     },
@@ -240,10 +240,10 @@ const ORG_MODELS: OrgModel[] = [
     checkpoint: null,
     serving: "endpoint",
     allowed: false,
+    isDefault: false,
     endpoint: {
       id: "mep_seed_intake",
       host: "gpu-02.acme.internal",
-      url: "https://gpu-02.acme.internal/v1",
       hasKey: true,
       providerModel: "intake-v1",
     },
@@ -327,7 +327,6 @@ function seededWrite(
     const endpoint: ModelEndpoint = {
       id: `mep_seed_${crypto.randomUUID().slice(0, 8)}`,
       host: hostOf(input.url!),
-      url: input.url,
       hasKey: Boolean(input.key),
       providerModel: input.providerModel ?? model,
     };
@@ -344,6 +343,7 @@ function seededWrite(
               checkpoint: input.checkpoint ?? null,
               serving: "endpoint",
               allowed: true,
+              isDefault: false,
               endpoint,
               usedBy: [],
             },
@@ -359,7 +359,7 @@ function seededWrite(
   if (!owner?.endpoint) throw new ApiError("No such model endpoint.", 404);
   const endpoint: ModelEndpoint = {
     ...owner.endpoint,
-    ...(input.url ? { url: input.url, host: hostOf(input.url) } : {}),
+    ...(input.url ? { host: hostOf(input.url) } : {}),
     ...(input.providerModel ? { providerModel: input.providerModel } : {}),
     ...(input.key ? { hasKey: true } : {}),
   };
