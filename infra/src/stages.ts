@@ -37,6 +37,16 @@ export const isStage = (stage: string): stage is Stage =>
   isPreviewStage(stage) ||
   isSelfHostStage(stage);
 
+// The queues whose consumers move failed messages to a dead-letter queue,
+// bound to the API as <QUEUE>_DLQ.
+export const deadLetterQueues = [
+  "jobs",
+  "cases",
+  "webhooks",
+  "emails",
+  "logs",
+] as const;
+
 export const names = (stage: string) => ({
   app: `preprocess-app-${stage}`,
   // The docs site (apps/docs).
@@ -52,6 +62,11 @@ export const names = (stage: string) => ({
   emailsSent: `preprocess-emails-sent-${stage}`,
   // Run logs (design doc 09): every producer's records, consumed by the API.
   logsQueue: `preprocess-logs-${stage}`,
+  // Each queue's dead letters: messages its consumer failed on every retry,
+  // held for 14 days. Nothing consumes them; the API's minute cron reports
+  // their depth (apps/api/src/dead-letters.ts).
+  deadLetters: (queue: (typeof deadLetterQueues)[number]) =>
+    `preprocess-dlq-${queue}-${stage}`,
   logs: `preprocess-logs-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,

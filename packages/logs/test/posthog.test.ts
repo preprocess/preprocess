@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { posthogConfig, routeOf, scrub, toPostHog } from "../src/posthog.ts";
+import {
+  posthogConfig,
+  routeOf,
+  scrub,
+  toPostHog,
+  trafficOf,
+} from "../src/posthog.ts";
 
 const event = (fields: Record<string, unknown>) => ({
   timestamp: "2026-11-28T10:00:00.000Z",
@@ -118,6 +124,49 @@ describe("toPostHog", () => {
       $exception_list: [{ type: "case.run", value: "case.run" }],
     });
     expect(exception).not.toHaveProperty("stack");
+  });
+});
+
+describe("probes and static files", () => {
+  it("recognizes the status page's probes and static files", () => {
+    expect(
+      trafficOf(
+        "/sign-in",
+        "PreprocessStatus/1 (+https://status.preprocess.com)",
+      ),
+    ).toBe("probe");
+    expect(trafficOf("/assets/index-Dy.js", "Mozilla/5.0")).toBe("asset");
+    expect(trafficOf("/fonts/InterVariable.woff2", null)).toBe("asset");
+    expect(trafficOf("/cases", "Mozilla/5.0")).toBeUndefined();
+  });
+
+  it("samples them at 1% and says so", () => {
+    const probe = event({
+      method: "GET",
+      path: "/sign-in",
+      status: 200,
+      traffic: "probe",
+    });
+    expect(toPostHog("app", probe, 1, () => 0.5).request).toBeNull();
+    expect(toPostHog("app", probe, 1, () => 0.001).request).toMatchObject({
+      sampleRate: 0.01,
+      traffic: "probe",
+    });
+  });
+
+  it("always sends their 5xx answers", () => {
+    const { request } = toPostHog(
+      "api",
+      event({
+        method: "GET",
+        path: "/v1/openapi.json",
+        status: 503,
+        traffic: "probe",
+      }),
+      1,
+      () => 0.5,
+    );
+    expect(request).toMatchObject({ status: 503, sampleRate: 1 });
   });
 });
 

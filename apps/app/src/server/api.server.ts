@@ -24,6 +24,8 @@ export async function apiRequest(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   const cookie = request.headers.get("cookie");
   if (cookie) headers.set("cookie", cookie);
+  const userAgent = request.headers.get("user-agent");
+  if (userAgent) headers.set("user-agent", userAgent);
   headers.set("origin", new URL(request.url).origin);
   if (typeof init.body === "string")
     headers.set("content-type", "application/json");

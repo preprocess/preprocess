@@ -12,7 +12,11 @@
 //   deletes their sessions, device-flow bearer sessions included;
 // - each SCIM Group is a group with scim_group_id set, its members those of
 //   the SCIM Group. A deleted SCIM Group keeps its group and grants, marked
-//   synced_removed_at, for an Owner or Admin to resolve.
+//   synced_removed_at, for an Owner or Admin to resolve, and Developers,
+//   Owners and Admins are emailed (notify.ts). A SCIM Group with the same
+//   externalId re-links it;
+// - every write counts toward the organization's latest sync
+//   (directory_sync), the writes less than SYNC_GAP apart.
 //
 // Everything runs in the auth request's one transaction (withAuth): the
 // plugin's own transaction is a savepoint in it, and every SCIM write and the
@@ -24,6 +28,7 @@ import { orgId, withoutOrgRead } from "@preprocess/db/client";
 import type { SystemTx, Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { groupMembers, groups } from "@preprocess/db/schema/access";
+import { directorySync } from "@preprocess/db/schema/directory-sync";
 import {
   member,
   scimGroup,
@@ -32,10 +37,12 @@ import {
   scimUser,
   user,
 } from "@preprocess/db/schema/auth";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import type { Env } from "./env.ts";
-import { getPlan } from "./plan.ts";
+import { writeOutbox } from "./outbox.ts";
+import { getPlan, unavailable } from "./plan.ts";
+import type { Unavailable } from "./plan.ts";
 
 export const SCIM_PATH = "/api/auth/scim/v2";
 export const SCIM_SCOPES = [
@@ -46,6 +53,9 @@ export const SCIM_SCOPES = [
 ] as const;
 // The plugin's default; it refuses a sixth active token.
 export const MAX_SCIM_TOKENS = 5;
+// A sync is SCIM writes less than this apart; it is running until this long
+// after the latest one.
+export const SYNC_GAP_MS = 2 * 60_000;
 
 const CREDENTIAL = /^(ba_scim_credential_[A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+$/;
 
@@ -94,6 +104,11 @@ const scimCaller = async (
   return found ? { ...found, credentialId } : null;
 };
 
+export const refusal = (reason: Unavailable) =>
+  reason === "license_expired"
+    ? "This install's license has expired, so directory sync has stopped until it's renewed."
+    : "Directory sync isn't included in this organization's plan.";
+
 // Spec 16: directory sync stops when the plan or license lapses. The data
 // stays, and the IdP gets a SCIM error until the plan is back.
 export const refuseWithoutPlan = async (env: Env, request: Request) => {
@@ -101,12 +116,32 @@ export const refuseWithoutPlan = async (env: Env, request: Request) => {
     scimCaller(tx, request.headers.get("authorization")),
   );
   if (!caller) return null;
-  if ((await getPlan(env, orgId(caller.organizationId))).has("scim"))
-    return null;
-  return scimError(
-    403,
-    "Directory sync isn't included in this organization's plan.",
+  const reason = unavailable(
+    await getPlan(env, orgId(caller.organizationId)),
+    "scim",
   );
+  return reason ? scimError(403, refusal(reason)) : null;
+};
+
+// One more write in the organization's latest sync, or the first of a new one.
+const recordSync = (tx: Tx, organizationId: string) => {
+  const recent = sql`${directorySync.lastSyncAt} > now() - make_interval(secs => ${SYNC_GAP_MS / 1000})`;
+  return tx
+    .insert(directorySync)
+    .values({
+      organizationId,
+      lastSyncAt: sql`now()`,
+      syncStartedAt: sql`now()`,
+      syncReceived: 1,
+    })
+    .onConflictDoUpdate({
+      target: directorySync.organizationId,
+      set: {
+        syncStartedAt: sql`case when ${recent} then ${directorySync.syncStartedAt} else now() end`,
+        syncReceived: sql`case when ${recent} then ${directorySync.syncReceived} + 1 else 1 end`,
+        lastSyncAt: sql`now()`,
+      },
+    });
 };
 
 export const slugify = (name: string) =>
@@ -118,7 +153,9 @@ export const slugify = (name: string) =>
     .slice(0, 48);
 
 // The group for a SCIM Group, created on first sight and renamed with it.
-// Its slug is fixed at creation, since agents' code names groups by slug.
+// Its slug is fixed at creation, since agents' code names groups by slug. A
+// removed group whose SCIM Group had the same externalId is re-linked
+// instead, its members to come from the directory again.
 const syncedGroup = async (
   tx: Tx,
   organizationId: string,
@@ -139,6 +176,37 @@ const syncedGroup = async (
       await tx.update(groups).set({ name }).where(eq(groups.id, found.id));
     return { ...found, name };
   }
+  const [source] = await tx
+    .select({ externalId: scimGroup.externalId })
+    .from(scimGroup)
+    .where(eq(scimGroup.id, scimGroupId));
+  const externalId = source?.externalId ?? null;
+  const [removed] = externalId
+    ? await tx
+        .select({ id: groups.id, slug: groups.slug })
+        .from(groups)
+        .where(
+          and(
+            eq(groups.organizationId, organizationId),
+            eq(groups.scimExternalId, externalId),
+            isNotNull(groups.syncedRemovedAt),
+          ),
+        )
+        .orderBy(desc(groups.syncedRemovedAt))
+        .limit(1)
+    : [];
+  if (removed) {
+    await tx
+      .update(groups)
+      .set({
+        scimGroupId,
+        name,
+        syncedRemovedAt: null,
+        syncedRemovedMembers: null,
+      })
+      .where(eq(groups.id, removed.id));
+    return { ...removed, name };
+  }
   const base = slugify(name) || "group";
   const taken = new Set(
     (
@@ -156,9 +224,14 @@ const syncedGroup = async (
   let slug = base;
   for (let n = 2; taken.has(slug); n++) slug = `${base.slice(0, 44)}-${n}`;
   const id = newId("group");
-  await tx
-    .insert(groups)
-    .values({ id, organizationId, slug, name, scimGroupId });
+  await tx.insert(groups).values({
+    id,
+    organizationId,
+    slug,
+    name,
+    scimGroupId,
+    scimExternalId: externalId,
+  });
   return { id, slug, name };
 };
 
@@ -183,6 +256,7 @@ const param = (ctx: HookContext, name: string) => {
 export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
   let caller: Caller | null = null;
   let userBefore: { id: string; userId: string; active: boolean } | undefined;
+  let groupBefore: { externalId: string | null; members: number } | undefined;
   const actor = () =>
     ({
       actorType: "platform",
@@ -367,6 +441,33 @@ export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
     return found;
   };
 
+  // What a deleted SCIM Group was, before the plugin removes it and its
+  // members.
+  const findGroup = async (id: string) => {
+    if (!caller) return undefined;
+    const [source] = await tx
+      .select({ externalId: scimGroup.externalId })
+      .from(scimGroup)
+      .where(
+        and(
+          eq(scimGroup.id, id),
+          eq(scimGroup.connectionId, caller.connectionId),
+        ),
+      );
+    if (!source) return undefined;
+    const [{ members = 0 } = {}] = await tx
+      .select({ members: count() })
+      .from(groupMembers)
+      .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+      .where(
+        and(
+          eq(groups.organizationId, caller.organizationId),
+          eq(groups.scimGroupId, id),
+        ),
+      );
+    return { externalId: source.externalId, members };
+  };
+
   const before = async (ctx: HookContext) => {
     caller = await scimCaller(
       tx,
@@ -375,6 +476,9 @@ export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
     );
     const id = param(ctx, "userId");
     if (id) userBefore = await findUser(id);
+    const groupId = param(ctx, "groupId");
+    if (groupId && ctx.request?.method === "DELETE")
+      groupBefore = await findGroup(groupId);
   };
 
   const after = async (ctx: HookContext) => {
@@ -384,6 +488,7 @@ export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
     if (returned instanceof Error) return;
     if (returned instanceof Response && !returned.ok) return;
     const organizationId = caller.organizationId;
+    await recordSync(tx, organizationId);
     const createdId =
       typeof (returned as { id?: unknown } | null)?.id === "string"
         ? (returned as { id: string }).id
@@ -418,14 +523,30 @@ export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
     if (method === "DELETE") {
       const [removed] = await tx
         .update(groups)
-        .set({ syncedRemovedAt: new Date() })
+        .set({
+          syncedRemovedAt: new Date(),
+          syncedRemovedMembers: groupBefore?.members ?? 0,
+          ...(groupBefore?.externalId
+            ? { scimExternalId: groupBefore.externalId }
+            : {}),
+        })
         .where(
           and(
             eq(groups.organizationId, organizationId),
             eq(groups.scimGroupId, id),
           ),
         )
-        .returning({ id: groups.id, slug: groups.slug, name: groups.name });
+        .returning({
+          id: groups.id,
+          slug: groups.slug,
+          removedAt: groups.syncedRemovedAt,
+        });
+      if (removed?.removedAt)
+        await writeOutbox(tx, organizationId, "email", {
+          type: "scim.group.removed",
+          groupId: removed.id,
+          removedAt: removed.removedAt.toISOString(),
+        });
       await record({
         organizationId,
         ...actor(),
@@ -437,7 +558,10 @@ export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
       return;
     }
     const [source] = await tx
-      .select({ displayName: scimGroup.displayName })
+      .select({
+        displayName: scimGroup.displayName,
+        externalId: scimGroup.externalId,
+      })
       .from(scimGroup)
       .where(
         and(
@@ -447,6 +571,15 @@ export const scimDirectory = (env: Env, tx: SystemTx, record: Record) => {
       );
     if (!source) return;
     const group = await syncedGroup(tx, organizationId, id, source.displayName);
+    await tx
+      .update(groups)
+      .set({ scimExternalId: source.externalId })
+      .where(
+        and(
+          eq(groups.id, group.id),
+          sql`${groups.scimExternalId} is distinct from ${source.externalId}`,
+        ),
+      );
     await record({
       organizationId,
       ...actor(),

@@ -1,4 +1,4 @@
-import { initLogs, logFailure, routeOf } from "@preprocess/logs";
+import { initLogs, logFailure, routeOf, trafficOf } from "@preprocess/logs";
 import type { LogRecord } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { evlog, type EvlogVariables } from "evlog/hono";
@@ -21,6 +21,7 @@ import { authRateLimit, orgRateLimit } from "./rate-limit.ts";
 import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
 import type { Env, Job } from "./env.ts";
+import { reportDeadLetters } from "./dead-letters.ts";
 import { deleteExpiredIdempotencyKeys } from "./idempotency.ts";
 import { heartbeat } from "./heartbeat.ts";
 import { sweepOutbox } from "./outbox.ts";
@@ -93,6 +94,7 @@ app.use(async (c, next) => {
       route && route !== "*" && !route.endsWith("/*")
         ? route
         : routeOf(c.req.path),
+    traffic: trafficOf(c.req.path, c.req.header("user-agent") ?? null),
   });
 });
 app.use("*", cors());
@@ -255,9 +257,9 @@ export default {
   scheduled(controller, env, ctx) {
     initLogs("api", (records) => sendLogs(env, records), env);
     // Every minute: re-send outbox rows a failed queue send left behind.
-    // Every minute, too: report metered usage to billing and close the awake
-    // intervals of sandboxes gone silent, and warn about or apply moves down
-    // to Free (our cloud only).
+    // Every minute, too: report metered usage to billing, close the awake
+    // intervals of sandboxes gone silent, report dead-letter queues that hold
+    // messages, and warn about or apply moves down to Free (our cloud only).
     if (controller.cron === "* * * * *") {
       watch(
         ctx,
@@ -266,6 +268,7 @@ export default {
       );
       watch(ctx, "cron.usage", reportUsage(env));
       watch(ctx, "cron.sandboxes", closeSilentSandboxes(env));
+      watch(ctx, "cron.dead-letters", reportDeadLetters(env));
       watch(
         ctx,
         "cron.plan-changes",

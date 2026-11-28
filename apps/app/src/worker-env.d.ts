@@ -7,6 +7,9 @@ declare global {
       PREPROCESS_REGION?: string;
       /** Set when Google sign-in is configured; shows its button. */
       GOOGLE_CLIENT_ID?: string;
+      /** PostHog's public project key and host (features/monitoring). */
+      POSTHOG_KEY?: string;
+      POSTHOG_HOST?: string;
       /** The docs site the app links to. */
       DOCS_URL?: string;
       /** Our status page; set only on our own stages (spec 16). */

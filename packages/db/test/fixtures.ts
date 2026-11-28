@@ -66,6 +66,7 @@ import {
   evalSuiteCases,
   evalSuites,
 } from "../src/schema/evals.ts";
+import { directorySync } from "../src/schema/directory-sync.ts";
 import { otelExports } from "../src/schema/otel.ts";
 import {
   organizationRetention,
@@ -416,6 +417,10 @@ export const seedOrganization = async (name: string) =>
       firstAt: new Date(),
       lastAt: new Date(),
     });
+    await tx.insert(directorySync).values({
+      organizationId: org,
+      lastSyncAt: new Date(),
+    });
     await tx.insert(organizationRetention).values({
       organizationId: org,
       runCaptureDays: 30,
@@ -631,6 +636,7 @@ export const tenantTables = {
   eval_suite_cases: "organization_id",
   eval_runs: "organization_id",
   eval_results: "organization_id",
+  directory_sync: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

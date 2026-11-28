@@ -332,22 +332,27 @@ const namedGroups = async (tx: Tx, agentId: string, manifest: Manifest) => {
   };
 };
 
-// Whether a live deployment's code names the group (design doc 01, q29): the
-// group, or its access to agentId when given, cannot be removed while so.
-export const groupInUse = async (tx: Tx, groupId: string, agentId?: string) => {
-  const agentIds = agentId
-    ? [agentId]
-    : (
-        await tx
-          .selectDistinct({ agentId: deployments.agentId })
-          .from(deploymentGroups)
-          .innerJoin(
-            deployments,
-            eq(deployments.id, deploymentGroups.deploymentId),
-          )
-          .where(eq(deploymentGroups.groupId, groupId))
-      ).map((r) => r.agentId);
-  for (const id of agentIds) {
+// The agents whose live deployments' code names the group (design doc 01,
+// q29), among agentIds when given.
+export const agentsNamingGroup = async (
+  tx: Tx,
+  groupId: string,
+  agentIds?: string[],
+) => {
+  const candidates =
+    agentIds ??
+    (
+      await tx
+        .selectDistinct({ agentId: deployments.agentId })
+        .from(deploymentGroups)
+        .innerJoin(
+          deployments,
+          eq(deployments.id, deploymentGroups.deploymentId),
+        )
+        .where(eq(deploymentGroups.groupId, groupId))
+    ).map((r) => r.agentId);
+  const naming: string[] = [];
+  for (const id of candidates) {
     const live = (await liveDeployments(tx, id)).map((d) => d.id);
     if (live.length === 0) continue;
     const [named] = await tx
@@ -360,10 +365,16 @@ export const groupInUse = async (tx: Tx, groupId: string, agentId?: string) => {
         ),
       )
       .limit(1);
-    if (named) return true;
+    if (named) naming.push(id);
   }
-  return false;
+  return naming;
 };
+
+// Whether a live deployment's code names the group: the group, or its access
+// to agentId when given, cannot be removed while so.
+export const groupInUse = async (tx: Tx, groupId: string, agentId?: string) =>
+  (await agentsNamingGroup(tx, groupId, agentId ? [agentId] : undefined))
+    .length > 0;
 
 // Brings one deployment's record in line with current grants: what it waits
 // for, its network rules and the groups its code names. Secrets need nothing
