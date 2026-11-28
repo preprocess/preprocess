@@ -88,11 +88,13 @@ async function settle<T>(response: Response): Promise<Result<T>> {
     typeof body?.error === "string" ? { message: body.error } : body?.error;
   const message =
     body?.success === false ? issues(error?.message) : error?.message;
+  if (!message)
+    console.error(`Single sign-on request failed: ${response.status}`);
   return {
     ok: false,
     status: response.status,
     code: error?.code,
-    message: message ?? `The request failed (${response.status}).`,
+    message: message ?? "Something went wrong. Try again.",
     upstreamStatus: error?.status,
   };
 }
@@ -153,7 +155,7 @@ const never = <T>() => new Promise<T>(() => {});
 function seeded(state: SsoSeedState): SsoSettings | undefined {
   switch (state) {
     case "member":
-      throw new ApiError("Only Owners can manage single sign-on.", 403);
+      throw new ApiError("Only Owners can change single sign-on.", 403);
     case "error":
       throw new ApiError("Something went wrong. Try again.", 500);
     case "loading":
@@ -275,7 +277,7 @@ function seededWrite(
     if (!/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain))
       throw refuse(400, "invalid_request", "Enter a domain like acme.com.");
     if (before.domains.some((d) => d.domain === domain))
-      throw refuse(409, "domain_exists", "That domain is already on the list.");
+      throw refuse(409, "domain_exists", "This domain is already added.");
     const added: SsoDomain = {
       domain,
       status: "pending",
@@ -292,8 +294,7 @@ function seededWrite(
   if (check && method === "POST") {
     const name = decodeURIComponent(check[1] ?? "");
     const current = before.domains.find((d) => d.domain === name);
-    if (!current)
-      throw refuse(404, "not_found", "That domain isn't on the list.");
+    if (!current) throw refuse(404, "not_found", "This domain wasn't found.");
     // Seeded checks verify pending domains; failed ones stay failed.
     const checked: SsoDomain =
       current.status === "failed"
