@@ -200,6 +200,36 @@ export const trainingVars = ["TRAINING_SERVICE"] as const;
 export const statusHeartbeatVars = ["STATUS_HEARTBEAT_URL"] as const;
 export const statusHeartbeatSecrets = ["STATUS_HEARTBEAT_SECRET"] as const;
 
+// Support requests (apps/api/src/support.ts), our cloud only and all
+// optional; never bound on a self-hosted install, which has no support
+// intake. SUPPORT_ORG_ID and SUPPORT_AGENT_ID name the Preprocess Support
+// organization and its support agent, on any of our stages. Production alone
+// sends support email (SUPPORT_EMAIL_FROM), receives it (SUPPORT_INBOUND_DOMAIN,
+// whose Email Routing rules the stack declares) and checks the signed-out
+// form with a real Turnstile key; staging and previews send no support email
+// and use Cloudflare's always-pass Turnstile test keys.
+export const supportVars = ["SUPPORT_ORG_ID", "SUPPORT_AGENT_ID"] as const;
+export const supportProductionVars = [
+  "SUPPORT_EMAIL_FROM",
+  "SUPPORT_INBOUND_DOMAIN",
+  "SUPPORT_TURNSTILE_SITE_KEY",
+] as const;
+export const supportProductionSecrets = [
+  "SUPPORT_TURNSTILE_SECRET_KEY",
+] as const;
+// Cloudflare's documented test keys: the site key always passes and so does
+// the secret, for any token.
+export const turnstileTestKeys = {
+  SUPPORT_TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+  SUPPORT_TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
+};
+// The literal addresses Email Routing hands to the API on
+// SUPPORT_INBOUND_DOMAIN: requests@ (where Google forwards
+// support@preprocess.com) and r@, whose r+<token>@ subaddresses are replies.
+// Catch-all rules exist on the apex only, so these are literal rules with
+// subaddressing on.
+export const supportInboundLocalParts = ["requests", "r"] as const;
+
 // PostHog (spec 12 and 15): server errors and request events from the app,
 // docs, API and runtime, and the app's browser errors. Production and staging
 // each send to their own PostHog project, so staging never reaches
@@ -304,6 +334,9 @@ export const localGitHub = {
   builder: "http://127.0.0.1:8789",
 };
 export const localEmailFrom = "Preprocess <invitations@preprocess.localhost>";
+// Locally support email goes to the send_email sink like every other email.
+export const localSupportEmailFrom =
+  "Preprocess Support <support@preprocess.localhost>";
 export const localAuditKeyId = "audit-ed25519-development";
 
 // values typed into a local database. Deployed stages bind Secrets Store.

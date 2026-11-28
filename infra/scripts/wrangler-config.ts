@@ -22,9 +22,11 @@ import {
   localModelService,
   localRoleDatabaseUrl,
   localSecretsMasterKey,
+  localSupportEmailFrom,
   names,
   runtimeDurableObjects,
   sandboxDurableObjects,
+  turnstileTestKeys,
 } from "../src/stages.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -78,6 +80,8 @@ const configs: Record<string, object> = {
       GITHUB_CLIENT_ID: localGitHub.clientId,
       GITHUB_API_URL: localGitHub.url,
       GITHUB_URL: localGitHub.url,
+      SUPPORT_EMAIL_FROM: localSupportEmailFrom,
+      ...turnstileTestKeys,
     },
     hyperdrive: [
       {
