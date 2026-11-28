@@ -8,6 +8,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { FluidProvider } from "@preprocess/ui/lib/fluid-provider";
+import { createServerFn } from "@tanstack/react-start";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
@@ -39,6 +40,13 @@ import { isPublicAuthPath } from "../server/public-auth-path";
 
 import "@preprocess/ui/styles.css";
 import "../styles.css";
+
+// The Help menu's links: the install's docs, and our status page, which only
+// our own stages set (spec 16).
+const loadHelpLinks = createServerFn({ method: "GET" }).handler(async () => {
+  const { docsUrl, statusUrl } = await import("../server/run-mode.server");
+  return { docsUrl: docsUrl(), statusUrl: statusUrl() };
+});
 
 const NAME_PATH = "/onboarding/name";
 // Approving `preprocess login` needs a session but renders without the shell.
@@ -87,9 +95,10 @@ export const Route = createRootRoute({
       await activateOrganization({ data: { organizationId: first.id } });
   },
   loader: async ({ location }) => {
-    const [sidebarOpen, monitoring] = await Promise.all([
+    const [sidebarOpen, monitoring, helpLinks] = await Promise.all([
       loadProductSidebarOpen(),
       loadMonitoring(),
+      loadHelpLinks(),
     ]);
 
     if (isPublicAuthPath(location.pathname)) {
@@ -99,6 +108,7 @@ export const Route = createRootRoute({
         organizations: [],
         sidebarOpen,
         monitoring,
+        helpLinks,
       };
     }
 
@@ -156,6 +166,7 @@ export const Route = createRootRoute({
       organizations,
       sidebarOpen,
       monitoring,
+      helpLinks,
     };
   },
   // Auth, organizations, and the unread count load with the document. Client

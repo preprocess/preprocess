@@ -19,6 +19,8 @@ import {
   LoadingButton,
 } from "@preprocess/ui/components/loading-button";
 import { PasswordInput } from "@preprocess/ui/components/password-input";
+import { Spinner } from "@preprocess/ui/components/spinner";
+import { cn } from "@preprocess/ui/lib/utils";
 import {
   Select,
   SelectContent,
@@ -490,6 +492,7 @@ function DomainRow({
   onError: (error: unknown) => void;
 }) {
   const actions = useSsoActions();
+  const [checking, setChecking] = useState(false);
   const [color, status] = DOMAIN_BADGE[domain.status];
   const remove = {
     label: "Remove",
@@ -515,20 +518,34 @@ function DomainRow({
         />
       ) : (
         <>
-          <LoadingButton
-            onAction={() => {
+          <Button
+            aria-busy={checking || undefined}
+            onClick={() => {
+              if (checking) return;
               onError(null);
-              return actions.checkDomain(domain.domain);
+              setChecking(true);
+              actions
+                .checkDomain(domain.domain)
+                .catch(onError)
+                .finally(() => setChecking(false));
             }}
-            onError={onError}
-            pendingLabel="Check"
-            successLabel="Done"
-            errorLabel="Retry"
             size="compact"
             variant="secondary"
           >
-            Check now
-          </LoadingButton>
+            <span className="grid place-items-center">
+              <span
+                className={cn(
+                  "col-start-1 row-start-1",
+                  checking && "invisible",
+                )}
+              >
+                Check now
+              </span>
+              {checking ? (
+                <Spinner className="col-start-1 row-start-1 size-3.5" />
+              ) : null}
+            </span>
+          </Button>
           <SettingsRowMenu
             actions={[
               {

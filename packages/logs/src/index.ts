@@ -5,6 +5,7 @@ import {
   posthogConfig,
   routeOf,
   sendToPostHog,
+  trafficOf,
   type PostHogEnv,
 } from "./posthog.ts";
 
@@ -13,6 +14,7 @@ export {
   EXCEPTION_EVENT,
   REQUEST_EVENT,
   routeOf,
+  trafficOf,
   type PostHogEnv,
 } from "./posthog.ts";
 
@@ -198,7 +200,11 @@ export const withRequestEvents = <E extends PostHogEnv>(
 ) =>
   withEvlog<E, ExecutionContext>((request, env, ctx, log) => {
     initLogs(service, undefined, env);
-    log.set({ route: routeOf(new URL(request.url).pathname) });
+    const { pathname } = new URL(request.url);
+    log.set({
+      route: routeOf(pathname),
+      traffic: trafficOf(pathname, request.headers.get("user-agent")),
+    });
     return fetch(request, env, ctx);
   }).fetch;
 

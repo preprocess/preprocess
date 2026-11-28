@@ -287,7 +287,7 @@ const access = async (env: Env, vars: Vars): Promise<Access> => {
   const role = vars.caller.role;
   if (role !== "owner" && role !== "admin")
     throw new HTTPException(403, {
-      message: "Only Owners can manage single sign-on.",
+      message: "Only Owners can change single sign-on.",
     });
   const plan = await getPlan(env, vars.org);
   if (plan.has("sso"))
@@ -320,7 +320,7 @@ const access = async (env: Env, vars: Vars): Promise<Access> => {
 const requireEditor = async (env: Env, vars: Vars) => {
   if (vars.caller.type !== "person" || vars.caller.role !== "owner")
     throw new HTTPException(403, {
-      message: "Only Owners can manage single sign-on.",
+      message: "Only Owners can change single sign-on.",
     });
   if (!(await access(env, vars)).available)
     throw new HTTPException(403, {
@@ -671,8 +671,7 @@ const findDomain = async (tx: SystemTx, org: string, domain: string) => {
         eq(ssoDomains.domain, domain.toLowerCase()),
       ),
     );
-  if (!row)
-    throw new ApiError(404, "not_found", "That domain isn't on the list.");
+  if (!row) throw new ApiError(404, "not_found", "This domain wasn't found.");
   return row;
 };
 
@@ -1281,7 +1280,7 @@ export const ssoRoutes = new OpenAPIHono<{
           throw new ApiError(
             409,
             "domain_exists",
-            "That domain is already on the list.",
+            "This domain is already added.",
           );
         const [{ count = 0 } = {}] = await tx
           .select({ count: sql<number>`count(*)::int` })

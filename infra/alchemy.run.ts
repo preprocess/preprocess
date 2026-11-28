@@ -84,6 +84,7 @@ import {
   type SelfHostStage,
   type Stage,
   publicDocsUrl,
+  publicStatusUrl,
   posthogProject,
   posthogVars,
 } from "./src/stages.ts";
@@ -349,6 +350,8 @@ export default Alchemy.Stack(
         // Where the app links to docs: the stage's own docs domain, else the
         // public docs, so the app never waits on the docs Worker's URL.
         DOCS_URL: docsDomain ? `https://${docsDomain}` : publicDocsUrl,
+        // Our status page; a self-hosted install links none (spec 16).
+        ...(!selfHost && { STATUS_URL: publicStatusUrl }),
         // Shows the Google button; the API holds the secret.
         ...Object.fromEntries(
           googleVars.map(
@@ -388,6 +391,7 @@ export default Alchemy.Stack(
         API_URL: appDomain
           ? `https://${appDomain}/v1`
           : Output.map(app.url, (url) => `${url}/v1`),
+        ...(!selfHost && { STATUS_URL: publicStatusUrl }),
       },
     });
     const docsUrl = docsDomain ? `https://${docsDomain}` : docs.url;

@@ -15,6 +15,7 @@ import {
   LOCAL,
   localAppUrl,
   publicDocsUrl,
+  publicStatusUrl,
   localAuditKeyId,
   localEmailFrom,
   localGitHub,
@@ -44,7 +45,7 @@ const configs: Record<string, object> = {
     // The app serves Better Auth (/api/auth/*) and /v1 from the API Worker on
     // its own origin, so session cookies stay first-party.
     services: [{ binding: "API", service: local.api }],
-    vars: { DOCS_URL: publicDocsUrl },
+    vars: { DOCS_URL: publicDocsUrl, STATUS_URL: publicStatusUrl },
     // The app builds per stage (CLOUDFLARE_ENV selects the environment).
     env: {
       staging: { name: names("staging").app, workers_dev: true },
@@ -57,7 +58,7 @@ const configs: Record<string, object> = {
     name: local.docs,
     main: "src/server.ts",
     ...common,
-    vars: { API_URL: `${localAppUrl}/v1` },
+    vars: { API_URL: `${localAppUrl}/v1`, STATUS_URL: publicStatusUrl },
   },
   "apps/api": {
     $schema: "node_modules/wrangler/config-schema.json",

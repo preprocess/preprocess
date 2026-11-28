@@ -32,14 +32,19 @@ function Missing() {
 function ShellNotFound({
   data,
 }: {
-  data: { apiUrl: string; pageTree: object };
+  data: { apiUrl: string; pageTree: object; statusUrl: string | null };
 }) {
-  const { apiUrl, pageTree } = useFumadocsLoader(data) as {
+  const { apiUrl, pageTree, statusUrl } = useFumadocsLoader(data) as {
     apiUrl: string;
     pageTree: PageTree.Root;
+    statusUrl: string | null;
   };
   return (
-    <DocsShell appUrl={new URL(apiUrl).origin} tree={pageTree}>
+    <DocsShell
+      appUrl={new URL(apiUrl).origin}
+      statusUrl={statusUrl}
+      tree={pageTree}
+    >
       <Missing />
     </DocsShell>
   );
@@ -53,7 +58,15 @@ export function NotFound({ data }: { data?: unknown }) {
     "apiUrl" in data
   )
     return (
-      <ShellNotFound data={data as { apiUrl: string; pageTree: object }} />
+      <ShellNotFound
+        data={
+          data as {
+            apiUrl: string;
+            pageTree: object;
+            statusUrl: string | null;
+          }
+        }
+      />
     );
   return (
     <main className="flex h-svh flex-col items-center justify-center">
