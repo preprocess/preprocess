@@ -63,6 +63,18 @@ we announce the date it will stop at least 6 months ahead.
 The one exception is security: we may change or restrict behavior without notice
 to fix a vulnerability, and we say so in the advisory.
 
+### Deprecated
+
+These keep working in `/v1`. Each names what replaces it.
+
+| Deprecated                                                                                                                                                   | Use instead                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `domains` on `PUT /v1/orgs/{org}/sso`                                                                                                                        | `POST /v1/orgs/{org}/sso/domains` and `DELETE /v1/orgs/{org}/sso/domains/{domain}`         |
+| `enforced` and `jit` on `PUT /v1/orgs/{org}/sso`                                                                                                             | `requireSso` and `jit` on `PATCH /v1/orgs/{org}/sso/sign-in`                               |
+| `POST /v1/orgs/{org}/sso/verify-domain`                                                                                                                      | `POST /v1/orgs/{org}/sso/domains/{domain}/check`                                           |
+| `allowed` on `GET /v1/orgs/{org}/sso`                                                                                                                        | `access.available`                                                                         |
+| The connection's `providerId`, `issuer`, `domains`, `domainVerified`, `verification`, `enforced`, `serviceProvider`, `saml.ssoUrl` and `saml.hasCertificate` | `domains`, `requireSso`, `serviceProvider` and `saml.certificateExpiresAt` in the settings |
+
 ## Endpoints
 
 <EndpointTags />

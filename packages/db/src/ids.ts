@@ -11,6 +11,7 @@ export const prefixes = {
   invitation: "inv",
   apikey: "key",
   ssoProvider: "sso",
+  ssoDomain: "ssd",
   group: "grp",
   agent: "agt",
   deployment: "dep",
