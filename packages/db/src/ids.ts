@@ -37,6 +37,7 @@ export const prefixes = {
   usageReport: "urp",
   sandboxInterval: "sbi",
   retentionSweep: "rsw",
+  scim: "scim",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

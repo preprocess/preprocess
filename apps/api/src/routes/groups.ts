@@ -21,6 +21,7 @@ import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
 import { groupInUse, syncAgents } from "../deploy.ts";
 import { getPlan } from "../plan.ts";
+import { slugify } from "../scim.ts";
 import { refuseOverSeats } from "../seats.ts";
 
 const OrgParam = z.object({ org: z.string() });
@@ -38,6 +39,13 @@ const Group = z
     isDevelopers: z.boolean(),
     memberCount: z.number(),
     createdAt: z.string(),
+    synced: z.boolean().openapi({
+      description:
+        "Synced from the identity provider: name and members are read-only",
+    }),
+    syncedRemovedAt: z.string().nullable().openapi({
+      description: "When the identity provider deleted the synced group",
+    }),
   })
   .openapi("Group");
 
@@ -73,14 +81,6 @@ const json = <T extends z.ZodType>(schema: T, description: string) => ({
 });
 const noContent = { 204: { description: "Done" } };
 
-const slugify = (name: string) =>
-  name
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-
 const SlugSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]{0,47}$/, "lowercase letters, digits and dashes");
@@ -94,6 +94,8 @@ const listGroups = (tx: Tx) =>
       description: groups.description,
       isDevelopers: groups.isDevelopers,
       createdAt: groups.createdAt,
+      scimGroupId: groups.scimGroupId,
+      syncedRemovedAt: groups.syncedRemovedAt,
       memberCount: count(groupMembers.userId),
     })
     .from(groups)
@@ -101,10 +103,29 @@ const listGroups = (tx: Tx) =>
     .groupBy(groups.id)
     .orderBy(asc(groups.name));
 
-const toGroup = (g: Awaited<ReturnType<typeof listGroups>>[number]) => ({
+const toGroup = ({
+  scimGroupId,
+  ...g
+}: Awaited<ReturnType<typeof listGroups>>[number]) => ({
   ...g,
   createdAt: g.createdAt.toISOString(),
+  synced: scimGroupId !== null,
+  syncedRemovedAt: g.syncedRemovedAt?.toISOString() ?? null,
 });
+
+// A synced group's name and members follow the directory (scim.ts).
+const refuseSynced = (
+  group: Awaited<ReturnType<typeof findGroup>>,
+  what: "name" | "members",
+) => {
+  if (group.scimGroupId === null || group.syncedRemovedAt) return;
+  throw new HTTPException(409, {
+    message:
+      what === "name"
+        ? "This group's name comes from your identity provider. Change it there."
+        : "This group's members come from your identity provider. Change them there.",
+  });
+};
 
 const findGroup = async (tx: Tx, id: string) => {
   const [found] = await listGroups(tx).where(eq(groups.id, id));
@@ -307,6 +328,8 @@ export const groupRoutes = new OpenAPIHono<{
       const body = c.req.valid("json");
       const updated = await withOrg(c.env, c.var.org, async (tx) => {
         const before = await findGroup(tx, id);
+        if (body.name !== undefined && body.name !== before.name)
+          refuseSynced(before, "name");
         await tx
           .update(groups)
           .set({
@@ -348,6 +371,11 @@ export const groupRoutes = new OpenAPIHono<{
         if (group.isDevelopers)
           throw new HTTPException(409, {
             message: "The Developers group cannot be deleted.",
+          });
+        if (group.scimGroupId !== null && !group.syncedRemovedAt)
+          throw new HTTPException(409, {
+            message:
+              "This group comes from your identity provider. Delete it there.",
           });
         await refuseInUse(
           tx,
@@ -393,6 +421,7 @@ export const groupRoutes = new OpenAPIHono<{
       const plan = await getPlan(c.env, c.var.org);
       await withOrg(c.env, c.var.org, async (tx) => {
         const group = await findGroup(tx, id);
+        refuseSynced(group, "members");
         const [membership] = await tx
           .select({ id: member.id })
           .from(member)
@@ -432,6 +461,7 @@ export const groupRoutes = new OpenAPIHono<{
       const { group: id, user: userId } = c.req.valid("param");
       await withOrg(c.env, c.var.org, async (tx) => {
         const group = await findGroup(tx, id);
+        refuseSynced(group, "members");
         const removed = await tx
           .delete(groupMembers)
           .where(

@@ -39,6 +39,7 @@ import { and, count, eq, gt, sql } from "drizzle-orm";
 import { endBillingForDeletion } from "./billing.ts";
 import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
+import { refuseWithoutPlan, SCIM_PATH, scimDirectory } from "./scim.ts";
 
 // The deploy smoke test (infra/scripts/smoke.ts) has no mailbox. On staging
 // and previews only, its one address (smoke-test+<stage>@ EMAIL_FROM's
@@ -124,6 +125,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
   let revoking:
     { id: string; referenceId: string; name: string | null } | undefined;
   const person = (fallback: string) => request.actorId ?? fallback;
+  const directory = scimDirectory(env, tx, record);
 
   // Sign-up is open on our cloud. A self-hosted install takes its first
   // person, then only people with a pending invitation.
@@ -177,7 +179,13 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     baseURL: env.APP_URL,
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: [env.APP_URL],
-    database: drizzleAdapter(tx, { provider: "pg", schema: authSchema }),
+    // Native transactions (savepoints in the request's transaction): the
+    // SCIM plugin refuses to run without them.
+    database: drizzleAdapter(tx, {
+      provider: "pg",
+      schema: authSchema,
+      transaction: true,
+    }),
     // No passwords. Both ways in prove the address (the link reaches it, or
     // Google vouches for it), and accepting an invitation needs a verified
     // email, so nobody can take someone else's seat.
@@ -201,7 +209,12 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     advanced: {
       ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
       database: {
-        generateId: ({ model }) => newId(idKinds[model] ?? "verification"),
+        generateId: ({ model }) =>
+          newId(
+            model.startsWith("scim")
+              ? "scim"
+              : (idKinds[model] ?? "verification"),
+          ),
       },
     },
     user: {
@@ -223,8 +236,12 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
     databaseHooks: {
       user: {
         create: {
-          async before(user) {
-            if (!(await mayJoin(user.email))) throw needsInvitation();
+          // A directory provisions people without an invitation: its token
+          // was issued by an Owner.
+          async before(user, context) {
+            const provisioned = context?.path?.startsWith("/scim/v2") === true;
+            if (!provisioned && !(await mayJoin(user.email)))
+              throw needsInvitation();
             return { data: { ...user, ...fullName(user) } };
           },
         },
@@ -254,6 +271,10 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
       // The key a revoke names, read before the plugin deletes it, so the
       // audit event can say which organization and key it was.
       before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path?.startsWith("/scim/v2")) {
+          await directory.before(ctx);
+          return;
+        }
         // Refuse a sign-up link up front rather than at the link, so the
         // person sees why on the page instead of after opening the email.
         if (ctx.path === "/magic-link/verify") {
@@ -311,6 +332,10 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
           .where(eq(authSchema.apikey.id, keyId));
       }),
       after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path?.startsWith("/scim/v2")) {
+          await directory.after(ctx);
+          return;
+        }
         const returned = ctx.context.returned as
           | {
               id?: string;
@@ -544,6 +569,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
         interval: "5s",
       }),
       bearer(),
+      directory.plugin,
     ],
   });
 };
@@ -590,6 +616,12 @@ export const readSession = (env: Env, request: Request) =>
 // skips both the transaction and the second lookup.
 export const handleAuthRequest = async (env: Env, request: Request) => {
   const context = requestContext(request);
+  // SCIM (scim.ts) authenticates by its own bearer token, never a session.
+  if (new URL(request.url).pathname.startsWith(`${SCIM_PATH}/`))
+    return (
+      (await refuseWithoutPlan(env, request)) ??
+      withAuth(env, context, (auth) => auth.handler(request))
+    );
   if (
     request.method === "GET" &&
     new URL(request.url).pathname === "/api/auth/get-session"

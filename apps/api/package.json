@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.27",
+    "@better-auth/scim": "1.7.27",
     "@hono/zod-openapi": "^1.6.3",
     "@preprocess/db": "workspace:*",
     "@preprocess/logs": "workspace:*",
