@@ -12,7 +12,6 @@ import { fakeGithub, GITHUB_API, GITHUB_WEB } from "./test/fake-github.ts";
 import { fakeIdp, isFakeIdp } from "./test/fake-idp.ts";
 import { fakeMcp } from "./test/fake-mcp.ts";
 import { fakeModel, MODEL_ORIGIN } from "./test/fake-model.ts";
-import { fakeTurnstile, TURNSTILE_ORIGIN } from "./test/fake-turnstile.ts";
 import { installDatabaseUrl, testDatabaseUrl } from "./test/global-setup.ts";
 
 const require = createRequire(import.meta.url);
@@ -98,7 +97,6 @@ export default defineConfig({
           GITHUB_API_URL: GITHUB_API,
           GITHUB_URL: GITHUB_WEB,
           GITHUB_BUILD_TIMEOUT_SECONDS: "1",
-          SUPPORT_TURNSTILE_SECRET_KEY: "test-turnstile-secret",
         },
         // The internet the API reaches: GitHub, an organization's model
         // server, an SSO identity provider with the DNS it checks domains
@@ -108,7 +106,6 @@ export default defineConfig({
           if ([GITHUB_API, GITHUB_WEB].includes(url.origin))
             return fakeGithub(request);
           if (url.origin === MODEL_ORIGIN) return fakeModel(request);
-          if (url.origin === TURNSTILE_ORIGIN) return fakeTurnstile(request);
           if (isFakeIdp(url)) return fakeIdp(request);
           return fakeMcp(request);
         },

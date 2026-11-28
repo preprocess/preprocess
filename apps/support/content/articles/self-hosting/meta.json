@@ -1,9 +1,0 @@
-{
-  "title": "Self-hosting",
-  "pages": [
-    "deploy-self-hosted-preprocess",
-    "activate-and-renew-a-license-key",
-    "upgrade-a-self-hosted-install",
-    "configure-support-links-for-self-hosting"
-  ]
-}

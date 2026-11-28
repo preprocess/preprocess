@@ -2,8 +2,6 @@
 // usable on any stage). OUTPUTS is the JSON scripts/stage.ts printed.
 //
 // 1. The API answers its health check and the app serves its sign-in page.
-//    On our cloud's stages, the help center serves its home page and an
-//    article, and its search index holds both help articles and docs pages.
 // 2. Auth round trip through the app's origin (the app forwards /api/auth to
 //    the API): sign in as the stage's smoke-test user, signing up on the
 //    first run, then read the session back.
@@ -38,13 +36,9 @@ import path from "node:path";
 
 import { buildSync } from "esbuild";
 
-import { isSelfHostStage } from "../src/stages.ts";
-
-const { app, api, docs, support } = JSON.parse(process.env.OUTPUTS ?? "{}") as {
+const { app, api } = JSON.parse(process.env.OUTPUTS ?? "{}") as {
   app?: string;
   api?: string;
-  docs?: string;
-  support?: string;
 };
 if (!app || !api) throw new Error("OUTPUTS must carry app and api URLs");
 const stage = process.env.STAGE ?? "staging";
@@ -134,33 +128,6 @@ console.log(`GET ${api} -> 200`);
 const signInPage = await call("GET", "/sign-in");
 if (signInPage.status !== 200 || !/<html/i.test(signInPage.text)) {
   fail("the app's sign-in page");
-}
-
-// The help center, which selfhost stages never deploy. Its search index
-// must hold its own articles and the docs pages it merges from the docs
-// Worker, on the docs' origin.
-if (!support && !isSelfHostStage(stage)) fail("OUTPUTS carry no help center");
-if (support) {
-  const get = async (pathname: string) => {
-    const response = await fetch(new URL(pathname, support));
-    console.log(`GET ${support}${pathname} -> ${response.status}`);
-    return response;
-  };
-  const home = await get("/");
-  if (home.status !== 200 || !/<html/i.test(await home.text()))
-    fail("the help center's home page");
-  const index = (await (await get("/api/search")).json().catch(() => ({}))) as {
-    articles?: { url: string }[];
-    docs?: { url: string }[];
-  };
-  const article = index.articles?.[0]?.url;
-  if (!article) fail("the help center's search index has no help articles");
-  if (!index.docs?.length)
-    fail("the help center's search index has no docs pages");
-  if (docs && !index.docs?.every((page) => page.url.startsWith(docs)))
-    fail("the help center's docs results are not on the docs' origin");
-  const page = await get(article ?? "/");
-  if (page.status !== 200) fail(`the help article ${article}`);
 }
 
 // 2. Auth round trip.
