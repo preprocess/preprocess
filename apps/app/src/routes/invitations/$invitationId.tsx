@@ -42,6 +42,7 @@ export const Route = createFileRoute("/invitations/$invitationId")({
         session,
         preview,
         google: options.google,
+        turnstile: options.turnstile,
         invitation: null,
         problem: null,
       };
@@ -50,6 +51,7 @@ export const Route = createFileRoute("/invitations/$invitationId")({
       session,
       preview: null,
       google: false,
+      turnstile: null,
       ...(await loadInvitation({ data: params.invitationId })),
     };
   },
@@ -74,7 +76,7 @@ function Unavailable({
 
 function InvitationPage() {
   const { invitationId } = Route.useParams();
-  const { session, preview, google, invitation, problem } =
+  const { session, preview, google, turnstile, invitation, problem } =
     Route.useLoaderData();
   const { signOut } = useAuth();
   const here = `/invitations/${invitationId}`;
@@ -120,6 +122,7 @@ function InvitationPage() {
         <PasswordlessForm
           defaultEmail={preview.email}
           google={google}
+          turnstile={turnstile}
           next={here}
           onSent={setSent}
           submitLabel="Sign in"

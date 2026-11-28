@@ -8,10 +8,15 @@ import {
 import type { IconComponentProps } from "@preprocess/ui/lib/icon-context";
 import { useRef, useState, type FormEvent } from "react";
 
-import { authPost } from "../features/auth/client";
+import { ApiError, authPost } from "../features/auth/client";
 import { AuthField, authLinkClass } from "./auth-layout";
+import { Turnstile, type TurnstileHandle } from "./turnstile";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const BOT_CHECK_FAILED =
+  "We couldn't confirm you're a person. Complete the check and try again.";
+// Refusals about the address itself, shown under the field.
+const ADDRESS_ERRORS = new Set(["DISPOSABLE_EMAIL", "TOO_MANY_LINKS"]);
 
 /**
  * The two ways in, with no password: Google (where the install configured
@@ -24,9 +29,12 @@ export function PasswordlessForm({
   defaultEmail = "",
   submitLabel,
   onSent,
+  turnstile,
 }: Readonly<{
   next: string;
   google: boolean;
+  /** The bot check's site key, where sign-in links need one. */
+  turnstile: string | null;
   /** The primary button: "Sign in" or "Sign up". */
   submitLabel: string;
   defaultEmail?: string;
@@ -34,6 +42,7 @@ export function PasswordlessForm({
   onSent: (email: string | null) => void;
 }>) {
   const sendRef = useRef<LoadingButtonHandle>(null);
+  const checkRef = useRef<TurnstileHandle>(null);
   const [email, setEmail] = useState(defaultEmail);
   const [emailError, setEmailError] = useState<string>();
   const [error, setError] = useState<string | null>(null);
@@ -48,19 +57,33 @@ export function PasswordlessForm({
       setEmailError("Enter an email address, like ada@example.com.");
       throw new AsyncActionAbortError();
     }
+    const token = turnstile ? await checkRef.current?.token() : undefined;
+    if (turnstile && !token) {
+      setError(BOT_CHECK_FAILED);
+      throw new AsyncActionAbortError();
+    }
     try {
-      await authPost("/sign-in/magic-link", {
-        email: address,
-        callbackURL: next,
-        newUserCallbackURL: next,
-        errorCallbackURL: failed,
-      });
+      await authPost(
+        "/sign-in/magic-link",
+        {
+          email: address,
+          callbackURL: next,
+          newUserCallbackURL: next,
+          errorCallbackURL: failed,
+        },
+        token ? { "x-turnstile-token": token } : undefined,
+      );
       window.setTimeout(() => onSent(address), 600);
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not send the link.",
-      );
+      if (cause instanceof ApiError && ADDRESS_ERRORS.has(cause.code ?? ""))
+        setEmailError(cause.message);
+      else
+        setError(
+          cause instanceof Error ? cause.message : "Could not send the link.",
+        );
       throw cause;
+    } finally {
+      checkRef.current?.reset();
     }
   }
 
@@ -110,6 +133,7 @@ export function PasswordlessForm({
             value={email}
           />
         </FieldGroup>
+        {turnstile ? <Turnstile ref={checkRef} siteKey={turnstile} /> : null}
         {error ? (
           <p className="text-body text-destructive" role="alert">
             {error}

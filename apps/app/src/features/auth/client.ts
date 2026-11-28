@@ -62,10 +62,15 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}) {
 }
 
 /** POST to a Better Auth endpoint under /api/auth. */
-export const authPost = <T = unknown>(path: string, body: unknown = {}) =>
+export const authPost = <T = unknown>(
+  path: string,
+  body: unknown = {},
+  headers?: Record<string, string>,
+) =>
   apiFetch<T>(`/api/auth${path}`, {
     method: "POST",
     body: JSON.stringify(body),
+    headers,
   });
 
 /** A /v1 route in one organization that answers text, such as NDJSON. */

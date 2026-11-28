@@ -20,6 +20,7 @@ export const LIMITS = {
 
 const WINDOW_MS = 60_000;
 export const FEEDBACK_WINDOW_MS = 3_600_000;
+const HOUR_MS = 3_600_000;
 
 // One object per organization holds its own count and each of its API keys';
 // one per client address holds that address's sign-in attempts.
@@ -69,6 +70,26 @@ export class RateLimiter extends DurableObject<Env> {
         count: b.count + 1,
       });
     return { over: [], retryAfter: 0 };
+  }
+
+  // Hour-long windows (sign-in links per address, signup-protection.ts),
+  // kept in storage so an object evicted between requests still counts
+  // them, and cleared by an alarm once the window ends.
+  async takeHourly(limit: number): Promise<{ over: boolean }> {
+    const window = Math.floor(Date.now() / HOUR_MS);
+    const stored = await this.ctx.storage.get<{
+      window: number;
+      count: number;
+    }>("hourly");
+    const count = stored?.window === window ? stored.count : 0;
+    if (count >= limit) return { over: true };
+    await this.ctx.storage.put("hourly", { window, count: count + 1 });
+    await this.ctx.storage.setAlarm((window + 1) * HOUR_MS);
+    return { over: false };
+  }
+
+  override async alarm() {
+    await this.ctx.storage.deleteAll();
   }
 }
 

@@ -69,13 +69,18 @@ export const needsName = (user: SessionUser) =>
 
 /**
  * How people get in here: whether anyone may create an account (or only
- * invitees), and whether Google sign-in is configured.
+ * invitees), whether Google sign-in is configured, and the bot check's
+ * site key where sign-in links need one.
  */
 export const loadAuthOptions = createServerFn({ method: "GET" }).handler(
   async () => {
-    const { signUpIsOpen, googleSignIn } =
+    const { signUpIsOpen, googleSignIn, turnstileSiteKey } =
       await import("../../server/run-mode.server");
-    return { signUpOpen: signUpIsOpen(), google: googleSignIn() };
+    return {
+      signUpOpen: signUpIsOpen(),
+      google: googleSignIn(),
+      turnstile: turnstileSiteKey(),
+    };
   },
 );
 
