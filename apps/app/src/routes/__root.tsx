@@ -14,6 +14,7 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { ProductShell } from "../components/product-shell";
+import { PageNotFound } from "../components/route-states";
 import { loadProductSidebarOpen } from "../components/product-sidebar-open";
 import { ProductSidebarOpenProvider } from "../components/product-sidebar-state";
 import { ThemeProvider, ThemeScript } from "../components/theme-provider";
@@ -177,6 +178,7 @@ export const Route = createRootRoute({
   shouldReload: false,
   shellComponent: RootDocument,
   component: RootComponent,
+  notFoundComponent: PageNotFound,
 });
 
 // Settings data from the API. One client per browser tab.

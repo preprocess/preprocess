@@ -1,5 +1,6 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 
+import { AgentNotFound } from "../../../../components/route-states";
 import { CaseInbox } from "../../../../features/agent-cases/case-inbox";
 import {
   casesSearchForUrl,
@@ -25,9 +26,7 @@ export const Route = createFileRoute("/agents/$agentId_/cases/")({
     return { agent, page, access };
   },
   component: AgentCasesPage,
-  notFoundComponent: () => (
-    <p className="p-6 text-body">This agent doesn't exist.</p>
-  ),
+  notFoundComponent: AgentNotFound,
 });
 
 function AgentCasesPage() {

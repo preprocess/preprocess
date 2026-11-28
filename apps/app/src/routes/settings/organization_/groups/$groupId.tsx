@@ -1,4 +1,6 @@
+import { Button } from "@preprocess/ui/components/button";
 import {
+  Link,
   createFileRoute,
   notFound,
   useNavigate,
@@ -17,6 +19,8 @@ import {
   GroupDetailView,
   PAGE_BACK,
 } from "../../../../features/groups/groups-panel";
+import { SettingsEmpty } from "../../../../features/settings/kit";
+import { GoneArt } from "../../../../components/empty-art";
 
 export const Route = createFileRoute("/settings/organization_/groups/$groupId")(
   {
@@ -64,5 +68,16 @@ function OrganizationGroupPage() {
 }
 
 function GroupNotFound() {
-  return <p className="p-6 text-body">This group doesn't exist.</p>;
+  return (
+    <SettingsEmpty
+      action={
+        <Button asChild size="sm" variant="secondary">
+          <Link to="/settings/organization/groups">Back to groups</Link>
+        </Button>
+      }
+      art={<GoneArt />}
+      description="This group was deleted or doesn't exist."
+      title="Group not found"
+    />
+  );
 }

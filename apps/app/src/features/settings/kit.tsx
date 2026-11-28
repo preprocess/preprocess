@@ -69,7 +69,11 @@ import {
   type ReactNode,
 } from "react";
 
-import { CouldntLoadArt, NoAccessArt } from "../../components/empty-art";
+import {
+  CouldntLoadArt,
+  NoAccessArt,
+  SignedOutArt,
+} from "../../components/empty-art";
 import { ApiError } from "../auth/client";
 
 /**
@@ -542,8 +546,8 @@ const LOAD_ERROR_COPY = {
     body: "Ask an organization Owner or Admin if you need access to this section.",
   },
   unauthorized: {
-    title: "Session expired",
-    body: "Sign in again to view this section.",
+    title: "Your session expired",
+    body: "Sign in again to view and change your settings.",
   },
   network: {
     title: "Couldn't load this section",
@@ -608,7 +612,15 @@ export function SettingsError({
             </Button>
           )
         }
-        art={kind === "forbidden" ? <NoAccessArt /> : <CouldntLoadArt />}
+        art={
+          kind === "forbidden" ? (
+            <NoAccessArt />
+          ) : kind === "unauthorized" ? (
+            <SignedOutArt />
+          ) : (
+            <CouldntLoadArt />
+          )
+        }
         description={copy.body}
         title={copy.title}
       />
