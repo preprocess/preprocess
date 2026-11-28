@@ -86,6 +86,7 @@ import {
 } from "../src/schema/github.ts";
 import { modelEndpoints } from "../src/schema/models.ts";
 import { orgKeys, secrets } from "../src/schema/secrets.ts";
+import { ssoDomains } from "../src/schema/sso.ts";
 
 export type Org = Awaited<ReturnType<typeof seedOrganization>>;
 
@@ -486,6 +487,14 @@ export const seedOrganization = async (name: string) =>
       domain: `${org}.example`,
       domainVerified: true,
     });
+    await tx.insert(ssoDomains).values({
+      id: newId("ssoDomain"),
+      organizationId: org,
+      domain: `${org}.example`,
+      token: "seed-token",
+      status: "verified",
+      createdBy: "usr_seed",
+    });
     await tx.insert(datasets).values({
       id: newId("dataset"),
       organizationId: org,
@@ -576,6 +585,7 @@ export const tenantTables = {
   invitation: "organization_id",
   apikey: "reference_id",
   sso_provider: "organization_id",
+  sso_domains: "organization_id",
   groups: "organization_id",
   group_members: "organization_id",
   agents: "organization_id",

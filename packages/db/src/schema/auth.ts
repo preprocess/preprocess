@@ -52,6 +52,9 @@ export const session = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     activeOrganizationId: text("active_organization_id"),
+    // "sso" for a session an SSO sign-in started; null for every other way
+    // in. Require SSO ends the others (routes/sso.ts).
+    signInMethod: text("sign_in_method"),
   },
   (table) => [index("session_userId_idx").on(table.userId)],
 );
@@ -469,6 +472,19 @@ export const ssoProvider = pgTable(
     domainVerified: boolean("domain_verified"),
     enforced: boolean("enforced").default(false).notNull(),
     jit: boolean("jit").default(true).notNull(),
+    // Where SAML metadata came from (null when it was pasted), when it was
+    // last read, and when its signing certificate expires.
+    metadataUrl: text("metadata_url"),
+    metadataReadAt: timestamp("metadata_read_at"),
+    certificateExpiresAt: timestamp("certificate_expires_at"),
+    // The group JIT adds new people to; null for none.
+    defaultGroupId: text("default_group_id"),
+    // The test sign-in in flight (its id is also in the tester's cookie), and
+    // the last test's result as JSON (routes/sso.ts, SsoTest).
+    testId: text("test_id"),
+    testStartedBy: text("test_started_by"),
+    testStartedAt: timestamp("test_started_at"),
+    lastTest: text("last_test"),
   },
   (table) => [
     index("sso_provider_organizationId_idx").on(table.organizationId),

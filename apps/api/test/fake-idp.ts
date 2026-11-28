@@ -30,6 +30,11 @@ type Person = {
   email: string;
   given_name?: string;
   family_name?: string;
+  // How the provider misbehaves for a test sign-in: refuse the person (as an
+  // IdP does for someone not assigned to the app), or answer SAML for
+  // another audience.
+  deny?: string;
+  audience?: string;
 };
 const codes = new Map<string, { person: Person; clientId: string }>();
 const accessTokens = new Map<string, Person>();
@@ -119,7 +124,7 @@ const samlResponse = async (url: URL) => {
   const acs = /AssertionConsumerServiceURL="([^"]+)"/.exec(xml)?.[1] ?? "";
   const issuer = /<saml:Issuer[^>]*>([^<]+)</.exec(xml)?.[1] ?? "";
   const sp = samlify.ServiceProvider({
-    entityID: issuer.replaceAll("&amp;", "&"),
+    entityID: next?.audience ?? issuer.replaceAll("&amp;", "&"),
     wantAssertionsSigned: true,
     wantMessageSigned: true,
     assertionConsumerService: [{ Binding: POST, Location: acs }],
@@ -200,12 +205,25 @@ export const fakeIdp = async (request: Request): Promise<Response> => {
   // A real IdP answers with a page that posts this form to the ACS; tests post
   // it themselves.
   if (route === "GET /saml/cert") return new Response(samlCert);
+  if (route === "GET /saml/metadata")
+    return new Response(samlIdp.getMetadata(), {
+      headers: { "content-type": "application/samlmetadata+xml" },
+    });
+  if (route === "GET /saml/missing")
+    return new Response("not here", { status: 404, statusText: "Not Found" });
   if (route === "GET /saml/sso") {
     if (!next) return json({ error: "nobody to sign in" }, 400);
     return json(await samlResponse(url));
   }
   if (route === "GET /authorize") {
     if (!next) return json({ error: "nobody to sign in" }, 400);
+    if (next.deny) {
+      const refused = new URL(url.searchParams.get("redirect_uri")!);
+      refused.searchParams.set("error", "access_denied");
+      refused.searchParams.set("error_description", next.deny);
+      refused.searchParams.set("state", url.searchParams.get("state") ?? "");
+      return Response.redirect(refused.toString(), 302);
+    }
     const code = randomUUID();
     codes.set(code, {
       person: next,
