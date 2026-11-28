@@ -52,6 +52,7 @@ import { otelRoutes } from "./routes/otel.ts";
 import { evalRoutes } from "./routes/evals.ts";
 import { memoryRoutes } from "./routes/memories.ts";
 import { trainingRoutes, trainingTag } from "./routes/training.ts";
+import { modelRoutes } from "./routes/models.ts";
 import { captureRoutes } from "./routes/capture.ts";
 import { datasetRoutes } from "./routes/datasets.ts";
 import { meRoutes } from "./routes/me.ts";
@@ -155,6 +156,7 @@ orgApi.route("/", otelRoutes);
 orgApi.route("/", evalRoutes);
 orgApi.route("/", memoryRoutes);
 orgApi.route("/", trainingRoutes);
+orgApi.route("/", modelRoutes);
 orgApi.route("/", captureRoutes);
 orgApi.route("/", datasetRoutes);
 
