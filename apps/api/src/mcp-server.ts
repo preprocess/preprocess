@@ -14,7 +14,14 @@ type Method = "get" | "post" | "put" | "patch" | "delete";
 // Tool name → operation. A test checks every entry exists in the document.
 export const TOOLS: Record<
   string,
-  { method: Method; path: string; destructive?: true; fallback?: string }
+  {
+    method: Method;
+    path: string;
+    destructive?: true;
+    fallback?: string;
+    // Our cloud only: not listed or callable on a self-hosted install.
+    hosted?: true;
+  }
 > = {
   list_agents: {
     method: "get",
@@ -111,6 +118,26 @@ export const TOOLS: Record<
     method: "delete",
     path: "/agents/{agent}/memories/{memory}",
     destructive: true,
+  },
+  create_support_request: {
+    method: "post",
+    path: "/support/requests",
+    hosted: true,
+  },
+  list_support_requests: {
+    method: "get",
+    path: "/support/requests",
+    hosted: true,
+  },
+  get_support_request: {
+    method: "get",
+    path: "/support/requests/{id}",
+    hosted: true,
+  },
+  reply_to_support_request: {
+    method: "post",
+    path: "/support/requests/{id}/messages",
+    hosted: true,
   },
 };
 

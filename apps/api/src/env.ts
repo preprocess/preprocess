@@ -1,4 +1,4 @@
-import type { LogRecord, PostHogEnv } from "@preprocess/logs";
+import type { LogRecord, PostHogEnv, ProductEvent } from "@preprocess/logs";
 import type { SandboxOwner } from "@preprocess/sandbox";
 import type { NetworkRules } from "@preprocess/db/schema/deployments";
 import type { SandboxPreset, SandboxSetup } from "@preprocess/sdk/protocol";
@@ -312,7 +312,8 @@ export type Env = PostHogEnv & {
   // consumer writes the store and the Postgres summaries. LOG_STORE "sql" is
   // the Pipelines stream plus R2 SQL on deployed stages; anything else keeps
   // NDJSON in LOG_BUCKET, which is how local development and tests run.
-  LOGS: Queue<LogRecord | OtelRetry>;
+  // Product analytics events (analytics.ts) ride it to PostHog too.
+  LOGS: Queue<LogRecord | OtelRetry | { product: ProductEvent }>;
   // Each queue's dead letters (dead-letters.ts), read only for their depth.
   // Deployed stages bind them; local development and tests do not.
   JOBS_DLQ?: Queue;
@@ -328,4 +329,17 @@ export type Env = PostHogEnv & {
   CLOUDFLARE_ACCOUNT_ID?: string;
   LOG_SQL_BUCKET?: string;
   LOG_SQL_TOKEN?: string;
+  // Support requests (support.ts), our cloud only and all optional. With
+  // SUPPORT_ORG_ID and SUPPORT_AGENT_ID each request is also a case for
+  // the support agent in our Preprocess Support organization. Support email
+  // is sent only with SUPPORT_EMAIL_FROM ("Preprocess Support
+  // <support@preprocess.com>" in production), with replies threading back
+  // through r+<token>@SUPPORT_INBOUND_DOMAIN when that is set. The signed-out
+  // form's Turnstile secret; its site key is for the forms.
+  SUPPORT_ORG_ID?: string;
+  SUPPORT_AGENT_ID?: string;
+  SUPPORT_EMAIL_FROM?: string;
+  SUPPORT_INBOUND_DOMAIN?: string;
+  SUPPORT_TURNSTILE_SECRET_KEY?: string;
+  SUPPORT_TURNSTILE_SITE_KEY?: string;
 };

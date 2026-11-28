@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 import type { AgentAccessLevel } from "../agents/agent-seed";
 import { orgApi } from "../auth/client";
+import type { NamingDeployment } from "./cant-delete-group";
 
 /**
  * Organization groups from the API. Agent access is granted to groups; the
@@ -53,6 +54,8 @@ export type GroupDetail = {
   /** People in the organization who aren't members yet. */
   readonly candidates: readonly OrgPerson[];
   readonly agents: readonly GroupAgentAccess[];
+  /** Live deployments whose code names the group; it can't be deleted while any do. */
+  readonly namedBy: readonly NamingDeployment[];
 };
 
 type ApiGroup = {
@@ -65,6 +68,7 @@ type ApiGroup = {
 type ApiGroupDetail = ApiGroup & {
   members: { userId: string; name: string; email: string }[];
   grants: { agentId: string; agentSlug: string; access: AgentAccessLevel }[];
+  namedBy?: NamingDeployment[];
 };
 
 type ApiMember = { userId: string; name: string; email: string };
@@ -130,6 +134,10 @@ export const groupDetail = createServerFn({ method: "GET" })
         name: grant.agentSlug,
         level: grant.access,
         everyone: null,
+      })),
+      namedBy: (group.namedBy ?? []).map(({ agentSlug, environment }) => ({
+        agentSlug,
+        environment,
       })),
     };
   });

@@ -56,6 +56,7 @@ import { grantViewersNewAgent } from "./plan-change.ts";
 import { customImagesAllowed } from "./plan.ts";
 import { sandboxMaxSize, sizeAllowed } from "./sandbox.ts";
 import { layerBuilt } from "./sandbox-layers.ts";
+import { trackEvent } from "./analytics.ts";
 import { nextFire, schedulerName } from "./scheduler.ts";
 import {
   agentOverrideValues,
@@ -368,6 +369,39 @@ export const agentsNamingGroup = async (
     if (named) naming.push(id);
   }
   return naming;
+};
+
+// The live deployments whose code names the group, one per agent and
+// environment, by agent slug: what has to redeploy before it can go.
+export const deploymentsNamingGroup = async (tx: Tx, groupId: string) => {
+  const naming: {
+    agentId: string;
+    agentSlug: string;
+    environment: "production" | "preview";
+  }[] = [];
+  for (const agentId of await agentsNamingGroup(tx, groupId)) {
+    const live = (await liveDeployments(tx, agentId)).map((d) => d.id);
+    const rows = await tx
+      .selectDistinct({
+        agentSlug: agents.slug,
+        environment: deployments.environment,
+      })
+      .from(deploymentGroups)
+      .innerJoin(deployments, eq(deployments.id, deploymentGroups.deploymentId))
+      .innerJoin(agents, eq(agents.id, deployments.agentId))
+      .where(
+        and(
+          eq(deploymentGroups.groupId, groupId),
+          inArray(deploymentGroups.deploymentId, live),
+        ),
+      );
+    naming.push(...rows.map((row) => ({ agentId, ...row })));
+  }
+  return naming.sort(
+    (a, b) =>
+      a.agentSlug.localeCompare(b.agentSlug) ||
+      a.environment.localeCompare(b.environment),
+  );
 };
 
 // Whether a live deployment's code names the group: the group, or its access
@@ -686,6 +720,7 @@ export const deploy = async (
       message: "mainModule is not among the modules",
     });
   // Agents are created by their first deploy, never in the app (mvp-surface).
+  let createdAgent = false as boolean;
   const agent = await withOrg(env, org, async (tx) => {
     const [created] = await tx
       .insert(agents)
@@ -702,10 +737,14 @@ export const deploy = async (
         data: { slug },
       });
       await grantViewersNewAgent(tx, org, created.id);
+      createdAgent = true;
     }
     const [agent] = await tx.select().from(agents).where(eq(agents.slug, slug));
     return agent!;
   });
+  const person = actor.actorType === "person" ? actor.actorId : null;
+  if (createdAgent)
+    await trackEvent(env, "agent_created", org, person, { agent_id: agent.id });
   if (agent.archivedAt)
     throw new HTTPException(409, { message: "agent is archived" });
 
@@ -804,6 +843,19 @@ export const deploy = async (
       },
     });
     await markDeveloper(tx, env, org, actor);
+  });
+  await trackEvent(env, "agent_deployed", org, person, {
+    agent_id: agent.id,
+    deployment_id: id,
+    source:
+      input.source === "github"
+        ? "github"
+        : actor.actorType === "api_key"
+          ? "api"
+          : "cli",
+    environment:
+      input.git.branch === agent.productionBranch ? "production" : "preview",
+    custom_environment: Boolean(setup),
   });
   const waiting = await withOrg(env, org, (tx) => syncDeployment(tx, org, id));
   const production = input.git.branch === agent.productionBranch;

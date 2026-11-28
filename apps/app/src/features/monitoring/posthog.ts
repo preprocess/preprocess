@@ -6,12 +6,20 @@ import type { CaptureResult, PostHog } from "posthog-js";
 // install only when it points at its own PostHog. Without a key nothing
 // loads.
 //
-// Privacy: no autocapture, surveys or session recording, so no element text,
-// input or case content is collected; text and attributes stay masked in
-// case either is turned on later. URLs lose their query and hash, which can
-// hold search terms. People are identified by user id only, never by email
-// or name.
+// Privacy: no autocapture or surveys. Session replay records layout and
+// clicks only: every input and all text are masked, element attributes too,
+// network requests are not recorded (bodies, headers or timings), and the case
+// room, document panes and other customer content carry REPLAY_BLOCK, which
+// replay leaves out entirely. URLs lose their query and hash, which can hold
+// search terms. People are identified by user id only, never by email or
+// name, and their organization is the `organization` group.
 export type Monitoring = { key: string; host: string } | null;
+
+// The share of sessions replay records: all of them until launch.
+export const REPLAY_SAMPLE_RATE = 1;
+
+// The class that keeps an element and everything in it out of replay.
+export const REPLAY_BLOCK = "ph-no-capture";
 
 export const loadMonitoring = createServerFn({ method: "GET" }).handler(
   async (): Promise<Monitoring> => {
@@ -65,7 +73,18 @@ export const startMonitoring = (
       capture_pageview: "history_change",
       capture_pageleave: true,
       autocapture: false,
-      disable_session_recording: true,
+      disable_session_recording: false,
+      session_recording: {
+        sampleRate: REPLAY_SAMPLE_RATE,
+        maskAllInputs: true,
+        maskTextSelector: "*",
+        maskAllElementAttributes: true,
+        blockClass: REPLAY_BLOCK,
+        recordHeaders: false,
+        recordBody: false,
+      },
+      enable_recording_console_log: false,
+      capture_performance: false,
       mask_all_text: true,
       mask_all_element_attributes: true,
       person_profiles: "identified_only",
@@ -81,5 +100,8 @@ export const startMonitoring = (
     }
     posthog.identify(person.userId);
     posthog.register({ organizationId: person.organizationId });
+    if (person.organizationId)
+      posthog.group("organization", person.organizationId);
+    else posthog.resetGroups();
   });
 };

@@ -67,6 +67,11 @@ import {
   evalSuites,
 } from "../src/schema/evals.ts";
 import { directorySync } from "../src/schema/directory-sync.ts";
+import {
+  supportAttachments,
+  supportMessages,
+  supportRequests,
+} from "../src/schema/support.ts";
 import { otelExports } from "../src/schema/otel.ts";
 import {
   organizationRetention,
@@ -422,6 +427,37 @@ export const seedOrganization = async (name: string) =>
       organizationId: org,
       lastSyncAt: new Date(),
     });
+    const supportRequestId = newId("supportRequest");
+    await tx.insert(supportRequests).values({
+      id: supportRequestId,
+      organizationId: org,
+      requesterUserId: userId,
+      requesterEmail: `${userId}@example.test`,
+      subject: "Help",
+      category: "other",
+      severity: 3,
+      channel: "form",
+      replyToken: newId("supportMessage").replace(/\W/g, ""),
+    });
+    const supportMessageId = newId("supportMessage");
+    await tx.insert(supportMessages).values({
+      id: supportMessageId,
+      requestId: supportRequestId,
+      organizationId: org,
+      authorKind: "customer",
+      body: "Help",
+      via: "form",
+    });
+    await tx.insert(supportAttachments).values({
+      id: newId("supportAttachment"),
+      requestId: supportRequestId,
+      messageId: supportMessageId,
+      organizationId: org,
+      r2Key: `support/${org}/${supportRequestId}/a`,
+      filename: "a.txt",
+      contentType: "text/plain",
+      sizeBytes: 1,
+    });
     await tx.insert(organizationRetention).values({
       organizationId: org,
       runCaptureDays: 30,
@@ -647,6 +683,9 @@ export const tenantTables = {
   eval_runs: "organization_id",
   eval_results: "organization_id",
   directory_sync: "organization_id",
+  support_requests: "organization_id",
+  support_messages: "organization_id",
+  support_attachments: "organization_id",
 } as const;
 
 export const ident = (name: string) =>

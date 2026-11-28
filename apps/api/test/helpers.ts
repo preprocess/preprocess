@@ -5,7 +5,7 @@ import {
   createExecutionContext,
   waitOnExecutionContext,
 } from "cloudflare:test";
-import type { LogRecord } from "@preprocess/logs";
+import type { LogRecord, ProductEvent } from "@preprocess/logs";
 import { env } from "cloudflare:workers";
 import { vi } from "vitest";
 
@@ -25,6 +25,8 @@ export const logged: LogRecord[] = [];
 // Records an OpenTelemetry export put back on the queue for another attempt.
 export const retried: { body: OtelRetry; delaySeconds: number | undefined }[] =
   [];
+// Product analytics events the API queued for PostHog (analytics.ts).
+export const tracked: ProductEvent[] = [];
 
 // Email goes to this list instead of the local runtime's file sink.
 // Our cloud by default, where sign-up is open; self-hosted tests unset the region.
@@ -39,15 +41,19 @@ export const testEnv = (overrides: Partial<Env> = {}): Env => ({
   } as unknown as SendEmail,
   LOGS: {
     sendBatch: (
-      messages: { body: LogRecord | OtelRetry; delaySeconds?: number }[],
+      messages: {
+        body: LogRecord | OtelRetry | { product: ProductEvent };
+        delaySeconds?: number;
+      }[],
     ) => {
       for (const m of messages)
-        if ("otelRetry" in m.body)
+        if ("product" in m.body) tracked.push(m.body.product);
+        else if ("otelRetry" in m.body)
           retried.push({ body: m.body, delaySeconds: m.delaySeconds });
         else logged.push(m.body);
       return Promise.resolve();
     },
-  } as unknown as Queue<LogRecord | OtelRetry>,
+  } as unknown as Env["LOGS"],
   ...overrides,
 });
 

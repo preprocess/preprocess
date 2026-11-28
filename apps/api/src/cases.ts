@@ -24,6 +24,7 @@ import { agentRole, canSeeCase, canWorkCase } from "./access.ts";
 import { assertModelAllowed } from "./allowed-models.ts";
 import type { Caller } from "./caller.ts";
 import type { Manifest } from "./deploy.ts";
+import { trackEvent } from "./analytics.ts";
 import { acceptedMemories } from "./memories.ts";
 import type { Env, GroupRef, StartCase } from "./env.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
@@ -320,10 +321,30 @@ export const createCase = async (
             eq(idempotencyKeys.key, idempotencyKey),
           ),
         );
-    return { body, replayed: false as const, outboxId };
+    return {
+      body,
+      replayed: false as const,
+      outboxId,
+      agentId: agent.id,
+      deploymentId: deployment.id,
+    };
   });
-  if (!created.replayed)
+  if (!created.replayed) {
     await drainOutbox(env, org, [{ id: created.outboxId, kind: "case.start" }]);
+    await trackEvent(
+      env,
+      "case_started",
+      org,
+      by.actorType === "person" ? by.createdBy : null,
+      {
+        case_id: created.body.id,
+        agent_id: created.agentId,
+        deployment_id: created.deploymentId,
+        source: by.source,
+        files: input.files.length,
+      },
+    );
+  }
   return { body: created.body, replayed: created.replayed };
 };
 
@@ -479,6 +500,8 @@ const groupBySlug = async (tx: Tx, slug: string) => {
 // queued in the same transaction and drained after it commits.
 export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
   const rows: { id: string; kind: OutboxKind }[] = [];
+  let handedOffTo = null as string | null;
+  let finished = false as boolean;
   await withOrg(env, orgId(event.organizationId), async (tx) => {
     const own = and(
       eq(cases.id, event.caseId),
@@ -620,6 +643,8 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
       event.status === "waiting" &&
       group !== null &&
       (before.status !== "waiting" || before.group !== group.id);
+    if (newWait) handedOffTo = group.id;
+    finished = done && before.status !== event.status;
     await tx
       .update(cases)
       .set({
@@ -678,4 +703,17 @@ export const recordCaseEvent = async (env: Env, event: CaseEvent) => {
     for (const id of webhookRows) rows.push({ id, kind: "webhook" });
   });
   if (rows.length) await drainOutbox(env, orgId(event.organizationId), rows);
+  if (event.type !== "status") return;
+  const ids = { case_id: event.caseId, agent_id: event.agentId };
+  if (finished)
+    await trackEvent(env, "case_completed", event.organizationId, null, {
+      ...ids,
+      outcome: event.status as "completed",
+    });
+  if (handedOffTo)
+    await trackEvent(env, "case_handed_off", event.organizationId, null, {
+      ...ids,
+      group_id: handedOffTo,
+      approval: event.approvalId !== undefined,
+    });
 };

@@ -7,6 +7,7 @@
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { audit } from "@preprocess/db/audit";
+import { organizationIdentify } from "@preprocess/logs";
 import { orgId, withOrg } from "@preprocess/db/client";
 import { HTTPException } from "hono/http-exception";
 
@@ -23,6 +24,7 @@ import {
   readPlan,
 } from "../billing.ts";
 import { eventBase, type OrgVariables } from "../caller.ts";
+import { track, trackEvent } from "../analytics.ts";
 import type { Env } from "../env.ts";
 import {
   changePreview,
@@ -689,6 +691,22 @@ export const billingRoutes = new OpenAPIHono<{
           },
         }),
       );
+      // An upgrade that needs a payment page changes nothing until it's paid.
+      if (down || !attached.payment_url) {
+        await trackEvent(
+          c.env,
+          "plan_changed",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          {
+            from: current.name,
+            to: plan,
+            timing: down ? "period_end" : "now",
+          },
+        );
+        if (!down)
+          await track(c.env, [organizationIdentify(c.var.org, { plan })]);
+      }
       if (down) {
         const end = customer.subscriptions.find(
           (s) => s.plan_id === current.name && s.status === "active",
@@ -936,6 +954,16 @@ export const billingRoutes = new OpenAPIHono<{
           data: { credits: quantity, paid: !attached.payment_url },
         }),
       );
+      if (!attached.payment_url)
+        await trackEvent(
+          c.env,
+          "credits_topped_up",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          {
+            credits: quantity,
+          },
+        );
       if (!attached.payment_url) await clearReloadFailure(c.env, c.var.org);
       return c.json(
         {

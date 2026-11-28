@@ -19,7 +19,7 @@ import { HTTPException } from "hono/http-exception";
 import { actor, eventBase, requireAdmin } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import type { Env } from "../env.ts";
-import { groupInUse, syncAgents } from "../deploy.ts";
+import { deploymentsNamingGroup, groupInUse, syncAgents } from "../deploy.ts";
 import { getPlan } from "../plan.ts";
 import { slugify } from "../scim.ts";
 import { refuseOverSeats } from "../seats.ts";
@@ -70,9 +70,21 @@ const Grant = z
   })
   .openapi("AgentGrant");
 
+const NamingDeployment = z
+  .object({
+    agentId: z.string(),
+    agentSlug: z.string(),
+    environment: z.enum(["production", "preview"]),
+  })
+  .openapi("GroupNamingDeployment");
+
 const GroupDetail = Group.extend({
   members: z.array(GroupMember),
   grants: z.array(Grant),
+  namedBy: z.array(NamingDeployment).openapi({
+    description:
+      "Live deployments whose code names the group, one per agent and environment. While any do, the group can't be deleted.",
+  }),
 }).openapi("GroupDetail");
 
 const json = <T extends z.ZodType>(schema: T, description: string) => ({
@@ -286,7 +298,8 @@ export const groupRoutes = new OpenAPIHono<{
           .where(eq(groupMembers.groupId, id))
           .orderBy(asc(user.name));
         const grants = await grantsOf(tx).where(eq(agentGrants.groupId, id));
-        return { group, members, grants };
+        const namedBy = await deploymentsNamingGroup(tx, id);
+        return { group, members, grants, namedBy };
       });
       return c.json(
         {
@@ -297,6 +310,7 @@ export const groupRoutes = new OpenAPIHono<{
             addedAt: m.addedAt.toISOString(),
           })),
           grants: detail.grants.map(toGrant),
+          namedBy: detail.namedBy,
         },
         200,
       );

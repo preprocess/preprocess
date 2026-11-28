@@ -1,4 +1,10 @@
-import { initLogs, logFailure, routeOf, trafficOf } from "@preprocess/logs";
+import {
+  initLogs,
+  logFailure,
+  routeOf,
+  sendProductEvents,
+  trafficOf,
+} from "@preprocess/logs";
 import type { LogRecord } from "@preprocess/logs";
 import { ModelError } from "@preprocess/models/client";
 import { evlog, type EvlogVariables } from "evlog/hono";
@@ -9,6 +15,11 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { routePath } from "hono/route";
 
+import {
+  identifyAllOrganizations,
+  isProductMessage,
+  type ProductMessage,
+} from "./analytics.ts";
 import { anchorAll, publicKeys } from "./audit-anchor.ts";
 import { reportDaily, reportUsage } from "./billing.ts";
 import { runPlanChanges } from "./plan-change.ts";
@@ -17,7 +28,7 @@ import { collectSandboxLayers } from "./sandbox-layers.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
-import { authRateLimit, orgRateLimit } from "./rate-limit.ts";
+import { authRateLimit, orgRateLimit, supportRateLimit } from "./rate-limit.ts";
 import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
 import type { Env, Job } from "./env.ts";
@@ -62,7 +73,10 @@ import { modelRoutes } from "./routes/models.ts";
 import { captureRoutes } from "./routes/capture.ts";
 import { datasetRoutes } from "./routes/datasets.ts";
 import { meRoutes } from "./routes/me.ts";
-import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
+import { supportRoutes } from "./routes/support.ts";
+import { supportEnabled } from "./support.ts";
+import { receiveSupportEmail, signedOutRequest } from "./support-inbound.ts";
+import { buildTools, handleMcp, TOOLS, type Tool } from "./mcp-server.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
@@ -143,6 +157,26 @@ app.get("/api/invitations/:id", async (c) => {
   return preview ? c.json(preview) : c.json({ error: "not_found" }, 404);
 });
 
+// Support (support.ts) is our cloud's only: a self-hosted install answers 404
+// for every support route, before anyone is asked to sign in.
+const supportNotFound = () =>
+  Response.json(
+    { error: { code: "not_found", message: "Not found." } },
+    { status: 404 },
+  );
+app.use("/v1/orgs/:org/support/*", async (c, next) =>
+  supportEnabled(c.env) ? next() : supportNotFound(),
+);
+
+// A signed-out visitor's support request, behind Turnstile and a limit per
+// client address. Not part of /v1.
+app.post("/api/support/requests", async (c) =>
+  supportEnabled(c.env)
+    ? ((await supportRateLimit(c.env, c.req.raw)) ??
+      signedOutRequest(c.env, c.req.raw))
+    : supportNotFound(),
+);
+
 // The public half of the audit signing key, for checking manifests.
 app.get("/v1/audit/keys", async (c) => c.json(await publicKeys(c.env)));
 
@@ -186,6 +220,7 @@ orgApi.route("/", trainingRoutes);
 orgApi.route("/", modelRoutes);
 orgApi.route("/", captureRoutes);
 orgApi.route("/", datasetRoutes);
+orgApi.route("/", supportRoutes);
 
 // The MCP server (src/mcp-server.ts) takes an organization API key, and each
 // tool call is a request to this API with the same key, so the API's own
@@ -206,7 +241,7 @@ orgApi.post("/mcp", async (c) => {
         v1.getOpenAPI31Document(OPENAPI) as unknown as Parameters<
           typeof buildTools
         >[0],
-      )),
+      )).filter((tool) => supportEnabled(c.env) || !TOOLS[tool.name]?.hosted),
     (request) =>
       app.fetch(
         new Request(
@@ -217,6 +252,7 @@ orgApi.post("/mcp", async (c) => {
               "content-type": "application/json",
               authorization: c.req.header("authorization") ?? "",
               "x-api-key": c.req.header("x-api-key") ?? "",
+              "x-preprocess-client": "mcp",
             },
             body: request.body ?? null,
           },
@@ -254,6 +290,13 @@ const watch = (
 
 export default {
   fetch: app.fetch,
+  // Inbound support email (support-inbound.ts), from Email Routing on
+  // SUPPORT_INBOUND_DOMAIN. Locally, wrangler dev feeds a raw message to it
+  // at /cdn-cgi/handler/email (scripts/support-email.ts).
+  async email(message, env) {
+    initLogs("api", (records) => sendLogs(env, records), env);
+    await receiveSupportEmail(env, message);
+  },
   scheduled(controller, env, ctx) {
     initLogs("api", (records) => sendLogs(env, records), env);
     // Every minute: re-send outbox rows a failed queue send left behind.
@@ -284,12 +327,15 @@ export default {
     const now = new Date(controller.scheduledTime);
     watch(ctx, "cron.sandbox-layers", collectSandboxLayers(env, now));
     watch(ctx, "cron.audit-anchor", anchorAll(env, now));
+    watch(ctx, "cron.analytics-groups", identifyAllOrganizations(env));
     watch(ctx, "cron.idempotency", deleteExpiredIdempotencyKeys(env));
     watch(ctx, "cron.retention", sweepRetention(env, now));
     watch(ctx, "cron.daily-usage", reportDaily(env, now));
   },
   async queue(
-    batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,
+    batch: MessageBatch<
+      Job | OutboxMessage | LogRecord | OtelRetry | ProductMessage
+    >,
     env: Env,
     ctx: ExecutionContext,
   ) {
@@ -309,21 +355,44 @@ export default {
 const queueKind = (queue: string) => queue.split("-")[1] ?? queue;
 
 const consume = async (
-  batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,
+  batch: MessageBatch<
+    Job | OutboxMessage | LogRecord | OtelRetry | ProductMessage
+  >,
   env: Env,
   ctx: ExecutionContext,
 ) => {
   if (batch.queue.startsWith("preprocess-logs-")) {
+    // Product events (analytics.ts) go to PostHog first, each acked once
+    // sent, so a failed send retries only those.
+    const product = batch.messages.filter((m) => isProductMessage(m.body));
+    if (product.length) {
+      try {
+        await sendProductEvents(
+          env,
+          product.map((m) => (m.body as ProductMessage).product),
+        );
+        for (const m of product) m.ack();
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            event: "product.send_failed",
+            error: String(error),
+          }),
+        );
+        for (const m of product) m.retry({ delaySeconds: 30 });
+      }
+    }
     // A failed store write retries the whole batch; a failed export
     // retries only the export.
-    const bodies = batch.messages.map((m) => m.body as LogRecord | OtelRetry);
+    const logs = batch.messages.filter((m) => !isProductMessage(m.body));
+    const bodies = logs.map((m) => m.body as LogRecord | OtelRetry);
     const fresh = bodies.filter((b): b is LogRecord => !("otelRetry" in b));
     if (fresh.length) await ingestLogs(env, fresh);
     await exportLogs(env, [
       ...fresh.map((record) => ({ otelRetry: 0, record })),
       ...bodies.filter((b): b is OtelRetry => "otelRetry" in b),
     ]);
-    batch.ackAll();
+    for (const m of logs) m.ack();
     return;
   }
   if (batch.queue.startsWith("preprocess-cases-")) {
