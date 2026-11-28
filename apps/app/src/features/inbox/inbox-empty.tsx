@@ -27,13 +27,13 @@ export function InboxEmpty({ kind }: { kind: InboxEmptyKind }) {
       break;
     case "pick":
       art = <NothingSelectedArt />;
-      title = "No message selected";
-      description = "Choose a message from the list to read it here.";
+      title = "No notification selected";
+      description = "Choose a notification from the list to read it here.";
       break;
     case "pick-empty-list":
       art = null;
-      title = "No message selected";
-      description = "Messages you open from the list show up here.";
+      title = "No notification selected";
+      description = "Notifications you open from the list show up here.";
       break;
     default: {
       const _exhaustive: never = kind;
