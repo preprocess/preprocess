@@ -39,7 +39,7 @@ const configs: Record<string, object> = {
   "apps/app": {
     $schema: "node_modules/wrangler/config-schema.json",
     name: local.app,
-    main: "@tanstack/react-start/server-entry",
+    main: "src/server.ts",
     ...common,
     // The app serves Better Auth (/api/auth/*) and /v1 from the API Worker on
     // its own origin, so session cookies stay first-party.
@@ -55,7 +55,7 @@ const configs: Record<string, object> = {
   "apps/docs": {
     $schema: "node_modules/wrangler/config-schema.json",
     name: local.docs,
-    main: "@tanstack/react-start/server-entry",
+    main: "src/server.ts",
     ...common,
     vars: { API_URL: `${localAppUrl}/v1` },
   },

@@ -67,6 +67,7 @@ import {
   imageRepositories,
   licenseSecrets,
   compatibility,
+  deadLetterQueues,
   durableObjects,
   isPreviewStage,
   isSelfHostStage,
@@ -83,6 +84,8 @@ import {
   type SelfHostStage,
   type Stage,
   publicDocsUrl,
+  posthogProject,
+  posthogVars,
 } from "./src/stages.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -303,6 +306,20 @@ export default Alchemy.Stack(
       : {};
     const runMode = region ? { PREPROCESS_REGION: region } : {};
     const keep = RemovalPolicy.protect(!preview);
+    // PostHog for the app, docs, API and runtime: our production's project
+    // from stages.ts, a self-hosted install's own when its deploy sets
+    // POSTHOG_KEY, and nothing on staging or previews.
+    const posthog = selfHost
+      ? Object.fromEntries(
+          posthogVars.map(
+            (name) =>
+              [
+                name,
+                Config.String(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        )
+      : (posthogProject[stage] ?? {});
 
     // The API, tail, runtime and app bind each other's entrypoints; Alchemy
     // creates each Worker before binding, so the cycle deploys.
@@ -326,6 +343,8 @@ export default Alchemy.Stack(
       ...(appDomain && { domain: appDomain }),
       env: {
         ...runMode,
+        ...posthog,
+        STAGE: stage,
         API: Cloudflare.WorkerEntrypoint(apiRef),
         // Where the app links to docs: the stage's own docs domain, else the
         // public docs, so the app never waits on the docs Worker's URL.
@@ -364,6 +383,8 @@ export default Alchemy.Stack(
       workersDev: !docsDomain,
       ...(docsDomain && { domain: docsDomain }),
       env: {
+        ...posthog,
+        STAGE: stage,
         API_URL: appDomain
           ? `https://${appDomain}/v1`
           : Output.map(app.url, (url) => `${url}/v1`),
@@ -427,6 +448,18 @@ export default Alchemy.Stack(
     const emailsQueue = yield* Cloudflare.Queues.Queue("Emails", {
       name: n.emailsQueue,
     });
+    // Dead letters (stages.ts deadLetters), one queue per consumer, kept as
+    // long as Queues allows so a failure can be read and replayed.
+    const deadLetters = Object.fromEntries(
+      yield* Effect.all(
+        deadLetterQueues.map((queue) =>
+          Cloudflare.Queues.Queue(`DeadLetters-${queue}`, {
+            name: n.deadLetters(queue),
+            messageRetentionPeriod: 14 * 24 * 60 * 60,
+          }).pipe(Effect.map((dlq) => [queue, dlq] as const)),
+        ),
+      ),
+    ) as Record<(typeof deadLetterQueues)[number], Cloudflare.Queues.Queue>;
     const emailsSent = yield* Cloudflare.KV.Namespace("EmailsSent", {
       title: n.emailsSent,
     });
@@ -651,6 +684,7 @@ export default Alchemy.Stack(
       env: {
         STAGE: stage,
         ...runMode,
+        ...posthog,
         ...modelService,
         ...(realModels && {
           ...optionalSecrets(runtimeModelSecrets),
@@ -679,6 +713,7 @@ export default Alchemy.Stack(
       env: {
         STAGE: stage,
         ...runMode,
+        ...posthog,
         ...modelService,
         ...(realModels && optionalSecrets(apiModelSecrets)),
         DB: db,
@@ -794,6 +829,12 @@ export default Alchemy.Stack(
         EMAILS: emailsQueue,
         EMAILS_SENT: emailsSent,
         LOGS: logsQueue,
+        ...Object.fromEntries(
+          deadLetterQueues.map((queue) => [
+            `${queue.toUpperCase()}_DLQ`,
+            deadLetters[queue],
+          ]),
+        ),
         LOG_BUCKET: logsBucket,
         ...logSql,
         FILES: files,
@@ -802,27 +843,32 @@ export default Alchemy.Stack(
     yield* Cloudflare.Queues.Consumer("JobsConsumer", {
       queueId: jobs.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.jobs.queueName,
       settings: { maxWaitTimeMs: 1000 },
     });
     yield* Cloudflare.Queues.Consumer("CasesConsumer", {
       queueId: casesQueue.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.cases.queueName,
       settings: { maxWaitTimeMs: 1000 },
     });
     yield* Cloudflare.Queues.Consumer("EmailsConsumer", {
       queueId: emailsQueue.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.emails.queueName,
       settings: { maxWaitTimeMs: 1000 },
     });
     yield* Cloudflare.Queues.Consumer("LogsConsumer", {
       queueId: logsQueue.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.logs.queueName,
       settings: { maxWaitTimeMs: 5000, batchSize: 100 },
     });
     // The consumer times each retry itself, over 24 hours (doc 06).
     yield* Cloudflare.Queues.Consumer("WebhooksConsumer", {
       queueId: webhooksQueue.queueId,
       scriptName: api.workerName,
+      deadLetterQueue: deadLetters.webhooks.queueName,
       settings: { maxWaitTimeMs: 1000, maxRetries: 20 },
     });
 

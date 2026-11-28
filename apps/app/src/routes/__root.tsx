@@ -17,6 +17,7 @@ import { loadProductSidebarOpen } from "../components/product-sidebar-open";
 import { ProductSidebarOpenProvider } from "../components/product-sidebar-state";
 import { ThemeProvider, ThemeScript } from "../components/theme-provider";
 import { AuthProvider } from "../features/auth/auth-context";
+import { safeRedirect } from "../features/auth/safe-redirect";
 import {
   activateOrganization,
   loadOrganizations,
@@ -24,6 +25,10 @@ import {
   needsName,
 } from "../features/auth/session";
 import { loadInbox } from "../features/inbox/load-inbox";
+import {
+  loadMonitoring,
+  startMonitoring,
+} from "../features/monitoring/posthog";
 import { onDataChanged } from "../lib/data-changed";
 import { loadRequiredCheckout } from "../features/organizations/billing";
 import { OrganizationsProvider } from "../features/organizations/organizations-context";
@@ -82,7 +87,10 @@ export const Route = createRootRoute({
       await activateOrganization({ data: { organizationId: first.id } });
   },
   loader: async ({ location }) => {
-    const sidebarOpen = await loadProductSidebarOpen();
+    const [sidebarOpen, monitoring] = await Promise.all([
+      loadProductSidebarOpen(),
+      loadMonitoring(),
+    ]);
 
     if (isPublicAuthPath(location.pathname)) {
       return {
@@ -90,12 +98,14 @@ export const Route = createRootRoute({
         inboxUnread: 0,
         organizations: [],
         sidebarOpen,
+        monitoring,
       };
     }
 
+    // Every gate passes the page the person was going to along as `redirect`.
+    const redirectTo = `${location.pathname}${location.searchStr}`;
     const session = await loadSession();
     if (!session) {
-      const redirectTo = `${location.pathname}${location.searchStr}`;
       // TanStack Router redirects are Response objects, not Error instances.
       throw redirect({
         href: `/sign-in?redirect=${encodeURIComponent(redirectTo)}`,
@@ -105,7 +115,6 @@ export const Route = createRootRoute({
     // Names come before everything else, however the person signed in.
     const onName = location.pathname === NAME_PATH;
     if (needsName(session.user) && !onName) {
-      const redirectTo = `${location.pathname}${location.searchStr}`;
       throw redirect({
         href: `${NAME_PATH}?redirect=${encodeURIComponent(redirectTo)}`,
       });
@@ -116,16 +125,25 @@ export const Route = createRootRoute({
 
     const onOnboarding = isOnboardingPath(location.pathname);
     if (!onName && !session.organizationId && !onOnboarding) {
-      throw redirect({ to: "/onboarding" });
+      throw redirect({
+        href:
+          redirectTo === "/"
+            ? "/onboarding"
+            : `/onboarding?redirect=${encodeURIComponent(redirectTo)}`,
+      });
     }
     if (!onName && session.organizationId && onOnboarding) {
-      throw redirect({ to: "/" });
+      throw redirect({
+        href: safeRedirect(
+          new URLSearchParams(location.searchStr).get("redirect"),
+        ),
+      });
     }
 
     // Once cards are required, an Owner whose organization has no plan yet
-    // goes to checkout to start Free (spec 16a).
+    // goes to checkout to start Free (spec 16a), and comes back here.
     if (!onName && session.organizationId) {
-      const checkout = await loadRequiredCheckout();
+      const checkout = await loadRequiredCheckout({ data: redirectTo });
       if (checkout) throw redirect({ href: checkout });
     }
 
@@ -137,6 +155,7 @@ export const Route = createRootRoute({
       inboxUnread: inbox.unreadCount,
       organizations,
       sidebarOpen,
+      monitoring,
     };
   },
   // Auth, organizations, and the unread count load with the document. Client
@@ -153,12 +172,19 @@ const queryClient = new QueryClient({
 });
 
 function RootComponent() {
-  const { inboxUnread, session, organizations, sidebarOpen } =
+  const { inboxUnread, session, organizations, sidebarOpen, monitoring } =
     Route.useLoaderData();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const router = useRouter();
+  const userId = session?.user.id;
+  const organizationId = session?.organizationId ?? null;
+  useEffect(
+    () =>
+      startMonitoring(monitoring, userId ? { userId, organizationId } : null),
+    [monitoring, userId, organizationId],
+  );
   useEffect(
     () =>
       onDataChanged(() => {

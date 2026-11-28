@@ -37,6 +37,16 @@ export const isStage = (stage: string): stage is Stage =>
   isPreviewStage(stage) ||
   isSelfHostStage(stage);
 
+// The queues whose consumers move failed messages to a dead-letter queue,
+// bound to the API as <QUEUE>_DLQ.
+export const deadLetterQueues = [
+  "jobs",
+  "cases",
+  "webhooks",
+  "emails",
+  "logs",
+] as const;
+
 export const names = (stage: string) => ({
   app: `preprocess-app-${stage}`,
   // The docs site (apps/docs).
@@ -52,6 +62,11 @@ export const names = (stage: string) => ({
   emailsSent: `preprocess-emails-sent-${stage}`,
   // Run logs (design doc 09): every producer's records, consumed by the API.
   logsQueue: `preprocess-logs-${stage}`,
+  // Each queue's dead letters: messages its consumer failed on every retry,
+  // held for 14 days. Nothing consumes them; the API's minute cron reports
+  // their depth (apps/api/src/dead-letters.ts).
+  deadLetters: (queue: (typeof deadLetterQueues)[number]) =>
+    `preprocess-dlq-${queue}-${stage}`,
   logs: `preprocess-logs-${stage}`,
   bucket: `preprocess-files-${stage}`,
   auditBucket: `preprocess-audit-${stage}`,
@@ -184,6 +199,27 @@ export const trainingVars = ["TRAINING_SERVICE"] as const;
 // Without both, nothing is sent. Never bound on a self-hosted install.
 export const statusHeartbeatVars = ["STATUS_HEARTBEAT_URL"] as const;
 export const statusHeartbeatSecrets = ["STATUS_HEARTBEAT_SECRET"] as const;
+
+// PostHog (spec 12 and 15): server errors and request events from the app,
+// docs, API and runtime, and the app's browser errors. Production and staging
+// each send to their own PostHog project, so staging never reaches
+// production's; the keys are public project keys (phc_), the same ones
+// browsers receive. Previews send nothing. A self-hosted
+// install sends nothing unless its deploy sets POSTHOG_KEY, and POSTHOG_HOST
+// for a host other than PostHog's US cloud, to point at its own PostHog.
+export const posthogVars = ["POSTHOG_KEY", "POSTHOG_HOST"] as const;
+export const posthogProject: Partial<
+  Record<Stage, Record<(typeof posthogVars)[number], string>>
+> = {
+  production: {
+    POSTHOG_KEY: "phc_AU5GoFmdkBQ8bxX6wvEbpneNhQbbVSayfzNCxa6RauJu",
+    POSTHOG_HOST: "https://us.i.posthog.com",
+  },
+  staging: {
+    POSTHOG_KEY: "phc_urwmiA4mz5QA3Dhu3WWxW8hmhPiK9qnFLHwtgpnA9uBq",
+    POSTHOG_HOST: "https://us.i.posthog.com",
+  },
+};
 
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).

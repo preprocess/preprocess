@@ -313,8 +313,15 @@
     {
       "idx": 47,
       "version": "7",
-      "when": 1795830675922,
-      "tag": "0049_sso_settings",
+      "when": 1795832494182,
+      "tag": "0049_directory_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795833613046,
+      "tag": "0050_sso_settings",
       "breakpoints": true
     }
   ]
