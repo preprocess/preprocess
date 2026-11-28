@@ -47,6 +47,7 @@ type CaseObject = {
   message(input: { userId: string; text: string }): Promise<{
     id: string;
     mentioned: string[];
+    first: boolean;
   }>;
   cancel(): Promise<CaseState>;
   dropCapture(): Promise<void>;

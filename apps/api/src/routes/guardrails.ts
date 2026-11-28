@@ -29,6 +29,7 @@ import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
 import { syncAgents } from "../deploy.ts";
 import type { Env } from "../env.ts";
+import { trackEvent } from "../analytics.ts";
 import { modelId } from "../settings.ts";
 import {
   agentNetwork,
@@ -42,7 +43,13 @@ import {
 } from "../network.ts";
 import type { NetworkRules } from "../network.ts";
 import { sandboxMaxSize, setSandboxMaxSize, sizeAllowed } from "../sandbox.ts";
-import { setSpendingLimit, toMicro } from "./spending.ts";
+import { spendingLimit } from "../spend.ts";
+import {
+  limitChange,
+  setSpendingLimit,
+  toMicro,
+  trackLimitChange,
+} from "./spending.ts";
 
 const OrgParam = z.object({ org: z.string() });
 const AgentParam = OrgParam.extend({ agent: z.string() });
@@ -134,6 +141,27 @@ const findAgent = async (tx: Tx, slug: string) => {
   if (!agent) throw new ApiError(404, "not_found", "No such agent.");
   return agent;
 };
+
+// After a network rule change commits.
+const networkChanged = (
+  env: Env,
+  vars: OrgVariables,
+  agentId: string | null,
+  rules: NetworkRules | null,
+) =>
+  trackEvent(
+    env,
+    "network_rule_changed",
+    vars.org,
+    vars.caller.type === "person" ? vars.caller.userId : null,
+    {
+      scope: agentId ? "agent" : "organization",
+      agent_id: agentId,
+      allow: rules?.allow.length ?? 0,
+      block: rules?.block.length ?? 0,
+      cleared: rules === null,
+    },
+  );
 
 const allAgents = async (tx: Tx) =>
   (await tx.select({ id: agents.id }).from(agents)).map((a) => a.id);
@@ -356,6 +384,7 @@ const decide = async (
   approve: boolean,
 ) => {
   requireAdmin(vars.caller);
+  let limitSet: ReturnType<typeof limitChange> = null;
   const body = await withOrg(env, vars.org, async (tx) => {
     const [request] = await requestRows(tx).where(eq(guardrailRequests.id, id));
     if (!request) throw new ApiError(404, "not_found", "No such request.");
@@ -373,12 +402,18 @@ const decide = async (
       .update(guardrailRequests)
       .set({ status, decidedBy, decidedAt })
       .where(eq(guardrailRequests.id, id));
+    const limitBefore =
+      approve && request.change.kind === "spending_limit"
+        ? await spendingLimit(tx)
+        : undefined;
     if (approve)
       await syncAgents(
         tx,
         vars.org,
         await applyChange(tx, vars, request.agentId, request.change),
       );
+    if (limitBefore !== undefined)
+      limitSet = limitChange(limitBefore, await spendingLimit(tx), "request");
     await audit(tx, {
       ...eventBase(vars),
       action: approve
@@ -390,6 +425,7 @@ const decide = async (
     });
     return toRequest({ ...request, status, decidedBy, decidedAt });
   });
+  await trackLimitChange(env, vars, limitSet);
   return body;
 };
 
@@ -543,6 +579,7 @@ export const guardrailRoutes = new OpenAPIHono<{
           await setOrganizationNetwork(tx, c.var, rules),
         ),
       );
+      await networkChanged(c.env, c.var, null, rules);
       return c.json(rules, 200);
     },
   )
@@ -593,12 +630,15 @@ export const guardrailRoutes = new OpenAPIHono<{
           await setAgentNetwork(tx, c.var, agent.id, rules),
         );
         return {
+          agentId: agent.id,
           organization: await organizationNetwork(tx),
           agent: rules,
           effective: await effectiveNetwork(tx, agent.id),
         };
       });
-      return c.json(body, 200);
+      const { agentId, ...view } = body;
+      await networkChanged(c.env, c.var, agentId, rules);
+      return c.json(view, 200);
     },
   )
   .openapi(
@@ -613,14 +653,16 @@ export const guardrailRoutes = new OpenAPIHono<{
     }),
     async (c) => {
       requireAdmin(c.var.caller);
-      await withOrg(c.env, c.var.org, async (tx) => {
+      const agentId = await withOrg(c.env, c.var.org, async (tx) => {
         const agent = await findAgent(tx, c.req.valid("param").agent);
         await syncAgents(
           tx,
           c.var.org,
           await setAgentNetwork(tx, c.var, agent.id, null),
         );
+        return agent.id;
       });
+      await networkChanged(c.env, c.var, agentId, null);
       return c.body(null, 204);
     },
   )

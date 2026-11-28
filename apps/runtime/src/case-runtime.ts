@@ -36,6 +36,7 @@ import { agentWorker } from "./dispatch.ts";
 import type {
   CaseEvent,
   CaseFile,
+  CaseStats,
   CaseStatus,
   Env,
   EvalEvent,
@@ -383,6 +384,43 @@ export class CaseRuntime extends DurableObject<Env> {
     );
   }
 
+  // What the run used, for product analytics: counts, the model id and the
+  // MCP servers' slugs, never a prompt, input or result.
+  private stats(meta: Meta): CaseStats {
+    const events = this.events();
+    const { input, output } = this.usage(events);
+    const mcp = new Map<string, { calls: number; errors: number }>();
+    let toolCalls = 0;
+    let modelErrors = 0;
+    let ocrPages = 0;
+    for (const e of events) {
+      if (e.kind === "tool.call") toolCalls++;
+      if (
+        e.kind === "model.error" ||
+        (e.kind === "model.response" && e.data.stopReason === "error")
+      )
+        modelErrors++;
+      if (e.kind === "ocr" && typeof e.data.pages === "number")
+        ocrPages += e.data.pages;
+      if (e.kind === "mcp.call") {
+        const server = String(e.data.server);
+        const counted = mcp.get(server) ?? { calls: 0, errors: 0 };
+        counted.calls++;
+        if (e.data.error) counted.errors++;
+        mcp.set(server, counted);
+      }
+    }
+    return {
+      model: meta.manifest.model,
+      tokensIn: input,
+      tokensOut: output,
+      toolCalls,
+      modelErrors,
+      ocrPages,
+      mcp: [...mcp].map(([server, counted]) => ({ server, ...counted })),
+    };
+  }
+
   // What a status event reports of the case's charges so far.
   private charged() {
     const { costMicroUsd, charges } = this.usage(this.events());
@@ -431,6 +469,9 @@ export class CaseRuntime extends DurableObject<Env> {
         ...this.charged(),
         ...(this.captureBytes !== undefined && {
           captureBytes: this.captureBytes,
+        }),
+        ...((event.status === "completed" || event.status === "failed") && {
+          stats: this.stats(meta),
         }),
       }),
       organizationId: meta.organizationId,
@@ -1959,6 +2000,7 @@ export class CaseRuntime extends DurableObject<Env> {
   async message(input: { userId: string; text: string }) {
     const meta = this.meta();
     if (!meta) throw new Error("case has not started");
+    const first = !this.thread().some((m) => m.kind === "person");
     const id = this.post(meta, `person:${input.userId}`, "person", input.text);
     const slugs = new Set(this.groups(meta).map((g) => g.slug));
     const mentioned = [
@@ -1974,7 +2016,14 @@ export class CaseRuntime extends DurableObject<Env> {
         by: `person:${input.userId}`,
         message: input.text,
       });
-    return { id, mentioned: [...new Set(mentioned)] };
+    return { id, mentioned: [...new Set(mentioned)], first };
+  }
+
+  // An MCP call the agent's code made through its McpBroker for this case:
+  // the server's slug and whether it failed, which the run's stats count.
+  mcpCalled(server: string, failed: boolean) {
+    if (!this.meta()) return;
+    this.record("mcp.call", { server, error: failed });
   }
 
   // A person completes a waiting case (spec 6): the same rule as the agent,
