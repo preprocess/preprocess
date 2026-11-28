@@ -313,6 +313,13 @@ export type Env = PostHogEnv & {
   // the Pipelines stream plus R2 SQL on deployed stages; anything else keeps
   // NDJSON in LOG_BUCKET, which is how local development and tests run.
   LOGS: Queue<LogRecord | OtelRetry>;
+  // Each queue's dead letters (dead-letters.ts), read only for their depth.
+  // Deployed stages bind them; local development and tests do not.
+  JOBS_DLQ?: Queue;
+  CASES_DLQ?: Queue;
+  WEBHOOKS_DLQ?: Queue;
+  EMAILS_DLQ?: Queue;
+  LOGS_DLQ?: Queue;
   LOG_BUCKET: R2Bucket;
   LOG_STORE?: string;
   LOG_STREAM?: Pipeline;

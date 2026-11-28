@@ -9,6 +9,7 @@ import {
 } from "./posthog.ts";
 
 export {
+  capturePostHog,
   EXCEPTION_EVENT,
   REQUEST_EVENT,
   routeOf,
