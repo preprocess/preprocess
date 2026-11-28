@@ -8,8 +8,9 @@ import { source } from "@/lib/source";
 // The help center's search index: its own articles, built once per isolate,
 // and the docs pages from the docs Worker's /api/search, read through the DOCS
 // service binding, with their URLs made absolute on DOCS_URL. The browser
-// indexes each list on its own, so help articles group before docs. A docs index that can't be read leaves the
-// docs out until the next try, 30 seconds on, and never fails the articles.
+// indexes each list on its own, so help articles group before docs. A docs
+// index that can't be read leaves the docs out until the next try, 30 seconds
+// on, and never fails the articles.
 export type HelpSearchIndex = { articles: SearchPage[]; docs: SearchPage[] };
 
 const docsTtl = 5 * 60_000;
