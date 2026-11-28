@@ -53,6 +53,13 @@ import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 import { purgeJob, snapshotPurge } from "./purge.ts";
 import { refuseWithoutPlan, SCIM_PATH, scimDirectory } from "./scim.ts";
+import {
+  isDisposable,
+  signupBlocked,
+  takeSignInLink,
+  TURNSTILE_HEADER,
+  turnstilePassed,
+} from "./signup-protection.ts";
 
 // The deploy smoke test (infra/scripts/smoke.ts) has no mailbox. On staging
 // and previews only, its one address (smoke-test+<stage>@ EMAIL_FROM's
@@ -701,13 +708,29 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             email.toLowerCase() !== smokeTestAddress
           )
             throw notHere();
+          // The deploy smoke test has no browser to pass the bot check, and
+          // signs in more often than the hourly cap.
+          const smokeTest = email.toLowerCase() === smokeTestAddress;
+          if (
+            !smokeTest &&
+            !(await turnstilePassed(
+              env,
+              ctx.headers?.get(TURNSTILE_HEADER),
+              request.ip,
+            ))
+          )
+            throw await signupBlocked(env, "bot");
           const [known] = await tx
             .select({ id: authSchema.user.id })
             .from(authSchema.user)
             .where(sql`lower(${authSchema.user.email}) = lower(${email})`)
             .limit(1);
           if (!known && !(await mayJoin(email))) throw needsInvitation();
+          if (!known && runMode(env).kind === "cloud" && isDisposable(email))
+            throw await signupBlocked(env, "disposable");
           if (await ssoRequired(email)) throw useSso();
+          if (!smokeTest && !(await takeSignInLink(env, email)))
+            throw await signupBlocked(env, "rate_limited");
           return;
         }
         if (ctx.path === "/update-user" && request.actorId) {
@@ -856,6 +879,16 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
           });
         },
         organizationHooks: {
+          // A temporary inbox couldn't sign up to accept (signup-protection.ts).
+          beforeCreateInvitation: ({ invitation }) => {
+            if (runMode(env).kind === "cloud" && isDisposable(invitation.email))
+              throw new APIError("BAD_REQUEST", {
+                code: "DISPOSABLE_EMAIL",
+                message:
+                  "Invite a permanent email address. Temporary inboxes can't join.",
+              });
+            return Promise.resolve();
+          },
           beforeCreateOrganization: ({ organization: org, user }) => {
             creatingOrganization = true;
             return Promise.resolve({ data: { ...org, createdBy: user.id } });

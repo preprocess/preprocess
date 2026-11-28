@@ -7,6 +7,9 @@ export const signUpIsOpen = () => runMode(env).kind === "cloud";
 /** Google sign-in shows only where the install configured it. */
 export const googleSignIn = () => Boolean(env.GOOGLE_CLIENT_ID);
 
+/** The sign-in bot check's public key, where the install set one. */
+export const turnstileSiteKey = () => env.SIGN_IN_TURNSTILE_SITEKEY ?? null;
+
 /** The browser's PostHog project, where the install sends to one. */
 export const posthogBrowser = () =>
   env.POSTHOG_KEY

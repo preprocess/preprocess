@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "openapi": "node scripts/openapi.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "disposable-domains": "node scripts/disposable-domains.ts"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.27",

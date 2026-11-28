@@ -146,6 +146,18 @@ export const githubSecrets = [
 export const googleVars = ["GOOGLE_CLIENT_ID"] as const;
 export const googleSecrets = ["GOOGLE_CLIENT_SECRET"] as const;
 
+// The bot check on sign-in links (PRE-165). Production binds its own
+// Turnstile widget's keys (alchemy.run.ts). Staging and previews bind
+// Cloudflare's documented test keys, which always pass, so the check runs
+// there without a widget. A self-hosted install sets both or neither; with
+// neither, sign-in has no bot check.
+export const turnstileVars = ["SIGN_IN_TURNSTILE_SITEKEY"] as const;
+export const turnstileSecrets = ["SIGN_IN_TURNSTILE_SECRET"] as const;
+export const turnstileTestKeys = {
+  sitekey: "1x00000000000000000000AA",
+  secret: "1x0000000000000000000000000000000AA",
+} as const;
+
 // Autumn, our cloud's billing (spec 16a), optional: without it billing is off.
 // Never bound on a self-hosted install, which bills nothing.
 // AUTUMN_WEBHOOK_SECRET verifies Autumn's webhooks (Svix, whsec_…); without

@@ -23,7 +23,7 @@ export const Route = createFileRoute("/sign-in")({
 
 function SignInPage() {
   const { redirect, error } = Route.useSearch();
-  const { signUpOpen, google } = Route.useLoaderData();
+  const { signUpOpen, google, turnstile } = Route.useLoaderData();
   const [sent, setSent] = useState<string | null>(null);
   const next = safeRedirect(redirect);
   const invited = next.startsWith("/invitations/");
@@ -65,6 +65,7 @@ function SignInPage() {
     >
       <PasswordlessForm
         google={google}
+        turnstile={turnstile}
         next={next}
         onSent={setSent}
         submitLabel="Sign in"
