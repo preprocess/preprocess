@@ -1,4 +1,9 @@
 import type { ScenarioState } from "../../scenarios/scenarios";
+import {
+  LICENSE_HREF,
+  seededLicense,
+  type License,
+} from "../settings/license-seed";
 import { ANNOUNCEMENTS } from "./announcements";
 
 export type NoticeLevel = "error" | "warning" | "announcement";
@@ -144,6 +149,41 @@ const MEMBER_NOTICES: readonly BillingNotice[] = [
       : null,
 ];
 
+// Owners and Admins of a self-hosted install, when its license needs them.
+const licenseNotice = (license: License): Notice | null => {
+  switch (license.status) {
+    case "grace":
+      return {
+        id: "license-grace",
+        level: "warning",
+        title: "License expired",
+        detail: license.graceEndsAt
+          ? `Grace ends ${monthDay(license.graceEndsAt)} · See License`
+          : "See License",
+        href: LICENSE_HREF,
+      };
+    case "expired":
+      return {
+        id: "license-expired",
+        level: "error",
+        title: "License expired",
+        detail: "Features off · Renew in License",
+        href: LICENSE_HREF,
+      };
+    case "invalid":
+      return {
+        id: "license-invalid",
+        level: "warning",
+        title: "License key isn't valid",
+        detail: "Features off · Check in License",
+        href: LICENSE_HREF,
+      };
+    case "active":
+    case "none":
+      return null;
+  }
+};
+
 const LEVELS: readonly NoticeLevel[] = ["error", "warning", "announcement"];
 
 /**
@@ -152,11 +192,14 @@ const LEVELS: readonly NoticeLevel[] = ["error", "warning", "announcement"];
  */
 export function buildNotices({
   billing,
+  license = null,
   administers,
   dismissed,
   announcements = true,
 }: {
   billing: Billing | null;
+  /** Self-hosted only; null on our cloud and for Members. */
+  license?: License | null;
   administers: boolean;
   dismissed: ReadonlySet<string>;
   announcements?: boolean;
@@ -166,6 +209,10 @@ export function buildNotices({
         .map((notice) => notice(billing))
         .filter((notice) => notice !== null)
     : [];
+  const fromLicense =
+    administers && license
+      ? [licenseNotice(license)].filter((n) => n !== null)
+      : [];
   const fromAnnouncements = announcements
     ? ANNOUNCEMENTS.filter(({ id }) => !dismissed.has(id)).map(
         ({ id, title, detail, href, date }): Notice => ({
@@ -180,7 +227,7 @@ export function buildNotices({
       )
     : [];
   const newest = (notice: Notice) => notice.date ?? "9999-12-31";
-  return [...fromBilling, ...fromAnnouncements].sort(
+  return [...fromBilling, ...fromLicense, ...fromAnnouncements].sort(
     (a, b) =>
       LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level) ||
       (newest(b) > newest(a) ? 1 : newest(b) < newest(a) ? -1 : 0),
@@ -189,6 +236,7 @@ export function buildNotices({
 
 type Seeded = {
   billing: Billing | null;
+  license: License | null;
   administers: boolean;
   announcements: boolean;
 };
@@ -234,6 +282,7 @@ export function seededNotices(state: ScenarioState<"notices">): Seeded | null {
         }),
         administers: true,
         announcements: false,
+        license: null,
       };
     case "several":
       return {
@@ -248,6 +297,7 @@ export function seededNotices(state: ScenarioState<"notices">): Seeded | null {
         }),
         administers: true,
         announcements: true,
+        license: null,
       };
     case "mixed":
       return {
@@ -257,6 +307,7 @@ export function seededNotices(state: ScenarioState<"notices">): Seeded | null {
         }),
         administers: true,
         announcements: true,
+        license: null,
       };
     case "reload-failed":
       return {
@@ -269,6 +320,7 @@ export function seededNotices(state: ScenarioState<"notices">): Seeded | null {
         }),
         administers: true,
         announcements: false,
+        license: null,
       };
     case "reload-cap":
       return {
@@ -278,14 +330,36 @@ export function seededNotices(state: ScenarioState<"notices">): Seeded | null {
         }),
         administers: true,
         announcements: false,
+        license: null,
+      };
+    case "license-grace":
+    case "license-expired":
+    case "license-invalid":
+      return {
+        billing: null,
+        license: seededLicense(
+          state === "license-grace"
+            ? "grace"
+            : state === "license-expired"
+              ? "expired"
+              : "invalid",
+        ),
+        administers: true,
+        announcements: false,
       };
     case "member":
       return {
         billing: seededBilling({ credits: { remaining: 0, owed: 0 } }),
         administers: false,
         announcements: true,
+        license: null,
       };
     case "none":
-      return { billing: null, administers: true, announcements: false };
+      return {
+        billing: null,
+        license: null,
+        administers: true,
+        announcements: false,
+      };
   }
 }

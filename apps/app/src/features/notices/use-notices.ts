@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { currentScenario } from "../../scenarios/current-scenario";
 import { useOrganizationId } from "../auth/auth-context";
 import { ApiError, apiFetch, orgApi } from "../auth/client";
+import type { License } from "../settings/license-seed";
 import { useAdministers } from "../settings/use-role";
 import { buildNotices, seededNotices, type Billing } from "./notices";
 
@@ -29,6 +30,20 @@ export function useNotices() {
       }
     },
   });
+  // Self-hosted only: our cloud answers 404. Members never ask.
+  const license = useQuery({
+    queryKey: ["license-notice", organizationId],
+    enabled: !seeded && administers === true,
+    retry: false,
+    queryFn: async () => {
+      try {
+        return await orgApi<License>(organizationId, "/license");
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.status === 404) return null;
+        throw cause;
+      }
+    },
+  });
   const dismissed = useQuery({
     queryKey: DISMISSED,
     queryFn: () => apiFetch<Dismissed>("/v1/me/notices/dismissed"),
@@ -36,10 +51,19 @@ export function useNotices() {
 
   // Billing notices wait for the person's role, and announcements for their
   // dismissals, so neither flashes the wrong item first.
-  const live = { billing: billing.data ?? null, administers };
-  const { billing: source, administers: manager } = seeded ?? live;
+  const live = {
+    billing: billing.data ?? null,
+    license: license.data ?? null,
+    administers,
+  };
+  const {
+    billing: source,
+    license: installLicense,
+    administers: manager,
+  } = seeded ?? live;
   const notices = buildNotices({
     billing: manager === undefined ? null : source,
+    license: manager === true ? installLicense : null,
     administers: manager === true,
     dismissed: new Set(dismissed.data?.ids),
     announcements: Boolean(dismissed.data) && (seeded?.announcements ?? true),

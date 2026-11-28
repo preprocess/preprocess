@@ -2,10 +2,11 @@
 // plan (billing.ts); until an organization starts one, or where billing is
 // off, it is on the free plan with every paid feature refused and no limit.
 // A plan's seat limit holds only once billing is enforced (billing.ts).
-// Self-hosted, the license key in PREPROCESS_LICENSE_KEY supplies one plan for
-// the install: a valid key, or one in its 30 days of grace, gives its features
-// and seat limit; no key, an invalid one or one past grace gives the free
-// plan, whose product and data keep working.
+// Self-hosted, the install's license key supplies one plan for the install:
+// the key an Owner uploaded, else PREPROCESS_LICENSE_KEY. A valid key, or one
+// in its 30 days of grace, gives its features and seat limit; no key, an
+// invalid one or one past grace gives the free plan, whose product and data
+// keep working.
 
 import type { OrgId } from "@preprocess/db/client";
 import { runMode } from "@preprocess/runmode";
@@ -13,7 +14,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { cloudPlan, seatLimitApplies } from "./billing.ts";
 import type { Env } from "./env.ts";
-import { readLicense } from "./license.ts";
+import { installKey, readLicense } from "./license.ts";
 import type { LicenseState } from "./license.ts";
 
 export const paidFeatures = [
@@ -75,7 +76,7 @@ export const getPlan = async (env: Env, org: OrgId): Promise<Plan> => {
       null,
     );
   }
-  const license = await readLicense(env.PREPROCESS_LICENSE_KEY);
+  const license = await readLicense((await installKey(env))?.key);
   if (license.status !== "active" && license.status !== "grace")
     return plan("free", [], { seats: null }, license);
   return plan(
