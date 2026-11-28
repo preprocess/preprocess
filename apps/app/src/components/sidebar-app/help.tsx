@@ -1,4 +1,3 @@
-import { Button } from "@preprocess/ui/components/button";
 import {
   DropdownContent,
   DropdownMenu,
@@ -9,7 +8,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@preprocess/ui/components/sidebar";
 import {
   Activity,
@@ -86,34 +84,5 @@ export function SidebarHelp() {
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  );
-}
-
-export function CollapsedHelpButton() {
-  const { open, isMobile } = useSidebar();
-  if (open || isMobile) return null;
-  return (
-    <DropdownMenu>
-      <DropdownTrigger
-        render={
-          <Button
-            aria-label="Help"
-            size="icon-compact"
-            type="button"
-            variant="ghost"
-          />
-        }
-      >
-        <CircleHelp strokeWidth={1.15} />
-      </DropdownTrigger>
-      <DropdownContent
-        align="start"
-        className={SIDEBAR_MENU_POPUP}
-        side="right"
-        sideOffset={6}
-      >
-        <HelpMenuItems />
-      </DropdownContent>
-    </DropdownMenu>
   );
 }

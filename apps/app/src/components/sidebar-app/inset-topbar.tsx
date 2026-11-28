@@ -3,7 +3,6 @@ import { SidebarTrigger, useSidebar } from "@preprocess/ui/components/sidebar";
 import { cn } from "@preprocess/ui/lib/utils";
 
 import { CollapsedNoticesButton } from "../../features/notices/notice-stack";
-import { CollapsedHelpButton } from "./help";
 
 // ---------------------------------------------------------------------------
 // The main region's topbar. While the sidebar is only PEEKED the trigger
@@ -34,7 +33,6 @@ export function SidebarInsetTopbar({
         }`}
       />
       <CollapsedNoticesButton />
-      <CollapsedHelpButton />
       {children}
     </header>
   );
