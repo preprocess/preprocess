@@ -148,7 +148,7 @@ your install's errors and latency, point it at a PostHog project you own: set
 `POSTHOG_KEY` and, unless your project is on PostHog's US cloud, `POSTHOG_HOST`,
 then deploy again. Leave both unset to keep monitoring off.
 
-With a key set, the app, docs, API and runtime Workers send two events:
+With a key set, the app, docs, API and runtime Workers send:
 
 - `server_request`: one event per request, with the service, stage, method,
   route (ids replaced by `:id`), status, duration in milliseconds and, for API
@@ -156,6 +156,9 @@ With a key set, the app, docs, API and runtime Workers send two events:
 - `$exception`: each server error, with its type, a message with quoted values,
   emails, query strings and long numbers removed, and its stack frames. Errors
   during a case carry only the kind of step that failed, never text.
+- From the app in the browser: page views and browser errors, with the person's
+  user id and organization id. There is no autocapture and no session recording,
+  page addresses lose their query strings, and element text stays masked.
 
 Request bodies, answers, files, tool output, secrets and messages are never
 sent.
