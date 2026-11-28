@@ -83,6 +83,8 @@ import {
   type SelfHostStage,
   type Stage,
   publicDocsUrl,
+  posthogProject,
+  posthogVars,
 } from "./src/stages.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -303,6 +305,20 @@ export default Alchemy.Stack(
       : {};
     const runMode = region ? { PREPROCESS_REGION: region } : {};
     const keep = RemovalPolicy.protect(!preview);
+    // PostHog for the app, docs, API and runtime: our production's project
+    // from stages.ts, a self-hosted install's own when its deploy sets
+    // POSTHOG_KEY, and nothing on staging or previews.
+    const posthog = selfHost
+      ? Object.fromEntries(
+          posthogVars.map(
+            (name) =>
+              [
+                name,
+                Config.String(name).pipe(Config.withDefault(undefined)),
+              ] as const,
+          ),
+        )
+      : (posthogProject[stage] ?? {});
 
     // The API, tail, runtime and app bind each other's entrypoints; Alchemy
     // creates each Worker before binding, so the cycle deploys.
@@ -326,6 +342,8 @@ export default Alchemy.Stack(
       ...(appDomain && { domain: appDomain }),
       env: {
         ...runMode,
+        ...posthog,
+        STAGE: stage,
         API: Cloudflare.WorkerEntrypoint(apiRef),
         // Where the app links to docs: the stage's own docs domain, else the
         // public docs, so the app never waits on the docs Worker's URL.
@@ -364,6 +382,8 @@ export default Alchemy.Stack(
       workersDev: !docsDomain,
       ...(docsDomain && { domain: docsDomain }),
       env: {
+        ...posthog,
+        STAGE: stage,
         API_URL: appDomain
           ? `https://${appDomain}/v1`
           : Output.map(app.url, (url) => `${url}/v1`),
@@ -651,6 +671,7 @@ export default Alchemy.Stack(
       env: {
         STAGE: stage,
         ...runMode,
+        ...posthog,
         ...modelService,
         ...(realModels && {
           ...optionalSecrets(runtimeModelSecrets),
@@ -679,6 +700,7 @@ export default Alchemy.Stack(
       env: {
         STAGE: stage,
         ...runMode,
+        ...posthog,
         ...modelService,
         ...(realModels && optionalSecrets(apiModelSecrets)),
         DB: db,

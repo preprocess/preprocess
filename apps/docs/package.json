@@ -14,6 +14,7 @@
   "dependencies": {
     "@orama/orama": "^3.1.18",
     "@preprocess/cli": "workspace:*",
+    "@preprocess/logs": "workspace:*",
     "@preprocess/ui": "catalog:",
     "@tanstack/react-router": "catalog:",
     "@tanstack/react-start": "catalog:",

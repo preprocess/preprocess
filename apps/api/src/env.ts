@@ -1,4 +1,4 @@
-import type { LogRecord } from "@preprocess/logs";
+import type { LogRecord, PostHogEnv } from "@preprocess/logs";
 import type { SandboxOwner } from "@preprocess/sandbox";
 import type { NetworkRules } from "@preprocess/db/schema/deployments";
 import type { SandboxPreset, SandboxSetup } from "@preprocess/sdk/protocol";
@@ -209,7 +209,9 @@ export type Builder = {
   cancel(id: string): Promise<void>;
 };
 
-export type Env = {
+// POSTHOG_KEY and POSTHOG_HOST (@preprocess/logs posthog.ts): set on our
+// production and on a self-hosted install that names its own PostHog.
+export type Env = PostHogEnv & {
   STAGE: string;
   // Set on our cloud, unset on a self-hosted install; read it through
   // @preprocess/runmode.

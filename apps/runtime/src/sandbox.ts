@@ -204,8 +204,11 @@ export abstract class CaseSandbox extends DurableObject<Env> {
       mountLog?: string;
     } = {},
   ) {
-    initLogs("runtime", (records) =>
-      this.env.PLATFORM ? this.env.PLATFORM.logs(records) : Promise.resolve(),
+    initLogs(
+      "runtime",
+      (records) =>
+        this.env.PLATFORM ? this.env.PLATFORM.logs(records) : Promise.resolve(),
+      this.env,
     );
     const log = wideEvent(
       kind,

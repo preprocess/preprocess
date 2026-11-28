@@ -1,4 +1,19 @@
 import { createRequestLogger, initLogger, type WideEvent } from "evlog";
+import { withEvlog } from "evlog/workers";
+
+import {
+  posthogConfig,
+  routeOf,
+  sendToPostHog,
+  type PostHogEnv,
+} from "./posthog.ts";
+
+export {
+  EXCEPTION_EVENT,
+  REQUEST_EVENT,
+  routeOf,
+  type PostHogEnv,
+} from "./posthog.ts";
 
 // One run-log record (design doc 09): the Pipelines stream's schema, a line
 // of the local NDJSON store, and what the logs API returns.
@@ -138,23 +153,64 @@ export const toRecord = (event: WideEvent): LogRecord | null => {
 };
 
 type Send = (records: LogRecord[]) => Promise<void>;
+let initialized = false;
 let send: Send | undefined;
+let posthog: ReturnType<typeof posthogConfig> = null;
 
-// Every platform Worker calls this once per isolate with how its records
-// leave it: the API sends to the LOGS queue, the others through the API's
-// Platform entrypoint. Events still print to the Worker's own console.
-export const initLogs = (service: string, to: Send) => {
-  const first = send === undefined;
+// Every platform Worker calls this before it logs, with how its records leave
+// it: the API sends to the LOGS queue, the runtime through the API's Platform
+// entrypoint, and the app and docs keep no run log. With POSTHOG_KEY in env,
+// errors and request events also go to PostHog (posthog.ts). Events still
+// print to the Worker's own console.
+export const initLogs = (
+  service: string,
+  to: Send | undefined,
+  env: PostHogEnv = {},
+) => {
   send = to;
-  if (!first) return;
+  posthog = posthogConfig(env);
+  if (initialized) return;
+  initialized = true;
   initLogger({
     env: { service },
     pretty: false,
     drain: async ({ event }) => {
       const record = toRecord(event);
-      if (record && send) await send([record]);
+      await Promise.all([
+        record && send ? send([record]) : undefined,
+        posthog ? sendToPostHog(posthog, service, event) : undefined,
+      ]);
     },
   });
+};
+
+// A Worker's fetch with one wide event per request, for the Workers whose
+// routes are not Hono's (the app and docs). They keep no run log, so the
+// event only goes to PostHog, where configured.
+export const withRequestEvents = <E extends PostHogEnv>(
+  service: string,
+  fetch: (
+    request: Request,
+    env: E,
+    ctx: ExecutionContext,
+  ) => Response | Promise<Response>,
+) =>
+  withEvlog<E, ExecutionContext>((request, env, ctx, log) => {
+    initLogs(service, undefined, env);
+    log.set({ route: routeOf(new URL(request.url).pathname) });
+    return fetch(request, env, ctx);
+  }).fetch;
+
+// A failure outside a request, such as a cron task or a queue batch: one
+// error event, which reaches PostHog like a failed request.
+export const logFailure = (
+  operation: string,
+  error: unknown,
+  waitUntil: (promise: Promise<unknown>) => void,
+) => {
+  const log = createRequestLogger({ operation, waitUntil });
+  log.error(error instanceof Error ? error : new Error(String(error)));
+  log.emit();
 };
 
 // One wide event for a unit of work: set fields as it goes, then emit once.

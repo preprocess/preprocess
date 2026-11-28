@@ -359,6 +359,9 @@ importers:
       '@preprocess/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@preprocess/logs':
+        specifier: workspace:*
+        version: link:../../packages/logs
       '@preprocess/ui':
         specifier: 'catalog:'
         version: https://pkg.pr.new/preprocess/kit/@preprocess/ui@a0e2bd7(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.3.3)
