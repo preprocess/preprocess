@@ -2,13 +2,8 @@
 
 ## Reporting a vulnerability
 
-Please report security issues privately, never in a public issue, pull request
-or discussion.
-
-- **GitHub:** open a private report from the
-  [Security tab](https://github.com/preprocess/preprocess/security/advisories/new)
-  of this repository.
-- **Email:** security@preprocess.com.
+Please report security issues privately by email to security@preprocess.com,
+never in a public issue, pull request or discussion.
 
 Include what you found, the version or commit you tested, steps to reproduce,
 and the impact you expect. A proof of concept helps. Please don't access, change
