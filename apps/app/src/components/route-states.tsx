@@ -80,21 +80,6 @@ export function CaseLinkNotValid() {
   );
 }
 
-export function GroupNotFound() {
-  return (
-    <RouteState
-      action={
-        <Button asChild size="compact" variant="ghost">
-          <Link to="/settings/organization/groups">Back to groups</Link>
-        </Button>
-      }
-      art={<GoneArt />}
-      description="This group was deleted or doesn't exist."
-      title="Group not found"
-    />
-  );
-}
-
 export function RouteError() {
   return (
     <RouteState
