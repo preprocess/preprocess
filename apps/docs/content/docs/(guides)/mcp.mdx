@@ -66,10 +66,21 @@ apply exactly as they do in the API.
 | Logs      | `get_case_logs`, `search_logs`                                                                                                                                                                          |
 | Evals     | `list_eval_suites`, `create_eval_suite`, `get_eval_suite`, `update_eval_suite`, `delete_eval_suite`, `add_eval_suite_cases`, `remove_eval_suite_cases`, `run_eval_suite`, `get_eval_run`                |
 | Memory    | `list_agent_memories`, `list_case_memories`, `delete_agent_memory`                                                                                                                                      |
+| Feedback  | `send_feedback`                                                                                                                                                                                         |
 
 Read-only tools are marked as such. Tools that archive, cancel, promote or
 delete are marked destructive, so clients that ask before destructive calls will
 ask.
+
+## Send feedback
+
+`send_feedback` lets an agent tell Preprocess when something in Preprocess
+itself is broken, missing or confusing, such as an error it can't explain or a
+tool that doesn't do what these docs say. It takes a `category` (`bug`, `idea`,
+`question` or `other`) and a `message` of up to 5,000 characters. It can also
+name the `agent` (by id or slug) and the `case` it's about, and the `client`
+sending it. Each API key can send 20 an hour. Don't put secrets or customer data
+in a message.
 
 Some decisions belong to people, so the server leaves them out: approving or
 rejecting, accepting or dismissing a memory rule, and deciding a guardrail

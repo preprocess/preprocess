@@ -241,6 +241,52 @@ const clip = (value: string) => {
     : line;
 };
 
+// Feedback about Preprocess, to our own inbox (routes/feedback.ts): plain
+// and internal, every field labelled, the message as written.
+export type FeedbackEmailData = {
+  feedbackId: string;
+  orgName: string;
+  orgId: string;
+  category: string;
+  agentId: string | null;
+  caseId: string | null;
+  client: string | null;
+  submitter: string;
+  message: string;
+};
+
+export const feedbackEmail = (
+  brand: Brand,
+  data: FeedbackEmailData,
+): RenderedEmail => {
+  const subject = `Feedback (${data.category}) from ${data.orgName}`;
+  const fields: [string, string][] = [
+    ["Organization", `${data.orgName} (${data.orgId})`],
+    ["Category", data.category],
+    ["Agent", data.agentId ?? "none"],
+    ["Case", data.caseId ?? "none"],
+    ["Client", data.client ?? "none"],
+    ["Submitted by", data.submitter],
+  ];
+  return {
+    subject,
+    html: page(
+      brand,
+      subject,
+      clip(data.message),
+      heading("Feedback") +
+        fields
+          .map(([label, value]) =>
+            paragraph(`${escapeHtml(label)}: ${escapeHtml(value)}`),
+          )
+          .join("") +
+        quote("Message", data.message) +
+        footer(escapeHtml(`Feedback ${data.feedbackId}.`)),
+    ),
+    text: `Feedback\n\n${fields.map(([label, value]) => `${label}: ${value}`).join("\n")}\n\n${data.message}\n\n--\nFeedback ${data.feedbackId}.\n`,
+  };
+};
+
 export const magicLinkEmail = (
   brand: Brand,
   data: { url: string },

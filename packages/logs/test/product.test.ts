@@ -175,6 +175,25 @@ describe("productEvent", () => {
     });
   });
 
+  it("carries a feedback item's category and nothing else of it", () => {
+    const event = productEvent({}, "feedback_submitted", org, user, {
+      category: "bug",
+      message: "The deploy log stops at the build step.",
+      agent_id: agent,
+      case_id: kase,
+      client: "claude-code",
+    } as never);
+    expect(event.event).toBe("feedback_submitted");
+    expect(event.properties.category).toBe("bug");
+    for (const key of ["message", "agent_id", "case_id", "client"])
+      expect(event.properties).not.toHaveProperty(key);
+    expect(
+      productEvent({}, "feedback_submitted", org, user, {
+        category: "complaint",
+      } as never).properties,
+    ).not.toHaveProperty("category");
+  });
+
   it("sets the organization group's plan, seats and created_at", () => {
     const event = organizationIdentify(org, {
       plan: "team",

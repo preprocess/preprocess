@@ -42,6 +42,7 @@ export const prefixes = {
   retentionSweep: "rsw",
   dataset: "dst",
   scim: "scim",
+  feedback: "fbk",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

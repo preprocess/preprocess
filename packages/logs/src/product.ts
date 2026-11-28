@@ -340,6 +340,11 @@ export const PRODUCT_EVENTS = {
   // retries. The sign-in limit counts per client address, so it carries no
   // organization.
   rate_limited: { scope: ["org", "api_key", "sign_in"] },
+  // A sign-in link refused by sign-up protection (apps/api
+  // signup-protection.ts): the bot check failed, a new address is a
+  // temporary inbox, or the address had its links for the hour. Never the
+  // address or its domain, so it carries no person and no organization.
+  signup_blocked: { cause: ["bot", "disposable", "rate_limited"] },
   // A failed /v1 request by a member or API key of the organization, once
   // the caller is known; a rate limit's refusal is rate_limited instead.
   // Every server error is sent and one client error in ten, with weight 10,
@@ -397,6 +402,9 @@ export const PRODUCT_EVENTS = {
       "developers_opentelemetry",
     ],
   },
+  // Feedback about Preprocess (apps/api routes/feedback.ts). The category
+  // only: never the message, its ids or the client.
+  feedback_submitted: { category: ["bug", "idea", "question", "other"] },
 } as const satisfies Record<string, Record<string, PropertySpec>>;
 
 export type ProductEventName = keyof typeof PRODUCT_EVENTS;

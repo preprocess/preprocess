@@ -81,7 +81,11 @@ import {
   runtimeModelSecrets,
   statusHeartbeatSecrets,
   statusHeartbeatVars,
+  feedbackProductionVars,
   trainingVars,
+  turnstileSecrets,
+  turnstileTestKeys,
+  turnstileVars,
   type SelfHostStage,
   type Stage,
   publicDocsUrl,
@@ -335,6 +339,30 @@ export default Alchemy.Stack(
     const docsDomain = yield* Config.String("DOCS_DOMAIN").pipe(
       Config.withDefault(""),
     );
+    // The Turnstile widget for sign-in and sign-up (PRE-165), managed mode on
+    // production's app domain; its sitekey goes to the app and its secret to
+    // the API, which checks each sign-in link's token (stages.ts).
+    const turnstile =
+      stage === "production" && appDomain
+        ? yield* Cloudflare.Turnstile.Widget("SignInWidget", {
+            domains: [appDomain],
+            mode: "managed",
+          }).pipe(keep)
+        : undefined;
+    const turnstileKeys = turnstile
+      ? { sitekey: turnstile.sitekey, secret: turnstile.secret }
+      : selfHost
+        ? {
+            sitekey: yield* Config.String(turnstileVars[0]).pipe(
+              Config.withDefault(undefined),
+            ),
+            secret: yield* Config.Redacted(turnstileSecrets[0]).pipe(
+              Config.withDefault(undefined),
+            ),
+          }
+        : stage === "production"
+          ? {}
+          : turnstileTestKeys;
     const app = yield* Cloudflare.Worker("App", {
       ...worker,
       name: n.app,
@@ -349,6 +377,10 @@ export default Alchemy.Stack(
         ...posthog,
         STAGE: stage,
         API: Cloudflare.WorkerEntrypoint(apiRef),
+        ...(turnstileKeys.sitekey &&
+          turnstileKeys.secret && {
+            [turnstileVars[0]]: turnstileKeys.sitekey,
+          }),
         // Where the app links to docs: the stage's own docs domain, else the
         // public docs, so the app never waits on the docs Worker's URL.
         DOCS_URL: docsDomain ? `https://${docsDomain}` : publicDocsUrl,
@@ -726,6 +758,10 @@ export default Alchemy.Stack(
         ...(realModels && optionalSecrets(apiModelSecrets)),
         DB: db,
         DB_SYSTEM: dbSystem,
+        ...(turnstileKeys.sitekey &&
+          turnstileKeys.secret && {
+            [turnstileSecrets[0]]: turnstileKeys.secret,
+          }),
         APP_URL: appUrl,
         EMAIL: Cloudflare.Email.SendEmail("Email"),
         EMAIL_FROM: yield* Config.String("EMAIL_FROM"),
@@ -808,6 +844,17 @@ export default Alchemy.Stack(
             ),
           )),
         ...(region && optionalSecrets(statusHeartbeatSecrets)),
+        ...(region &&
+          stage === "production" &&
+          Object.fromEntries(
+            feedbackProductionVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
         ...(region &&
           billingOrgs[stage] && {
             BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),
@@ -895,6 +942,7 @@ export default Alchemy.Stack(
       docs: docsUrl,
       api: api.url,
       ...(modelStub && { modelStub: modelStub.url }),
+      ...(turnstile && { turnstileSitekey: turnstile.sitekey }),
       branch: n.branch,
     };
   }),
