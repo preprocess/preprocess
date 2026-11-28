@@ -10,11 +10,7 @@ import { env as bindings } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Env } from "../src/env.ts";
-import {
-  licenseKeys,
-  PLACEHOLDER_LICENSE_KEY,
-  readLicense,
-} from "../src/license.ts";
+import { licenseKeys, readLicense } from "../src/license.ts";
 import { getPlan } from "../src/plan.ts";
 import { countSeats } from "../src/seats.ts";
 import {
@@ -88,11 +84,11 @@ beforeAll(async () => {
   signing = await generate();
   other = await generate();
   signingPublic = await publicOf(signing);
-  licenseKeys.push(signingPublic);
+  licenseKeys[TEST_KID] = signingPublic;
 });
 
 afterAll(() => {
-  licenseKeys.splice(licenseKeys.indexOf(signingPublic), 1);
+  delete licenseKeys[TEST_KID];
 });
 
 describe("license key", () => {
@@ -138,32 +134,56 @@ describe("license key", () => {
     expect((await readLicense(tampered)).status).toBe("invalid");
   });
 
-  it("verifies against any listed key, so a rotation adds the new key", async () => {
+  it("rejects a kid the build doesn't know, even when its key signed it", async () => {
+    expect((await readLicense(await sign({ kid: "unknown" }))).status).toBe(
+      "invalid",
+    );
+    for (const kid of ["__proto__", "constructor", "toString"])
+      expect((await readLicense(await sign({ kid }))).status).toBe("invalid");
+  });
+
+  it("verifies only against the key its kid names", async () => {
+    const otherPublic = await publicOf(other);
+    const keys = { ...licenseKeys, "other-kid": otherPublic };
+    // Signed by the other key but claiming the test kid.
+    const misnamed = await sign({}, other.privateKey);
+    expect((await readLicense(misnamed, new Date(), keys)).status).toBe(
+      "invalid",
+    );
+    // Signed by the test key but claiming the other kid.
+    const claimed = await sign({ kid: "other-kid" });
+    expect((await readLicense(claimed, new Date(), keys)).status).toBe(
+      "invalid",
+    );
+  });
+
+  it("a rotation adds the new kid beside the current one", async () => {
     const next = await generate();
     const byNext = await sign({ kid: "next-2027" }, next.privateKey);
     const byCurrent = await sign();
     expect((await readLicense(byNext)).status).toBe("invalid");
-    const keys = [...licenseKeys, await publicOf(next)];
+    const keys = { ...licenseKeys, "next-2027": await publicOf(next) };
     expect((await readLicense(byCurrent, new Date(), keys)).status).toBe(
       "active",
     );
     const state = await readLicense(byNext, new Date(), keys);
     expect(state.status).toBe("active");
     expect(state.status === "active" && state.license.kid).toBe("next-2027");
-    // Retiring the old key leaves its licenses invalid.
+    // Retiring the old kid leaves its licenses invalid.
     expect(
-      (await readLicense(byCurrent, new Date(), [await publicOf(next)])).status,
+      (
+        await readLicense(byCurrent, new Date(), {
+          "next-2027": await publicOf(next),
+        })
+      ).status,
     ).toBe("invalid");
   });
 
-  it("ships only the placeholder key, which verifies nothing", async () => {
-    expect(licenseKeys.filter((k) => k !== signingPublic)).toEqual([
-      PLACEHOLDER_LICENSE_KEY,
-    ]);
-    expect(
-      (await readLicense(await sign(), new Date(), [PLACEHOLDER_LICENSE_KEY]))
-        .status,
-    ).toBe("invalid");
+  it("ships no signing key yet, so nothing verifies", async () => {
+    expect(Object.keys(licenseKeys).filter((k) => k !== TEST_KID)).toEqual([]);
+    expect((await readLicense(await sign(), new Date(), {})).status).toBe(
+      "invalid",
+    );
   });
 
   it("garbage and no key give the free plan", async () => {
