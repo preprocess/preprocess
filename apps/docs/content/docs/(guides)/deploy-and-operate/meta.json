@@ -7,6 +7,7 @@
     "environments-and-regions",
     "security-and-data-handling",
     "product-analytics-and-session-replay",
-    "outbound-hostnames"
+    "outbound-hostnames",
+    "billing-and-limits"
   ]
 }
