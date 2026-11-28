@@ -179,11 +179,12 @@ describe("license key", () => {
     ).toBe("invalid");
   });
 
-  it("ships no signing key yet, so nothing verifies", async () => {
-    expect(Object.keys(licenseKeys).filter((k) => k !== TEST_KID)).toEqual([]);
-    expect((await readLicense(await sign(), new Date(), {})).status).toBe(
-      "invalid",
-    );
+  it("ships only the production key, which a test key can't sign for", async () => {
+    expect(Object.keys(licenseKeys).filter((k) => k !== TEST_KID)).toEqual([
+      "ed25519-mHYOpjlvgu",
+    ]);
+    const forged = await sign({ kid: "ed25519-mHYOpjlvgu" });
+    expect((await readLicense(forged)).status).toBe("invalid");
   });
 
   it("garbage and no key give the free plan", async () => {
