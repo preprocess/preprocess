@@ -2,7 +2,7 @@ import { Button } from "@preprocess/ui/components/button";
 import { ChevronRight } from "@preprocess/ui/lib/icons";
 import { Link } from "@tanstack/react-router";
 
-import { FillsOnItsOwnArt, NotDeployedArt } from "../../components/empty-art";
+import { MemoriesArt, NotDeployedArt } from "../../components/empty-art";
 
 import { parseAgentId, parseCaseId } from "../agent-cases/agent-case-ref";
 import { orgApi } from "../auth/client";
@@ -70,7 +70,7 @@ export function AgentMemories({ agentSlug }: Readonly<{ agentSlug: string }>) {
           <SettingsError error={accepted.state.error} />
         ) : accepted.state.data.memories.length === 0 ? (
           <SettingsEmpty
-            art={<FillsOnItsOwnArt />}
+            art={<MemoriesArt />}
             description="Rules the agent proposes and your team accepts appear here and load into future cases."
             title="No memories yet"
           />

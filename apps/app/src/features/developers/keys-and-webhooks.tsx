@@ -15,7 +15,11 @@ import { Plus, X } from "@preprocess/ui/lib/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 
-import { NoAccessArt, NothingCreatedArt } from "../../components/empty-art";
+import {
+  ApiKeysArt,
+  NoAccessArt,
+  WebhooksArt,
+} from "../../components/empty-art";
 
 import { useOrganizationId } from "../auth/auth-context";
 import { apiFetch, authPost, orgApi } from "../auth/client";
@@ -180,7 +184,7 @@ function ApiKeysSection() {
         <SettingsSkeletonRows count={2} />
       ) : keys.data.length === 0 ? (
         <SettingsEmpty
-          art={<NothingCreatedArt />}
+          art={<ApiKeysArt />}
           description="Create an organization API key to deploy agents, start cases or connect MCP clients."
           title="No API keys yet"
         />
@@ -369,7 +373,7 @@ function WebhooksSection() {
         <SettingsSkeletonRows count={2} />
       ) : endpoints.data.length === 0 ? (
         <SettingsEmpty
-          art={<NothingCreatedArt />}
+          art={<WebhooksArt />}
           description="Add a webhook endpoint to receive case events as they happen."
           title="No webhooks yet"
         />

@@ -16,7 +16,7 @@ import { Link, Plus, ShareUpRight, X } from "@preprocess/ui/lib/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 
-import { NoAccessArt, NothingCreatedArt } from "../../components/empty-art";
+import { GithubRepositoriesArt, NoAccessArt } from "../../components/empty-art";
 import {
   ValidatedField,
   type ValidatedFieldHandle,
@@ -295,9 +295,9 @@ function GitHubSections() {
           <SettingsSkeletonRows count={3} />
         ) : repos.length === 0 ? (
           <SettingsEmpty
-            art={<NothingCreatedArt />}
-            description="The GitHub App doesn't have access to any repositories yet. Grant access under Manage."
-            title="No repositories"
+            art={<GithubRepositoriesArt />}
+            description="Grant the Preprocess GitHub App access to a repository to deploy agents on push."
+            title="No repositories yet"
           />
         ) : (
           <SettingsRows>

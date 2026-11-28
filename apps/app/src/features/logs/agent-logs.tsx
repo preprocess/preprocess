@@ -10,7 +10,7 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import {
-  FillsOnItsOwnArt,
+  LogsArt,
   NoResultsArt,
   NotDeployedArt,
 } from "../../components/empty-art";
@@ -246,13 +246,7 @@ export function AgentLogs({ agentSlug }: Readonly<{ agentSlug: string }>) {
               </Button>
             ) : undefined
           }
-          art={
-            !search && filter === "all" ? (
-              <FillsOnItsOwnArt />
-            ) : (
-              <NoResultsArt />
-            )
-          }
+          art={!search && filter === "all" ? <LogsArt /> : <NoResultsArt />}
           description={
             search
               ? "No log entries match this query."

@@ -21,7 +21,7 @@ import {
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { FillsOnItsOwnArt } from "../../components/empty-art";
+import { AuditLogArt } from "../../components/empty-art";
 
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
@@ -174,7 +174,7 @@ export function AuditLogPanel() {
               if (list.length === 0)
                 return (
                   <SettingsEmpty
-                    art={<FillsOnItsOwnArt />}
+                    art={<AuditLogArt />}
                     description="Organization, deployment, access and billing events are recorded here automatically."
                     title="No audit events yet"
                   />

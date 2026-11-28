@@ -20,7 +20,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 
-import { NoAccessArt, NothingCreatedArt } from "../../components/empty-art";
+import { NoAccessArt, SecretsArt } from "../../components/empty-art";
 
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
@@ -387,7 +387,7 @@ function Secrets() {
         <SettingsSkeletonRows count={3} />
       ) : secrets.data.length === 0 ? (
         <SettingsEmpty
-          art={<NothingCreatedArt />}
+          art={<SecretsArt />}
           description="Add encrypted secrets that agents can use in tools without exposing values to the model."
           title="No secrets yet"
         />

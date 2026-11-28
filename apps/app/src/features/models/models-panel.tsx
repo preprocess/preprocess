@@ -38,8 +38,8 @@ import { useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import {
   CouldntLoadArt,
+  CustomModelsArt,
   NoAccessArt,
-  NothingCreatedArt,
 } from "../../components/empty-art";
 import {
   ValidatedField,
@@ -609,7 +609,7 @@ function OwnSection({
       {empty ? (
         <SettingsEmpty
           action={manage ? register("sm") : undefined}
-          art={<NothingCreatedArt />}
+          art={<CustomModelsArt />}
           description={
             manage
               ? "Register a model you serve, such as one trained on your cases, by its endpoint URL."

@@ -6,7 +6,7 @@ import {
   EmptyTitle,
 } from "@preprocess/ui/components/empty";
 
-import { FillsOnItsOwnArt } from "./empty-art";
+import { CaseChatArt } from "./empty-art";
 
 export function ChatEmpty() {
   return (
@@ -16,7 +16,7 @@ export function ChatEmpty() {
     >
       <EmptyHeader className="pointer-events-auto group">
         <EmptyMedia variant="graphic">
-          <FillsOnItsOwnArt />
+          <CaseChatArt />
         </EmptyMedia>
         <EmptyTitle>No messages yet</EmptyTitle>
         <EmptyDescription>

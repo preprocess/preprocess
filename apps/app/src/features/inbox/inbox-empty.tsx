@@ -7,10 +7,7 @@ import {
 } from "@preprocess/ui/components/empty";
 import type { ReactNode } from "react";
 
-import {
-  FillsOnItsOwnArt,
-  NothingSelectedArt,
-} from "../../components/empty-art";
+import { InboxListArt, NothingSelectedArt } from "../../components/empty-art";
 
 export type InboxEmptyKind = "list" | "pick" | "pick-empty-list";
 
@@ -20,7 +17,7 @@ export function InboxEmpty({ kind }: { kind: InboxEmptyKind }) {
   let description: string;
   switch (kind) {
     case "list":
-      art = <FillsOnItsOwnArt />;
+      art = <InboxListArt />;
       title = "Inbox is empty";
       description =
         "Reviews, approvals, memory proposals and mentions show up here.";

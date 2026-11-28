@@ -16,7 +16,7 @@ import { Check, Plus, X } from "@preprocess/ui/lib/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 
-import { NothingCreatedArt } from "../../components/empty-art";
+import { NetworkRulesArt } from "../../components/empty-art";
 
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
@@ -232,7 +232,7 @@ export function OrgNetworkSection() {
         <SettingsSkeletonRows count={3} />
       ) : saved.allow.length + saved.block.length === 0 ? (
         <SettingsEmpty
-          art={<NothingCreatedArt />}
+          art={<NetworkRulesArt />}
           description="Agents can reach every host. Add host rules to control which external domains agents can reach."
           title="No network rules yet"
         />

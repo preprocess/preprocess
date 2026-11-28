@@ -69,7 +69,7 @@ import {
   familyOf,
   type CaseInputFamily,
 } from "./case-input-kind";
-import { FillsOnItsOwnArt, NoResultsArt } from "../../components/empty-art";
+import { InputTabArt, NoResultsArt } from "../../components/empty-art";
 import { SettingsSearchField } from "../settings/kit";
 import { CaseInputViewer } from "./case-input-viewer";
 import { filesFromZip } from "./case-input-zip";
@@ -1116,11 +1116,7 @@ export function CaseInputPane({
             >
               <EmptyHeader className="pointer-events-auto group">
                 <EmptyMedia variant="graphic">
-                  {query.trim() === "" ? (
-                    <FillsOnItsOwnArt />
-                  ) : (
-                    <NoResultsArt />
-                  )}
+                  {query.trim() === "" ? <InputTabArt /> : <NoResultsArt />}
                 </EmptyMedia>
                 {query.trim() === "" ? (
                   <>

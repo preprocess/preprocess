@@ -9,7 +9,7 @@ import { ChevronRight, Plus } from "@preprocess/ui/lib/icons";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 
-import { FillsOnItsOwnArt, NotDeployedArt } from "../../components/empty-art";
+import { EvalSuitesArt, NotDeployedArt } from "../../components/empty-art";
 
 import { orgApi } from "../auth/client";
 import {
@@ -101,7 +101,7 @@ export function AgentEvalSuites({
         <SettingsError error={state.error} />
       ) : state.data.suites.length === 0 ? (
         <SettingsEmpty
-          art={<FillsOnItsOwnArt />}
+          art={<EvalSuitesArt />}
           description="Completed cases with reviewed answers build your automatic suite, or create a manual suite."
           title="No eval suites yet"
         />
