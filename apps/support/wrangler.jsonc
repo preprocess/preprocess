@@ -9,6 +9,7 @@
   "compatibility_date": "2026-07-26",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  "services": [{ "binding": "DOCS", "service": "preprocess-docs-development" }],
   "vars": {
     "APP_URL": "https://app.preprocess.localhost",
     "DOCS_URL": "https://docs.preprocess.localhost",

@@ -434,6 +434,10 @@ export default Alchemy.Stack(
                 return url;
               }),
           STATUS_URL: publicStatusUrl,
+          // Workers on one account can't fetch each other over workers.dev
+          // or a shared zone (error 1042), so the docs index comes through
+          // a service binding.
+          DOCS: Cloudflare.WorkerEntrypoint(docs),
         },
       });
       supportUrl = supportDomain ? `https://${supportDomain}` : support.url;

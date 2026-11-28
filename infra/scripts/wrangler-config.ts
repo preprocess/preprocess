@@ -67,6 +67,7 @@ const configs: Record<string, object> = {
     name: local.support,
     main: "src/server.ts",
     ...common,
+    services: [{ binding: "DOCS", service: local.docs }],
     vars: {
       APP_URL: localAppUrl,
       DOCS_URL: localDocsUrl,
