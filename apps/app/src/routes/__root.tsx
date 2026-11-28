@@ -26,7 +26,9 @@ import {
   needsName,
 } from "../features/auth/session";
 import { loadInbox } from "../features/inbox/load-inbox";
+import { surfaceOf } from "../features/monitoring/feature-surfaces";
 import {
+  captureProductEvent,
   loadMonitoring,
   startMonitoring,
 } from "../features/monitoring/posthog";
@@ -196,6 +198,15 @@ function RootComponent() {
       startMonitoring(monitoring, userId ? { userId, organizationId } : null),
     [monitoring, userId, organizationId],
   );
+  // One feature_viewed per page of a main surface, once its route resolves.
+  const routeId = useRouterState({
+    select: (state) =>
+      state.status === "idle" ? state.matches.at(-1)?.routeId : undefined,
+  });
+  useEffect(() => {
+    const surface = routeId && surfaceOf(routeId);
+    if (surface) captureProductEvent("feature_viewed", { surface });
+  }, [routeId, pathname]);
   useEffect(
     () =>
       onDataChanged(() => {

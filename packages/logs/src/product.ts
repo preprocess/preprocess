@@ -334,6 +334,69 @@ export const PRODUCT_EVENTS = {
   plan_cancel_started: { seats_over: COUNT, agents_paused: COUNT },
   plan_cancel_withdrawn: { plan: PLANS, instead: PLANS },
   org_deleted: {},
+  // Reliability and UI usage (PRE-160).
+  // A request a rate limit refused (apps/api rate-limit.ts): at most one
+  // event per limit and minute in each isolate, however often the caller
+  // retries. The sign-in limit counts per client address, so it carries no
+  // organization.
+  rate_limited: { scope: ["org", "api_key", "sign_in"] },
+  // A failed /v1 request by a member or API key of the organization, once
+  // the caller is known; a rate limit's refusal is rate_limited instead.
+  // Every server error is sent and one client error in ten, with weight 10,
+  // so summing weight counts them. The route is the matched template, as in
+  // server_request.
+  api_error: {
+    route: SLUG,
+    method: ["get", "post", "put", "patch", "delete"],
+    status: COUNT,
+    status_class: ["client_error", "server_error"],
+    caller: ["person", "api_key"],
+    weight: COUNT,
+  },
+  // The one browser event: someone opened a main surface of the app, sent
+  // with posthog.capture by the app's root route (features/monitoring).
+  feature_viewed: {
+    surface: [
+      "inbox",
+      "cases",
+      "case_room",
+      "case_review",
+      "agents",
+      "agent_overview",
+      "agent_cases",
+      "agent_deployments",
+      "agent_configuration",
+      "agent_access",
+      "agent_evaluations",
+      "agent_evaluation_run",
+      "agent_memories",
+      "agent_observability",
+      "agent_settings",
+      "agent_training",
+      "agent_dataset",
+      "observability",
+      "settings_account",
+      "settings_organization",
+      "settings_members",
+      "settings_groups",
+      "settings_billing",
+      "settings_models",
+      "settings_defaults",
+      "settings_guardrails",
+      "settings_retention",
+      "settings_audit_logs",
+      "settings_sso",
+      "settings_directory_sync",
+      "settings_license",
+      "developers_api_keys",
+      "developers_github",
+      "developers_integrations",
+      "developers_secrets",
+      "developers_network",
+      "developers_sandboxes",
+      "developers_opentelemetry",
+    ],
+  },
 } as const satisfies Record<string, Record<string, PropertySpec>>;
 
 export type ProductEventName = keyof typeof PRODUCT_EVENTS;

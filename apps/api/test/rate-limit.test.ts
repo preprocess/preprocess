@@ -10,6 +10,7 @@ import {
   createOrganization,
   signUp,
   testEnv,
+  tracked,
   unique,
 } from "./helpers.ts";
 
@@ -106,5 +107,50 @@ describe("rate limits", { timeout: 30_000 }, () => {
     ).toBe(200);
     // Reading the session is not an attempt.
     expect((await from(ip).call("/api/auth/get-session")).status).toBe(200);
+  });
+
+  // Product analytics (PRE-160): a refusal is a rate_limited event, once per
+  // limit and window however often the caller retries.
+  it("report a full organization limit once, on its group", async () => {
+    const { client, userId } = await signUp(
+      "Rita",
+      testEnv({ POSTHOG_KEY: "phc_test" }),
+    );
+    const org = await createOrganization(client, "Rate Events");
+    await exhaust(rateLimitName.org(org), "org", LIMITS.org);
+    const start = tracked.length;
+    expect((await client.call(`/v1/orgs/${org}/groups`)).status).toBe(200);
+    for (let i = 0; i < 3; i++)
+      expectLimited(await client.call(`/v1/orgs/${org}/groups`));
+    const events = tracked
+      .slice(start)
+      .filter((e) => e.event === "rate_limited");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      distinctId: userId,
+      properties: { scope: "org", $groups: { organization: org } },
+    });
+  });
+
+  it("report a full sign-in limit without an organization or address", async () => {
+    const ip = `192.0.2.${Math.floor(Math.random() * 250)}`;
+    const client = new Client(testEnv({ POSTHOG_KEY: "phc_test" }), {
+      "cf-connecting-ip": ip,
+    });
+    await exhaust(rateLimitName.auth(ip), "auth", LIMITS.auth);
+    const start = tracked.length;
+    for (let i = 0; i < 2; i++)
+      expectLimited(
+        await client.call("/api/auth/sign-in/magic-link", {
+          body: { email: `${unique("ip")}@example.test`, callbackURL: "/" },
+        }),
+      );
+    const events = tracked
+      .slice(start)
+      .filter((e) => e.event === "rate_limited");
+    expect(events).toHaveLength(1);
+    expect(events[0]?.properties).toMatchObject({ scope: "sign_in" });
+    expect(events[0]?.properties.$groups).toBeUndefined();
+    expect(JSON.stringify(events)).not.toContain(ip);
   });
 });

@@ -66,7 +66,7 @@ import type { CaseNeighbors } from "./list-org-cases";
 import type { CaseInputSample } from "./flue-lab-input-samples";
 import { AgentSectionNav } from "../agents/agent-shell";
 import type { OrgAgentDetail } from "../agents/list-org-agents";
-import { REPLAY_BLOCK } from "../monitoring/posthog";
+import { captureProductEvent, REPLAY_BLOCK } from "../monitoring/posthog";
 
 export type AgentCaseRoomProps = {
   /** The agent the case belongs to; the room sits under its Cases section. */
@@ -286,6 +286,12 @@ export function AgentCaseRoom({
     openIds: [],
   });
   const [side, setSide] = useState<WorkspacePaneState | null>(null);
+  const reviewOpen =
+    main.selectedId === "review" || side?.selectedId === "review";
+  useEffect(() => {
+    if (reviewOpen)
+      captureProductEvent("feature_viewed", { surface: "case_review" });
+  }, [reviewOpen]);
   const [isSplit, setIsSplit] = useState(false);
   const [focusedPane, setFocusedPane] = useState<"main" | "side">("main");
   const chatPanelRef = useRef<ResizablePanelHandle>(null);
