@@ -103,12 +103,3 @@ export function AuthField({
 
 export const authLinkClass =
   "text-foreground underline-offset-4 hover:underline";
-
-/** A same-origin path to return to after signing in, or "/". */
-export function safeRedirect(value: unknown) {
-  return typeof value === "string" &&
-    value.startsWith("/") &&
-    !value.startsWith("//")
-    ? value
-    : "/";
-}

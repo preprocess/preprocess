@@ -17,6 +17,7 @@ import { loadProductSidebarOpen } from "../components/product-sidebar-open";
 import { ProductSidebarOpenProvider } from "../components/product-sidebar-state";
 import { ThemeProvider, ThemeScript } from "../components/theme-provider";
 import { AuthProvider } from "../features/auth/auth-context";
+import { safeRedirect } from "../features/auth/safe-redirect";
 import {
   activateOrganization,
   loadOrganizations,
@@ -93,9 +94,10 @@ export const Route = createRootRoute({
       };
     }
 
+    // Every gate passes the page the person was going to along as `redirect`.
+    const redirectTo = `${location.pathname}${location.searchStr}`;
     const session = await loadSession();
     if (!session) {
-      const redirectTo = `${location.pathname}${location.searchStr}`;
       // TanStack Router redirects are Response objects, not Error instances.
       throw redirect({
         href: `/sign-in?redirect=${encodeURIComponent(redirectTo)}`,
@@ -105,7 +107,6 @@ export const Route = createRootRoute({
     // Names come before everything else, however the person signed in.
     const onName = location.pathname === NAME_PATH;
     if (needsName(session.user) && !onName) {
-      const redirectTo = `${location.pathname}${location.searchStr}`;
       throw redirect({
         href: `${NAME_PATH}?redirect=${encodeURIComponent(redirectTo)}`,
       });
@@ -116,16 +117,25 @@ export const Route = createRootRoute({
 
     const onOnboarding = isOnboardingPath(location.pathname);
     if (!onName && !session.organizationId && !onOnboarding) {
-      throw redirect({ to: "/onboarding" });
+      throw redirect({
+        href:
+          redirectTo === "/"
+            ? "/onboarding"
+            : `/onboarding?redirect=${encodeURIComponent(redirectTo)}`,
+      });
     }
     if (!onName && session.organizationId && onOnboarding) {
-      throw redirect({ to: "/" });
+      throw redirect({
+        href: safeRedirect(
+          new URLSearchParams(location.searchStr).get("redirect"),
+        ),
+      });
     }
 
     // Once cards are required, an Owner whose organization has no plan yet
-    // goes to checkout to start Free (spec 16a).
+    // goes to checkout to start Free (spec 16a), and comes back here.
     if (!onName && session.organizationId) {
-      const checkout = await loadRequiredCheckout();
+      const checkout = await loadRequiredCheckout({ data: redirectTo });
       if (checkout) throw redirect({ href: checkout });
     }
 

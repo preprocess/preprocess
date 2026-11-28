@@ -7,11 +7,7 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 
-import {
-  AuthLayout,
-  authLinkClass,
-  safeRedirect,
-} from "../components/auth-layout";
+import { AuthLayout, authLinkClass } from "../components/auth-layout";
 import {
   NameFields,
   nameErrors,
@@ -19,6 +15,7 @@ import {
 } from "../components/name-fields";
 import { useAuth } from "../features/auth/auth-context";
 import { authPost } from "../features/auth/client";
+import { safeRedirect } from "../features/auth/safe-redirect";
 
 // The root loader sends anyone signed in without a first and last name here
 // first, whichever way they came in.

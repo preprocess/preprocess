@@ -51,7 +51,7 @@ function CreateOrganizationDialog({
 
     try {
       const { organizationId } = await createOrganization(name);
-      const checkout = await freeCheckout(organizationId);
+      const checkout = await freeCheckout(organizationId, "/");
       if (checkout) window.location.assign(checkout);
       else window.location.reload();
     } catch (cause) {
