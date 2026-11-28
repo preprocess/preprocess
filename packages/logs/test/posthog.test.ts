@@ -73,6 +73,25 @@ describe("toPostHog", () => {
     expect(exception).not.toBeNull();
   });
 
+  it("sends a refused request as a request, not an exception", () => {
+    const { request, exception } = toPostHog(
+      "api",
+      event({
+        method: "GET",
+        path: "/v1/orgs/org_01m8ar0hemfahb99w1a60fp0a7/license",
+        status: 403,
+        level: "error",
+        error: {
+          name: "HTTPException",
+          message: "Licenses are for self-hosted installs.",
+          status: 403,
+        },
+      }),
+    );
+    expect(request).toMatchObject({ status: 403 });
+    expect(exception).toBeNull();
+  });
+
   it("scrubs an error's message and keeps its stack frames", () => {
     const { exception } = toPostHog(
       "api",
