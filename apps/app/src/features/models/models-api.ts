@@ -28,6 +28,8 @@ export type CatalogModel = {
   allowed: boolean;
   trainable: boolean;
   isDefault: boolean;
+  /** True only on a self-hosted install, where a built-in can be served from the organization's endpoint. */
+  canOverride: boolean;
   endpoint?: ModelEndpoint | null;
 };
 
@@ -167,6 +169,7 @@ const catalog = (selfHosted: boolean): CatalogModel[] => [
     allowed: true,
     trainable: false,
     isDefault: true,
+    canOverride: selfHosted,
   },
   {
     id: "deepseek-v4.1-flash-fast",
@@ -176,6 +179,7 @@ const catalog = (selfHosted: boolean): CatalogModel[] => [
     allowed: true,
     trainable: false,
     isDefault: false,
+    canOverride: selfHosted,
   },
   {
     id: "kimi-k3.1-pro",
@@ -185,6 +189,7 @@ const catalog = (selfHosted: boolean): CatalogModel[] => [
     allowed: true,
     trainable: false,
     isDefault: false,
+    canOverride: selfHosted,
     endpoint: selfHosted
       ? {
           id: "mep_seed_kimi",
@@ -202,6 +207,7 @@ const catalog = (selfHosted: boolean): CatalogModel[] => [
     allowed: false,
     trainable: false,
     isDefault: false,
+    canOverride: selfHosted,
   },
 ];
 
@@ -410,17 +416,9 @@ export function useManagesModels() {
   return state !== "member" && state !== "member-empty";
 }
 
-/**
- * Whether built-in models can be served from the organization's own endpoint:
- * only on a self-hosted install, which GET /models shows by serving a built-in
- * from an endpoint or the install's own configuration.
- */
+/** Whether built-in models can be served from the organization's own endpoint: only on a self-hosted install. */
 export const servesOwnBuiltIns = (models: readonly ModelEntry[]) =>
-  models.some(
-    (m) =>
-      m.kind === "catalog" &&
-      (m.serving === "endpoint" || m.serving === "install"),
-  );
+  models.some((m) => m.kind === "catalog" && m.canOverride);
 
 export function useModelActions() {
   const organizationId = useOrganizationId();
