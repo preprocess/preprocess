@@ -14,6 +14,7 @@ import {
   durableObjects,
   LOCAL,
   localAppUrl,
+  localDocsUrl,
   publicDocsUrl,
   publicStatusUrl,
   localAuditKeyId,
@@ -59,6 +60,18 @@ const configs: Record<string, object> = {
     main: "src/server.ts",
     ...common,
     vars: { API_URL: `${localAppUrl}/v1`, STATUS_URL: publicStatusUrl },
+  },
+  // The help center links into the app and merges the docs' search index.
+  "apps/support": {
+    $schema: "node_modules/wrangler/config-schema.json",
+    name: local.support,
+    main: "src/server.ts",
+    ...common,
+    vars: {
+      APP_URL: localAppUrl,
+      DOCS_URL: localDocsUrl,
+      STATUS_URL: publicStatusUrl,
+    },
   },
   "apps/api": {
     $schema: "node_modules/wrangler/config-schema.json",

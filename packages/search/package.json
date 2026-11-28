@@ -1,0 +1,29 @@
+{
+  "name": "@preprocess/search",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The docs search index (Orama) and the page text it indexes, shared by the docs site and the help center.",
+  "author": "Preprocess, Inc.",
+  "license": "Elastic-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fumadocs": "./src/fumadocs.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@orama/orama": "^3.1.18"
+  },
+  "peerDependencies": {
+    "fumadocs-core": "16.19.7"
+  },
+  "devDependencies": {
+    "fumadocs-core": "16.19.7",
+    "typescript": "^5.9.3",
+    "vitest": "catalog:"
+  }
+}
