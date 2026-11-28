@@ -99,7 +99,14 @@ export const SCENARIO_SURFACES = {
       "loading",
     ],
   },
-  // The sidebar notice stack's billing state, role and announcements.
+  // License settings (self-hosted): "live" reads the API; the rest are
+  // seeded license states, and "admin" is an Admin's read-only view.
+  license: {
+    label: "License",
+    states: ["live", "active", "grace", "expired", "invalid", "none", "admin"],
+  },
+  // The sidebar notice stack's billing and license state, role and
+  // announcements.
   notices: {
     label: "Notices",
     states: [
@@ -109,6 +116,9 @@ export const SCENARIO_SURFACES = {
       "mixed",
       "reload-failed",
       "reload-cap",
+      "license-grace",
+      "license-expired",
+      "license-invalid",
       "member",
       "none",
     ],
@@ -138,6 +148,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   "billing-result": "ok",
   retention: "live",
   models: "live",
+  license: "live",
   notices: "live",
 };
 
@@ -151,6 +162,7 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   "billing-result": "ok",
   retention: "live",
   models: "live",
+  license: "live",
   notices: "live",
 };
 

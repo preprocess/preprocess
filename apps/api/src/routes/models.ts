@@ -192,7 +192,7 @@ const toEndpoint = (row: ModelEndpointRow): z.infer<typeof Endpoint> => ({
 
 const BaseModel = z.enum(MODELS).nullable().openapi({
   description:
-    "The catalogue model an organization model was trained from, which prices it",
+    "The catalogue model an organization model was trained from. Metadata only: calls to the organization's own endpoint carry no model charge",
 });
 
 const Register = z.object({

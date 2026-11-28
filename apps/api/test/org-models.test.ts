@@ -6,7 +6,9 @@
 
 import { orgId, withOrg, type OrgId } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
+import { usageRecords } from "@preprocess/db/schema/billing";
 import { evalRuns } from "@preprocess/db/schema/evals";
+import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { Client, createOrganization, signUp, testEnv } from "./helpers.ts";
@@ -144,6 +146,7 @@ describe("choosing an organization model", () => {
 
 describe("running on an organization model", () => {
   type CaseView = {
+    caseId: string;
     status: string;
     capture: Array<{ kind: string; data: Record<string, unknown> }>;
   };
@@ -180,6 +183,16 @@ describe("running on an organization model", () => {
     expect(
       view.capture.find((e) => e.kind === "model.request")?.data,
     ).toMatchObject({ model: MODEL, endpoint: endpointId });
+    // On our cloud the case itself is still metered; a call to the
+    // organization's own endpoint is not (design doc 10).
+    const usage = await withOrg(testEnv(), a.org, (tx) =>
+      tx
+        .select({ feature: usageRecords.feature })
+        .from(usageRecords)
+        .where(eq(usageRecords.caseId, view.caseId)),
+    );
+    expect(usage.map((u) => u.feature)).toContain("cases");
+    expect(usage.map((u) => u.feature)).not.toContain("model_usage");
   });
 
   it("lists it under the allowed-models guardrail like a catalogue model", async () => {

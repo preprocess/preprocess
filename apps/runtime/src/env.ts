@@ -255,15 +255,14 @@ export type Platform = {
   ): Promise<Record<string, RegisteredEndpoint>>;
 };
 
-// An endpoint's id, which capture records, its route, and for an
-// organization model the catalogue model it is priced as.
+// An endpoint's id, which capture records, its route, and whether it serves
+// an organization model or overrides a catalogue one.
 export type RegisteredEndpoint = {
   id: string;
   url: string;
   key: string;
   model: string;
   kind: "override" | "model";
-  baseModel: string | null;
 };
 
 export type DeploymentRef = Pick<
