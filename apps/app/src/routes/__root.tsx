@@ -25,6 +25,10 @@ import {
   needsName,
 } from "../features/auth/session";
 import { loadInbox } from "../features/inbox/load-inbox";
+import {
+  loadMonitoring,
+  startMonitoring,
+} from "../features/monitoring/posthog";
 import { onDataChanged } from "../lib/data-changed";
 import { loadRequiredCheckout } from "../features/organizations/billing";
 import { OrganizationsProvider } from "../features/organizations/organizations-context";
@@ -83,7 +87,10 @@ export const Route = createRootRoute({
       await activateOrganization({ data: { organizationId: first.id } });
   },
   loader: async ({ location }) => {
-    const sidebarOpen = await loadProductSidebarOpen();
+    const [sidebarOpen, monitoring] = await Promise.all([
+      loadProductSidebarOpen(),
+      loadMonitoring(),
+    ]);
 
     if (isPublicAuthPath(location.pathname)) {
       return {
@@ -91,6 +98,7 @@ export const Route = createRootRoute({
         inboxUnread: 0,
         organizations: [],
         sidebarOpen,
+        monitoring,
       };
     }
 
@@ -147,6 +155,7 @@ export const Route = createRootRoute({
       inboxUnread: inbox.unreadCount,
       organizations,
       sidebarOpen,
+      monitoring,
     };
   },
   // Auth, organizations, and the unread count load with the document. Client
@@ -163,12 +172,19 @@ const queryClient = new QueryClient({
 });
 
 function RootComponent() {
-  const { inboxUnread, session, organizations, sidebarOpen } =
+  const { inboxUnread, session, organizations, sidebarOpen, monitoring } =
     Route.useLoaderData();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const router = useRouter();
+  const userId = session?.user.id;
+  const organizationId = session?.organizationId ?? null;
+  useEffect(
+    () =>
+      startMonitoring(monitoring, userId ? { userId, organizationId } : null),
+    [monitoring, userId, organizationId],
+  );
   useEffect(
     () =>
       onDataChanged(() => {
