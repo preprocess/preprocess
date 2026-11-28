@@ -86,6 +86,7 @@ import {
   publicDocsUrl,
   publicStatusUrl,
   posthogPersonSecrets,
+  refuseIcebergLogs,
   posthogPersonVars,
   posthogProject,
   posthogVars,
@@ -485,6 +486,8 @@ export default Alchemy.Stack(
     const logCatalogToken = yield* Config.Redacted("LOG_CATALOG_TOKEN").pipe(
       Config.withDefault(undefined),
     );
+    const icebergRefusal = refuseIcebergLogs(logCatalogToken !== undefined);
+    if (icebergRefusal) return yield* Effect.die(new Error(icebergRefusal));
     let logSql = {};
     if (logCatalogToken) {
       const catalog = yield* Cloudflare.Basin.Catalog("LogCatalog", {
