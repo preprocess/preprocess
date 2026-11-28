@@ -85,9 +85,7 @@ import {
   type Stage,
   publicDocsUrl,
   publicStatusUrl,
-  posthogPersonSecrets,
   refuseIcebergLogs,
-  posthogPersonVars,
   posthogProject,
   posthogVars,
 } from "./src/stages.ts";
@@ -809,16 +807,6 @@ export default Alchemy.Stack(
             ),
           )),
         ...(region && optionalSecrets(statusHeartbeatSecrets)),
-        ...Object.fromEntries(
-          posthogPersonVars.map(
-            (name) =>
-              [
-                name,
-                Config.String(name).pipe(Config.withDefault(undefined)),
-              ] as const,
-          ),
-        ),
-        ...optionalSecrets(posthogPersonSecrets),
         ...(region &&
           billingOrgs[stage] && {
             BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),

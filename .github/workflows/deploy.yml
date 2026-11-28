@@ -91,11 +91,6 @@ jobs:
       # Optional: verifies Autumn's webhooks (auto-reload failures). Without
       # it the webhook endpoint answers 404.
       AUTUMN_WEBHOOK_SECRET: ${{ secrets.AUTUMN_WEBHOOK_SECRET }}
-      # Optional: deleting an organization deletes the PostHog persons of
-      # members left in no organization (a personal API key with person:write
-      # on staging's project). Without them, persons stay in PostHog.
-      POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
-      POSTHOG_PROJECT_ID: ${{ vars.POSTHOG_PROJECT_ID }}
       BILLING_REQUIRED_FROM: ${{ vars.BILLING_REQUIRED_FROM }}
       BILLING_INTERNAL_ORGS: ${{ vars.BILLING_INTERNAL_ORGS }}
       BILLING_ENFORCED_ORGS: ${{ vars.BILLING_ENFORCED_ORGS }}
@@ -155,8 +150,7 @@ jobs:
           for name in AUTUMN_SECRET_KEY AUTUMN_WEBHOOK_SECRET BILLING_REQUIRED_FROM BILLING_INTERNAL_ORGS \
             BILLING_ENFORCED_ORGS REAL_MODELS BASETEN_API_KEY MISTRAL_API_KEY \
             GITHUB_APP_ID GITHUB_APP_SLUG GITHUB_CLIENT_ID GITHUB_APP_PRIVATE_KEY \
-            GITHUB_WEBHOOK_SECRET GITHUB_CLIENT_SECRET POSTHOG_PERSONAL_API_KEY \
-            POSTHOG_PROJECT_ID; do
+            GITHUB_WEBHOOK_SECRET GITHUB_CLIENT_SECRET; do
             [ -n "${!name}" ] || unset "$name"
           done
           pnpm --filter @preprocess/infra staging:deploy

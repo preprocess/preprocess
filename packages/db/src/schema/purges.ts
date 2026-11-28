@@ -35,8 +35,8 @@ export const organizationPurges = pgTable(
 // case: a case's object (and its sandbox), agent id and case id.
 // scheduler: an agent's scheduler, agent id and "" or a preview's id.
 // builds: a build queue, agent slug and branch.
-// person: a member's PostHog person, "" and the user id; deleted once the
-// user belongs to no organization.
+// person: no longer written. A purge snapshotted by #254's code may still
+// list members this way; they're struck without any action.
 export const PURGE_OBJECT_KINDS = [
   "case",
   "scheduler",
