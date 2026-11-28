@@ -1,7 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { AuthLayout, authLinkClass } from "../components/auth-layout";
+import {
+  AuthLayout,
+  TermsNotice,
+  authLinkClass,
+} from "../components/auth-layout";
 import {
   LinkSent,
   PasswordlessForm,
@@ -69,6 +73,7 @@ function SignInPage() {
         onSent={setSent}
         submitLabel="Sign in"
       />
+      <TermsNotice />
     </AuthLayout>
   );
 }

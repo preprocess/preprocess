@@ -103,3 +103,20 @@ export function AuthField({
 
 export const authLinkClass =
   "text-foreground underline-offset-4 hover:underline";
+
+/** The click-through acceptance under the sign-in and sign-up forms (PRE-161). */
+export function TermsNotice() {
+  return (
+    <p className="mt-4 text-center text-caption text-muted-foreground">
+      By continuing, you agree to the{" "}
+      <a className={authLinkClass} href="https://preprocess.com/terms">
+        Terms
+      </a>{" "}
+      and{" "}
+      <a className={authLinkClass} href="https://preprocess.com/privacy">
+        Privacy Policy
+      </a>
+      .
+    </p>
+  );
+}
