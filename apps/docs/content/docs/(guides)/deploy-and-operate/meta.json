@@ -4,6 +4,7 @@
     "self-hosting",
     "github-app",
     "environments-and-regions",
-    "security-and-data-handling"
+    "security-and-data-handling",
+    "outbound-hostnames"
   ]
 }
