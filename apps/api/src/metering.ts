@@ -10,6 +10,11 @@ import { and, count, eq, gte, inArray, sum } from "drizzle-orm";
 
 import type { Env } from "./env.ts";
 
+// The model charge is what the runtime priced each response at
+// (apps/runtime/src/models.ts): a call through our providers or Workers AI at
+// the provider's price plus 5%, and a call to an organization's own endpoint
+// (an org:<slug> model or an override it registered) at zero (design doc 10).
+// Case fees, decide and OCR are metered as usual either way.
 export type Charges = { model: number; decide: number; ocr: number };
 
 const chargeFeature = {

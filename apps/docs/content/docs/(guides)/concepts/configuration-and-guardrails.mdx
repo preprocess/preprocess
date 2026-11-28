@@ -100,8 +100,8 @@ Preprocess enforces six guardrails:
   eval runs, OCR calls, sandbox time and case fees. When the cap is reached, new
   metered calls are refused and running cases transition to `halted` until a
   person raises the limit or the month rolls over and reruns them.
-- **Allowed models:** The catalogue models agents may run on (`null`, the
-  default, allows every model). Set it with
+- **Allowed models:** The catalogue and organization models (`org:<slug>`)
+  agents may run on (`null`, the default, allows every model). Set it with
   `PUT /v1/orgs/{org}/guardrails/allowed-models` and a body like
   `{"models": ["deepseek-v4.1-flash"]}`, or under Guardrails → Models in the
   app. Every path that picks a model checks it: deploys, the organization's

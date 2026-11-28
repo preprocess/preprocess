@@ -15,7 +15,8 @@ import {
   type EvaluateRequest,
   type Manifest,
   type McpBinding,
-  type Model,
+  isOrgModel,
+  type ModelId,
   type OptionsRequest,
   type ProjectConfig,
   type ProjectSettings,
@@ -45,6 +46,7 @@ import {
 export type {
   Manifest,
   Model,
+  ModelId,
   ProjectConfig,
   ProjectSettings,
   Reasoning,
@@ -117,7 +119,7 @@ export const tool = <
 
 export type AgentDefinition<S extends string> = {
   instructions: string;
-  model?: Model;
+  model?: ModelId;
   reasoning?: Reasoning;
   secrets?: readonly S[];
   mcp?: readonly string[];
@@ -178,8 +180,14 @@ const validTimezone = (timezone: string) => {
 const check = (definition: AgentDefinition<string>) => {
   const problems: string[] = [];
   if (!definition.instructions.trim()) problems.push("instructions are empty");
-  if (definition.model && !MODELS.includes(definition.model))
-    problems.push(`model must be one of ${MODELS.join(", ")}`);
+  if (
+    definition.model &&
+    !(MODELS as readonly string[]).includes(definition.model) &&
+    !isOrgModel(definition.model)
+  )
+    problems.push(
+      `model must be one of ${MODELS.join(", ")}, or org:<slug> for an organization model`,
+    );
   if (definition.reasoning && !REASONING.includes(definition.reasoning))
     problems.push(`reasoning must be one of ${REASONING.join(", ")}`);
   for (const name of definition.secrets ?? []) {

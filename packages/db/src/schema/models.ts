@@ -28,7 +28,7 @@ export const modelEndpoints = pgTable(
     model: text().notNull(),
     kind: text().$type<"override" | "model">().notNull(),
     // An organization model's shown name and the catalogue model it was
-    // trained from, which prices it.
+    // trained from (metadata; calls to the endpoint carry no model charge).
     label: text(),
     baseModel: text(),
     url: text().notNull(),

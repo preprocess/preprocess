@@ -4,7 +4,7 @@ import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
-import { localDatabaseUrl, localRoleUrl } from "@preprocess/db/migrate";
+import { localRoleUrl } from "@preprocess/db/migrate";
 import { buildSync } from "esbuild";
 import { defineConfig } from "vitest/config";
 
@@ -12,6 +12,7 @@ import { fakeGithub, GITHUB_API, GITHUB_WEB } from "./test/fake-github.ts";
 import { fakeIdp, isFakeIdp } from "./test/fake-idp.ts";
 import { fakeMcp } from "./test/fake-mcp.ts";
 import { fakeModel, MODEL_ORIGIN } from "./test/fake-model.ts";
+import { installDatabaseUrl, testDatabaseUrl } from "./test/global-setup.ts";
 
 const require = createRequire(import.meta.url);
 // pg require()s pg-protocol, and Vitest resolves that require with the
@@ -22,8 +23,7 @@ const pgRequire = createRequire(require.resolve("pg"));
 
 const root = import.meta.dirname;
 const dist = path.join(root, "test/dist");
-const url =
-  process.env.TEST_DATABASE_URL ?? localDatabaseUrl("preprocess_api_test");
+const url = testDatabaseUrl;
 
 // The runtime and the model stub run beside the API, as in `pnpm dev`; the
 // sample agents are bundled the way `preprocess deploy` bundles one.
@@ -47,6 +47,7 @@ bundle("test/fixtures/sample-agent.ts", "sample-agent.js");
 bundle("test/fixtures/crm-agent.ts", "crm-agent.js");
 bundle("test/fixtures/fake-builder.ts", "fake-builder.js");
 bundle("test/fixtures/network-agent.ts", "network-agent.js");
+bundle("test/fixtures/org-model-agent.ts", "org-model-agent.js");
 bundle("test/fixtures/groups-agent.ts", "groups-agent.js");
 bundle("test/fixtures/approvals-agent.ts", "approvals-agent.js");
 bundle("test/fixtures/scheduled-agent.ts", "scheduled-agent.js");
@@ -77,6 +78,11 @@ export default defineConfig({
         hyperdrives: {
           DB: localRoleUrl(url, "preprocess_app"),
           DB_SYSTEM: localRoleUrl(url, "preprocess_system"),
+          INSTALL_DB: localRoleUrl(installDatabaseUrl, "preprocess_app"),
+          INSTALL_DB_SYSTEM: localRoleUrl(
+            installDatabaseUrl,
+            "preprocess_system",
+          ),
         },
         bindings: {
           MODEL_SERVICE_URL: "http://model-stub.test",
