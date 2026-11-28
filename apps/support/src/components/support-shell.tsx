@@ -91,11 +91,12 @@ export const useOpenSearch = () => use(OpenSearch);
 
 const contactUrl = "/contact";
 
+// The platform is known only in the browser, so the server renders the hint
+// hidden and the browser fills it in once hydrated, instead of drawing ⌘K
+// first and swapping it on other platforms.
 function useShortcutLabel() {
-  const [label, setLabel] = useState("⌘K");
-  useEffect(() => {
-    if (!isMacPlatform()) setLabel("Ctrl K");
-  }, []);
+  const [label, setLabel] = useState<string>();
+  useEffect(() => setLabel(isMacPlatform() ? "⌘K" : "Ctrl K"), []);
   return label;
 }
 
@@ -116,9 +117,10 @@ export function SearchTrigger({ onOpen }: { onOpen: () => void }) {
         className={cn(
           typeClass("micro"),
           "flex h-5 items-center rounded-md bg-surface-1 px-1.5 font-sans text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)]",
+          !shortcut && "invisible",
         )}
       >
-        {shortcut}
+        {shortcut ?? "⌘K"}
       </kbd>
     </button>
   );
