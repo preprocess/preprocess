@@ -58,7 +58,17 @@ export const amountBucket = (amount: number) =>
     : AMOUNT_BUCKETS[1 + AMOUNT_EDGES.filter((edge) => amount >= edge).length]!;
 
 export const PRODUCT_EVENTS = {
-  signed_up: { method: ["email", "google", "sso", "directory"] },
+  // The marketing site's first-touch utm_* params and referring hostname,
+  // lowercased, when the sign-up came through its link (apps/api auth.ts).
+  // utm_content is left out: the catalogue test rejects "content" names.
+  signed_up: {
+    method: ["email", "google", "sso", "directory"],
+    utm_source: SLUG,
+    utm_medium: SLUG,
+    utm_campaign: SLUG,
+    utm_term: SLUG,
+    referrer_domain: SLUG,
+  },
   org_created: {},
   member_invited: { invitation_id: ID, role: ROLES },
   member_joined: {
