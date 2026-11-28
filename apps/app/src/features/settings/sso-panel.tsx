@@ -521,6 +521,9 @@ function DomainRow({
               return actions.checkDomain(domain.domain);
             }}
             onError={onError}
+            pendingLabel="Check"
+            successLabel="Done"
+            errorLabel="Retry"
             size="compact"
             variant="secondary"
           >

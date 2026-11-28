@@ -59,6 +59,16 @@ type Failed = {
 };
 type Result<T> = { ok: true; data: T } | Failed;
 
+const issues = (json: string | undefined) => {
+  try {
+    return (JSON.parse(json ?? "") as { message: string }[])
+      .map((issue) => issue.message)
+      .join(" ");
+  } catch {
+    return undefined;
+  }
+};
+
 async function settle<T>(response: Response): Promise<Result<T>> {
   if (response.ok)
     return {
@@ -67,17 +77,22 @@ async function settle<T>(response: Response): Promise<Result<T>> {
     };
   const body = await response
     .json<{
+      success?: false;
       error?: string | { code?: string; message?: string; status?: string };
     }>()
     .catch(() => null);
-  // A 403 answers { error: "message" }; every other refusal an object.
+  // #217's refusals on PUT /sso answer { error: "message" }, and its
+  // validation errors { success: false, error } with the issues as JSON in
+  // the message; every other refusal { error: { code, message } }.
   const error =
     typeof body?.error === "string" ? { message: body.error } : body?.error;
+  const message =
+    body?.success === false ? issues(error?.message) : error?.message;
   return {
     ok: false,
     status: response.status,
     code: error?.code,
-    message: error?.message ?? `The request failed (${response.status}).`,
+    message: message ?? `The request failed (${response.status}).`,
     upstreamStatus: error?.status,
   };
 }
@@ -138,7 +153,7 @@ const never = <T>() => new Promise<T>(() => {});
 function seeded(state: SsoSeedState): SsoSettings | undefined {
   switch (state) {
     case "member":
-      throw new ApiError("Only Owners and Admins can see single sign-on.", 403);
+      throw new ApiError("Only Owners can manage single sign-on.", 403);
     case "error":
       throw new ApiError("Something went wrong. Try again.", 500);
     case "loading":
@@ -180,10 +195,9 @@ function seededWrite(
     const input = body as ConnectionInput;
     const existing = before.connection;
     if (existing && existing.protocol !== input.protocol)
-      throw refuse(
+      throw new SsoError(
+        "Remove the connection before switching between SAML and OIDC.",
         409,
-        "protocol_change",
-        "Remove the connection before switching protocols.",
       );
     const base = {
       requireSso: existing?.requireSso ?? false,
@@ -215,7 +229,7 @@ function seededWrite(
       throw refuse(
         400,
         "metadata_unreadable",
-        "The metadata URL couldn't be read.",
+        "Couldn't read the metadata: the URL returned 404 Not Found.",
         "404 Not Found",
       );
     return save({
@@ -259,9 +273,9 @@ function seededWrite(
   if (path === "/sso/domains" && method === "POST") {
     const domain = (body as { domain: string }).domain.trim().toLowerCase();
     if (!/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain))
-      throw refuse(400, "invalid_domain", "Enter a domain such as acme.com.");
+      throw refuse(400, "invalid_request", "Enter a domain like acme.com.");
     if (before.domains.some((d) => d.domain === domain))
-      throw refuse(409, "domain_exists", `${domain} is already added.`);
+      throw refuse(409, "domain_exists", "That domain is already on the list.");
     const added: SsoDomain = {
       domain,
       status: "pending",
@@ -278,7 +292,8 @@ function seededWrite(
   if (check && method === "POST") {
     const name = decodeURIComponent(check[1] ?? "");
     const current = before.domains.find((d) => d.domain === name);
-    if (!current) throw refuse(404, "not_found", "That domain isn't added.");
+    if (!current)
+      throw refuse(404, "not_found", "That domain isn't on the list.");
     // Seeded checks verify pending domains; failed ones stay failed.
     const checked: SsoDomain =
       current.status === "failed"
@@ -312,7 +327,7 @@ function seededWrite(
     return null;
   }
 
-  throw refuse(404, "not_found", "Not found.");
+  throw refuse(404, "not_found", "Connect a provider first.");
 }
 
 /** The organization's single sign-on settings; a Member's read fails with 403. */
