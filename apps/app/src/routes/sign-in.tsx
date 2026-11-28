@@ -1,11 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
-import {
-  AuthLayout,
-  TermsNotice,
-  authLinkClass,
-} from "../components/auth-layout";
+import { AuthLayout, authLinkClass } from "../components/auth-layout";
 import {
   LinkSent,
   PasswordlessForm,
@@ -60,6 +56,7 @@ function SignInPage() {
           </Link>
         </>
       }
+      terms
       subtitle={
         invited
           ? "Sign in to accept your invite."
@@ -74,7 +71,6 @@ function SignInPage() {
         onSent={setSent}
         submitLabel="Sign in"
       />
-      <TermsNotice />
     </AuthLayout>
   );
 }

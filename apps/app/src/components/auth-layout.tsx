@@ -23,6 +23,7 @@ export function AuthLayout({
   description,
   children,
   footer,
+  terms,
 }: {
   /** The headline's first line. */
   title: string;
@@ -31,6 +32,8 @@ export function AuthLayout({
   description?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  /** Ends the column with the Terms and Privacy Policy line. */
+  terms?: boolean;
 }) {
   return (
     <div className="grid h-svh bg-background lg:grid-cols-2">
@@ -58,6 +61,7 @@ export function AuthLayout({
                 {footer}
               </p>
             ) : null}
+            {terms ? <TermsNotice /> : null}
           </div>
         </main>
       </ScrollArea>
@@ -105,9 +109,9 @@ export const authLinkClass =
   "text-foreground underline-offset-4 hover:underline";
 
 /** The click-through acceptance under the sign-in and sign-up forms (PRE-161). */
-export function TermsNotice() {
+function TermsNotice() {
   return (
-    <p className="mt-4 text-center text-caption text-muted-foreground">
+    <p className="mt-6 text-center text-caption text-muted-foreground">
       By continuing, you agree to the{" "}
       <a className={authLinkClass} href="https://preprocess.com/terms">
         Terms
