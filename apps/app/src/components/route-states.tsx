@@ -10,7 +10,7 @@ import {
 } from "@preprocess/ui/components/empty";
 import type { ReactNode } from "react";
 
-import { CouldntLoadArt, GoneArt } from "./empty-art";
+import { GoneArt, PageNotFoundArt, SomethingWentWrongArt } from "./empty-art";
 
 function RouteState({
   action,
@@ -43,7 +43,7 @@ export function PageNotFound() {
           <Link to="/inbox">Go to Inbox</Link>
         </Button>
       }
-      art={<GoneArt />}
+      art={<PageNotFoundArt />}
       description="The page you're looking for doesn't exist or may have moved."
       title="Page not found"
     />
@@ -73,7 +73,7 @@ export function CaseLinkNotValid() {
           <Link to="/cases">Back to cases</Link>
         </Button>
       }
-      art={<GoneArt />}
+      art={<PageNotFoundArt />}
       description="This case link isn't valid."
       title="Case not found"
     />
@@ -92,7 +92,7 @@ export function RouteError() {
           Reload page
         </Button>
       }
-      art={<CouldntLoadArt />}
+      art={<SomethingWentWrongArt />}
       description="We couldn't load this page. Try reloading, or come back in a moment."
       title="Something went wrong"
     />
