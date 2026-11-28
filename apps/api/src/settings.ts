@@ -15,6 +15,7 @@ import {
   currentModel,
   DEFAULT_MODEL,
   MODELS,
+  ORG_MODEL,
   REASONING,
 } from "@preprocess/sdk/protocol";
 import { eq } from "drizzle-orm";
@@ -22,10 +23,15 @@ import { z } from "zod";
 
 import type { Manifest } from "./deploy.ts";
 
+// A model an agent may name (design doc 10): a catalogue id or an
+// organization model's "org:<slug>". Whether the organization has that one is
+// assertModelKnown's check (model-endpoints.ts).
+export const modelId = z.union([z.enum(MODELS), z.string().regex(ORG_MODEL)]);
+
 // Settings an organization can default. `fallback` is the platform's value
 // when nothing sets one; null means the runtime's own behavior.
 export const DEFAULTS = {
-  model: { schema: z.enum(MODELS), fallback: DEFAULT_MODEL },
+  model: { schema: modelId, fallback: DEFAULT_MODEL },
   reasoning: { schema: z.enum(REASONING), fallback: "medium" },
   ocr: { schema: z.boolean(), fallback: false },
   searchCases: { schema: z.boolean(), fallback: false },

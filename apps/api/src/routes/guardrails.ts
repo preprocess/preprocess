@@ -20,7 +20,7 @@ import type { GuardrailChange } from "@preprocess/db/schema/guardrails";
 import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { modelEndpoints } from "@preprocess/db/schema/models";
 import { secrets } from "@preprocess/db/schema/secrets";
-import { MODELS, SANDBOX_SIZES } from "@preprocess/sdk/protocol";
+import { SANDBOX_SIZES } from "@preprocess/sdk/protocol";
 import { desc, eq } from "drizzle-orm";
 
 import { allowedModels, setAllowedModels } from "../allowed-models.ts";
@@ -29,6 +29,7 @@ import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
 import { syncAgents } from "../deploy.ts";
 import type { Env } from "../env.ts";
+import { modelId } from "../settings.ts";
 import {
   agentNetwork,
   effectiveNetwork,
@@ -84,12 +85,12 @@ const SandboxMaxSize = z
   });
 
 const AllowedModels = z
-  .array(z.enum(MODELS))
+  .array(modelId)
   .min(1)
   .nullable()
   .openapi("AllowedModels", {
     description:
-      "The catalogue models agents may run on; null allows every model. Deploys, settings, case starts, reruns, approvals and eval runs that resolve to another model are refused with model_not_allowed (409).",
+      "The catalogue and organization models (org:<slug>) agents may run on; null allows every model. Deploys, settings, case starts, reruns, approvals and eval runs that resolve to another model are refused with model_not_allowed (409).",
   });
 
 export const Change = z

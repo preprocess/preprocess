@@ -15,8 +15,10 @@ the versions you used.
   version. Every deployment records the SDK version it was built with, and the
   runtime supports every SDK version within a major version.
 - **API.** The HTTP API is versioned in its path (`/v1`). Changes within a
-  version are additive; removing or changing behavior follows a written
-  deprecation policy, published with the API reference when `/v1` ships.
+  version are additive; removing or changing behavior follows the deprecation
+  policy in the API reference (`apps/docs/content/docs/api/index.mdx`): mark it
+  deprecated in the OpenAPI schema, announce it in the upgrade notes, and keep
+  it working for at least 12 months.
 - **Shared libraries.** UI, auth and the other shared packages live in
   [preprocess/kit](https://github.com/preprocess/kit), which versions them with
   changesets.

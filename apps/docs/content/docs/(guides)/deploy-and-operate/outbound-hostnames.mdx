@@ -1,0 +1,67 @@
+---
+title: Outbound hostnames
+description:
+  Every host a self-hosted install of Preprocess contacts, and what turns each
+  one on.
+---
+
+A self-hosted install contacts only the hosts below, and only when you turn on
+the feature that needs them. It never contacts Preprocess, Inc.: there is no
+license server, no telemetry and no usage reporting. Hosts you configure
+yourself (your Postgres, model endpoints, webhooks, MCP servers and
+OpenTelemetry collector) are covered at the end of this page.
+
+Use this list to configure egress rules in your own network. It is separate from
+the [network guardrail](/concepts/configuration-and-guardrails), which governs
+what agent code may reach.
+
+## From the platform at runtime
+
+| Host                                                                   | Used for                                                   | Turned on by                                  |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------- |
+| `inference.baseten.co`                                                 | Kimi K3.1 Pro, DeepSeek V4.1 Flash and `decide`            | `BASETEN_API_KEY`                             |
+| `api.mistral.ai`                                                       | OCR                                                        | `MISTRAL_API_KEY`                             |
+| `api.github.com`, `github.com`                                         | The GitHub App: installations, webhooks, repository access | The `GITHUB_*` variables                      |
+| `codeload.github.com`                                                  | Downloading a commit's code to build a deployment          | The `GITHUB_*` variables                      |
+| `registry.npmjs.org`, and any registry the repository's lockfile names | Installing an agent's dependencies in the build sandbox    | The `GITHUB_*` variables                      |
+| `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`   | Google sign-in                                             | `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` |
+| `api.sql.cloudflarestorage.com`                                        | Querying run logs in an R2 Data Catalog table              | `LOG_CATALOG_TOKEN`                           |
+
+Qwen 3.8 27B on Workers AI, email, queues, R2 and Durable Objects are reached
+through Cloudflare bindings inside your account, not over the public internet.
+
+## From the installer
+
+`preprocess install` runs on your machine or CI runner, not in Cloudflare, and
+contacts:
+
+| Host                  | Used for                                                   |
+| --------------------- | ---------------------------------------------------------- |
+| `api.github.com`      | Finding the latest release, unless you pass `--version`    |
+| `codeload.github.com` | Downloading the release, unless you pass `--source`        |
+| `api.cloudflare.com`  | Creating and updating resources in your Cloudflare account |
+| `registry.npmjs.org`  | Installing the CLI and its dependencies with `npx`         |
+
+`preprocess github-app` also opens `github.com` in your browser and calls
+`api.github.com` once to finish registering the app.
+
+## Hosts you configure
+
+These hosts are whatever you set, so they don't appear above:
+
+- **Postgres**, through Hyperdrive (`DATABASE_URL`).
+- **Model endpoints** in `MODEL_ENDPOINTS` and `MODEL_SERVICE_URL`.
+- **Outbound webhooks** and **OpenTelemetry export** URLs set in each
+  organization's settings.
+- **Remote MCP servers** registered in each organization, and their OAuth
+  sign-in and token endpoints.
+- **Hosts agent code reaches** with `fetch()`, from its Dynamic Worker or
+  sandbox, as allowed by the organization's network rules.
+
+<Callout title="MCP traffic is outside the network guardrail">
+  Calls to MCP servers leave from the API Worker, which adds the organization's
+  token, not from agent code. The network guardrail's allow and block lists
+  don't apply to them. Control which agents can use a server with MCP server
+  grants, and control the hosts themselves with your own egress rules. See
+  [Security and data handling](/deploy-and-operate/security-and-data-handling).
+</Callout>

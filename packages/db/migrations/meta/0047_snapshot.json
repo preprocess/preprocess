@@ -1,6 +1,6 @@
 {
-  "id": "631ce9eb-d9d0-4a9a-bf44-3915f05a760d",
-  "prevId": "211085ac-aec3-4abc-804f-9c738fd2d983",
+  "id": "423b8f27-35dd-4468-8f06-2139c47a9abc",
+  "prevId": "e804652a-60ce-423a-97aa-ed98db8dc417",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5364,6 +5364,60 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.install_license": {
+      "name": "install_license",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "boolean",
+          "primaryKey": true,
+          "notNull": true,
+          "default": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "install_license_uploaded_by_user_id_fk": {
+          "name": "install_license_uploaded_by_user_id_fk",
+          "tableFrom": "install_license",
+          "columnsFrom": ["uploaded_by"],
+          "tableTo": "user",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "install_license_one_row": {
+          "name": "install_license_one_row",
+          "value": "\"install_license\".\"id\""
+        }
+      },
       "isRLSEnabled": false
     },
     "public.log_summaries": {

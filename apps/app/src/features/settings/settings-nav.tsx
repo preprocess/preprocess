@@ -29,6 +29,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useBilling, useIsOwner } from "../billing/billing-api";
 import { billingShown } from "../billing/billing-types";
 import { currentScenario } from "../../scenarios/current-scenario";
+import { useLicense } from "./license-api";
 import { useAdministers } from "./use-role";
 
 type Page = {
@@ -48,7 +49,8 @@ type Page = {
     | "/settings/organization/integrations"
     | "/settings/organization/secrets"
     | "/settings/organization/network"
-    | "/settings/organization/sandboxes";
+    | "/settings/organization/sandboxes"
+    | "/settings/organization/license";
   label: string;
   anchors?: readonly { id: string; label: string }[];
 };
@@ -103,6 +105,10 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
       { to: "/settings/organization/retention", label: "Retention" },
     ],
   },
+  {
+    label: "Self-hosted",
+    pages: [{ to: "/settings/organization/license", label: "License" }],
+  },
 ];
 
 const PAGES = GROUPS.flatMap((group) =>
@@ -122,6 +128,8 @@ export function currentSettingsPage(pathname: string) {
 // Billing shows only to the Owner, on our cloud with billing on, once the plan
 // has started or billing holds for the organization. Retention shows to Owners
 // and Admins, self-hosted included; seeded retention states always show it.
+// License shows to Owners and Admins of a self-hosted install, and in seeded
+// license states.
 function useVisible() {
   const owner = useIsOwner();
   const billing = useBilling();
@@ -130,12 +138,16 @@ function useVisible() {
     owner === true && Boolean(billing.data && billingShown(billing.data));
   const showRetention =
     administers === true || currentScenario().retention !== "live";
+  const license = useLicense(administers === true);
+  const showLicense = Boolean(license.data);
   return (page: Page) =>
     page.to === "/settings/organization/billing"
       ? showBilling
       : page.to === "/settings/organization/retention"
         ? showRetention
-        : true;
+        : page.to === "/settings/organization/license"
+          ? showLicense
+          : true;
 }
 
 function usePathname() {
@@ -153,7 +165,7 @@ export function SettingsNav() {
         viewportClassName="scroll-fade overscroll-none"
       >
         <nav aria-label="Settings" className="flex flex-col gap-5 px-3 py-8">
-          {GROUPS.map((group) => (
+          {GROUPS.filter((group) => group.pages.some(visible)).map((group) => (
             <div className="flex flex-col gap-1" key={group.label}>
               <h2
                 className="px-2 text-caption text-muted-foreground"
@@ -214,7 +226,7 @@ export function SettingsSwitcher() {
       >
         <SelectTrigger aria-label="Settings section" className="w-56" />
         <SelectContent>
-          {GROUPS.map((group) => (
+          {GROUPS.filter((group) => group.pages.some(visible)).map((group) => (
             <SelectGroup key={group.label}>
               <SelectLabel
                 style={{ fontVariationSettings: fontWeights.semibold }}
