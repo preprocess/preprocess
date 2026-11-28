@@ -16,7 +16,7 @@ import { MARKUP } from "@preprocess/models/prices";
 import { runMode } from "@preprocess/runmode";
 import { MODELS, type Model as AgentModel } from "@preprocess/sdk/protocol";
 
-import type { Env } from "./env.ts";
+import type { Env, RegisteredEndpoint } from "./env.ts";
 
 export const PROVIDER = "preprocess";
 
@@ -142,12 +142,29 @@ export const routeFetch =
   };
 
 // The agent models (spec 3), each routed on its own (packages/models
-// endpoints): Kimi and DeepSeek to Baseten, Qwen to Workers AI, or the stub
+// endpoints): the organization's registered endpoint when it has one (design
+// doc 10), else Kimi and DeepSeek to Baseten, Qwen to Workers AI, or the stub
 // through MODEL_SERVICE_URL. pi-ai prices each response from `cost`; a Fast
 // request served from base capacity is repriced at base rates before capture
 // records it.
-export const openModels = (env: Env, observe: (fn: Stream) => Stream) => {
-  const routes = new Map(MODELS.map((id) => [id, modelRoute(env, id)]));
+export const openModels = (
+  env: Env,
+  observe: (fn: Stream) => Stream,
+  registered: Record<string, RegisteredEndpoint> = {},
+) => {
+  const routes = new Map(
+    MODELS.map((id) => {
+      const own = registered[id];
+      return [
+        id,
+        modelRoute(
+          env,
+          id,
+          own && { url: own.url, key: own.key, model: own.model },
+        ),
+      ];
+    }),
+  );
   const models: Model<"openai-completions">[] = MODELS.map((id) => {
     const route = routes.get(id)!;
     return {

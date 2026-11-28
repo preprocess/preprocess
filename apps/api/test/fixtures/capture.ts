@@ -48,7 +48,26 @@ export const fixtureCapture = (c: {
     content: [
       {
         type: "text",
-        text: '[{"result":"ok","path":"vendor"},{"result":"ok","path":"total"}]',
+        text: JSON.stringify([
+          {
+            result: "ok",
+            path: "vendor",
+            before: null,
+            after: "Globex",
+            stale: [],
+            shown: [],
+            hidden: [],
+          },
+          {
+            result: "ok",
+            path: "total",
+            before: null,
+            after: 12,
+            stale: [],
+            shown: [],
+            hidden: [],
+          },
+        ]),
       },
     ],
     isError: false,

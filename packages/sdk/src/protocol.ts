@@ -51,6 +51,11 @@ export const RETIRED_MODELS: Readonly<Record<string, Model>> = {
 export const currentModel = (model: string): string =>
   RETIRED_MODELS[model] ?? model;
 
+// An organization's own model (design doc 10), registered by endpoint, such as
+// a trained checkpoint: "org:<slug>". MODEL_CATALOG stays the built-in list.
+export const ORG_MODEL = /^org:[a-z0-9][a-z0-9-]{0,62}$/;
+export const isOrgModel = (id: string) => ORG_MODEL.test(id);
+
 export const REASONING = ["low", "medium", "high"] as const;
 export type Reasoning = (typeof REASONING)[number];
 

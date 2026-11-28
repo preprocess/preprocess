@@ -15,6 +15,7 @@ export const prefixes = {
   agent: "agt",
   deployment: "dep",
   secret: "sec",
+  modelEndpoint: "mep",
   mcpServer: "mcs",
   mcpConnection: "mcc",
   mcpAuthorization: "mca",
@@ -38,6 +39,7 @@ export const prefixes = {
   usageReport: "urp",
   sandboxInterval: "sbi",
   retentionSweep: "rsw",
+  dataset: "dst",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
