@@ -344,7 +344,7 @@ export const PRODUCT_EVENTS = {
   // signup-protection.ts): the bot check failed, a new address is a
   // temporary inbox, or the address had its links for the hour. Never the
   // address or its domain, so it carries no person and no organization.
-  signup_blocked: { reason: ["bot", "disposable", "rate_limited"] },
+  signup_blocked: { cause: ["bot", "disposable", "rate_limited"] },
   // A failed /v1 request by a member or API key of the organization, once
   // the caller is known; a rate limit's refusal is rate_limited instead.
   // Every server error is sent and one client error in ten, with weight 10,

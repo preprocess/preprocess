@@ -99,7 +99,7 @@ const REFUSALS = {
   disposable: [
     "FORBIDDEN",
     "DISPOSABLE_EMAIL",
-    "Use a permanent email address. Temporary inboxes can't sign up.",
+    "Use a permanent email address. Temporary email addresses aren't supported.",
   ],
   rate_limited: [
     "TOO_MANY_REQUESTS",
@@ -111,7 +111,7 @@ const REFUSALS = {
 // The signup_blocked event, with neither the address nor its domain, and
 // the refusal to throw. A failed send never lets the request through.
 export const signupBlocked = async (env: Env, reason: BlockReason) => {
-  await trackEvent(env, "signup_blocked", null, null, { reason }).catch(
+  await trackEvent(env, "signup_blocked", null, null, { cause: reason }).catch(
     () => undefined,
   );
   const [status, code, message] = REFUSALS[reason];

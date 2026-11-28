@@ -885,7 +885,7 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
               throw new APIError("BAD_REQUEST", {
                 code: "DISPOSABLE_EMAIL",
                 message:
-                  "Invite a permanent email address. Temporary inboxes can't join.",
+                  "Enter a permanent email address. Temporary email addresses can't be invited.",
               });
             return Promise.resolve();
           },

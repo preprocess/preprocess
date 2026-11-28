@@ -33,19 +33,21 @@ const mailedTo = (email: string) => sent.filter((m) => m.to === email).length;
 const blocked = (reason: string) =>
   tracked.filter(
     (event) =>
-      event.event === "signup_blocked" && event.properties.reason === reason,
+      event.event === "signup_blocked" && event.properties.cause === reason,
   );
 
 // Siteverify accepts the one token "good" and records what it was sent.
 const siteverify = () => {
   const calls: FormData[] = [];
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (url.hostname !== "challenges.cloudflare.com")
       throw new Error("unexpected fetch to " + url.hostname);
     const form = init?.body as FormData;
     calls.push(form);
-    return Response.json({ success: form.get("response") === "good" });
+    return Promise.resolve(
+      Response.json({ success: form.get("response") === "good" }),
+    );
   });
   return calls;
 };
@@ -118,7 +120,7 @@ describe("temporary inboxes", () => {
       expect(asked.status).toBe(403);
       expect(asked.body.code).toBe("DISPOSABLE_EMAIL");
       expect(asked.body.message).toBe(
-        "Use a permanent email address. Temporary inboxes can't sign up.",
+        "Use a permanent email address. Temporary email addresses aren't supported.",
       );
       expect(mailedTo(email)).toBe(0);
     }
@@ -187,12 +189,12 @@ describe("sign-in links per address", () => {
 });
 
 describe("the signup_blocked event", () => {
-  it("carries the reason and stage, never the address or its domain", async () => {
+  it("carries the cause and stage, never the address or its domain", async () => {
     const email = address("mailinator.com");
     await ask(new Client(testEnv(analytics)), email);
     const event = blocked("disposable").at(-1)!;
     expect(Object.keys(event.properties).sort()).toEqual(
-      ["$geoip_disable", "reason", "service", "stage"].sort(),
+      ["$geoip_disable", "cause", "service", "stage"].sort(),
     );
     expect(JSON.stringify(event)).not.toContain("mailinator");
   });
