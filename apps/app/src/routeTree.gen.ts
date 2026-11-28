@@ -47,7 +47,6 @@ import { Route as AgentsAgentIdObservabilityRouteImport } from "./routes/agents/
 import { Route as AgentsAgentIdSandboxRouteImport } from "./routes/agents/$agentId/sandbox";
 import { Route as AgentsAgentIdSecretsRouteImport } from "./routes/agents/$agentId/secrets";
 import { Route as AgentsAgentIdSettingsRouteImport } from "./routes/agents/$agentId/settings";
-import { Route as AgentsAgentIdTrainingRouteImport } from "./routes/agents/$agentId/training";
 import { Route as AgentsAgentIdVariablesRouteImport } from "./routes/agents/$agentId/variables";
 import { Route as ApiAuthSplatRouteImport } from "./routes/api/auth/$";
 import { Route as ApiDevScenarioRouteImport } from "./routes/api/dev/scenario";
@@ -71,11 +70,13 @@ import { Route as SettingsOrganizationRetentionRouteImport } from "./routes/sett
 import { Route as SettingsOrganizationSandboxesRouteImport } from "./routes/settings/organization/sandboxes";
 import { Route as SettingsOrganizationSecretsRouteImport } from "./routes/settings/organization/secrets";
 import { Route as AgentsAgentIdEvaluationsIndexRouteImport } from "./routes/agents/$agentId/evaluations/index";
+import { Route as AgentsAgentIdTrainingIndexRouteImport } from "./routes/agents/$agentId/training/index";
 import { Route as AgentsAgentIdCasesIndexRouteImport } from "./routes/agents/$agentId_/cases/index";
 import { Route as AgentsAgentIdCasesCaseIdRouteImport } from "./routes/agents/$agentId_/cases/$caseId";
 import { Route as SettingsOrganizationGroupsIndexRouteImport } from "./routes/settings/organization/groups/index";
 import { Route as SettingsOrganizationGroupsGroupIdRouteImport } from "./routes/settings/organization_/groups/$groupId";
 import { Route as AgentsAgentIdEvaluationsSuiteIdIndexRouteImport } from "./routes/agents/$agentId/evaluations/$suiteId/index";
+import { Route as AgentsAgentIdTrainingDatasetsDatasetIdRouteImport } from "./routes/agents/$agentId/training/datasets/$datasetId";
 import { Route as AgentsAgentIdEvaluationsSuiteIdRunsRunIdRouteImport } from "./routes/agents/$agentId/evaluations/$suiteId/runs/$runId";
 
 const IndexRoute = IndexRouteImport.update({
@@ -271,11 +272,6 @@ const AgentsAgentIdSettingsRoute = AgentsAgentIdSettingsRouteImport.update({
   path: "/settings",
   getParentRoute: () => AgentsAgentIdRoute,
 } as any);
-const AgentsAgentIdTrainingRoute = AgentsAgentIdTrainingRouteImport.update({
-  id: "/training",
-  path: "/training",
-  getParentRoute: () => AgentsAgentIdRoute,
-} as any);
 const AgentsAgentIdVariablesRoute = AgentsAgentIdVariablesRouteImport.update({
   id: "/variables",
   path: "/variables",
@@ -409,6 +405,12 @@ const AgentsAgentIdEvaluationsIndexRoute =
     path: "/evaluations/",
     getParentRoute: () => AgentsAgentIdRoute,
   } as any);
+const AgentsAgentIdTrainingIndexRoute =
+  AgentsAgentIdTrainingIndexRouteImport.update({
+    id: "/training/",
+    path: "/training/",
+    getParentRoute: () => AgentsAgentIdRoute,
+  } as any);
 const AgentsAgentIdCasesIndexRoute = AgentsAgentIdCasesIndexRouteImport.update({
   id: "/agents/$agentId_/cases/",
   path: "/agents/$agentId/cases/",
@@ -436,6 +438,12 @@ const AgentsAgentIdEvaluationsSuiteIdIndexRoute =
   AgentsAgentIdEvaluationsSuiteIdIndexRouteImport.update({
     id: "/evaluations/$suiteId/",
     path: "/evaluations/$suiteId/",
+    getParentRoute: () => AgentsAgentIdRoute,
+  } as any);
+const AgentsAgentIdTrainingDatasetsDatasetIdRoute =
+  AgentsAgentIdTrainingDatasetsDatasetIdRouteImport.update({
+    id: "/training/datasets/$datasetId",
+    path: "/training/datasets/$datasetId",
     getParentRoute: () => AgentsAgentIdRoute,
   } as any);
 const AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute =
@@ -483,7 +491,6 @@ export interface FileRoutesByFullPath {
   "/agents/$agentId/sandbox": typeof AgentsAgentIdSandboxRoute;
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
-  "/agents/$agentId/training": typeof AgentsAgentIdTrainingRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
   "/api/auth/$": typeof ApiAuthSplatRoute;
   "/api/dev/scenario": typeof ApiDevScenarioRoute;
@@ -510,8 +517,10 @@ export interface FileRoutesByFullPath {
   "/agents/$agentId/cases/$caseId": typeof AgentsAgentIdCasesCaseIdRoute;
   "/settings/organization/groups/$groupId": typeof SettingsOrganizationGroupsGroupIdRoute;
   "/agents/$agentId/evaluations/": typeof AgentsAgentIdEvaluationsIndexRoute;
+  "/agents/$agentId/training/": typeof AgentsAgentIdTrainingIndexRoute;
   "/agents/$agentId/cases/": typeof AgentsAgentIdCasesIndexRoute;
   "/settings/organization/groups/": typeof SettingsOrganizationGroupsIndexRoute;
+  "/agents/$agentId/training/datasets/$datasetId": typeof AgentsAgentIdTrainingDatasetsDatasetIdRoute;
   "/agents/$agentId/evaluations/$suiteId/": typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/runs/$runId": typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
 }
@@ -550,7 +559,6 @@ export interface FileRoutesByTo {
   "/agents/$agentId/sandbox": typeof AgentsAgentIdSandboxRoute;
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
-  "/agents/$agentId/training": typeof AgentsAgentIdTrainingRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
   "/api/auth/$": typeof ApiAuthSplatRoute;
   "/api/dev/scenario": typeof ApiDevScenarioRoute;
@@ -577,8 +585,10 @@ export interface FileRoutesByTo {
   "/agents/$agentId/cases/$caseId": typeof AgentsAgentIdCasesCaseIdRoute;
   "/settings/organization/groups/$groupId": typeof SettingsOrganizationGroupsGroupIdRoute;
   "/agents/$agentId/evaluations": typeof AgentsAgentIdEvaluationsIndexRoute;
+  "/agents/$agentId/training": typeof AgentsAgentIdTrainingIndexRoute;
   "/agents/$agentId/cases": typeof AgentsAgentIdCasesIndexRoute;
   "/settings/organization/groups": typeof SettingsOrganizationGroupsIndexRoute;
+  "/agents/$agentId/training/datasets/$datasetId": typeof AgentsAgentIdTrainingDatasetsDatasetIdRoute;
   "/agents/$agentId/evaluations/$suiteId": typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/runs/$runId": typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
 }
@@ -621,7 +631,6 @@ export interface FileRoutesById {
   "/agents/$agentId/sandbox": typeof AgentsAgentIdSandboxRoute;
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
-  "/agents/$agentId/training": typeof AgentsAgentIdTrainingRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
   "/api/auth/$": typeof ApiAuthSplatRoute;
   "/api/dev/scenario": typeof ApiDevScenarioRoute;
@@ -648,8 +657,10 @@ export interface FileRoutesById {
   "/agents/$agentId_/cases/$caseId": typeof AgentsAgentIdCasesCaseIdRoute;
   "/settings/organization_/groups/$groupId": typeof SettingsOrganizationGroupsGroupIdRoute;
   "/agents/$agentId/evaluations/": typeof AgentsAgentIdEvaluationsIndexRoute;
+  "/agents/$agentId/training/": typeof AgentsAgentIdTrainingIndexRoute;
   "/agents/$agentId_/cases/": typeof AgentsAgentIdCasesIndexRoute;
   "/settings/organization/groups/": typeof SettingsOrganizationGroupsIndexRoute;
+  "/agents/$agentId/training/datasets/$datasetId": typeof AgentsAgentIdTrainingDatasetsDatasetIdRoute;
   "/agents/$agentId/evaluations/$suiteId/": typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/runs/$runId": typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
 }
@@ -693,7 +704,6 @@ export interface FileRouteTypes {
     | "/agents/$agentId/sandbox"
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
-    | "/agents/$agentId/training"
     | "/agents/$agentId/variables"
     | "/api/auth/$"
     | "/api/dev/scenario"
@@ -720,8 +730,10 @@ export interface FileRouteTypes {
     | "/agents/$agentId/cases/$caseId"
     | "/settings/organization/groups/$groupId"
     | "/agents/$agentId/evaluations/"
+    | "/agents/$agentId/training/"
     | "/agents/$agentId/cases/"
     | "/settings/organization/groups/"
+    | "/agents/$agentId/training/datasets/$datasetId"
     | "/agents/$agentId/evaluations/$suiteId/"
     | "/agents/$agentId/evaluations/$suiteId/runs/$runId";
   fileRoutesByTo: FileRoutesByTo;
@@ -760,7 +772,6 @@ export interface FileRouteTypes {
     | "/agents/$agentId/sandbox"
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
-    | "/agents/$agentId/training"
     | "/agents/$agentId/variables"
     | "/api/auth/$"
     | "/api/dev/scenario"
@@ -787,8 +798,10 @@ export interface FileRouteTypes {
     | "/agents/$agentId/cases/$caseId"
     | "/settings/organization/groups/$groupId"
     | "/agents/$agentId/evaluations"
+    | "/agents/$agentId/training"
     | "/agents/$agentId/cases"
     | "/settings/organization/groups"
+    | "/agents/$agentId/training/datasets/$datasetId"
     | "/agents/$agentId/evaluations/$suiteId"
     | "/agents/$agentId/evaluations/$suiteId/runs/$runId";
   id:
@@ -830,7 +843,6 @@ export interface FileRouteTypes {
     | "/agents/$agentId/sandbox"
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
-    | "/agents/$agentId/training"
     | "/agents/$agentId/variables"
     | "/api/auth/$"
     | "/api/dev/scenario"
@@ -857,8 +869,10 @@ export interface FileRouteTypes {
     | "/agents/$agentId_/cases/$caseId"
     | "/settings/organization_/groups/$groupId"
     | "/agents/$agentId/evaluations/"
+    | "/agents/$agentId/training/"
     | "/agents/$agentId_/cases/"
     | "/settings/organization/groups/"
+    | "/agents/$agentId/training/datasets/$datasetId"
     | "/agents/$agentId/evaluations/$suiteId/"
     | "/agents/$agentId/evaluations/$suiteId/runs/$runId";
   fileRoutesById: FileRoutesById;
@@ -1163,13 +1177,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AgentsAgentIdSettingsRouteImport;
       parentRoute: typeof AgentsAgentIdRoute;
     };
-    "/agents/$agentId/training": {
-      id: "/agents/$agentId/training";
-      path: "/training";
-      fullPath: "/agents/$agentId/training";
-      preLoaderRoute: typeof AgentsAgentIdTrainingRouteImport;
-      parentRoute: typeof AgentsAgentIdRoute;
-    };
     "/agents/$agentId/variables": {
       id: "/agents/$agentId/variables";
       path: "/variables";
@@ -1331,6 +1338,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AgentsAgentIdEvaluationsIndexRouteImport;
       parentRoute: typeof AgentsAgentIdRoute;
     };
+    "/agents/$agentId/training/": {
+      id: "/agents/$agentId/training/";
+      path: "/training";
+      fullPath: "/agents/$agentId/training/";
+      preLoaderRoute: typeof AgentsAgentIdTrainingIndexRouteImport;
+      parentRoute: typeof AgentsAgentIdRoute;
+    };
     "/agents/$agentId_/cases/": {
       id: "/agents/$agentId_/cases/";
       path: "/agents/$agentId/cases";
@@ -1364,6 +1378,13 @@ declare module "@tanstack/react-router" {
       path: "/evaluations/$suiteId";
       fullPath: "/agents/$agentId/evaluations/$suiteId/";
       preLoaderRoute: typeof AgentsAgentIdEvaluationsSuiteIdIndexRouteImport;
+      parentRoute: typeof AgentsAgentIdRoute;
+    };
+    "/agents/$agentId/training/datasets/$datasetId": {
+      id: "/agents/$agentId/training/datasets/$datasetId";
+      path: "/training/datasets/$datasetId";
+      fullPath: "/agents/$agentId/training/datasets/$datasetId";
+      preLoaderRoute: typeof AgentsAgentIdTrainingDatasetsDatasetIdRouteImport;
       parentRoute: typeof AgentsAgentIdRoute;
     };
     "/agents/$agentId/evaluations/$suiteId/runs/$runId": {
@@ -1463,10 +1484,11 @@ interface AgentsAgentIdRouteChildren {
   AgentsAgentIdSandboxRoute: typeof AgentsAgentIdSandboxRoute;
   AgentsAgentIdSecretsRoute: typeof AgentsAgentIdSecretsRoute;
   AgentsAgentIdSettingsRoute: typeof AgentsAgentIdSettingsRoute;
-  AgentsAgentIdTrainingRoute: typeof AgentsAgentIdTrainingRoute;
   AgentsAgentIdVariablesRoute: typeof AgentsAgentIdVariablesRoute;
   AgentsAgentIdIndexRoute: typeof AgentsAgentIdIndexRoute;
   AgentsAgentIdEvaluationsIndexRoute: typeof AgentsAgentIdEvaluationsIndexRoute;
+  AgentsAgentIdTrainingIndexRoute: typeof AgentsAgentIdTrainingIndexRoute;
+  AgentsAgentIdTrainingDatasetsDatasetIdRoute: typeof AgentsAgentIdTrainingDatasetsDatasetIdRoute;
   AgentsAgentIdEvaluationsSuiteIdIndexRoute: typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute: typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
 }
@@ -1483,10 +1505,12 @@ const AgentsAgentIdRouteChildren: AgentsAgentIdRouteChildren = {
   AgentsAgentIdSandboxRoute: AgentsAgentIdSandboxRoute,
   AgentsAgentIdSecretsRoute: AgentsAgentIdSecretsRoute,
   AgentsAgentIdSettingsRoute: AgentsAgentIdSettingsRoute,
-  AgentsAgentIdTrainingRoute: AgentsAgentIdTrainingRoute,
   AgentsAgentIdVariablesRoute: AgentsAgentIdVariablesRoute,
   AgentsAgentIdIndexRoute: AgentsAgentIdIndexRoute,
   AgentsAgentIdEvaluationsIndexRoute: AgentsAgentIdEvaluationsIndexRoute,
+  AgentsAgentIdTrainingIndexRoute: AgentsAgentIdTrainingIndexRoute,
+  AgentsAgentIdTrainingDatasetsDatasetIdRoute:
+    AgentsAgentIdTrainingDatasetsDatasetIdRoute,
   AgentsAgentIdEvaluationsSuiteIdIndexRoute:
     AgentsAgentIdEvaluationsSuiteIdIndexRoute,
   AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute:

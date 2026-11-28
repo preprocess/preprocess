@@ -25,6 +25,25 @@ function parseBody(text: string, ok: boolean): unknown {
   }
 }
 
+// Better Auth answers { message, code }; /v1 answers { error: { code,
+// message } }.
+function errorFrom(body: unknown, status: number) {
+  const detail = (body ?? {}) as {
+    message?: string;
+    error?: string | { message?: string; code?: string };
+    code?: string;
+  };
+  const nested = typeof detail.error === "object" ? detail.error : undefined;
+  return new ApiError(
+    detail.message ??
+      nested?.message ??
+      (typeof detail.error === "string" ? detail.error : undefined) ??
+      "Something went wrong. Try again.",
+    status,
+    detail.code ?? nested?.code,
+  );
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   if (init.body) headers.set("content-type", "application/json");
@@ -36,16 +55,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}) {
   const text = await response.text();
   const body = parseBody(text, response.ok);
   if (!response.ok) {
-    const detail = (body ?? {}) as {
-      message?: string;
-      error?: string;
-      code?: string;
-    };
-    throw new ApiError(
-      detail.message ?? detail.error ?? "Something went wrong. Try again.",
-      response.status,
-      detail.code,
-    );
+    throw errorFrom(body, response.status);
   }
   if ((init.method ?? "GET").toUpperCase() !== "GET") announceDataChanged();
   return body as T;
@@ -57,6 +67,16 @@ export const authPost = <T = unknown>(path: string, body: unknown = {}) =>
     method: "POST",
     body: JSON.stringify(body),
   });
+
+/** A /v1 route in one organization that answers text, such as NDJSON. */
+export async function orgText(organizationId: string, path: string) {
+  const response = await fetch(`/v1/orgs/${organizationId}${path}`, {
+    credentials: "same-origin",
+  });
+  const text = await response.text();
+  if (!response.ok) throw errorFrom(parseBody(text, false), response.status);
+  return text;
+}
 
 /** A /v1 route in one organization. */
 export const orgApi = <T = unknown>(
