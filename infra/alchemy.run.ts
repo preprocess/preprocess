@@ -47,6 +47,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
 import { GrantAppRole } from "./src/app-role.ts";
+import { EmailSubaddressing } from "./src/email-subaddressing.ts";
 import { originConnectionLimits } from "./src/connections.ts";
 import {
   roleOrigin,
@@ -82,6 +83,11 @@ import {
   runtimeModelSecrets,
   statusHeartbeatSecrets,
   statusHeartbeatVars,
+  supportInboundLocalParts,
+  supportProductionSecrets,
+  supportProductionVars,
+  supportVars,
+  turnstileTestKeys,
   trainingVars,
   type SelfHostStage,
   type Stage,
@@ -754,6 +760,14 @@ export default Alchemy.Stack(
       },
     });
 
+    // Support (apps/api/src/support.ts): production's inbound domain, when
+    // its deploy sets one.
+    const supportInboundDomain =
+      stage === "production"
+        ? yield* Config.String("SUPPORT_INBOUND_DOMAIN").pipe(
+            Config.withDefault(undefined),
+          )
+        : undefined;
     const api = yield* Cloudflare.Worker("Api", {
       ...worker,
       name: n.api,
@@ -852,6 +866,31 @@ export default Alchemy.Stack(
           )),
         ...(region && optionalSecrets(statusHeartbeatSecrets)),
         ...(region &&
+          Object.fromEntries(
+            supportVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
+        ...(region &&
+          (stage === "production"
+            ? {
+                ...Object.fromEntries(
+                  supportProductionVars.map(
+                    (name) =>
+                      [
+                        name,
+                        Config.String(name).pipe(Config.withDefault(undefined)),
+                      ] as const,
+                  ),
+                ),
+                ...optionalSecrets(supportProductionSecrets),
+              }
+            : turnstileTestKeys)),
+        ...(region &&
           billingOrgs[stage] && {
             BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),
             BILLING_ENFORCED_ORGS: billingOrgs[stage].enforced.join(","),
@@ -891,6 +930,33 @@ export default Alchemy.Stack(
         FILES: files,
       },
     });
+    // Inbound support email (production, with SUPPORT_INBOUND_DOMAIN): Email
+    // Routing is enabled on that subdomain of its zone outside this stack,
+    // and catch-all rules exist on the apex only, so requests@ and r@ on the
+    // subdomain are literal rules to the API, with subaddressing on for the
+    // r+<token>@ reply addresses.
+    if (supportInboundDomain) {
+      const zone = supportInboundDomain.split(".").slice(1).join(".");
+      const rules = [];
+      for (const local of supportInboundLocalParts)
+        rules.push(
+          yield* Cloudflare.Email.Rule(`SupportInbound-${local}`, {
+            zone,
+            name: `Support: ${local}@${supportInboundDomain} to the API`,
+            matchers: [
+              {
+                type: "literal",
+                field: "to",
+                value: `${local}@${supportInboundDomain}`,
+              },
+            ],
+            actions: [{ type: "worker", value: [n.api] }],
+          }),
+        );
+      yield* EmailSubaddressing("SupportSubaddressing", {
+        zoneId: rules[0]!.zoneId,
+      });
+    }
     yield* Cloudflare.Queues.Consumer("JobsConsumer", {
       queueId: jobs.queueId,
       scriptName: api.workerName,

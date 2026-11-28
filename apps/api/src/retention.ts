@@ -41,6 +41,7 @@ import type { Caller, OrgVariables } from "./caller.ts";
 import { ApiError } from "./cases.ts";
 import type { Env } from "./env.ts";
 import { logStore } from "./logs.ts";
+import { supportEnabled, sweepSupportRetention } from "./support.ts";
 
 export type RetentionPeriods = Record<RetentionKind, number | null>;
 
@@ -516,5 +517,18 @@ export const sweepRetention = async (env: Env, now = new Date()) => {
           }),
         );
       }
+    }
+  // Support requests and attachments have fixed periods (support.ts).
+  if (supportEnabled(env))
+    try {
+      await sweepSupportRetention(env, now);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "retention.failed",
+          kind: "support",
+          error: String(error),
+        }),
+      );
     }
 };

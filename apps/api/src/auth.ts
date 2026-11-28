@@ -42,6 +42,7 @@ import { productEvent, type ProductEvent } from "@preprocess/logs";
 
 import { identifyOrganizations, track } from "./analytics.ts";
 import { endBillingForDeletion } from "./billing.ts";
+import { deleteSupportObjects } from "./support.ts";
 import { sendInvitationEmail, sendMagicLinkEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 import { refuseWithoutPlan, SCIM_PATH, scimDirectory } from "./scim.ts";
@@ -794,6 +795,10 @@ export const createAuth = (env: Env, tx: SystemTx, request: RequestContext) => {
             await tx.execute(sql`
               insert into deleted_organizations (organization_id, deleted_at, final_seq, final_hash)
               select organization_id, now(), seq, hash from audit_heads where organization_id = ${org.id}`);
+          },
+          // Its support rows go by cascade; their attachments' objects here.
+          async afterDeleteOrganization({ organization: org }) {
+            await deleteSupportObjects(env, org.id);
           },
           async afterAcceptInvitation({ invitation, member, user }) {
             await record({
