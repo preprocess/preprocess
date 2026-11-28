@@ -117,6 +117,58 @@ describe("product analytics", () => {
     expect(invalid).not.toHaveProperty("referrer_domain");
   });
 
+  it("marks a test address's events, organization and members test=true", async () => {
+    const env = testEnv({
+      POSTHOG_KEY: "phc_test",
+      ANALYTICS_TEST_EMAILS: "qa+*@example.test",
+    });
+    const start = tracked.length;
+    const { client, userId } = await signUp(
+      "Quinn Tester",
+      env,
+      `qa+${crypto.randomUUID().slice(0, 8)}@example.test`,
+    );
+    const org = await createOrganization(client, "Test Run Org");
+    const member = await addMember(client, org, "Rita Member");
+    const other = await signUp("Real Person", env);
+    await createOrganization(other.client, "Real Org");
+    const events = since(start);
+
+    const of = (id: string) =>
+      events.filter(
+        (e) =>
+          e.distinctId === id ||
+          e.properties.organization_id === id ||
+          e.properties.$group_key === id,
+      );
+    // The member signed up before joining, so only what they do in the
+    // organization is marked.
+    const marked = [
+      ...of(userId),
+      ...of(org),
+      ...of(member.userId).filter((e) => e.properties.organization_id === org),
+    ];
+    expect(marked.map((e) => e.event)).toEqual(
+      expect.arrayContaining(["signed_up", "org_created", "member_joined"]),
+    );
+    for (const event of marked) expect(event.properties.test).toBe(true);
+    expect(
+      events.find((e) => e.event === "signed_up" && e.distinctId === userId)
+        ?.properties.$set,
+    ).toMatchObject({ test: true });
+    expect(
+      events
+        .filter(
+          (e) =>
+            e.event === "$groupidentify" && e.properties.$group_key === org,
+        )
+        .at(-1)?.properties.$group_set,
+    ).toMatchObject({ test: true });
+
+    for (const event of of(other.userId))
+      expect(event.properties).not.toHaveProperty("test");
+  });
+
   it("queues nothing without a PostHog key", async () => {
     const start = tracked.length;
     const { client } = await signUp("Quiet Person", testEnv());

@@ -54,6 +54,7 @@ import {
 } from "./src/database.ts";
 import { regionConfig } from "./src/regions.ts";
 import {
+  analyticsVars,
   apiCrons,
   apiModelSecrets,
   apiSecrets,
@@ -824,6 +825,16 @@ export default Alchemy.Stack(
             BILLING_INTERNAL_ORGS: billingOrgs[stage].internal.join(","),
             BILLING_ENFORCED_ORGS: billingOrgs[stage].enforced.join(","),
           }),
+        ...(region &&
+          Object.fromEntries(
+            analyticsVars.map(
+              (name) =>
+                [
+                  name,
+                  Config.String(name).pipe(Config.withDefault(undefined)),
+                ] as const,
+            ),
+          )),
         ...Object.fromEntries(
           (selfHost ? licenseSecrets : []).map(
             (name) =>
