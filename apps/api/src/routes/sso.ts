@@ -671,8 +671,7 @@ const findDomain = async (tx: SystemTx, org: string, domain: string) => {
         eq(ssoDomains.domain, domain.toLowerCase()),
       ),
     );
-  if (!row)
-    throw new ApiError(404, "not_found", "This domain wasn't found.");
+  if (!row) throw new ApiError(404, "not_found", "This domain wasn't found.");
   return row;
 };
 
