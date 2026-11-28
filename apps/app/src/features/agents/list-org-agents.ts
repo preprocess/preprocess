@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 
 /**
  * The organization's agents from the API. An agent is addressed by its slug,
@@ -42,6 +42,8 @@ type ApiDeployment = AgentDeploymentSummary & {
   git: { branch: string | null; commit: string | null };
 };
 
+const server = createServerOnlyFn(() => import("../../server/api.server"));
+
 const toOrgAgent = (agent: ApiAgent): OrgAgent => ({
   id: agent.slug,
   name: agent.slug,
@@ -51,7 +53,7 @@ const toOrgAgent = (agent: ApiAgent): OrgAgent => ({
 
 /** The organization's agents that aren't archived, by name. */
 export async function orgAgents(): Promise<OrgAgent[]> {
-  const { activeOrgJson } = await import("../../server/api.server");
+  const { activeOrgJson } = await server();
   const agents = await activeOrgJson<ApiAgent[]>("/agents");
   return agents.filter((agent) => !agent.archived).map(toOrgAgent);
 }
@@ -62,7 +64,7 @@ export const listOrgAgents = createServerFn({ method: "GET" }).handler(() =>
 
 /** One agent by slug with its production deployment, or null. */
 export async function orgAgent(slug: string): Promise<OrgAgentDetail | null> {
-  const { activeOrgJson } = await import("../../server/api.server");
+  const { activeOrgJson } = await server();
   const path = `/agents/${encodeURIComponent(slug)}`;
   const agent = await activeOrgJson<ApiAgent | null>(path, {
     notFound: null,

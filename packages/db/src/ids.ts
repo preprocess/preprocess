@@ -10,10 +10,12 @@ export const prefixes = {
   member: "mem",
   invitation: "inv",
   apikey: "key",
+  ssoProvider: "sso",
   group: "grp",
   agent: "agt",
   deployment: "dep",
   secret: "sec",
+  modelEndpoint: "mep",
   mcpServer: "mcs",
   mcpConnection: "mcc",
   mcpAuthorization: "mca",
@@ -37,6 +39,8 @@ export const prefixes = {
   usageReport: "urp",
   sandboxInterval: "sbi",
   retentionSweep: "rsw",
+  dataset: "dst",
+  scim: "scim",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -30,6 +30,7 @@ bundle("test/fixtures/invoice-agent.ts", "invoice-agent.js");
 bundle("test/fixtures/failing-agent.ts", "failing-agent.js");
 bundle("test/fixtures/approval-agent.ts", "approval-agent.js");
 bundle("test/fixtures/sandbox-agent.ts", "sandbox-agent.js");
+bundle("test/fixtures/medium-sandbox-agent.ts", "medium-sandbox-agent.js");
 bundle("test/fixtures/mcp-service.ts", "mcp-service.js");
 
 const worker = (name: string, extra: object = {}) => ({
@@ -97,6 +98,7 @@ export class Platform extends WorkerEntrypoint {
   async secretsVersion(d) { return secrets.get(ref(d))?.version ?? "none"; }
   async secretValues(d) { return secrets.get(ref(d)) ?? { version: "none", values: {} }; }
   async caseEvent() {}
+  async modelEndpoints() { return {}; }
   // Tests cap an organization at n more passes of the spending gate.
   async limitSpend(organizationId, n) { allowed.set(organizationId, n); }
   async spendGate(organizationId) {

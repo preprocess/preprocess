@@ -1,158 +1,154 @@
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
+import { DialogFooter } from "@preprocess/ui/components/dialog";
+import {
+  CheckboxGroup,
+  CheckboxItem,
+} from "@preprocess/ui/components/checkbox-group";
 import {
   AsyncActionAbortError,
   LoadingButton,
   type LoadingButtonHandle,
 } from "@preprocess/ui/components/loading-button";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
+import { Pencil, Plus, Users, X } from "@preprocess/ui/lib/icons";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@preprocess/ui/components/select";
-import { Lock, Pencil, Plus, X } from "@preprocess/ui/lib/icons";
+  RESERVED_BINDINGS,
+  RESERVED_PREFIX,
+  SECRET_NAME,
+} from "@preprocess/sdk/protocol";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 
+import { NoAccessArt, NothingCreatedArt } from "../../components/empty-art";
+
+import { useOrganizationId } from "../auth/auth-context";
+import { orgApi } from "../auth/client";
 import {
   SettingsConfirmDialog,
   SettingsDialogActions,
   SettingsDialogShell,
   SettingsEmpty,
+  SettingsError,
   SettingsPanelMessage,
   SettingsRow,
   SettingsRowMenu,
   SettingsRows,
   SettingsSection,
+  SettingsSkeletonRows,
   actionErrorMessage,
   formatRelative,
 } from "../settings/kit";
-import {
-  DEFAULT_SECRET_SCOPE,
-  type SecretScope,
-  type SecretSummary,
-} from "./platform-store";
+import { useAdministers } from "../settings/use-role";
 import {
   ValidatedField,
   type ValidatedFieldHandle,
 } from "../../components/validated-field";
 
-export type SecretItem = SecretSummary;
+/**
+ * Developers → Secrets: the organization's secrets (/v1/orgs/:org/secrets).
+ * Values are write-only. Which agents' code receives each one is a
+ * guardrail an Owner or Admin sets here; agents themselves never read them.
+ */
 
-const SCOPES = [
-  { value: "production", label: "Production" },
-  { value: "preview", label: "Previews and dev" },
-  { value: "all", label: "All deployments" },
-] as const satisfies readonly { value: SecretScope; label: string }[];
-
-const SCOPE_LABEL: Record<SecretScope, string> = {
-  production: "Production",
-  preview: "Previews",
-  all: "All",
+type Secret = {
+  name: string;
+  version: number;
+  updatedAt: string;
+  /** Slugs of the agents granted this secret. */
+  agents: string[];
+  /** Live deployments whose code receives it. */
+  live: number;
 };
 
-function scopeValue(value: string): SecretScope {
-  return value === "preview" || value === "all" ? value : "production";
-}
+type Agent = { slug: string; archived: boolean };
 
-const KEY_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 const MASK = "••••••••";
 
-function validateKey(value: string) {
-  const key = value.trim();
-  if (!key) return "Enter a name, like API_TOKEN.";
-  if (!KEY_PATTERN.test(key)) {
-    return "Use capital letters, numbers, and underscores, starting with a letter.";
+function validateName(value: string) {
+  const name = value.trim();
+  if (!name) return "Enter a name, like API_TOKEN.";
+  if (!SECRET_NAME.test(name)) {
+    return "Use up to 64 capital letters, numbers, and underscores, starting with a letter.";
+  }
+  if (
+    (RESERVED_BINDINGS as readonly string[]).includes(name) ||
+    name.startsWith(RESERVED_PREFIX)
+  ) {
+    return `${name} is reserved by Preprocess; choose another name.`;
   }
   return null;
 }
 
 function validateValue(value: string) {
-  return value.length > 0 ? null : "Enter a value.";
+  if (value.length === 0) return "Enter a value.";
+  return value.length > 5120 ? "Values can be up to 5,120 characters." : null;
 }
 
-/** A saved value, which is write-only: dots, no reveal or copy. */
-function SecretValue() {
-  return (
-    <span
-      aria-label="Value hidden"
-      className="min-w-0 truncate text-body text-muted-foreground"
-    >
-      {MASK}
-    </span>
-  );
+function grantSummary(secret: Secret) {
+  if (secret.agents.length === 0) return "No agents";
+  if (secret.agents.length <= 2) return secret.agents.join(", ");
+  return `${secret.agents.length} agents`;
 }
 
-function SecretKey({ name }: Readonly<{ name: string }>) {
-  return (
-    <span
-      className="truncate text-body text-foreground"
-      style={{ fontVariationSettings: fontWeights.semibold }}
-    >
-      {name}
-    </span>
-  );
+function secretPath(name: string) {
+  return `/secrets/${encodeURIComponent(name)}`;
 }
 
 /**
- * Add a variable, or replace a saved one's value. Saved values never come
- * back, so replacing starts from an empty field. A key the organization
- * owns is refused.
+ * Add a secret, or replace a saved one's value. Saved values never come
+ * back, so replacing starts from an empty field.
  */
 function SecretDialog({
-  open,
+  secret,
+  existing,
   onOpenChange,
-  item,
-  noun,
-  conflict,
-  onSave,
+  onSaved,
 }: Readonly<{
-  open: boolean;
+  /** The secret whose value is being replaced; null when adding. */
+  secret: Secret | null;
+  existing: readonly Secret[];
   onOpenChange: (open: boolean) => void;
-  /** The variable whose value is being replaced; absent when adding. */
-  item: SecretItem | null;
-  noun: string;
-  /** Why a key can't be used here, or null when it can. */
-  conflict: (key: string) => string | null;
-  onSave: (key: string, value: string, scope: SecretScope) => Promise<unknown>;
+  onSaved: () => Promise<unknown>;
 }>) {
-  const [scope, setScope] = useState<SecretScope>(
-    item?.scope ?? DEFAULT_SECRET_SCOPE,
-  );
-  const keyRef = useRef<ValidatedFieldHandle>(null);
+  const organizationId = useOrganizationId();
+  const nameRef = useRef<ValidatedFieldHandle>(null);
   const valueRef = useRef<ValidatedFieldHandle>(null);
   const saveRef = useRef<LoadingButtonHandle>(null);
-  const [key, setKey] = useState(item?.key ?? "");
+  const [name, setName] = useState(secret?.name ?? "");
   const [value, setValue] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const editing = item !== null;
+  const editing = secret !== null;
 
   async function save() {
     setError(null);
-    const keyOk = editing || Boolean(keyRef.current?.commit());
+    const nameOk = editing || Boolean(nameRef.current?.commit());
     const valueOk = Boolean(valueRef.current?.commit());
-    if (!keyOk || !valueOk) throw new AsyncActionAbortError();
+    if (!nameOk || !valueOk) throw new AsyncActionAbortError();
     try {
-      await onSave(key.trim(), value, scope);
+      await orgApi(organizationId, secretPath(name.trim()), {
+        method: "PUT",
+        body: JSON.stringify({ value }),
+      });
+      await onSaved();
       window.setTimeout(() => onOpenChange(false), 400);
     } catch (cause) {
-      setError(actionErrorMessage(cause, `Could not save the ${noun}.`));
+      setError(actionErrorMessage(cause, "Could not save the secret."));
       throw cause;
     }
   }
 
   return (
     <SettingsDialogShell
-      onOpenChange={onOpenChange}
-      open={open}
       description={
         editing
-          ? "Saved values can't be viewed again. Enter the new value."
-          : `Once saved, the value can't be viewed again; only replaced.`
+          ? "Saved values can't be viewed again. Enter the new value; agents that receive it get it on their next call."
+          : "Once saved, the value can't be viewed again, only replaced."
       }
-      title={editing ? `Replace ${item.key}` : `Add ${noun}`}
+      onOpenChange={onOpenChange}
+      open
+      title={editing ? `Replace ${secret.name}` : "Add secret"}
     >
       <form
         className="flex flex-col gap-4"
@@ -165,13 +161,18 @@ function SecretDialog({
           <ValidatedField
             autoFocus
             hint="Capital letters, numbers, and underscores."
-            id="secret-key"
+            id="secret-name"
             label="Name"
-            onChange={(next) => setKey(next.toUpperCase())}
+            onChange={(next) => setName(next.toUpperCase())}
             placeholder="API_TOKEN"
-            ref={keyRef}
-            validate={(next) => validateKey(next) ?? conflict(next.trim())}
-            value={key}
+            ref={nameRef}
+            validate={(next) =>
+              validateName(next) ??
+              (existing.some((item) => item.name === next.trim())
+                ? `${next.trim()} already exists; replace its value instead.`
+                : null)
+            }
+            value={name}
           />
         )}
         <ValidatedField
@@ -185,30 +186,6 @@ function SecretDialog({
           validate={validateValue}
           value={value}
         />
-        <div className="flex flex-col gap-1.5">
-          <span className="text-body text-foreground">Available to</span>
-          <Select
-            onValueChange={(next) => setScope(scopeValue(next))}
-            value={scope}
-          >
-            <SelectTrigger aria-label="Available to" />
-            <SelectContent>
-              {SCOPES.map((option, index) => (
-                <SelectItem
-                  index={index}
-                  key={option.value}
-                  value={option.value}
-                >
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-caption text-muted-foreground">
-            Previews and dev sessions use test credentials unless you include
-            them.
-          </span>
-        </div>
         {error ? (
           <SettingsPanelMessage tone="danger">{error}</SettingsPanelMessage>
         ) : null}
@@ -224,7 +201,7 @@ function SecretDialog({
             successLabel="Saved"
             type="submit"
           >
-            {editing ? "Replace value" : `Add ${noun}`}
+            {editing ? "Replace value" : "Add secret"}
           </LoadingButton>
         </SettingsDialogActions>
       </form>
@@ -232,138 +209,275 @@ function SecretDialog({
   );
 }
 
-/**
- * Variables as a settings section: masked values with reveal and copy,
- * edit and delete per row, and Add. `inherited` lists variables set
- * higher up (the organization's secrets on an agent): they show first,
- * locked, and their keys can't be reused here.
- */
-export function SecretsSection({
-  title,
-  description,
-  noun,
-  items,
-  inherited = [],
-  conflict = () => null,
-  onSave,
-  onDelete,
+/** Choose which agents' code receives a secret. */
+function AgentsDialog({
+  secret,
+  onOpenChange,
+  onSaved,
 }: Readonly<{
-  /** Omitted when the page or tab already names the list. */
-  title?: string;
-  description?: string;
-  /** "secret", "variable". */
-  noun: string;
-  items: readonly SecretItem[];
-  inherited?: readonly SecretItem[];
-  conflict?: (key: string) => string | null;
-  onSave: (key: string, value: string, scope: SecretScope) => Promise<unknown>;
-  onDelete: (key: string) => Promise<unknown>;
+  secret: Secret;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => Promise<unknown>;
 }>) {
+  const organizationId = useOrganizationId();
+  const agents = useQuery({
+    queryKey: ["agents", organizationId],
+    queryFn: () => orgApi<Agent[]>(organizationId, "/agents"),
+  });
+  const [chosen, setChosen] = useState<string[]>(secret.agents);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const slugs = [
+    ...new Set([
+      ...(agents.data ?? [])
+        .filter((agent) => !agent.archived)
+        .map((agent) => agent.slug),
+      ...secret.agents,
+    ]),
+  ].sort();
+
+  async function save() {
+    setError(null);
+    const path = (slug: string) =>
+      `${secretPath(secret.name)}/agents/${encodeURIComponent(slug)}`;
+    try {
+      for (const slug of chosen.filter((s) => !secret.agents.includes(s)))
+        await orgApi(organizationId, path(slug), { method: "PUT" });
+      for (const slug of secret.agents.filter((s) => !chosen.includes(s)))
+        await orgApi(organizationId, path(slug), { method: "DELETE" });
+      await onSaved();
+      window.setTimeout(() => onOpenChange(false), 400);
+    } catch (cause) {
+      await onSaved();
+      setError(actionErrorMessage(cause, "Could not change the agents."));
+      throw cause;
+    }
+  }
+
+  return (
+    <SettingsDialogShell
+      description="Only these agents' deployed code receives the value, on its next call. The model never sees it."
+      onOpenChange={onOpenChange}
+      open
+      title={`Agents that receive ${secret.name}`}
+    >
+      <div className="flex flex-col gap-4">
+        {agents.isError ? (
+          <SettingsError error={agents.error} inline />
+        ) : !agents.data ? (
+          <SettingsSkeletonRows count={2} />
+        ) : slugs.length === 0 ? (
+          <SettingsPanelMessage>
+            No agents yet. Deploy one, then grant it this secret.
+          </SettingsPanelMessage>
+        ) : (
+          <CheckboxGroup
+            checkedIndices={
+              new Set(
+                slugs.flatMap((slug, index) =>
+                  chosen.includes(slug) ? [index] : [],
+                ),
+              )
+            }
+          >
+            {slugs.map((slug, index) => (
+              <CheckboxItem
+                checked={chosen.includes(slug)}
+                index={index}
+                key={slug}
+                label={slug}
+                onToggle={() =>
+                  setChosen((current) =>
+                    current.includes(slug)
+                      ? current.filter((value) => value !== slug)
+                      : [...current, slug],
+                  )
+                }
+              />
+            ))}
+          </CheckboxGroup>
+        )}
+        {error ? (
+          <SettingsPanelMessage tone="danger">{error}</SettingsPanelMessage>
+        ) : null}
+        {agents.data && slugs.length === 0 ? (
+          <DialogFooter>
+            <Button
+              onClick={() => onOpenChange(false)}
+              type="button"
+              variant="secondary"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        ) : (
+          <SettingsDialogActions
+            onCancel={() => onOpenChange(false)}
+            pending={pending}
+          >
+            <LoadingButton
+              disabled={!agents.data}
+              onAction={save}
+              onStatusChange={(status) => setPending(status === "pending")}
+              pendingLabel="Saving…"
+              successLabel="Saved"
+            >
+              Save
+            </LoadingButton>
+          </SettingsDialogActions>
+        )}
+      </div>
+    </SettingsDialogShell>
+  );
+}
+
+/** The organization's secrets: write-only values and the agents granted each. */
+export function SecretsSection() {
+  const administers = useAdministers();
+  if (administers === undefined) return <SettingsSkeletonRows count={3} />;
+  if (!administers)
+    return (
+      <SettingsEmpty
+        art={<NoAccessArt />}
+        description="Only organization Owners and Admins can manage secrets."
+        title="Admin access required"
+      />
+    );
+  return <Secrets />;
+}
+
+function Secrets() {
+  const organizationId = useOrganizationId();
+  const queryClient = useQueryClient();
+  const queryKey = ["secrets", organizationId];
+  const secrets = useQuery({
+    queryKey,
+    queryFn: () => orgApi<Secret[]>(organizationId, "/secrets"),
+  });
+  const refresh = () => queryClient.invalidateQueries({ queryKey });
   const [dialog, setDialog] = useState<
-    { mode: "add" } | { mode: "edit"; item: SecretItem } | null
+    | { mode: "add" }
+    | { mode: "replace"; secret: Secret }
+    | { mode: "agents"; secret: Secret }
+    | null
   >(null);
-  const [deleting, setDeleting] = useState<SecretItem | null>(null);
-  const inheritedKeys = new Set(inherited.map((item) => item.key));
-  const keyConflict = (key: string) =>
-    inheritedKeys.has(key)
-      ? `${key} is set by the organization and can't be overridden here.`
-      : items.some((item) => item.key === key)
-        ? `${key} already exists; edit it instead.`
-        : conflict(key);
+  const [deleting, setDeleting] = useState<Secret | null>(null);
+  const close = (open: boolean) => (open ? undefined : setDialog(null));
 
   return (
     <SettingsSection
       actions={
         <Button
+          disabled={!secrets.data}
           leadingIcon={Plus}
           onClick={() => setDialog({ mode: "add" })}
           size="compact"
           type="button"
           variant="secondary"
         >
-          Add {noun}
+          Add secret
         </Button>
       }
-      description={description}
-      title={title}
+      description="Encrypted values granted to specific agents. Values can't be viewed after saving, and updates take effect on the next call."
+      title="Organization secrets"
     >
-      {items.length + inherited.length === 0 ? (
+      {secrets.isError ? (
+        <SettingsError error={secrets.error} />
+      ) : !secrets.data ? (
+        <SettingsSkeletonRows count={3} />
+      ) : secrets.data.length === 0 ? (
         <SettingsEmpty
-          description={`Add a ${noun} and it's available to deployed code.`}
-          title={`No ${noun}s yet`}
+          art={<NothingCreatedArt />}
+          description="Add encrypted secrets that agents can use in tools without exposing values to the model."
+          title="No secrets yet"
         />
       ) : (
         <SettingsRows>
-          {inherited.map((item) => (
+          {secrets.data.map((secret) => (
             <SettingsRow
-              description="Set by the organization · can't be overridden"
-              key={`org:${item.key}`}
-              label={<SecretKey name={item.key} />}
-              value={<SecretValue />}
-            >
-              <Badge size="sm">
-                <span className="flex items-center gap-1">
-                  <Lock aria-hidden="true" className="size-3" />
-                  Organization
+              description={`Updated ${formatRelative(secret.updatedAt)} · ${grantSummary(secret)}`}
+              key={secret.name}
+              label={
+                <span
+                  className="truncate text-body text-foreground"
+                  style={{ fontVariationSettings: fontWeights.medium }}
+                >
+                  {secret.name}
                 </span>
-              </Badge>
-            </SettingsRow>
-          ))}
-          {items.map((item) => (
-            <SettingsRow
-              description={`Updated ${formatRelative(item.updatedAt)}`}
-              key={item.key}
-              label={<SecretKey name={item.key} />}
-              value={<SecretValue />}
+              }
+              value={
+                <span
+                  aria-label="Value hidden"
+                  className="min-w-0 truncate text-body text-muted-foreground"
+                >
+                  {MASK}
+                </span>
+              }
             >
-              <Badge color="gray" size="sm">
-                {SCOPE_LABEL[item.scope]}
-              </Badge>
+              {secret.live > 0 ? (
+                <Badge color="green" size="sm">
+                  {secret.live === 1 ? "1 live" : `${secret.live} live`}
+                </Badge>
+              ) : null}
               <SettingsRowMenu
                 actions={[
                   {
-                    label: "Edit",
+                    label: "Replace value",
                     icon: Pencil,
-                    onSelect: () => setDialog({ mode: "edit", item }),
+                    onSelect: () => setDialog({ mode: "replace", secret }),
+                  },
+                  {
+                    label: "Choose agents",
+                    icon: Users,
+                    onSelect: () => setDialog({ mode: "agents", secret }),
                   },
                   {
                     label: "Delete",
                     icon: X,
-                    onSelect: () => setDeleting(item),
+                    onSelect: () => setDeleting(secret),
                   },
                 ]}
-                label={`Actions for ${item.key}`}
+                label={`Actions for ${secret.name}`}
               />
             </SettingsRow>
           ))}
         </SettingsRows>
       )}
-      {dialog ? (
+      {dialog?.mode === "agents" ? (
+        <AgentsDialog
+          key={dialog.secret.name}
+          onOpenChange={close}
+          onSaved={refresh}
+          secret={dialog.secret}
+        />
+      ) : dialog ? (
         <SecretDialog
-          conflict={keyConflict}
-          item={dialog.mode === "edit" ? dialog.item : null}
-          key={dialog.mode === "edit" ? dialog.item.key : "add"}
-          noun={noun}
-          onOpenChange={(open) => (open ? undefined : setDialog(null))}
-          onSave={onSave}
-          open
+          existing={secrets.data ?? []}
+          key={dialog.mode === "replace" ? dialog.secret.name : "add"}
+          onOpenChange={close}
+          onSaved={refresh}
+          secret={dialog.mode === "replace" ? dialog.secret : null}
         />
       ) : null}
       <SettingsConfirmDialog
         confirmLabel="Delete"
         description={
           deleting
-            ? `Deployed code loses ${deleting.key} on its next run.`
+            ? "It can't be deleted while a live deployment's code uses it."
             : undefined
         }
-        onConfirm={() =>
-          deleting ? onDelete(deleting.key) : Promise.resolve()
-        }
+        onConfirm={async () => {
+          if (!deleting) return;
+          await orgApi(organizationId, secretPath(deleting.name), {
+            method: "DELETE",
+          });
+          await refresh();
+        }}
         onOpenChange={(open) => (open ? undefined : setDeleting(null))}
         open={deleting !== null}
         pendingLabel="Deleting…"
         successLabel="Deleted"
-        title={deleting ? `Delete ${deleting.key}?` : "Delete"}
+        title={deleting ? `Delete ${deleting.name}?` : "Delete"}
       />
     </SettingsSection>
   );

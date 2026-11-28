@@ -1,8 +1,18 @@
 "use client";
 
 import { Button } from "@preprocess/ui/components/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@preprocess/ui/components/empty";
 import { Spinner } from "@preprocess/ui/components/spinner";
 import { useEffect, useState, type ReactNode } from "react";
+
+import { NothingToPreviewArt } from "../../components/empty-art";
 
 import { familyLabel, type CaseInputFamily } from "./case-input-kind";
 
@@ -48,6 +58,33 @@ export function DownloadFallback({
         </a>
       </Button>
     </div>
+  );
+}
+
+export function PreviewEmpty({
+  item,
+  description,
+}: {
+  item: CaseInputPreviewItem;
+  description: string;
+}) {
+  return (
+    <Empty className="min-h-0 flex-1 border-0">
+      <EmptyHeader>
+        <EmptyMedia variant="graphic">
+          <NothingToPreviewArt />
+        </EmptyMedia>
+        <EmptyTitle>Nothing to preview</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button asChild size="sm" variant="secondary">
+          <a download={item.file.name} href={item.url}>
+            Download
+          </a>
+        </Button>
+      </EmptyContent>
+    </Empty>
   );
 }
 

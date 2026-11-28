@@ -133,7 +133,12 @@ export const googleSecrets = ["GOOGLE_CLIENT_SECRET"] as const;
 
 // Autumn, our cloud's billing (spec 16a), optional: without it billing is off.
 // Never bound on a self-hosted install, which bills nothing.
-export const billingSecrets = ["AUTUMN_SECRET_KEY"] as const;
+// AUTUMN_WEBHOOK_SECRET verifies Autumn's webhooks (Svix, whsec_…); without
+// it the API's Autumn webhook answers 404.
+export const billingSecrets = [
+  "AUTUMN_SECRET_KEY",
+  "AUTUMN_WEBHOOK_SECRET",
+] as const;
 // When cards became required, and our own organizations (apps/api/src/env.ts).
 // Both unset, an organization without a plan is not limited.
 // BILLING_ENFORCED_ORGS: organizations billed like customers before the date,
@@ -169,6 +174,17 @@ export const billingOrgs: Partial<
 // valid one the install runs the free plan. Our cloud never binds it.
 export const licenseSecrets = ["PREPROCESS_LICENSE_KEY"] as const;
 
+// The training switch (design doc 10), optional and on selfhost stages only:
+// "on" turns Training on, and unset leaves it off. Our cloud never binds it;
+// Training is always on there.
+export const trainingVars = ["TRAINING_SERVICE"] as const;
+
+// The status page heartbeat (apps/api/src/heartbeat.ts), optional and on our
+// cloud only: the API posts to the URL with the secret as its bearer token.
+// Without both, nothing is sent. Never bound on a self-hosted install.
+export const statusHeartbeatVars = ["STATUS_HEARTBEAT_URL"] as const;
+export const statusHeartbeatSecrets = ["STATUS_HEARTBEAT_SECRET"] as const;
+
 // 00:20 UTC daily: the signed copy of yesterday's audit chain (doc 02).
 // Every minute: re-send outbox rows a failed queue send left behind (doc 04).
 export const apiCrons = ["20 0 * * *", "* * * * *"];
@@ -181,6 +197,8 @@ export const durableObjects = {
   // One per organization and agent, and one per preview deployment with
   // schedules (design doc 04).
   SCHEDULER: "Scheduler",
+  // Rate limits: one per organization, API key and client address.
+  RATE_LIMITER: "RateLimiter",
 } as const;
 
 // Durable Object classes the runtime Worker exports: one Pi Durable case
@@ -229,6 +247,10 @@ export const localRoleDatabaseUrl = (
 // The app's local origin. It serves Better Auth and /v1 from the API Worker,
 // so cookies stay first-party.
 export const localAppUrl = "https://app.preprocess.localhost";
+
+// The public docs site, linked from the app wherever a stage has no docs
+// domain of its own.
+export const publicDocsUrl = "https://docs.preprocess.com";
 
 // The GitHub App in `pnpm dev`: scripts/github-stub.ts stands in for GitHub
 // and apps/builder/local/server.ts runs the build sandbox under Docker. The

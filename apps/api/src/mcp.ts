@@ -34,12 +34,25 @@ type Tokens = {
   expiresAt?: number;
 };
 
-export class McpError extends Error {}
+// `status` is set when the server refused the HTTP request itself, which is
+// what registration reads to fall back from one transport to the other.
+export class McpError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+
+export type McpTransport = "streamable_http" | "sse";
 
 const PROTOCOL_VERSION = "2025-06-18";
+// The last version the HTTP+SSE transport was specified for.
+const SSE_PROTOCOL_VERSION = "2024-11-05";
 
-// ---------------------------------------------------------------------------
-// Streamable HTTP client: one session per call, JSON or SSE responses.
+// Every session, its streams included, closes by then.
+export const MCP_DEADLINE_MS = 60_000;
 
 type RpcResponse = {
   id?: number;
@@ -47,11 +60,43 @@ type RpcResponse = {
   error?: { code: number; message: string };
 };
 
+export type McpRequest = (method: string, params: object) => Promise<unknown>;
+
 export class Unauthorized extends Error {
   constructor(readonly resourceMetadata: string | undefined) {
     super("unauthorized");
   }
 }
+
+const refused = async (response: Response) => {
+  if (response.status === 401) {
+    await response.body?.cancel();
+    const header = response.headers.get("www-authenticate") ?? "";
+    throw new Unauthorized(/resource_metadata="([^"]+)"/.exec(header)?.[1]);
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new McpError(
+      `the MCP server answered ${response.status}`,
+      response.status,
+    );
+  }
+};
+
+const rpcResult = (message: RpcResponse | undefined) => {
+  if (!message) throw new McpError("the MCP server sent no response");
+  if (message.error) throw new McpError(message.error.message);
+  return message.result;
+};
+
+const initializeParams = (protocolVersion: string) => ({
+  protocolVersion,
+  capabilities: {},
+  clientInfo: { name: "preprocess", version: "1" },
+});
+
+// ---------------------------------------------------------------------------
+// Streamable HTTP: every message is a POST; the reply is JSON or SSE.
 
 const readRpc = async (response: Response, id: number) => {
   const type = response.headers.get("content-type") ?? "";
@@ -62,13 +107,14 @@ const readRpc = async (response: Response, id: number) => {
         .filter((line) => line.startsWith("data:"))
         .map((line) => JSON.parse(line.slice(5)) as RpcResponse)
     : [JSON.parse(text) as RpcResponse];
-  const message = messages.find((m) => m.id === id);
-  if (!message) throw new McpError("the MCP server sent no response");
-  if (message.error) throw new McpError(message.error.message);
-  return message.result;
+  return rpcResult(messages.find((m) => m.id === id));
 };
 
-export const mcpSession = async (url: string, token?: string) => {
+const streamableSession = async (
+  url: string,
+  token: string | undefined,
+  signal: AbortSignal,
+): Promise<McpRequest> => {
   let session: string | null = null;
   let next = 0;
   const post = async (body: object) => {
@@ -82,13 +128,9 @@ export const mcpSession = async (url: string, token?: string) => {
         ...(session && { "mcp-session-id": session }),
       },
       body: JSON.stringify({ jsonrpc: "2.0", ...body }),
+      signal,
     });
-    if (response.status === 401) {
-      const header = response.headers.get("www-authenticate") ?? "";
-      throw new Unauthorized(/resource_metadata="([^"]+)"/.exec(header)?.[1]);
-    }
-    if (!response.ok)
-      throw new McpError(`the MCP server answered ${response.status}`);
+    await refused(response);
     session ??= response.headers.get("mcp-session-id");
     return response;
   };
@@ -96,13 +138,181 @@ export const mcpSession = async (url: string, token?: string) => {
     const id = ++next;
     return readRpc(await post({ id, method, params }), id);
   };
-  await request("initialize", {
-    protocolVersion: PROTOCOL_VERSION,
-    capabilities: {},
-    clientInfo: { name: "preprocess", version: "1" },
-  });
+  await request("initialize", initializeParams(PROTOCOL_VERSION));
   await (await post({ method: "notifications/initialized" })).body?.cancel();
   return request;
+};
+
+// ---------------------------------------------------------------------------
+// HTTP+SSE (deprecated in MCP 2025-03-26), a fallback for servers that only
+// speak it: a GET opens an event stream, its `endpoint` event names where to
+// POST messages, and replies come back on the stream.
+
+type SseEvent = { event: string; data: string };
+
+async function* sseEvents(
+  reader: ReadableStreamDefaultReader<string>,
+): AsyncGenerator<SseEvent> {
+  let buffer = "";
+  let event = "message";
+  let data: string[] = [];
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      buffer += value;
+      const lines = buffer.split(/\r\n|\r|\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line === "") {
+          if (data.length) yield { event, data: data.join("\n") };
+          event = "message";
+          data = [];
+        } else if (line.startsWith(":")) continue;
+        else {
+          const colon = line.indexOf(":");
+          const field = colon === -1 ? line : line.slice(0, colon);
+          const raw = colon === -1 ? "" : line.slice(colon + 1);
+          const text = raw.startsWith(" ") ? raw.slice(1) : raw;
+          if (field === "event") event = text;
+          else if (field === "data") data.push(text);
+        }
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
+const sseSession = async (
+  url: string,
+  token: string | undefined,
+  signal: AbortSignal,
+): Promise<McpRequest> => {
+  const auth = token ? { authorization: `Bearer ${token}` } : {};
+  const stream = await fetch(url, {
+    headers: { accept: "text/event-stream", ...auth },
+    signal,
+  });
+  await refused(stream);
+  if (
+    !stream.body ||
+    !stream.headers.get("content-type")?.includes("text/event-stream")
+  ) {
+    await stream.body?.cancel();
+    throw new McpError(
+      "the MCP server did not open an event stream",
+      stream.status,
+    );
+  }
+  const reader = stream.body.pipeThrough(new TextDecoderStream()).getReader();
+  signal.addEventListener("abort", () => void reader.cancel().catch(() => {}));
+  const events = sseEvents(reader);
+  const nextEvent = async () => {
+    const next = await events.next().catch((error: unknown) => {
+      throw signal.aborted ? signal.reason : error;
+    });
+    if (signal.aborted) throw signal.reason;
+    if (next.done) throw new McpError("the MCP server closed its event stream");
+    return next.value;
+  };
+
+  let first = await nextEvent();
+  while (first.event !== "endpoint") first = await nextEvent();
+  const endpoint = new URL(first.data.trim(), url);
+  // The server picks where messages go; the organization's token only ever
+  // goes to the origin an admin registered.
+  if (endpoint.origin !== new URL(url).origin)
+    throw new McpError(
+      "the MCP server named a message endpoint on another origin",
+    );
+
+  let next = 0;
+  const post = async (body: object) => {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...auth },
+      body: JSON.stringify({ jsonrpc: "2.0", ...body }),
+      signal,
+    });
+    await refused(response);
+    await response.body?.cancel();
+  };
+  const request = async (method: string, params: object) => {
+    const id = ++next;
+    await post({ id, method, params });
+    for (;;) {
+      const event = await nextEvent();
+      if (event.event !== "message") continue;
+      const message = JSON.parse(event.data) as RpcResponse;
+      if (message.id === id) return rpcResult(message);
+    }
+  };
+  await request("initialize", initializeParams(SSE_PROTOCOL_VERSION));
+  await post({ method: "notifications/initialized" });
+  return request;
+};
+
+// One session for one piece of work. The deadline covers connecting and the
+// work, and the session's requests and streams are closed when it ends.
+export const mcpSession = async <T>(
+  url: string,
+  transport: McpTransport,
+  token: string | undefined,
+  work: (request: McpRequest) => Promise<T>,
+  deadlineMs = MCP_DEADLINE_MS,
+) => {
+  const controller = new AbortController();
+  let expire: (error: McpError) => void = () => {};
+  const deadline = new Promise<never>((_, reject) => (expire = reject));
+  const timer = setTimeout(() => {
+    const error = new McpError(
+      `the MCP server did not answer within ${deadlineMs / 1000} seconds`,
+    );
+    controller.abort(error);
+    expire(error);
+  }, deadlineMs);
+  try {
+    const open = transport === "sse" ? sseSession : streamableSession;
+    return await Promise.race([
+      open(url, token, controller.signal).then(work),
+      deadline,
+    ]);
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
+};
+
+// Registration's probe, without a token: streamable HTTP first, then the
+// legacy transport when the server refuses the POST the way an SSE-only
+// server does (MCP's backwards-compatibility rule). Unauthorized means the
+// transport works and the server wants an OAuth sign-in.
+export const detectServer = async (url: string) => {
+  const probe = (transport: McpTransport) =>
+    mcpSession(url, transport, undefined, async () => {}).then(
+      () => ({ transport, auth: "none" as const }),
+      (error: unknown) => {
+        if (error instanceof Unauthorized)
+          return { transport, auth: "oauth" as const };
+        throw error;
+      },
+    );
+  try {
+    return await probe("streamable_http");
+  } catch (error) {
+    if (
+      !(error instanceof McpError) ||
+      ![400, 404, 405].includes(error.status ?? 0)
+    )
+      throw error;
+    // When the server doesn't speak SSE either, the first answer says more.
+    return probe("sse").catch((sseError: unknown) => {
+      throw sseError instanceof McpError && sseError.status !== undefined
+        ? error
+        : sseError;
+    });
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -362,15 +572,18 @@ export const withServer = async <T>(
   env: Env,
   org: OrgId,
   server: typeof mcpServers.$inferSelect,
-  work: (request: Awaited<ReturnType<typeof mcpSession>>) => Promise<T>,
+  work: (request: McpRequest) => Promise<T>,
 ) => {
   const token = await accessToken(env, org, server);
   try {
-    return await work(await mcpSession(server.url, token));
+    return await mcpSession(server.url, server.transport, token, work);
   } catch (error) {
     if (!(error instanceof Unauthorized) || server.auth === "none") throw error;
-    return work(
-      await mcpSession(server.url, await refreshConnection(env, org, server)),
+    return mcpSession(
+      server.url,
+      server.transport,
+      await refreshConnection(env, org, server),
+      work,
     );
   }
 };

@@ -2,14 +2,16 @@
 // credits (PRE-96), starting a plan through Autumn's checkout, which collects
 // a card, changing it, buying credits and setting auto-reload. Owners handle
 // billing (spec 2) and their changes are audited. Where billing is off, every
-// route answers 404.
+// route answers 404, and so do checkout and the payment portal for an
+// organization without a plan until billing holds for it.
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { audit } from "@preprocess/db/audit";
 import { orgId, withOrg } from "@preprocess/db/client";
 import { HTTPException } from "hono/http-exception";
 
-import { autumn, type AutumnAttached } from "../autumn.ts";
+import { clearReloadFailure, readReloadState } from "../auto-reload.ts";
+import { autumn, type Autumn, type AutumnAttached } from "../autumn.ts";
 import {
   CREDITS,
   CREDITS_PLAN,
@@ -26,11 +28,13 @@ import {
   changePreview,
   checkPicks,
   customEnvironmentAgents,
+  demotedAt,
   demotedPeople,
   forgetChange,
   recordChange,
   restoreRoles,
 } from "../plan-change.ts";
+import { monthUsage } from "../month-usage.ts";
 import { spendingLimit } from "../spend.ts";
 
 const OrgParam = z.object({ org: z.string() });
@@ -49,6 +53,25 @@ const AutoReload = z
     }),
   })
   .openapi("AutoReload");
+
+const AutoReloadState = AutoReload.extend({
+  failed: z
+    .object({
+      at: z.string().openapi({ description: "When the reload failed" }),
+      reason: z.enum(["card_declined"]).nullable().openapi({
+        description: "Why, when the processor said; null when it didn't",
+      }),
+    })
+    .nullable()
+    .openapi({
+      description:
+        "The last auto-reload charge failed and nothing has resolved it yet, shown to Owners and Admins; null otherwise",
+    }),
+  capReachedUntil: z.string().nullable().openapi({
+    description:
+      "Auto-reload reached its monthly cap and resumes at this time (the 1st of next month, UTC), shown to Owners and Admins; null otherwise",
+  }),
+}).openapi("AutoReloadState");
 
 const Billing = z
   .object({
@@ -86,6 +109,10 @@ const Billing = z
             description:
               "Agents paused because they use a custom environment, which resume on Team",
           }),
+        at: z.string().nullable().openapi({
+          description:
+            "When Team ended for the people who lost their seat; null when nobody did",
+        }),
       })
       .nullable()
       .openapi({
@@ -105,20 +132,126 @@ const Billing = z
         description:
           "Free and Team pay a case's usage from prepaid credits; null on other plans",
       }),
-    autoReload: AutoReload.nullable(),
+    autoReload: AutoReloadState.nullable(),
     card: z
-      .object({ brand: z.string(), last4: z.string() })
+      .object({
+        brand: z.string(),
+        last4: z.string(),
+        expMonth: z.number().int(),
+        expYear: z.number().int(),
+      })
       .nullable()
       .openapi({ description: "The card on file, shown to the Owner only" }),
+    email: z.string().nullable().openapi({
+      description: "Where invoices and receipts go, shown to the Owner only",
+    }),
+    pastDue: z.boolean().openapi({
+      description:
+        "Whether a subscription payment failed and is still owed, shown to Owners and Admins; false for others",
+    }),
+    invoices: z
+      .array(
+        z.object({
+          id: z.string(),
+          at: z.string().openapi({ description: "When it was issued" }),
+          totalUsd: z.number(),
+          status: z.string().openapi({ description: "Such as paid or open" }),
+          url: z.string().nullable().openapi({
+            description: "The invoice's page, to view and pay it",
+          }),
+        }),
+      )
+      .openapi({
+        description: "The newest 3 invoices, shown to the Owner only",
+      }),
+    commit: z
+      .object({ usedUsd: z.number(), totalUsd: z.number() })
+      .nullable()
+      .openapi({
+        description:
+          "Enterprise's annual commit and how much of it is drawn down; null on other plans",
+      }),
   })
   .openapi("Billing");
+
+const Usage = z
+  .object({
+    month: z.string().openapi({ example: "2026-11" }),
+    seats: z.object({
+      count: z.number().int().openapi({ description: "Active seats" }),
+      includedCount: z.number().int(),
+      usd: z.number(),
+    }),
+    cases: z.object({
+      count: z.number().int(),
+      includedCount: z.number().int(),
+      usd: z.number().openapi({ description: "Case fees" }),
+    }),
+    modelUsageUsd: z.number(),
+    decideUsd: z.number(),
+    ocrUsd: z.number(),
+    sandboxUsd: z.number(),
+    storage: z.object({
+      gbMonths: z.number(),
+      includedGbMonths: z.number(),
+      usd: z.number(),
+    }),
+    byAgent: z
+      .array(
+        z.object({
+          agentId: z.string().nullable().openapi({
+            description:
+              "Null for usage with no agent: the OCR API, or a case that is gone",
+          }),
+          slug: z.string().nullable(),
+          cases: z.number().int(),
+          casesUsd: z.number().openapi({ description: "Case fees" }),
+          modelUsageUsd: z.number(),
+          decideUsd: z.number(),
+          ocrUsd: z.number(),
+          sandboxUsd: z.number(),
+        }),
+      )
+      .openapi({
+        description:
+          "Cases and each usage line by agent, through the case or eval case it was charged to. Each line's agents add up to it exactly: each agent's amount is floored to the cent, and the cents flooring dropped go one each to the agents with the largest fractions of a cent.",
+      }),
+    paidFromCreditsUsd: z.number().openapi({
+      description: "Model usage, decide, OCR, sandbox time and case fees",
+    }),
+    billedAtMonthEndUsd: z.number().openapi({
+      description: "Seats and storage past the allowance",
+    }),
+    daily: z.array(z.object({ day: z.string(), usd: z.number() })).openapi({
+      description:
+        "Usage paid from credits on each UTC day from the 1st to today",
+    }),
+    now: z.object({
+      seats: z.number().int().openapi({ description: "Seats held now" }),
+      seatLimit: z.number().int().nullable(),
+      casesThisMonth: z.number().int(),
+      caseLimit: z.number().int().nullable(),
+      storageGb: z.number().openapi({ description: "Stored now" }),
+      storageIncludedGb: z.number(),
+    }),
+  })
+  .openapi("BillingUsage");
+
+const action = z
+  .enum(["confirm_payment", "card_declined", "add_card"])
+  .nullable()
+  .openapi({
+    description:
+      "Why the Owner must finish on the payment page: the bank needs to confirm the payment, the card was declined, or there is no card on file; null when the card on file was charged or a new card was asked for",
+  });
 
 const Purchase = z
   .object({
     url: z.string().url().nullable().openapi({
       description:
-        "The payment page to send the Owner to when the card on file can't be charged (no card yet, the bank needs to confirm the payment, or the card was declined); null when the card on file was charged",
+        "The payment page to send the Owner to when the card on file can't be charged (no card yet, the bank needs to confirm the payment, or the card was declined) or a new card was asked for; null when the card on file was charged",
     }),
+    action,
   })
   .openapi("BillingPurchase");
 
@@ -170,6 +303,31 @@ const readAutoReload = (
 
 const paymentUrl = (attached: AutumnAttached) => attached.payment_url ?? null;
 
+const ACTIONS: Record<string, z.infer<typeof action>> = {
+  "3ds_required": "confirm_payment",
+  payment_failed: "card_declined",
+  payment_method_required: "add_card",
+};
+
+// What the Owner must do on the payment page, from Autumn's required action;
+// a payment page with no reason Autumn names means adding a card when there
+// is none on file.
+const paymentAction = async (
+  billing: Autumn,
+  org: string,
+  attached: AutumnAttached,
+) => {
+  if (!attached.payment_url) return null;
+  const known = attached.required_action
+    ? ACTIONS[attached.required_action.code]
+    : undefined;
+  if (known) return known;
+  const { payment_method } = await billing.customer(org, undefined, [
+    "payment_method",
+  ]);
+  return payment_method?.card ? null : "add_card";
+};
+
 // Enterprise is arranged with us, and so is any change to it (Chip).
 const refuseFixedPlan = (plan: string) => {
   if (plan === "enterprise")
@@ -203,23 +361,40 @@ export const billingRoutes = new OpenAPIHono<{
       if (!plan || !billing) throw off();
       const owner =
         c.var.caller.type === "person" && c.var.caller.role === "owner";
-      const customer = prepaid(plan)
-        ? await billing.customer(
-            c.var.org,
-            undefined,
-            owner ? "payment_method" : undefined,
-          )
-        : null;
+      const customer =
+        plan.started && plan.name !== "internal"
+          ? await billing.customer(
+              c.var.org,
+              undefined,
+              owner ? ["invoices", "payment_method"] : [],
+            )
+          : null;
       const card = owner ? customer?.payment_method?.card : undefined;
+      const commit =
+        plan.name === "enterprise" ? customer?.balances.commit : undefined;
       const manager =
         c.var.caller.type === "person" &&
         (c.var.caller.role === "owner" || c.var.caller.role === "admin");
+      const credits = customer && prepaid(plan) ? readCredits(customer) : null;
+      const reload =
+        customer && prepaid(plan)
+          ? readAutoReload(customer.billing_controls?.auto_topups)
+          : null;
+      const reloadState =
+        manager && credits && reload?.enabled
+          ? await readReloadState(
+              c.env,
+              c.var.org,
+              credits.remaining >= reload.belowCredits,
+            )
+          : { failed: null, capReachedUntil: null };
       const switched = manager
         ? await withOrg(c.env, orgId(c.var.org), async (tx) => ({
             people: (await demotedPeople(tx)).length,
             agents: plan.features.has("custom_sandbox_images")
               ? []
               : await customEnvironmentAgents(tx),
+            at: (await demotedAt(tx))?.toISOString() ?? null,
           }))
         : null;
       return c.json(
@@ -236,11 +411,38 @@ export const billingRoutes = new OpenAPIHono<{
             switched && (switched.people || switched.agents.length)
               ? switched
               : null,
-          credits: customer ? readCredits(customer) : null,
-          autoReload: customer
-            ? readAutoReload(customer.billing_controls?.auto_topups)
+          credits,
+          autoReload: reload && { ...reload, ...reloadState },
+          card: card
+            ? {
+                brand: card.brand,
+                last4: card.last4,
+                expMonth: card.exp_month,
+                expYear: card.exp_year,
+              }
             : null,
-          card: card ? { brand: card.brand, last4: card.last4 } : null,
+          email: (owner && customer?.email) || null,
+          pastDue: Boolean(
+            manager && customer?.subscriptions.some((s) => s.past_due),
+          ),
+          invoices: owner
+            ? [...(customer?.invoices ?? [])]
+                .sort((a, b) => b.created_at - a.created_at)
+                .slice(0, 3)
+                .map((invoice) => ({
+                  id: invoice.id,
+                  at: new Date(invoice.created_at).toISOString(),
+                  totalUsd: invoice.total,
+                  status: invoice.status,
+                  url: invoice.hosted_invoice_url ?? null,
+                }))
+            : [],
+          commit: commit
+            ? {
+                usedUsd: Math.floor(commit.usage) / 100,
+                totalUsd: Math.floor(commit.granted) / 100,
+              }
+            : null,
         },
         200,
       );
@@ -279,7 +481,19 @@ export const billingRoutes = new OpenAPIHono<{
         200: {
           content: {
             "application/json": {
-              schema: z.object({ url: z.string().url() }),
+              schema: z
+                .object({
+                  url: z.string().url().openapi({
+                    description:
+                      "The checkout page to send the Owner to, or returnTo when Team was charged to the card on file",
+                  }),
+                  paid: z.boolean().openapi({
+                    description:
+                      "Whether Team and its first credits were charged to the card on file, with nothing left to do",
+                  }),
+                  action,
+                })
+                .openapi("BillingCheckout"),
             },
           },
           description: "The checkout page to send the Owner to",
@@ -301,6 +515,8 @@ export const billingRoutes = new OpenAPIHono<{
           await organizationName(c.env, c.var.org),
         ),
       );
+      if (!current.started && !planRequired(c.env, c.var.org, false))
+        throw off();
       if (current.started) refuseFixedPlan(current.name);
       if (current.started && current.name === plan)
         throw new HTTPException(409, {
@@ -308,7 +524,7 @@ export const billingRoutes = new OpenAPIHono<{
         });
       if (plan === "free") {
         const { url } = await billing.checkout(c.var.org, plan, back);
-        return c.json({ url }, 200);
+        return c.json({ url, paid: false, action: null }, 200);
       }
       // A card on file is charged at once, and the Owner goes straight back.
       const attached = await billing.attachTogether(
@@ -319,7 +535,14 @@ export const billingRoutes = new OpenAPIHono<{
         ],
         back,
       );
-      return c.json({ url: attached.payment_url ?? back }, 200);
+      return c.json(
+        {
+          url: attached.payment_url ?? back,
+          paid: !attached.payment_url,
+          action: await paymentAction(billing, c.var.org, attached),
+        },
+        200,
+      );
     },
   )
   .openapi(
@@ -478,7 +701,13 @@ export const billingRoutes = new OpenAPIHono<{
           by: c.var.caller.type === "person" ? c.var.caller.userId : "",
         });
       }
-      return c.json({ url: paymentUrl(attached) }, 200);
+      return c.json(
+        {
+          url: paymentUrl(attached),
+          action: await paymentAction(billing, c.var.org, attached),
+        },
+        200,
+      );
     },
   )
   .openapi(
@@ -663,6 +892,10 @@ export const billingRoutes = new OpenAPIHono<{
               schema: z.object({
                 credits: credits.min(MIN_TOP_UP_CREDITS).max(10_000_000),
                 returnTo,
+                newCard: z.boolean().optional().openapi({
+                  description:
+                    "Pay with a new card on the payment page instead of the card on file; the new card is saved for future charges",
+                }),
               }),
             },
           },
@@ -687,11 +920,12 @@ export const billingRoutes = new OpenAPIHono<{
         throw new HTTPException(409, {
           message: "Credits are bought on the Free and Team plans.",
         });
-      const { credits: quantity, returnTo } = c.req.valid("json");
+      const { credits: quantity, returnTo, newCard } = c.req.valid("json");
       const attached = await billing.attach(c.var.org, {
         planId: CREDITS_PLAN,
         quantities: { [CREDITS]: quantity },
         successUrl: backTo(c.env, returnTo),
+        newCard: newCard === true,
       });
       await withOrg(c.env, c.var.org, (tx) =>
         audit(tx, {
@@ -702,7 +936,16 @@ export const billingRoutes = new OpenAPIHono<{
           data: { credits: quantity, paid: !attached.payment_url },
         }),
       );
-      return c.json({ url: paymentUrl(attached) }, 200);
+      if (!attached.payment_url) await clearReloadFailure(c.env, c.var.org);
+      return c.json(
+        {
+          url: paymentUrl(attached),
+          action: newCard
+            ? null
+            : await paymentAction(billing, c.var.org, attached),
+        },
+        200,
+      );
     },
   )
   .openapi(
@@ -788,5 +1031,147 @@ export const billingRoutes = new OpenAPIHono<{
         }),
       );
       return c.json(saved, 200);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "post",
+      path: "/billing/auto-reload/retry",
+      tags: ["Billing"],
+      summary:
+        "Run a failed auto-reload again now (Owner; Free and Team): buy the reload's credits on the card on file. A purchase that goes through clears the failure.",
+      request: {
+        params: OrgParam,
+        body: {
+          content: {
+            "application/json": { schema: z.object({ returnTo }) },
+          },
+        },
+      },
+      responses: {
+        200: {
+          content: { "application/json": { schema: Purchase } },
+          description: "The purchase, or the payment page to finish it on",
+        },
+        403: { description: "Not the Owner" },
+        409: { description: "Not on Free or Team, or no auto-reload set" },
+        404: { description: "Billing is off" },
+      },
+    }),
+    async (c) => {
+      requireOwner(c.var, OWNER_ONLY);
+      const billing = autumn(c.env);
+      const plan = await cloudPlan(c.env, c.var.org);
+      if (!billing || !plan) throw off();
+      if (!prepaid(plan))
+        throw new HTTPException(409, {
+          message: "Credits are bought on the Free and Team plans.",
+        });
+      const reload = readAutoReload(
+        (await billing.customer(c.var.org)).billing_controls?.auto_topups,
+      );
+      if (!reload)
+        throw new HTTPException(409, {
+          message: "Auto-reload isn't set up.",
+        });
+      const { returnTo } = c.req.valid("json");
+      const attached = await billing.attach(c.var.org, {
+        planId: CREDITS_PLAN,
+        quantities: { [CREDITS]: reload.addCredits },
+        successUrl: backTo(c.env, returnTo),
+      });
+      await withOrg(c.env, c.var.org, (tx) =>
+        audit(tx, {
+          ...eventBase(c.var),
+          action: "billing.auto_reload_retried",
+          targetType: "organization",
+          targetId: c.var.org,
+          data: { credits: reload.addCredits, paid: !attached.payment_url },
+        }),
+      );
+      if (!attached.payment_url) await clearReloadFailure(c.env, c.var.org);
+      return c.json(
+        {
+          url: paymentUrl(attached),
+          action: await paymentAction(billing, c.var.org, attached),
+        },
+        200,
+      );
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "get",
+      path: "/billing/usage",
+      tags: ["Billing"],
+      summary:
+        "This UTC month so far (Owner): usage by line and by agent, what credits paid, what is billed at month end, usage paid from credits each day, and the plan's meters now. Dollars are floored to the cent.",
+      request: { params: OrgParam },
+      responses: {
+        200: {
+          content: { "application/json": { schema: Usage } },
+          description: "The month so far",
+        },
+        403: { description: "Not the Owner" },
+        404: { description: "Billing is off" },
+      },
+    }),
+    async (c) => {
+      requireOwner(c.var, OWNER_ONLY);
+      const plan = await cloudPlan(c.env, c.var.org);
+      if (!plan || !autumn(c.env)) throw off();
+      return c.json(await monthUsage(c.env, c.var.org, plan), 200);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "post",
+      path: "/billing/portal",
+      tags: ["Billing"],
+      summary:
+        "Open the payment portal (Owner), where the Owner updates the card and the billing email and finds every invoice",
+      request: {
+        params: OrgParam,
+        body: {
+          content: {
+            "application/json": {
+              schema: z.object({
+                returnTo: returnTo.openapi({
+                  description: "Where the portal returns to",
+                }),
+              }),
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          content: {
+            "application/json": {
+              schema: z
+                .object({ url: z.string().url() })
+                .openapi("BillingPortal"),
+            },
+          },
+          description: "The portal page to send the Owner to",
+        },
+        400: { description: "returnTo is not on this app" },
+        403: { description: "Not the Owner" },
+        404: { description: "Billing is off" },
+      },
+    }),
+    async (c) => {
+      requireOwner(c.var, OWNER_ONLY);
+      const billing = autumn(c.env);
+      const plan = await cloudPlan(c.env, c.var.org);
+      if (
+        !billing ||
+        !plan ||
+        (!plan.started && !planRequired(c.env, c.var.org, false))
+      )
+        throw off();
+      const back = backTo(c.env, c.req.valid("json").returnTo);
+      const { url } = await billing.portal(c.var.org, back);
+      return c.json({ url }, 200);
     },
   );

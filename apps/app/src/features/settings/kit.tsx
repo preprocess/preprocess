@@ -7,6 +7,11 @@
 // rows divided inside it, body-role labels with caption-role descriptions,
 // and the control on the trailing edge.
 
+import {
+  Avatar,
+  AvatarFallback,
+  avatarMarbleSeed,
+} from "@preprocess/ui/components/avatar";
 import { Badge } from "@preprocess/ui/components/badge";
 import {
   Banner,
@@ -40,6 +45,7 @@ import {
   InfoIcon,
   MoreHorizontalIcon,
   SearchIcon,
+  User,
   XIcon,
 } from "@preprocess/ui/lib/icons";
 import { useShape } from "@preprocess/ui/lib/shape-context";
@@ -52,6 +58,8 @@ import {
   isValidElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type AnimationEvent,
@@ -61,6 +69,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { CouldntLoadArt, NoAccessArt } from "../../components/empty-art";
 import { ApiError } from "../auth/client";
 
 /**
@@ -404,12 +413,12 @@ export function SettingsIconTile({
   );
 }
 
-/** A person's photo, or their initial on a muted circle. */
+/** A person's photo, else their marble; a muted person glyph without a user. */
 export function SettingsAvatar({
-  name,
+  userId,
   pictureUrl,
 }: {
-  name: string;
+  userId: string | null;
   pictureUrl?: string | null;
 }) {
   if (pictureUrl) {
@@ -421,31 +430,89 @@ export function SettingsAvatar({
       />
     );
   }
+  if (userId) {
+    return (
+      <Avatar aria-hidden="true">
+        <AvatarFallback name={avatarMarbleSeed({ id: userId })} />
+      </Avatar>
+    );
+  }
   return (
     <span
       aria-hidden="true"
-      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-caption text-muted-foreground"
-      style={{ fontVariationSettings: fontWeights.semibold }}
+      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-hover text-muted-foreground"
     >
-      {(name.trim()[0] ?? "?").toUpperCase()}
+      <User className="size-4" />
     </span>
   );
 }
 
-/** The widgets' EmptyState: heading, message, optional action. */
+const EmptyArtScopeContext = createContext<{
+  first: HTMLElement | null;
+  register: (element: HTMLElement) => () => void;
+} | null>(null);
+
+/**
+ * One illustration per page: inside this scope only the first SettingsEmpty
+ * with art, in document order, draws it; the rest keep their text.
+ */
+export function SettingsEmptyArtScope({ children }: { children: ReactNode }) {
+  const [members, setMembers] = useState<readonly HTMLElement[]>([]);
+  const register = useCallback((element: HTMLElement) => {
+    setMembers((current) => [...current, element]);
+    return () =>
+      setMembers((current) => current.filter((item) => item !== element));
+  }, []);
+  const first = members.reduce<HTMLElement | null>(
+    (earliest, element) =>
+      earliest === null ||
+      earliest.compareDocumentPosition(element) &
+        Node.DOCUMENT_POSITION_PRECEDING
+        ? element
+        : earliest,
+    null,
+  );
+  const value = useMemo(() => ({ first, register }), [first, register]);
+  return (
+    <EmptyArtScopeContext.Provider value={value}>
+      {children}
+    </EmptyArtScopeContext.Provider>
+  );
+}
+
+/** The widgets' EmptyState: optional art, heading, message, optional action. */
 export function SettingsEmpty({
+  art,
   title,
   description,
   action,
 }: {
+  art?: ReactNode;
   title: string;
   description: string;
   action?: ReactNode;
 }) {
   const inCard = useContext(InCardContext);
+  const artScope = useContext(EmptyArtScopeContext);
+  const ref = useRef<HTMLDivElement>(null);
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!art || !artScope || !ref.current) return;
+    setElement(ref.current);
+    return artScope.register(ref.current);
+  }, [art, artScope]);
+  const showArt =
+    art && (!artScope || artScope.first === null || artScope.first === element);
   const content = (
-    <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
-      <div className="flex max-w-sm flex-col gap-1">
+    <div
+      className={cn(
+        "flex flex-col items-center gap-4 px-6 text-center",
+        showArt ? "py-10" : "py-6",
+      )}
+      ref={ref}
+    >
+      <div className="flex max-w-sm flex-col items-center gap-1">
+        {showArt ? <div className="mb-2 flex">{art}</div> : null}
         <p
           className="text-body text-foreground"
           style={{ fontVariationSettings: fontWeights.semibold }}
@@ -468,7 +535,27 @@ function errorKind(error: unknown): keyof typeof ERROR_COPY {
   return "generic";
 }
 
-// Copy per failure kind.
+// Copy per failure kind, for a section that failed to load.
+const LOAD_ERROR_COPY = {
+  forbidden: {
+    title: "You don't have access",
+    body: "Ask an organization Owner or Admin if you need access to this section.",
+  },
+  unauthorized: {
+    title: "Session expired",
+    body: "Sign in again to view this section.",
+  },
+  network: {
+    title: "Couldn't load this section",
+    body: "Something went wrong fetching this data. Try again.",
+  },
+  generic: {
+    title: "Couldn't load this section",
+    body: "Something went wrong fetching this data. Try again.",
+  },
+} as const;
+
+// Copy per failure kind, for an action that failed inline.
 const ERROR_COPY = {
   forbidden: {
     title: "Incorrect permissions",
@@ -488,15 +575,45 @@ const ERROR_COPY = {
   },
 } as const;
 
-/** A load or action failure, explained by kind. */
+/**
+ * A failure, explained by kind: a section that failed to load shows the
+ * empty state with art; `inline` keeps an action's failure as a banner.
+ */
 export function SettingsError({
   error,
   className,
+  inline = false,
 }: {
   error: unknown;
   className?: string;
+  inline?: boolean;
 }) {
   const kind = errorKind(error);
+  if (!inline) {
+    const copy = LOAD_ERROR_COPY[kind];
+    return (
+      <SettingsEmpty
+        action={
+          kind === "unauthorized" ? (
+            <Button asChild size="sm" variant="secondary">
+              <a href="/sign-in">Sign in</a>
+            </Button>
+          ) : kind === "forbidden" ? undefined : (
+            <Button
+              onClick={() => window.location.reload()}
+              size="sm"
+              variant="secondary"
+            >
+              Try again
+            </Button>
+          )
+        }
+        art={kind === "forbidden" ? <NoAccessArt /> : <CouldntLoadArt />}
+        description={copy.body}
+        title={copy.title}
+      />
+    );
+  }
   const copy = ERROR_COPY[kind];
   const message =
     kind === "generic" && error instanceof Error && error.message
@@ -765,9 +882,12 @@ export function SettingsDialogShell({
   footer?: ReactNode;
   size?: "sm" | "lg";
 }) {
+  // Focus lands on the panel itself, so a radio or checkbox group in the
+  // body doesn't open with its first row lit.
+  const panel = useRef<HTMLDivElement>(null);
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent size={size}>
+      <DialogContent initialFocus={panel} ref={panel} size={size}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? (
@@ -844,7 +964,7 @@ export function SettingsConfirmDialog({
       open={open}
       title={title}
     >
-      {error ? <SettingsError error={error} /> : null}
+      {error ? <SettingsError error={error} inline /> : null}
     </SettingsDialogShell>
   );
 }

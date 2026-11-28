@@ -6,9 +6,16 @@
 import { env } from "cloudflare:workers";
 import { readAuditEvents } from "@preprocess/db/audit";
 import { orgId, withOrg, type OrgId } from "@preprocess/db/client";
+import { deployments } from "@preprocess/db/schema/deployments";
+import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { GITHUB_API, INSTALLATION, REPOSITORY } from "./fake-github.ts";
+import {
+  GITHUB_API,
+  GITHUB_WEB,
+  INSTALLATION,
+  REPOSITORY,
+} from "./fake-github.ts";
 import { Client, createOrganization, signUp, testEnv } from "./helpers.ts";
 
 type Build = {
@@ -132,7 +139,7 @@ describe("installing the App", () => {
     const linked = await setup("good");
     expect(linked.status).toBe(302);
     expect(linked.headers.get("location")).toBe(
-      new URL("/settings/github", environment.APP_URL).href,
+      new URL("/settings/organization/github", environment.APP_URL).href,
     );
 
     const repos = await call<{ fullName: string; link: unknown }[]>(
@@ -160,6 +167,40 @@ describe("installing the App", () => {
       `/v1/github/setup?installation_id=${INSTALLATION}&state=${encodeURIComponent(state)}&code=good`,
     );
     expect(response.status).toBe(409);
+    const theirs = await other.client.call<{ installations: unknown[] }>(
+      `/v1/orgs/${otherOrg}/github/installations`,
+    );
+    expect(theirs.body).toEqual({ configured: true, installations: [] });
+  });
+
+  it("lists the organization's installations with their repository counts", async () => {
+    const { body } = await call<{
+      configured: boolean;
+      installations: { id: string }[];
+    }>("/v1/orgs/{org}/github/installations");
+    expect(body.installations[0]?.id).toMatch(/\S/);
+    expect(body).toMatchObject({
+      configured: true,
+      installations: [
+        {
+          account: "acme",
+          accountType: "Organization",
+          suspended: false,
+          repositories: 2,
+          manageUrl: `${GITHUB_WEB}/organizations/acme/settings/installations/${INSTALLATION}`,
+        },
+      ],
+    });
+  });
+
+  it("returns a repository change made on GitHub to the GitHub page", async () => {
+    const response = await new Client(environment).call(
+      `/v1/github/setup?installation_id=${INSTALLATION}&setup_action=update`,
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      new URL("/settings/organization/github", environment.APP_URL).href,
+    );
   });
 });
 
@@ -210,6 +251,15 @@ describe("push builds", () => {
       source: "github",
       git: { branch: "main", commit: "abc1234" },
       sdkVersion: "0.1.0",
+    });
+    const [stored] = await withOrg(env, org, (tx) =>
+      tx
+        .select({ manifest: deployments.manifest })
+        .from(deployments)
+        .where(eq(deployments.id, done.deploymentId!)),
+    );
+    expect(stored!.manifest).toMatchObject({
+      entry: "agents/stock/src/index.ts",
     });
 
     // One token, for this repository's contents only, used for the tarball

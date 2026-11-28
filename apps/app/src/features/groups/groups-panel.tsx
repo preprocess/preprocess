@@ -21,6 +21,8 @@ import {
 import { Link } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 
+import { NothingCreatedArt } from "../../components/empty-art";
+
 import {
   AccessSelect,
   LEVEL_NAME,
@@ -104,7 +106,8 @@ export function GroupsList({
     >
       {groups.length === 0 ? (
         <SettingsEmpty
-          description="Create a group to give its members access to agents."
+          art={<NothingCreatedArt />}
+          description="Create a group to control who works an agent's cases and which team a case waits on."
           title="No groups yet"
         />
       ) : (
@@ -316,12 +319,9 @@ function GroupMembers({
       >
         {group.members.length === 0 ? (
           <SettingsEmpty
-            description={
-              synced
-                ? "Nobody is in the mapped groups yet."
-                : "Add people from the organization."
-            }
-            title="No members yet"
+            art={<NothingCreatedArt />}
+            description="Add people to give them this group's agent access."
+            title="No members in this group"
           />
         ) : (
           <SettingsRows>
@@ -330,7 +330,7 @@ function GroupMembers({
                 description={person.email}
                 key={person.id}
                 label={person.name}
-                leading={<SettingsAvatar name={person.name} />}
+                leading={<SettingsAvatar userId={person.id} />}
               >
                 {synced ? null : (
                   <SettingsRowMenu
@@ -433,8 +433,9 @@ function GroupAccess({
     >
       {group.agents.length === 0 ? (
         <SettingsEmpty
-          description="Agents your organization creates will show up here."
-          title="No agents yet"
+          art={<NothingCreatedArt />}
+          description="Grant this group operator or viewer access to an agent."
+          title="No agent access yet"
         />
       ) : (
         <SettingsRows>

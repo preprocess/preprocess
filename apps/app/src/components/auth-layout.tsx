@@ -41,7 +41,7 @@ export function AuthLayout({
               <PreprocessMark className="mb-6 size-7" title="Preprocess" />
               <h1
                 className="text-display tracking-[-0.03em] text-foreground"
-                style={{ fontVariationSettings: fontWeights.semibold }}
+                style={{ fontVariationSettings: fontWeights.medium }}
               >
                 <span className="block">{title}</span>
                 {subtitle ? <span className="block">{subtitle}</span> : null}
@@ -80,7 +80,7 @@ export function AuthField({
   id: string;
   label: string;
   hint?: string;
-  error?: string;
+  error?: ReactNode;
   onChange: (value: string) => void;
 }) {
   return (
@@ -103,12 +103,3 @@ export function AuthField({
 
 export const authLinkClass =
   "text-foreground underline-offset-4 hover:underline";
-
-/** A same-origin path to return to after signing in, or "/". */
-export function safeRedirect(value: unknown) {
-  return typeof value === "string" &&
-    value.startsWith("/") &&
-    !value.startsWith("//")
-    ? value
-    : "/";
-}

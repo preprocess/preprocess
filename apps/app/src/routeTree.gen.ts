@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as DeviceRouteImport } from "./routes/device";
 import { Route as InboxRouteImport } from "./routes/inbox";
 import { Route as OnboardingRouteImport } from "./routes/onboarding";
 import { Route as SettingsRouteImport } from "./routes/settings";
@@ -21,6 +22,7 @@ import { Route as CasesIndexRouteImport } from "./routes/cases/index";
 import { Route as DevelopersApiRouteImport } from "./routes/developers/api";
 import { Route as DevelopersApiKeysRouteImport } from "./routes/developers/api-keys";
 import { Route as DevelopersFeedbackRouteImport } from "./routes/developers/feedback";
+import { Route as DevelopersGithubRouteImport } from "./routes/developers/github";
 import { Route as DevelopersIntegrationsRouteImport } from "./routes/developers/integrations";
 import { Route as DevelopersMcpRouteImport } from "./routes/developers/mcp";
 import { Route as DevelopersNetworkRouteImport } from "./routes/developers/network";
@@ -45,7 +47,6 @@ import { Route as AgentsAgentIdObservabilityRouteImport } from "./routes/agents/
 import { Route as AgentsAgentIdSandboxRouteImport } from "./routes/agents/$agentId/sandbox";
 import { Route as AgentsAgentIdSecretsRouteImport } from "./routes/agents/$agentId/secrets";
 import { Route as AgentsAgentIdSettingsRouteImport } from "./routes/agents/$agentId/settings";
-import { Route as AgentsAgentIdTrainingRouteImport } from "./routes/agents/$agentId/training";
 import { Route as AgentsAgentIdVariablesRouteImport } from "./routes/agents/$agentId/variables";
 import { Route as ApiAuthSplatRouteImport } from "./routes/api/auth/$";
 import { Route as ApiDevScenarioRouteImport } from "./routes/api/dev/scenario";
@@ -54,24 +55,38 @@ import { Route as SettingsAccountIndexRouteImport } from "./routes/settings/acco
 import { Route as SettingsOrganizationIndexRouteImport } from "./routes/settings/organization/index";
 import { Route as SettingsOrganizationApiKeysRouteImport } from "./routes/settings/organization/api-keys";
 import { Route as SettingsOrganizationAuditLogsRouteImport } from "./routes/settings/organization/audit-logs";
+import { Route as SettingsOrganizationBillingRouteImport } from "./routes/settings/organization/billing";
 import { Route as SettingsOrganizationDefaultsRouteImport } from "./routes/settings/organization/defaults";
 import { Route as SettingsOrganizationDevelopersRouteImport } from "./routes/settings/organization/developers";
 import { Route as SettingsOrganizationGithubRouteImport } from "./routes/settings/organization/github";
 import { Route as SettingsOrganizationGuardrailsRouteImport } from "./routes/settings/organization/guardrails";
 import { Route as SettingsOrganizationIntegrationsRouteImport } from "./routes/settings/organization/integrations";
+import { Route as SettingsOrganizationLicenseRouteImport } from "./routes/settings/organization/license";
 import { Route as SettingsOrganizationMembersRouteImport } from "./routes/settings/organization/members";
+import { Route as SettingsOrganizationModelsRouteImport } from "./routes/settings/organization/models";
+import { Route as SettingsOrganizationNetworkRouteImport } from "./routes/settings/organization/network";
 import { Route as SettingsOrganizationOpentelemetryRouteImport } from "./routes/settings/organization/opentelemetry";
+import { Route as SettingsOrganizationRetentionRouteImport } from "./routes/settings/organization/retention";
+import { Route as SettingsOrganizationSandboxesRouteImport } from "./routes/settings/organization/sandboxes";
+import { Route as SettingsOrganizationSecretsRouteImport } from "./routes/settings/organization/secrets";
 import { Route as AgentsAgentIdEvaluationsIndexRouteImport } from "./routes/agents/$agentId/evaluations/index";
+import { Route as AgentsAgentIdTrainingIndexRouteImport } from "./routes/agents/$agentId/training/index";
 import { Route as AgentsAgentIdCasesIndexRouteImport } from "./routes/agents/$agentId_/cases/index";
 import { Route as AgentsAgentIdCasesCaseIdRouteImport } from "./routes/agents/$agentId_/cases/$caseId";
 import { Route as SettingsOrganizationGroupsIndexRouteImport } from "./routes/settings/organization/groups/index";
 import { Route as SettingsOrganizationGroupsGroupIdRouteImport } from "./routes/settings/organization_/groups/$groupId";
 import { Route as AgentsAgentIdEvaluationsSuiteIdIndexRouteImport } from "./routes/agents/$agentId/evaluations/$suiteId/index";
+import { Route as AgentsAgentIdTrainingDatasetsDatasetIdRouteImport } from "./routes/agents/$agentId/training/datasets/$datasetId";
 import { Route as AgentsAgentIdEvaluationsSuiteIdRunsRunIdRouteImport } from "./routes/agents/$agentId/evaluations/$suiteId/runs/$runId";
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DeviceRoute = DeviceRouteImport.update({
+  id: "/device",
+  path: "/device",
   getParentRoute: () => rootRouteImport,
 } as any);
 const InboxRoute = InboxRouteImport.update({
@@ -127,6 +142,11 @@ const DevelopersApiKeysRoute = DevelopersApiKeysRouteImport.update({
 const DevelopersFeedbackRoute = DevelopersFeedbackRouteImport.update({
   id: "/developers/feedback",
   path: "/developers/feedback",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DevelopersGithubRoute = DevelopersGithubRouteImport.update({
+  id: "/developers/github",
+  path: "/developers/github",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevelopersIntegrationsRoute = DevelopersIntegrationsRouteImport.update({
@@ -252,11 +272,6 @@ const AgentsAgentIdSettingsRoute = AgentsAgentIdSettingsRouteImport.update({
   path: "/settings",
   getParentRoute: () => AgentsAgentIdRoute,
 } as any);
-const AgentsAgentIdTrainingRoute = AgentsAgentIdTrainingRouteImport.update({
-  id: "/training",
-  path: "/training",
-  getParentRoute: () => AgentsAgentIdRoute,
-} as any);
 const AgentsAgentIdVariablesRoute = AgentsAgentIdVariablesRouteImport.update({
   id: "/variables",
   path: "/variables",
@@ -300,6 +315,12 @@ const SettingsOrganizationAuditLogsRoute =
     path: "/audit-logs",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationBillingRoute =
+  SettingsOrganizationBillingRouteImport.update({
+    id: "/billing",
+    path: "/billing",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const SettingsOrganizationDefaultsRoute =
   SettingsOrganizationDefaultsRouteImport.update({
     id: "/defaults",
@@ -330,10 +351,28 @@ const SettingsOrganizationIntegrationsRoute =
     path: "/integrations",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationLicenseRoute =
+  SettingsOrganizationLicenseRouteImport.update({
+    id: "/license",
+    path: "/license",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const SettingsOrganizationMembersRoute =
   SettingsOrganizationMembersRouteImport.update({
     id: "/members",
     path: "/members",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
+const SettingsOrganizationModelsRoute =
+  SettingsOrganizationModelsRouteImport.update({
+    id: "/models",
+    path: "/models",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
+const SettingsOrganizationNetworkRoute =
+  SettingsOrganizationNetworkRouteImport.update({
+    id: "/network",
+    path: "/network",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
 const SettingsOrganizationOpentelemetryRoute =
@@ -342,10 +381,34 @@ const SettingsOrganizationOpentelemetryRoute =
     path: "/opentelemetry",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationRetentionRoute =
+  SettingsOrganizationRetentionRouteImport.update({
+    id: "/retention",
+    path: "/retention",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
+const SettingsOrganizationSandboxesRoute =
+  SettingsOrganizationSandboxesRouteImport.update({
+    id: "/sandboxes",
+    path: "/sandboxes",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
+const SettingsOrganizationSecretsRoute =
+  SettingsOrganizationSecretsRouteImport.update({
+    id: "/secrets",
+    path: "/secrets",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const AgentsAgentIdEvaluationsIndexRoute =
   AgentsAgentIdEvaluationsIndexRouteImport.update({
     id: "/evaluations/",
     path: "/evaluations/",
+    getParentRoute: () => AgentsAgentIdRoute,
+  } as any);
+const AgentsAgentIdTrainingIndexRoute =
+  AgentsAgentIdTrainingIndexRouteImport.update({
+    id: "/training/",
+    path: "/training/",
     getParentRoute: () => AgentsAgentIdRoute,
   } as any);
 const AgentsAgentIdCasesIndexRoute = AgentsAgentIdCasesIndexRouteImport.update({
@@ -377,6 +440,12 @@ const AgentsAgentIdEvaluationsSuiteIdIndexRoute =
     path: "/evaluations/$suiteId/",
     getParentRoute: () => AgentsAgentIdRoute,
   } as any);
+const AgentsAgentIdTrainingDatasetsDatasetIdRoute =
+  AgentsAgentIdTrainingDatasetsDatasetIdRouteImport.update({
+    id: "/training/datasets/$datasetId",
+    path: "/training/datasets/$datasetId",
+    getParentRoute: () => AgentsAgentIdRoute,
+  } as any);
 const AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute =
   AgentsAgentIdEvaluationsSuiteIdRunsRunIdRouteImport.update({
     id: "/evaluations/$suiteId/runs/$runId",
@@ -386,6 +455,7 @@ const AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/device": typeof DeviceRoute;
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
@@ -395,6 +465,7 @@ export interface FileRoutesByFullPath {
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
+  "/developers/github": typeof DevelopersGithubRoute;
   "/developers/integrations": typeof DevelopersIntegrationsRoute;
   "/developers/mcp": typeof DevelopersMcpRoute;
   "/developers/network": typeof DevelopersNetworkRoute;
@@ -420,33 +491,42 @@ export interface FileRoutesByFullPath {
   "/agents/$agentId/sandbox": typeof AgentsAgentIdSandboxRoute;
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
-  "/agents/$agentId/training": typeof AgentsAgentIdTrainingRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
   "/api/auth/$": typeof ApiAuthSplatRoute;
   "/api/dev/scenario": typeof ApiDevScenarioRoute;
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
+  "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
+  "/settings/organization/license": typeof SettingsOrganizationLicenseRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/models": typeof SettingsOrganizationModelsRoute;
+  "/settings/organization/network": typeof SettingsOrganizationNetworkRoute;
   "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
+  "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
+  "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
+  "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
   "/agents/$agentId/cases/$caseId": typeof AgentsAgentIdCasesCaseIdRoute;
   "/settings/organization/groups/$groupId": typeof SettingsOrganizationGroupsGroupIdRoute;
   "/agents/$agentId/evaluations/": typeof AgentsAgentIdEvaluationsIndexRoute;
+  "/agents/$agentId/training/": typeof AgentsAgentIdTrainingIndexRoute;
   "/agents/$agentId/cases/": typeof AgentsAgentIdCasesIndexRoute;
   "/settings/organization/groups/": typeof SettingsOrganizationGroupsIndexRoute;
+  "/agents/$agentId/training/datasets/$datasetId": typeof AgentsAgentIdTrainingDatasetsDatasetIdRoute;
   "/agents/$agentId/evaluations/$suiteId/": typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/runs/$runId": typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/device": typeof DeviceRoute;
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
@@ -455,6 +535,7 @@ export interface FileRoutesByTo {
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
+  "/developers/github": typeof DevelopersGithubRoute;
   "/developers/integrations": typeof DevelopersIntegrationsRoute;
   "/developers/mcp": typeof DevelopersMcpRoute;
   "/developers/network": typeof DevelopersNetworkRoute;
@@ -478,34 +559,43 @@ export interface FileRoutesByTo {
   "/agents/$agentId/sandbox": typeof AgentsAgentIdSandboxRoute;
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
-  "/agents/$agentId/training": typeof AgentsAgentIdTrainingRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
   "/api/auth/$": typeof ApiAuthSplatRoute;
   "/api/dev/scenario": typeof ApiDevScenarioRoute;
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
+  "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
+  "/settings/organization/license": typeof SettingsOrganizationLicenseRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/models": typeof SettingsOrganizationModelsRoute;
+  "/settings/organization/network": typeof SettingsOrganizationNetworkRoute;
   "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
+  "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
+  "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
+  "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
   "/agents/$agentId": typeof AgentsAgentIdIndexRoute;
   "/settings/account": typeof SettingsAccountIndexRoute;
   "/settings/organization": typeof SettingsOrganizationIndexRoute;
   "/agents/$agentId/cases/$caseId": typeof AgentsAgentIdCasesCaseIdRoute;
   "/settings/organization/groups/$groupId": typeof SettingsOrganizationGroupsGroupIdRoute;
   "/agents/$agentId/evaluations": typeof AgentsAgentIdEvaluationsIndexRoute;
+  "/agents/$agentId/training": typeof AgentsAgentIdTrainingIndexRoute;
   "/agents/$agentId/cases": typeof AgentsAgentIdCasesIndexRoute;
   "/settings/organization/groups": typeof SettingsOrganizationGroupsIndexRoute;
+  "/agents/$agentId/training/datasets/$datasetId": typeof AgentsAgentIdTrainingDatasetsDatasetIdRoute;
   "/agents/$agentId/evaluations/$suiteId": typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/runs/$runId": typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
+  "/device": typeof DeviceRoute;
   "/inbox": typeof InboxRoute;
   "/onboarding": typeof OnboardingRoute;
   "/settings": typeof SettingsRouteWithChildren;
@@ -515,6 +605,7 @@ export interface FileRoutesById {
   "/developers/api": typeof DevelopersApiRoute;
   "/developers/api-keys": typeof DevelopersApiKeysRoute;
   "/developers/feedback": typeof DevelopersFeedbackRoute;
+  "/developers/github": typeof DevelopersGithubRoute;
   "/developers/integrations": typeof DevelopersIntegrationsRoute;
   "/developers/mcp": typeof DevelopersMcpRoute;
   "/developers/network": typeof DevelopersNetworkRoute;
@@ -540,28 +631,36 @@ export interface FileRoutesById {
   "/agents/$agentId/sandbox": typeof AgentsAgentIdSandboxRoute;
   "/agents/$agentId/secrets": typeof AgentsAgentIdSecretsRoute;
   "/agents/$agentId/settings": typeof AgentsAgentIdSettingsRoute;
-  "/agents/$agentId/training": typeof AgentsAgentIdTrainingRoute;
   "/agents/$agentId/variables": typeof AgentsAgentIdVariablesRoute;
   "/api/auth/$": typeof ApiAuthSplatRoute;
   "/api/dev/scenario": typeof ApiDevScenarioRoute;
   "/cases/$agentId/$caseId": typeof CasesAgentIdCaseIdRoute;
   "/settings/organization/api-keys": typeof SettingsOrganizationApiKeysRoute;
   "/settings/organization/audit-logs": typeof SettingsOrganizationAuditLogsRoute;
+  "/settings/organization/billing": typeof SettingsOrganizationBillingRoute;
   "/settings/organization/defaults": typeof SettingsOrganizationDefaultsRoute;
   "/settings/organization/developers": typeof SettingsOrganizationDevelopersRoute;
   "/settings/organization/github": typeof SettingsOrganizationGithubRoute;
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
+  "/settings/organization/license": typeof SettingsOrganizationLicenseRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/models": typeof SettingsOrganizationModelsRoute;
+  "/settings/organization/network": typeof SettingsOrganizationNetworkRoute;
   "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
+  "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
+  "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
+  "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
   "/agents/$agentId_/cases/$caseId": typeof AgentsAgentIdCasesCaseIdRoute;
   "/settings/organization_/groups/$groupId": typeof SettingsOrganizationGroupsGroupIdRoute;
   "/agents/$agentId/evaluations/": typeof AgentsAgentIdEvaluationsIndexRoute;
+  "/agents/$agentId/training/": typeof AgentsAgentIdTrainingIndexRoute;
   "/agents/$agentId_/cases/": typeof AgentsAgentIdCasesIndexRoute;
   "/settings/organization/groups/": typeof SettingsOrganizationGroupsIndexRoute;
+  "/agents/$agentId/training/datasets/$datasetId": typeof AgentsAgentIdTrainingDatasetsDatasetIdRoute;
   "/agents/$agentId/evaluations/$suiteId/": typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   "/agents/$agentId/evaluations/$suiteId/runs/$runId": typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
 }
@@ -569,6 +668,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/device"
     | "/inbox"
     | "/onboarding"
     | "/settings"
@@ -578,6 +678,7 @@ export interface FileRouteTypes {
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
+    | "/developers/github"
     | "/developers/integrations"
     | "/developers/mcp"
     | "/developers/network"
@@ -603,33 +704,42 @@ export interface FileRouteTypes {
     | "/agents/$agentId/sandbox"
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
-    | "/agents/$agentId/training"
     | "/agents/$agentId/variables"
     | "/api/auth/$"
     | "/api/dev/scenario"
     | "/cases/$agentId/$caseId"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
+    | "/settings/organization/license"
     | "/settings/organization/members"
+    | "/settings/organization/models"
+    | "/settings/organization/network"
     | "/settings/organization/opentelemetry"
+    | "/settings/organization/retention"
+    | "/settings/organization/sandboxes"
+    | "/settings/organization/secrets"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
     | "/agents/$agentId/cases/$caseId"
     | "/settings/organization/groups/$groupId"
     | "/agents/$agentId/evaluations/"
+    | "/agents/$agentId/training/"
     | "/agents/$agentId/cases/"
     | "/settings/organization/groups/"
+    | "/agents/$agentId/training/datasets/$datasetId"
     | "/agents/$agentId/evaluations/$suiteId/"
     | "/agents/$agentId/evaluations/$suiteId/runs/$runId";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/device"
     | "/inbox"
     | "/onboarding"
     | "/settings"
@@ -638,6 +748,7 @@ export interface FileRouteTypes {
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
+    | "/developers/github"
     | "/developers/integrations"
     | "/developers/mcp"
     | "/developers/network"
@@ -661,33 +772,42 @@ export interface FileRouteTypes {
     | "/agents/$agentId/sandbox"
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
-    | "/agents/$agentId/training"
     | "/agents/$agentId/variables"
     | "/api/auth/$"
     | "/api/dev/scenario"
     | "/cases/$agentId/$caseId"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
+    | "/settings/organization/license"
     | "/settings/organization/members"
+    | "/settings/organization/models"
+    | "/settings/organization/network"
     | "/settings/organization/opentelemetry"
+    | "/settings/organization/retention"
+    | "/settings/organization/sandboxes"
+    | "/settings/organization/secrets"
     | "/agents/$agentId"
     | "/settings/account"
     | "/settings/organization"
     | "/agents/$agentId/cases/$caseId"
     | "/settings/organization/groups/$groupId"
     | "/agents/$agentId/evaluations"
+    | "/agents/$agentId/training"
     | "/agents/$agentId/cases"
     | "/settings/organization/groups"
+    | "/agents/$agentId/training/datasets/$datasetId"
     | "/agents/$agentId/evaluations/$suiteId"
     | "/agents/$agentId/evaluations/$suiteId/runs/$runId";
   id:
     | "__root__"
     | "/"
+    | "/device"
     | "/inbox"
     | "/onboarding"
     | "/settings"
@@ -697,6 +817,7 @@ export interface FileRouteTypes {
     | "/developers/api"
     | "/developers/api-keys"
     | "/developers/feedback"
+    | "/developers/github"
     | "/developers/integrations"
     | "/developers/mcp"
     | "/developers/network"
@@ -722,34 +843,43 @@ export interface FileRouteTypes {
     | "/agents/$agentId/sandbox"
     | "/agents/$agentId/secrets"
     | "/agents/$agentId/settings"
-    | "/agents/$agentId/training"
     | "/agents/$agentId/variables"
     | "/api/auth/$"
     | "/api/dev/scenario"
     | "/cases/$agentId/$caseId"
     | "/settings/organization/api-keys"
     | "/settings/organization/audit-logs"
+    | "/settings/organization/billing"
     | "/settings/organization/defaults"
     | "/settings/organization/developers"
     | "/settings/organization/github"
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
+    | "/settings/organization/license"
     | "/settings/organization/members"
+    | "/settings/organization/models"
+    | "/settings/organization/network"
     | "/settings/organization/opentelemetry"
+    | "/settings/organization/retention"
+    | "/settings/organization/sandboxes"
+    | "/settings/organization/secrets"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
     | "/agents/$agentId_/cases/$caseId"
     | "/settings/organization_/groups/$groupId"
     | "/agents/$agentId/evaluations/"
+    | "/agents/$agentId/training/"
     | "/agents/$agentId_/cases/"
     | "/settings/organization/groups/"
+    | "/agents/$agentId/training/datasets/$datasetId"
     | "/agents/$agentId/evaluations/$suiteId/"
     | "/agents/$agentId/evaluations/$suiteId/runs/$runId";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  DeviceRoute: typeof DeviceRoute;
   InboxRoute: typeof InboxRoute;
   OnboardingRoute: typeof OnboardingRoute;
   SettingsRoute: typeof SettingsRouteWithChildren;
@@ -759,6 +889,7 @@ export interface RootRouteChildren {
   DevelopersApiRoute: typeof DevelopersApiRoute;
   DevelopersApiKeysRoute: typeof DevelopersApiKeysRoute;
   DevelopersFeedbackRoute: typeof DevelopersFeedbackRoute;
+  DevelopersGithubRoute: typeof DevelopersGithubRoute;
   DevelopersIntegrationsRoute: typeof DevelopersIntegrationsRoute;
   DevelopersMcpRoute: typeof DevelopersMcpRoute;
   DevelopersNetworkRoute: typeof DevelopersNetworkRoute;
@@ -785,6 +916,13 @@ declare module "@tanstack/react-router" {
       path: "/";
       fullPath: "/";
       preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/device": {
+      id: "/device";
+      path: "/device";
+      fullPath: "/device";
+      preLoaderRoute: typeof DeviceRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/inbox": {
@@ -862,6 +1000,13 @@ declare module "@tanstack/react-router" {
       path: "/developers/feedback";
       fullPath: "/developers/feedback";
       preLoaderRoute: typeof DevelopersFeedbackRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/developers/github": {
+      id: "/developers/github";
+      path: "/developers/github";
+      fullPath: "/developers/github";
+      preLoaderRoute: typeof DevelopersGithubRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/developers/integrations": {
@@ -1032,13 +1177,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AgentsAgentIdSettingsRouteImport;
       parentRoute: typeof AgentsAgentIdRoute;
     };
-    "/agents/$agentId/training": {
-      id: "/agents/$agentId/training";
-      path: "/training";
-      fullPath: "/agents/$agentId/training";
-      preLoaderRoute: typeof AgentsAgentIdTrainingRouteImport;
-      parentRoute: typeof AgentsAgentIdRoute;
-    };
     "/agents/$agentId/variables": {
       id: "/agents/$agentId/variables";
       path: "/variables";
@@ -1095,6 +1233,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationAuditLogsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/billing": {
+      id: "/settings/organization/billing";
+      path: "/billing";
+      fullPath: "/settings/organization/billing";
+      preLoaderRoute: typeof SettingsOrganizationBillingRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/settings/organization/defaults": {
       id: "/settings/organization/defaults";
       path: "/defaults";
@@ -1130,11 +1275,32 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationIntegrationsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/license": {
+      id: "/settings/organization/license";
+      path: "/license";
+      fullPath: "/settings/organization/license";
+      preLoaderRoute: typeof SettingsOrganizationLicenseRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/settings/organization/members": {
       id: "/settings/organization/members";
       path: "/members";
       fullPath: "/settings/organization/members";
       preLoaderRoute: typeof SettingsOrganizationMembersRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
+    "/settings/organization/models": {
+      id: "/settings/organization/models";
+      path: "/models";
+      fullPath: "/settings/organization/models";
+      preLoaderRoute: typeof SettingsOrganizationModelsRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
+    "/settings/organization/network": {
+      id: "/settings/organization/network";
+      path: "/network";
+      fullPath: "/settings/organization/network";
+      preLoaderRoute: typeof SettingsOrganizationNetworkRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
     "/settings/organization/opentelemetry": {
@@ -1144,11 +1310,39 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationOpentelemetryRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/retention": {
+      id: "/settings/organization/retention";
+      path: "/retention";
+      fullPath: "/settings/organization/retention";
+      preLoaderRoute: typeof SettingsOrganizationRetentionRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
+    "/settings/organization/sandboxes": {
+      id: "/settings/organization/sandboxes";
+      path: "/sandboxes";
+      fullPath: "/settings/organization/sandboxes";
+      preLoaderRoute: typeof SettingsOrganizationSandboxesRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
+    "/settings/organization/secrets": {
+      id: "/settings/organization/secrets";
+      path: "/secrets";
+      fullPath: "/settings/organization/secrets";
+      preLoaderRoute: typeof SettingsOrganizationSecretsRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/agents/$agentId/evaluations/": {
       id: "/agents/$agentId/evaluations/";
       path: "/evaluations";
       fullPath: "/agents/$agentId/evaluations/";
       preLoaderRoute: typeof AgentsAgentIdEvaluationsIndexRouteImport;
+      parentRoute: typeof AgentsAgentIdRoute;
+    };
+    "/agents/$agentId/training/": {
+      id: "/agents/$agentId/training/";
+      path: "/training";
+      fullPath: "/agents/$agentId/training/";
+      preLoaderRoute: typeof AgentsAgentIdTrainingIndexRouteImport;
       parentRoute: typeof AgentsAgentIdRoute;
     };
     "/agents/$agentId_/cases/": {
@@ -1186,6 +1380,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AgentsAgentIdEvaluationsSuiteIdIndexRouteImport;
       parentRoute: typeof AgentsAgentIdRoute;
     };
+    "/agents/$agentId/training/datasets/$datasetId": {
+      id: "/agents/$agentId/training/datasets/$datasetId";
+      path: "/training/datasets/$datasetId";
+      fullPath: "/agents/$agentId/training/datasets/$datasetId";
+      preLoaderRoute: typeof AgentsAgentIdTrainingDatasetsDatasetIdRouteImport;
+      parentRoute: typeof AgentsAgentIdRoute;
+    };
     "/agents/$agentId/evaluations/$suiteId/runs/$runId": {
       id: "/agents/$agentId/evaluations/$suiteId/runs/$runId";
       path: "/evaluations/$suiteId/runs/$runId";
@@ -1211,13 +1412,20 @@ const SettingsAccountRouteWithChildren = SettingsAccountRoute._addFileChildren(
 interface SettingsOrganizationRouteChildren {
   SettingsOrganizationApiKeysRoute: typeof SettingsOrganizationApiKeysRoute;
   SettingsOrganizationAuditLogsRoute: typeof SettingsOrganizationAuditLogsRoute;
+  SettingsOrganizationBillingRoute: typeof SettingsOrganizationBillingRoute;
   SettingsOrganizationDefaultsRoute: typeof SettingsOrganizationDefaultsRoute;
   SettingsOrganizationDevelopersRoute: typeof SettingsOrganizationDevelopersRoute;
   SettingsOrganizationGithubRoute: typeof SettingsOrganizationGithubRoute;
   SettingsOrganizationGuardrailsRoute: typeof SettingsOrganizationGuardrailsRoute;
   SettingsOrganizationIntegrationsRoute: typeof SettingsOrganizationIntegrationsRoute;
+  SettingsOrganizationLicenseRoute: typeof SettingsOrganizationLicenseRoute;
   SettingsOrganizationMembersRoute: typeof SettingsOrganizationMembersRoute;
+  SettingsOrganizationModelsRoute: typeof SettingsOrganizationModelsRoute;
+  SettingsOrganizationNetworkRoute: typeof SettingsOrganizationNetworkRoute;
   SettingsOrganizationOpentelemetryRoute: typeof SettingsOrganizationOpentelemetryRoute;
+  SettingsOrganizationRetentionRoute: typeof SettingsOrganizationRetentionRoute;
+  SettingsOrganizationSandboxesRoute: typeof SettingsOrganizationSandboxesRoute;
+  SettingsOrganizationSecretsRoute: typeof SettingsOrganizationSecretsRoute;
   SettingsOrganizationIndexRoute: typeof SettingsOrganizationIndexRoute;
   SettingsOrganizationGroupsIndexRoute: typeof SettingsOrganizationGroupsIndexRoute;
 }
@@ -1225,14 +1433,21 @@ interface SettingsOrganizationRouteChildren {
 const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationApiKeysRoute: SettingsOrganizationApiKeysRoute,
   SettingsOrganizationAuditLogsRoute: SettingsOrganizationAuditLogsRoute,
+  SettingsOrganizationBillingRoute: SettingsOrganizationBillingRoute,
   SettingsOrganizationDefaultsRoute: SettingsOrganizationDefaultsRoute,
   SettingsOrganizationDevelopersRoute: SettingsOrganizationDevelopersRoute,
   SettingsOrganizationGithubRoute: SettingsOrganizationGithubRoute,
   SettingsOrganizationGuardrailsRoute: SettingsOrganizationGuardrailsRoute,
   SettingsOrganizationIntegrationsRoute: SettingsOrganizationIntegrationsRoute,
+  SettingsOrganizationLicenseRoute: SettingsOrganizationLicenseRoute,
   SettingsOrganizationMembersRoute: SettingsOrganizationMembersRoute,
+  SettingsOrganizationModelsRoute: SettingsOrganizationModelsRoute,
+  SettingsOrganizationNetworkRoute: SettingsOrganizationNetworkRoute,
   SettingsOrganizationOpentelemetryRoute:
     SettingsOrganizationOpentelemetryRoute,
+  SettingsOrganizationRetentionRoute: SettingsOrganizationRetentionRoute,
+  SettingsOrganizationSandboxesRoute: SettingsOrganizationSandboxesRoute,
+  SettingsOrganizationSecretsRoute: SettingsOrganizationSecretsRoute,
   SettingsOrganizationIndexRoute: SettingsOrganizationIndexRoute,
   SettingsOrganizationGroupsIndexRoute: SettingsOrganizationGroupsIndexRoute,
 };
@@ -1269,10 +1484,11 @@ interface AgentsAgentIdRouteChildren {
   AgentsAgentIdSandboxRoute: typeof AgentsAgentIdSandboxRoute;
   AgentsAgentIdSecretsRoute: typeof AgentsAgentIdSecretsRoute;
   AgentsAgentIdSettingsRoute: typeof AgentsAgentIdSettingsRoute;
-  AgentsAgentIdTrainingRoute: typeof AgentsAgentIdTrainingRoute;
   AgentsAgentIdVariablesRoute: typeof AgentsAgentIdVariablesRoute;
   AgentsAgentIdIndexRoute: typeof AgentsAgentIdIndexRoute;
   AgentsAgentIdEvaluationsIndexRoute: typeof AgentsAgentIdEvaluationsIndexRoute;
+  AgentsAgentIdTrainingIndexRoute: typeof AgentsAgentIdTrainingIndexRoute;
+  AgentsAgentIdTrainingDatasetsDatasetIdRoute: typeof AgentsAgentIdTrainingDatasetsDatasetIdRoute;
   AgentsAgentIdEvaluationsSuiteIdIndexRoute: typeof AgentsAgentIdEvaluationsSuiteIdIndexRoute;
   AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute: typeof AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute;
 }
@@ -1289,10 +1505,12 @@ const AgentsAgentIdRouteChildren: AgentsAgentIdRouteChildren = {
   AgentsAgentIdSandboxRoute: AgentsAgentIdSandboxRoute,
   AgentsAgentIdSecretsRoute: AgentsAgentIdSecretsRoute,
   AgentsAgentIdSettingsRoute: AgentsAgentIdSettingsRoute,
-  AgentsAgentIdTrainingRoute: AgentsAgentIdTrainingRoute,
   AgentsAgentIdVariablesRoute: AgentsAgentIdVariablesRoute,
   AgentsAgentIdIndexRoute: AgentsAgentIdIndexRoute,
   AgentsAgentIdEvaluationsIndexRoute: AgentsAgentIdEvaluationsIndexRoute,
+  AgentsAgentIdTrainingIndexRoute: AgentsAgentIdTrainingIndexRoute,
+  AgentsAgentIdTrainingDatasetsDatasetIdRoute:
+    AgentsAgentIdTrainingDatasetsDatasetIdRoute,
   AgentsAgentIdEvaluationsSuiteIdIndexRoute:
     AgentsAgentIdEvaluationsSuiteIdIndexRoute,
   AgentsAgentIdEvaluationsSuiteIdRunsRunIdRoute:
@@ -1305,6 +1523,7 @@ const AgentsAgentIdRouteWithChildren = AgentsAgentIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DeviceRoute: DeviceRoute,
   InboxRoute: InboxRoute,
   OnboardingRoute: OnboardingRoute,
   SettingsRoute: SettingsRouteWithChildren,
@@ -1314,6 +1533,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevelopersApiRoute: DevelopersApiRoute,
   DevelopersApiKeysRoute: DevelopersApiKeysRoute,
   DevelopersFeedbackRoute: DevelopersFeedbackRoute,
+  DevelopersGithubRoute: DevelopersGithubRoute,
   DevelopersIntegrationsRoute: DevelopersIntegrationsRoute,
   DevelopersMcpRoute: DevelopersMcpRoute,
   DevelopersNetworkRoute: DevelopersNetworkRoute,

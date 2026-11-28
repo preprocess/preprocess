@@ -11,6 +11,7 @@ import {
   CommandMenuEmpty,
   CommandMenuFooter,
   CommandMenuInput,
+  CommandMenuItem,
   CommandMenuList,
   isMacPlatform,
   type CommandMenuItemData,
@@ -60,6 +61,7 @@ import {
   Search,
   Sun,
   Terminal,
+  TextAlignStart,
   X,
 } from "@preprocess/ui/lib/icons";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
@@ -70,7 +72,6 @@ import { cn } from "@preprocess/ui/lib/utils";
 import { useRouter, useRouterState } from "@tanstack/react-router";
 import type { TOCItemType } from "fumadocs-core/toc";
 import type * as PageTree from "fumadocs-core/page-tree";
-import { useDocsSearch } from "fumadocs-core/search/client";
 import { TOCProvider } from "fumadocs-ui/components/toc";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTheme } from "next-themes";
@@ -98,6 +99,9 @@ import {
   sectionsOf,
   textOf,
 } from "./page-tree";
+import type * as SearchModule from "@/lib/search";
+import type { SearchPage } from "@/lib/search";
+
 import { MobileContents, OnThisPagePopover } from "./docs-toc";
 import { Wordmark } from "./wordmark";
 
@@ -551,7 +555,32 @@ function SidebarBody({
   );
 }
 
-type SearchItem = CommandMenuItemData & { url: string };
+type SearchItem = CommandMenuItemData & {
+  url: string;
+  parts?: { text: string; match: boolean }[];
+  hit?: boolean;
+};
+
+type SearchEngine = typeof SearchModule & {
+  index: ReturnType<typeof SearchModule.createSearchIndex>;
+};
+
+// Orama and the index load on first open, not with the page.
+let engine: Promise<SearchEngine> | undefined;
+function loadEngine() {
+  engine ??= Promise.all([
+    import("@/lib/search"),
+    fetch("/api/search").then((response): Promise<SearchPage[]> => {
+      if (!response.ok) throw new Error(`search index: ${response.status}`);
+      return response.json();
+    }),
+  ]).then(([search, pages]) => ({
+    ...search,
+    index: search.createSearchIndex(pages),
+  }));
+  engine.catch(() => (engine = undefined));
+  return engine;
+}
 
 // Where each page sits, for the line under a search hit: its section, or
 // for an API operation its tag and method.
@@ -583,6 +612,49 @@ function pageIndex(tree: PageTree.Root) {
   return pages;
 }
 
+function Highlighted({ parts }: { parts: { text: string; match: boolean }[] }) {
+  return parts.map((part, index) =>
+    part.match ? (
+      <mark
+        className="bg-transparent text-foreground"
+        key={index}
+        style={{ fontVariationSettings: fontWeights.medium }}
+      >
+        {part.text}
+      </mark>
+    ) : (
+      <Fragment key={index}>{part.text}</Fragment>
+    ),
+  );
+}
+
+function SearchRow({ item }: { item: SearchItem }) {
+  return (
+    <CommandMenuItem className={cn(item.hit && "ps-8")} value={item.value}>
+      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+        <span
+          className={cn(
+            "[text-box:trim-both_cap_alphabetic] -my-1 py-1",
+            item.hit ? "min-w-0 flex-1 truncate" : "shrink-0",
+          )}
+        >
+          {item.parts ? <Highlighted parts={item.parts} /> : item.label}
+        </span>
+        {item.description ? (
+          <span
+            className={cn(
+              "[text-box:trim-both_cap_alphabetic] -my-1 min-w-0 truncate py-1 text-muted-foreground",
+              item.hit && "max-w-2/5 shrink-0",
+            )}
+          >
+            {item.description}
+          </span>
+        ) : null}
+      </span>
+    </CommandMenuItem>
+  );
+}
+
 function DocsSearch({
   open,
   onOpenChange,
@@ -593,13 +665,18 @@ function DocsSearch({
   tree: PageTree.Root;
 }) {
   const router = useRouter();
-  const { search, setSearch, query } = useDocsSearch({ type: "fetch" });
+  const [search, setSearch] = useState("");
+  const [ready, setReady] = useState<SearchEngine>();
+  useEffect(() => {
+    if (open && !ready) void loadEngine().then(setReady, () => undefined);
+  }, [open, ready]);
   const pages = useMemo(() => pageIndex(tree), [tree]);
   const items = useMemo((): SearchItem[] => {
     const go = (url: string) => () => {
       void router.navigate({ href: url });
     };
-    if (search === "" || query.data === "empty")
+    const term = search.trim();
+    if (term === "")
       return [...pages]
         .filter(([, page]) => page.path === page.group)
         .map(([url, page]) => ({
@@ -611,23 +688,37 @@ function DocsSearch({
           icon: page.api ? Braces : FileText,
           onSelect: go(url),
         }));
-    return (query.data ?? []).map((result) => {
-      const url = result.url.split("#")[0] ?? result.url;
-      const page = pages.get(url);
-      const heading = result.type !== "page";
-      return {
-        url: result.url,
-        value: result.id,
-        label: heading
-          ? textOf(result.content)
-          : (page?.label ?? textOf(result.content)),
-        description: heading ? (page?.label ?? "") : (page?.path ?? ""),
-        group: page?.group ?? "Guides",
-        icon: heading ? Hash : page?.api ? Braces : FileText,
-        onSelect: go(result.url),
-      };
+    if (!ready) return [];
+    return ready.searchIndex(ready.index, term).flatMap((result) => {
+      const page = pages.get(result.url);
+      const label = page?.label ?? result.title;
+      const group = page?.group ?? "Guides";
+      return [
+        {
+          url: result.url,
+          value: `page:${result.url}`,
+          label,
+          parts: ready.snippet(label, term),
+          description: result.description,
+          group,
+          icon: page?.api ? Braces : FileText,
+          onSelect: go(result.url),
+        },
+        ...result.hits.map((hit, index) => ({
+          url: hit.url,
+          value: `${hit.kind}:${hit.url}:${index}`,
+          label: hit.text,
+          action: `Open ${hit.heading ?? hit.text}`,
+          parts: ready.snippet(hit.text, term),
+          description: hit.heading,
+          group,
+          hit: true,
+          icon: hit.kind === "heading" ? Hash : TextAlignStart,
+          onSelect: go(hit.url),
+        })),
+      ];
     });
-  }, [pages, query.data, router, search]);
+  }, [pages, ready, router, search]);
 
   return (
     <CommandMenuDialog
@@ -643,8 +734,12 @@ function DocsSearch({
         query={search}
       >
         <CommandMenuInput placeholder="Search documentation" />
-        <CommandMenuList>
-          <CommandMenuEmpty>No results found</CommandMenuEmpty>
+        <CommandMenuList
+          renderItem={(item) => <SearchRow item={item as SearchItem} />}
+        >
+          <CommandMenuEmpty>
+            {search.trim() && !ready ? "Loading…" : "No results found"}
+          </CommandMenuEmpty>
         </CommandMenuList>
         <CommandMenuFooter />
       </CommandMenu>
@@ -1050,6 +1145,11 @@ export function DocsShell({
             {toc.length > 0 ? <OnThisPagePopover /> : null}
             <ScrollArea
               className="min-h-0 flex-1"
+              ref={(root) => {
+                root
+                  ?.querySelector('[data-slot="scroll-area-viewport"]')
+                  ?.setAttribute("data-scroll-restoration-id", "docs-content");
+              }}
               viewportClassName="scroll-fade"
             >
               {children}

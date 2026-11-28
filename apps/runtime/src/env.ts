@@ -155,8 +155,6 @@ export type Settings = {
   timeoutSeconds: number | null;
   toolRetries: number | null;
   sandboxImage: string | null;
-  // The sandbox size with a dashboard override applied; null without one.
-  sandboxSize?: string | null;
   evals: { onPush: boolean };
   schedules: Record<string, { previews: boolean }>;
 };
@@ -249,6 +247,22 @@ export type Platform = {
   secretValues(
     d: DeploymentRef,
   ): Promise<{ version: string; values: Record<string, string> }>;
+  // The organization's registered model endpoints by model (design doc 10),
+  // read at case start and held in memory only: never in storage, capture or
+  // logs.
+  modelEndpoints(
+    organizationId: string,
+  ): Promise<Record<string, RegisteredEndpoint>>;
+};
+
+// An endpoint's id, which capture records, its route, and whether it serves
+// an organization model or overrides a catalogue one.
+export type RegisteredEndpoint = {
+  id: string;
+  url: string;
+  key: string;
+  model: string;
+  kind: "override" | "model";
 };
 
 export type DeploymentRef = Pick<

@@ -1,3 +1,8 @@
+import {
+  Avatar,
+  AvatarFallback,
+  avatarMarbleSeed,
+} from "@preprocess/ui/components/avatar";
 import { MenuItem } from "@preprocess/ui/components/menu-item";
 import { DropdownSeparator } from "@preprocess/ui/components/dropdown";
 import {
@@ -5,7 +10,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -18,17 +22,13 @@ import {
   OrbitSparkle,
   Folder4,
   Gauge,
-  Globe,
   Inbox,
-  Lock,
-  Monitor,
   Moon,
   OpenRectArrowOut,
-  Plug,
   Plus,
   Settings,
-  Shield,
   Sun,
+  User,
 } from "@preprocess/ui/lib/icons";
 import type { IconComponent } from "@preprocess/ui/lib/icon-context";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
@@ -42,11 +42,13 @@ import {
 import { useAuth } from "../features/auth/auth-context";
 import { useContext, useState, type ReactNode } from "react";
 
+import { SidebarNoticeStack } from "../features/notices/notice-stack";
 import { useOrganizations } from "../features/organizations/organizations-context";
 import type { UserOrganization } from "../features/organizations/user-organization";
 import { AppCommandMenu, AppCommandSearchTrigger } from "./app-command-menu";
 import { CreateOrganizationDialog } from "./create-organization-dialog";
 import { ProductSidebarOpenContext } from "./product-sidebar-state";
+import { SidebarHelp } from "./sidebar-app/help";
 import { SidebarInsetTopbar } from "./sidebar-app/inset-topbar";
 import { SidebarUserFooter } from "./sidebar-app/user-footer";
 import {
@@ -56,16 +58,7 @@ import {
 import { useTheme } from "./theme-provider";
 
 type NavItem = {
-  to:
-    | "/inbox"
-    | "/cases"
-    | "/agents"
-    | "/developers/api"
-    | "/developers/integrations"
-    | "/developers/sandboxes"
-    | "/developers/secrets"
-    | "/developers/network"
-    | "/developers/observability";
+  to: "/inbox" | "/cases" | "/agents" | "/developers/observability";
   label: string;
   icon: IconComponent;
   unread?: number;
@@ -203,9 +196,13 @@ function UserFooter() {
             className="size-5 rounded-full object-cover outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
             src={profilePictureUrl}
           />
+        ) : user ? (
+          <Avatar className="size-5">
+            <AvatarFallback name={avatarMarbleSeed(user)} />
+          </Avatar>
         ) : (
-          <span className="flex size-5 items-center justify-center rounded-full bg-muted-foreground text-[length:var(--fs-micro-compact,10px)] leading-[var(--lh-micro-compact,12px)] text-background">
-            {initialsOf(name).slice(0, 1)}
+          <span className="flex size-5 items-center justify-center rounded-full bg-hover text-muted-foreground">
+            <User aria-hidden="true" className="size-3" />
           </span>
         )
       }
@@ -238,15 +235,6 @@ function UserFooter() {
     />
   );
 }
-
-const DEVELOPER_NAV: readonly NavItem[] = [
-  { to: "/developers/observability", label: "Observability", icon: Gauge },
-  { to: "/developers/api", label: "Keys & webhooks", icon: Lock },
-  { to: "/developers/integrations", label: "Integrations", icon: Plug },
-  { to: "/developers/secrets", label: "Secrets", icon: Shield },
-  { to: "/developers/network", label: "Network", icon: Globe },
-  { to: "/developers/sandboxes", label: "Sandbox images", icon: Monitor },
-];
 
 function NavRows({
   items,
@@ -295,6 +283,7 @@ function ProductSidebar({
     { to: "/inbox", label: "Inbox", icon: Inbox, unread: inboxUnread },
     { to: "/cases", label: "Cases", icon: Folder4 },
     { to: "/agents", label: "Agents", icon: OrbitSparkle },
+    { to: "/developers/observability", label: "Observability", icon: Gauge },
   ];
 
   // The app is pill-shaped; the sidebar's rows and menus read better rounded.
@@ -316,16 +305,10 @@ function ProductSidebar({
               pathname={pathname}
             />
           </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel>Developers</SidebarGroupLabel>
-            <NavRows
-              items={DEVELOPER_NAV}
-              label="Developers"
-              pathname={pathname}
-            />
-          </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
+          <SidebarHelp />
+          <SidebarNoticeStack />
           <UserFooter />
         </SidebarFooter>
       </Sidebar>

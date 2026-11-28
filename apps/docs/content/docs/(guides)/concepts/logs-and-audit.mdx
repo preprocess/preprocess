@@ -128,12 +128,38 @@ match—reporting `ok: true` or the exact `firstBreak` (`hash_mismatch`, `gap`,
 Anyone can also verify signed manifests offline without trusting Preprocess by
 fetching the public Ed25519 keys from `GET /v1/audit/keys`.
 
-<Callout title="Coming soon">
-  Bulk audit log export (`POST /v1/orgs/{org}/audit-events/export`) is not yet
-  implemented and currently returns `501`. Reading paginated audit events (`GET
-  /v1/orgs/{org}/audit-events`), inspecting single events, fetching public keys
-  and running chain verification are all live today.
-</Callout>
+### Export
+
+Owners can download the audit log for a date range with
+`POST /v1/orgs/{org}/audit-events/export`. Export is a paid feature: on the Free
+plan, or a self-hosted install whose license doesn't include it, the request is
+refused with `403`. Admins and API keys can read and verify the log but not
+export it.
+
+The body names the format and the range, and takes the same optional filters as
+the event list:
+
+```json
+{
+  "format": "csv",
+  "from": "2026-11-01T00:00:00Z",
+  "to": "2026-12-01T00:00:00Z",
+  "action": "guardrail.updated"
+}
+```
+
+- **Range:** `from` is inclusive and `to` exclusive, both required. One export
+  covers at most **90 days**; a longer range is refused with
+  `400 range_too_long`, and a `to` that isn't after `from` with
+  `400 invalid_range`.
+- **Formats:** `csv` (RFC 4180, a header row, the event's `data` as JSON in one
+  column) or `ndjson` (one event per line, the shape `GET /audit-events`
+  returns).
+- **Streaming:** The file streams as an attachment in ascending `seq` order and
+  carries each event's `prevHash` and `hash`, so you can check an export against
+  the chain.
+- **Audited:** Each export is recorded as `audit.exported` with its format,
+  range and filters.
 
 ## How to use it
 

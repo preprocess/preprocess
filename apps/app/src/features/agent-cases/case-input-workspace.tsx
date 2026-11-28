@@ -2,6 +2,7 @@
 
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -68,7 +69,7 @@ import {
   familyOf,
   type CaseInputFamily,
 } from "./case-input-kind";
-import { CaseInputArt, NoMatchArt } from "../../components/empty-art";
+import { FillsOnItsOwnArt, NoResultsArt } from "../../components/empty-art";
 import { SettingsSearchField } from "../settings/kit";
 import { CaseInputViewer } from "./case-input-viewer";
 import { filesFromZip } from "./case-input-zip";
@@ -1081,6 +1082,7 @@ export function CaseInputPane({
       <SizeProvider size="compact">
         <div className="flex shrink-0 items-center gap-1 px-2 pb-2">
           <SettingsSearchField
+            className="min-w-0"
             label="Search files"
             onChange={setQuery}
             placeholder="Search files"
@@ -1114,24 +1116,39 @@ export function CaseInputPane({
             >
               <EmptyHeader className="pointer-events-auto group">
                 <EmptyMedia variant="graphic">
-                  {query.trim() === "" ? <CaseInputArt /> : <NoMatchArt />}
+                  {query.trim() === "" ? (
+                    <FillsOnItsOwnArt />
+                  ) : (
+                    <NoResultsArt />
+                  )}
                 </EmptyMedia>
                 {query.trim() === "" ? (
                   <>
-                    <EmptyTitle>No input found</EmptyTitle>
+                    <EmptyTitle>No input files</EmptyTitle>
                     <EmptyDescription>
-                      Add input to start this case.
+                      Files and text sent when this case started appear here.
                     </EmptyDescription>
                   </>
                 ) : (
                   <>
-                    <EmptyTitle>No results found</EmptyTitle>
+                    <EmptyTitle>No matching files</EmptyTitle>
                     <EmptyDescription>
-                      Nothing matches “{query.trim()}”.
+                      No input files match your search.
                     </EmptyDescription>
                   </>
                 )}
               </EmptyHeader>
+              {query.trim() === "" ? null : (
+                <EmptyContent className="pointer-events-auto">
+                  <Button
+                    onClick={() => setQuery("")}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    Clear search
+                  </Button>
+                </EmptyContent>
+              )}
             </Empty>
           ) : null}
         </EmptyPresence>

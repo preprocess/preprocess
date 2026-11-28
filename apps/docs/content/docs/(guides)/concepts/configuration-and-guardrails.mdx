@@ -45,18 +45,18 @@ Every setting returned by `GET /v1/orgs/{org}/agents/{agent}/settings` reports
 its effective `value`, its `source` (`override`, `code`, `organization` or
 `default`) and the individual `code`, `organization` and `override` values.
 
-| Setting                     | Platform default         | Org default | Dashboard override         |
-| --------------------------- | ------------------------ | ----------- | -------------------------- |
-| `model`                     | `deepseek-v4.1-flash`    | Yes         | Yes                        |
-| `reasoning`                 | `medium`                 | Yes         | Yes                        |
-| `ocr`                       | `false`                  | Yes         | Yes                        |
-| `searchCases`               | `false`                  | Yes         | Yes                        |
-| `timeoutSeconds`            | `null` (runtime default) | Yes         | Yes                        |
-| `toolRetries`               | `null` (0 retries)       | Yes         | Yes                        |
-| `sandboxImage`              | `null`                   | Yes         | Yes                        |
-| `evals.onPush`              | `false`                  | Yes         | Yes                        |
-| `sandbox.size`              | None (opt-in in code)    | No          | Yes (within guardrail cap) |
-| `schedules.<name>.previews` | `false`                  | No          | Yes                        |
+| Setting                     | Platform default         | Org default | Dashboard override |
+| --------------------------- | ------------------------ | ----------- | ------------------ |
+| `model`                     | `deepseek-v4.1-flash`    | Yes         | Yes                |
+| `reasoning`                 | `medium`                 | Yes         | Yes                |
+| `ocr`                       | `false`                  | Yes         | Yes                |
+| `searchCases`               | `false`                  | Yes         | Yes                |
+| `timeoutSeconds`            | `null` (runtime default) | Yes         | Yes                |
+| `toolRetries`               | `null` (0 retries)       | Yes         | Yes                |
+| `sandboxImage`              | `null`                   | Yes         | Yes                |
+| `evals.onPush`              | `false`                  | Yes         | Yes                |
+| `sandbox.size`              | None (opt-in in code)    | No          | No                 |
+| `schedules.<name>.previews` | `false`                  | No          | Yes                |
 
 ### How deploy and promote clear overrides
 
@@ -81,7 +81,7 @@ Only an Owner or Admin can loosen a guardrail directly. Making the change is the
 approval, and every change is written to the audit log (`guardrail.updated`,
 `secret.granted` or `mcp.granted`).
 
-Preprocess enforces five guardrails:
+Preprocess enforces six guardrails:
 
 - **Network rules:** An organization-wide `allow` list and `block` list (up to
   200 host patterns each, exact hosts like `api.example.com` or wildcards like
@@ -92,23 +92,35 @@ Preprocess enforces five guardrails:
   organization's allow list and its block list unions with the organization's
   block list.
 - **Max sandbox size:** Caps the largest case sandbox size an agent can use
-  (`small`, `medium`, `large` or `null` for no cap). Both deployments and
-  `sandbox.size` dashboard overrides are checked against this cap.
+  (`small`, `medium`, `large` or `null` for no cap). Deployments are checked
+  against this cap. A sandbox's size is set in code only, so there is no
+  dashboard override to check.
 - **Monthly spending limit:** An optional USD cap per calendar month in UTC
   (`null` by default). It meters all hosted usage across the organization—cases,
   eval runs, OCR calls, sandbox time and case fees. When the cap is reached, new
   metered calls are refused and running cases transition to `halted` until a
   person raises the limit or the month rolls over and reruns them.
+- **Allowed models:** The catalogue and organization models (`org:<slug>`)
+  agents may run on (`null`, the default, allows every model). Set it with
+  `PUT /v1/orgs/{org}/guardrails/allowed-models` and a body like
+  `{"models": ["deepseek-v4.1-flash"]}`, or under Guardrails → Models in the
+  app. Every path that picks a model checks it: deploys, the organization's
+  default model, an agent's `model` override, starting a case, rerunning one,
+  approving an approval, and eval runs. A model outside the list is refused with
+  `409 model_not_allowed` and an error that names the model. Changing the list
+  doesn't change any deployment, so an agent whose model is taken off keeps its
+  code and settings but can't start cases until the model is allowed again or
+  its model changes.
 - **Secret grants:** Which agents are allowed to receive each organization
   secret.
 - **MCP server grants:** Which agents are allowed to call each registered MCP
   server.
-
-<Callout title="Coming soon">
-  Custom model-endpoint guardrails (restricting which model endpoints an
-  organization sends data to) are not yet configurable; `GET /v1/orgs/{org}
-  /guardrails` currently returns `modelEndpoints: "hosted"`.
-</Callout>
+- **Model endpoints:** On a self-hosted install, Owners and Admins can serve a
+  catalog model from their own OpenAI-compatible URL
+  (`POST /v1/orgs/{org}/models/endpoints`), and cases then send that model's
+  calls there. `GET /v1/orgs/{org}/guardrails` returns `modelEndpoints.kind` as
+  `own` once any endpoint is registered, with each endpoint's model and host,
+  and `hosted` otherwise.
 
 ## Guardrail loosening requests
 

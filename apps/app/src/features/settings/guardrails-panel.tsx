@@ -4,12 +4,17 @@
 // Owner or Admin loosens one, and their change is the approval; anyone else,
 // and a deployment that asks for more, files a request that shows here.
 
+import { Link } from "@tanstack/react-router";
 import { Badge } from "@preprocess/ui/components/badge";
 import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { Tabs, TabsItem } from "@preprocess/ui/components/tabs";
 import { XIcon } from "@preprocess/ui/lib/icons";
+import {
+  CheckboxGroup,
+  CheckboxItem,
+} from "@preprocess/ui/components/checkbox-group";
 import {
   MODEL_CATALOG,
   MODELS,
@@ -24,7 +29,14 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import {
+  AllCaughtUpArt,
+  GoneArt,
+  NoResultsArt,
+} from "../../components/empty-art";
+
 import { useOrganizationId } from "../auth/auth-context";
+import { useModels } from "../models/models-api";
 import { orgApi } from "../auth/client";
 import {
   actionErrorMessage,
@@ -130,20 +142,7 @@ export function GuardrailsPanel({ request }: { request?: string }) {
         <SandboxSizeLimit />
       </Anchor>
       <Anchor id="models">
-        <SettingsSection
-          description="Where agents' model calls go."
-          title={sectionTitle("models")}
-        >
-          <SettingsRows>
-            <SettingsRow
-              description="Self-hosted serving URLs arrive with self-hosted installs."
-              label={MODELS.map((model) => MODEL_CATALOG[model].label).join(
-                ", ",
-              )}
-              value="Hosted service only"
-            />
-          </SettingsRows>
-        </SettingsSection>
+        <Models />
       </Anchor>
     </SettingsStacked>
   );
@@ -335,15 +334,24 @@ function Requests({ highlight }: { highlight?: string }) {
         <SettingsSkeletonRows count={2} />
       ) : highlight && !linked ? (
         <SettingsEmpty
-          description="It may have been withdrawn after the deployment that filed it was replaced."
-          title="This request no longer exists"
+          action={
+            <Button asChild size="compact" variant="ghost">
+              <Link to="/settings/organization/guardrails">
+                View all requests
+              </Link>
+            </Button>
+          }
+          art={<GoneArt />}
+          description="This guardrail request no longer exists."
+          title="Request not found"
         />
       ) : shown.length === 0 ? (
         <SettingsEmpty
+          art={status === "pending" ? <AllCaughtUpArt /> : <NoResultsArt />}
           description={
             status === "pending"
-              ? "Nobody is waiting on a guardrail."
-              : `No ${status} requests yet.`
+              ? "All guardrail loosening requests have been decided."
+              : `Guardrail requests that are ${status} appear here.`
           }
           title={`No ${status} requests`}
         />
@@ -618,6 +626,133 @@ function SpendingLimit() {
         </SettingsRows>
       )}
       <ErrorLine error={error} fallback="Could not change the limit." />
+    </SettingsSection>
+  );
+}
+
+function Models() {
+  const organizationId = useOrganizationId();
+  const queryClient = useQueryClient();
+  const canEdit = useCanAdminister();
+  const guardrails = useQuery({
+    queryKey: ["guardrails", organizationId],
+    queryFn: () =>
+      orgApi<{
+        allowedModels: string[] | null;
+        modelEndpoints?: { endpoints: unknown[] };
+      }>(organizationId, "/guardrails"),
+  });
+  const models = useModels();
+  const choices: readonly { id: string; label: string }[] = [
+    ...MODELS.map((id) => ({ id, label: MODEL_CATALOG[id].label })),
+    ...(models.data ?? []).filter((m) => m.kind === "model"),
+  ];
+  const all = choices.map((m) => m.id);
+  const saved = guardrails.data?.allowedModels ?? all;
+  const [draft, setDraft] = useState<readonly string[]>(all);
+  const [error, setError] = useState<unknown>(null);
+  const savedKey = saved.join();
+  useEffect(() => setDraft(saved), [savedKey]);
+  const dirty =
+    draft.length !== saved.length || draft.some((m) => !saved.includes(m));
+  const endpointCount = models.data
+    ? models.data.filter((m) => m.endpoint).length
+    : (guardrails.data?.modelEndpoints?.endpoints.length ?? 0);
+
+  return (
+    <SettingsSection
+      description="Which models agents may run on, and where their calls go. A deploy, setting, case or eval run that needs another model is refused and names it."
+      title={sectionTitle("models")}
+    >
+      {guardrails.isError ? (
+        <SettingsError error={guardrails.error} />
+      ) : !guardrails.data ? (
+        <SettingsSkeletonRows count={2} />
+      ) : (
+        <SettingsRows>
+          <SettingsRow
+            description={
+              guardrails.data.allowedModels === null
+                ? "Every model, the default"
+                : `${saved.length} of ${all.length} models`
+            }
+            label="Allowed models"
+            value={
+              <CheckboxGroup
+                checkedIndices={
+                  new Set(
+                    all.flatMap((model, index) =>
+                      draft.includes(model) ? [index] : [],
+                    ),
+                  )
+                }
+              >
+                {choices.map((model, index) => (
+                  <CheckboxItem
+                    aria-disabled={!canEdit}
+                    checked={draft.includes(model.id)}
+                    index={index}
+                    key={model.id}
+                    label={model.label}
+                    onToggle={() =>
+                      canEdit &&
+                      setDraft(
+                        draft.includes(model.id)
+                          ? draft.filter((m) => m !== model.id)
+                          : all.filter(
+                              (m) => m === model.id || draft.includes(m),
+                            ),
+                      )
+                    }
+                  />
+                ))}
+              </CheckboxGroup>
+            }
+          >
+            {canEdit ? (
+              <LoadingButton
+                disabled={!dirty}
+                onAction={async () => {
+                  setError(null);
+                  if (draft.length === 0)
+                    throw new Error("Allow at least one model.");
+                  await orgApi(organizationId, "/guardrails/allowed-models", {
+                    method: "PUT",
+                    body: JSON.stringify({
+                      models: draft.length === all.length ? null : draft,
+                    }),
+                  });
+                  await queryClient.invalidateQueries({
+                    queryKey: ["guardrails", organizationId],
+                  });
+                }}
+                onError={setError}
+              >
+                Save
+              </LoadingButton>
+            ) : null}
+          </SettingsRow>
+          <SettingsRow
+            description="Where agents' model calls go"
+            label="Model endpoints"
+            value={
+              endpointCount === 0
+                ? "Preprocess only"
+                : endpointCount === 1
+                  ? "Preprocess, plus 1 custom endpoint"
+                  : `Preprocess, plus ${endpointCount} custom endpoints`
+            }
+          >
+            <Button asChild size="compact" variant="secondary">
+              <Link to="/settings/organization/models">Manage in Models</Link>
+            </Button>
+          </SettingsRow>
+        </SettingsRows>
+      )}
+      <ErrorLine
+        error={error}
+        fallback="Could not change the allowed models."
+      />
     </SettingsSection>
   );
 }

@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 
 import { parseAgentId, parseCaseId } from "./agent-case-ref";
 import {
@@ -112,7 +112,7 @@ export type LiveCaseListPage = {
   readonly hasCases: boolean;
 };
 
-const server = () => import("../../server/api.server");
+const server = createServerOnlyFn(() => import("../../server/api.server"));
 
 /** GETs a /v1 route; with `notFound`, a 404 returns it instead of throwing. */
 async function getJson<T>(path: string, ...notFound: [] | [T]): Promise<T> {
@@ -163,6 +163,7 @@ function toCase(
     assignees: item.assignees.map((assignee) => {
       const person = people.get(assignee.id);
       return {
+        id: assignee.id,
         name: assignee.name,
         email: person?.email ?? "",
         groups: person?.groups.map((group) => group.name) ?? [],
@@ -430,9 +431,11 @@ async function roomOf(
   apiMemories: ApiMemory[],
 ): Promise<CaseRoomState> {
   const approvals = room.approvals ?? [];
+  const thread = room.thread ?? [];
   const people = peopleById(
     approvals.some((approval) => approval.decidedBy) ||
-      apiMemories.some((m) => m.decidedBy)
+      apiMemories.some((m) => m.decidedBy) ||
+      thread.some((message) => message.kind === "person")
       ? await getJson<ApiMember[]>("/members")
       : [],
   );
@@ -447,7 +450,15 @@ async function roomOf(
     })),
     checks: room.checks ?? [],
     answers: room.answers ?? null,
-    thread: room.thread ?? [],
+    thread: thread.map((message) =>
+      message.kind === "person"
+        ? {
+            ...message,
+            byName:
+              people.get(message.by.replace(/^person:/, ""))?.name ?? null,
+          }
+        : message,
+    ),
     approvals: approvals.map((approval) => ({
       ...approval,
       decidedByName: approval.decidedBy

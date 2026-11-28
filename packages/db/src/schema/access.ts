@@ -29,9 +29,16 @@ export const groups = pgTable(
     description: text(),
     isDevelopers: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    // Set on a group synced from the organization's identity provider (the
+    // SCIM Group's id): its name and members follow the directory and are
+    // read-only here. syncedRemovedAt is set when the directory deletes it;
+    // the group and its grants stay until an Owner or Admin acts.
+    scimGroupId: text(),
+    syncedRemovedAt: timestamp({ withTimezone: true }),
   },
   (t) => [
     unique().on(t.organizationId, t.slug),
+    uniqueIndex("groups_scim_group_id_unique").on(t.scimGroupId),
     unique("groups_org_id_unique").on(t.organizationId, t.id),
     uniqueIndex("one_developers_group")
       .on(t.organizationId)

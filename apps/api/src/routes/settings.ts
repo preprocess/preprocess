@@ -14,9 +14,9 @@ import {
   organizationDefaults,
 } from "@preprocess/db/schema/settings";
 import type { SettingValues } from "@preprocess/db/schema/settings";
-import type { SandboxSize } from "@preprocess/sdk/protocol";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 
+import { assertModelAllowed } from "../allowed-models.ts";
 import { actor, eventBase, requireAdmin, requireDeveloper } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
@@ -28,10 +28,8 @@ import {
   organizationDefaultValues,
   overrideWarnings,
   resolveSettings,
-  SANDBOX_SIZE_KEY,
   settingSchema,
 } from "../settings.ts";
-import { sandboxMaxSize, sizeAllowed } from "../sandbox.ts";
 
 const OrgParam = z.object({ org: z.string() });
 const AgentParam = OrgParam.extend({ agent: z.string() });
@@ -48,7 +46,13 @@ const Defaults = z
     timeoutSeconds: DEFAULTS.timeoutSeconds.schema.nullable().optional(),
     toolRetries: DEFAULTS.toolRetries.schema.nullable().optional(),
     sandboxImage: DEFAULTS.sandboxImage.schema.nullable().optional(),
-    "evals.onPush": DEFAULTS["evals.onPush"].schema.nullable().optional(),
+    "evals.onPush": DEFAULTS["evals.onPush"].schema
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          "Run the agent's suites marked runOnPush against each new production deployment when it becomes ready",
+      }),
   })
   .strict()
   .openapi("OrganizationDefaults", {
@@ -138,23 +142,8 @@ const setOverride = async (
 ) => {
   await requireDeveloper(tx, vars.caller);
   const agent = await findAgent(tx, slug);
-  if (key === SANDBOX_SIZE_KEY && value !== undefined) {
-    const manifest = (await currentDeployment(tx, agent.id))?.manifest as
-      Manifest | undefined;
-    if (!manifest?.sandbox)
-      throw new ApiError(
-        409,
-        "no_sandbox",
-        "This agent's code does not ask for a sandbox, so it has no size to override.",
-      );
-    const cap = await sandboxMaxSize(tx);
-    if (!sizeAllowed(cap, value as SandboxSize))
-      throw new ApiError(
-        409,
-        "sandbox_size_not_allowed",
-        `The organization allows sandboxes up to ${cap}. An Owner or Admin can raise the limit in Guardrails.`,
-      );
-  }
+  if (key === "model" && value !== undefined)
+    await assertModelAllowed(tx, value as string);
   const before = await agentOverrideValues(tx, agent.id);
   const { [key]: previous, ...rest } = before;
   const next: SettingValues =
@@ -221,6 +210,8 @@ export const settingsRoutes = new OpenAPIHono<{
         string | number | boolean | null | undefined
       >;
       const body = await withOrg(c.env, c.var.org, async (tx) => {
+        if (typeof patch.model === "string")
+          await assertModelAllowed(tx, patch.model);
         const before = await organizationDefaultValues(tx);
         const next: SettingValues = { ...before };
         for (const [key, value] of Object.entries(patch)) {
@@ -320,6 +311,8 @@ export const settingsRoutes = new OpenAPIHono<{
     }),
     async (c) => {
       const { agent, key } = c.req.valid("param");
+      if (!settingSchema(key))
+        throw new ApiError(404, "not_found", `No setting ${key}.`);
       return c.json(
         await withOrg(c.env, c.var.org, (tx) =>
           setOverride(tx, c.var, agent, key, undefined),

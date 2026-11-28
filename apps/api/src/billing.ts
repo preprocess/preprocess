@@ -51,6 +51,23 @@ export const CREDITS = "model_credit";
 // The add-on plan credits are bought through, at $0.01 each.
 export const CREDITS_PLAN = "credits";
 
+// Plan prices and allowances, as in autumn.config.ts. Free includes 3 seats,
+// 1,000 cases a month and 5 GB; Team and Enterprise pay $16 an active seat
+// and include 50 GB. Every plan's first 1,000 cases a month have no case fee.
+// Storage past the allowance is $0.10 a GB-month, billed to the card. Internal
+// pays nothing.
+export const FREE_SEATS = 3;
+export const FREE_CASES = 1_000;
+export const FREE_STORAGE_GB = 5;
+export const STORAGE_USD_PER_GB_MONTH = 0.1;
+export const prices = (plan: CloudPlan["name"]) => ({
+  seatUsd: plan === "team" || plan === "enterprise" ? 16 : 0,
+  includedSeats: plan === "free" ? FREE_SEATS : 0,
+  includedCases: FREE_CASES,
+  includedStorageGb: plan === "free" ? FREE_STORAGE_GB : 50,
+  storageUsdPerGbMonth: plan === "internal" ? 0 : STORAGE_USD_PER_GB_MONTH,
+});
+
 // The smallest purchase, by hand or by auto-reload: $10, so Stripe's fee is
 // a small share of it. Credits never expire; refunds go through support.
 export const MIN_TOP_UP_CREDITS = 1_000;
@@ -333,7 +350,24 @@ export type CloudPlan = {
   // Whether the organization has started a plan: at checkout, which takes a
   // card, or attached by plan() below.
   started: boolean;
+  // When the payment still owed was due: the oldest open invoice of a past-due
+  // subscription. Null when nothing is past due, or when the invoices weren't
+  // read.
+  pastDueSince: Date | null;
 };
+
+// A failed renewal leaves this long to update the card before new cases stop
+// (Chip, 2026-11-27).
+export const PAST_DUE_GRACE_DAYS = 7;
+
+// Whether the grace for a failed payment has run out. Enterprise pays by
+// invoice on terms arranged with us, and Internal pays nothing.
+export const pastDueStop = (plan: CloudPlan, now = new Date()) =>
+  plan.pastDueSince !== null &&
+  plan.name !== "enterprise" &&
+  plan.name !== "internal" &&
+  now.getTime() - plan.pastDueSince.getTime() >=
+    PAST_DUE_GRACE_DAYS * 86_400_000;
 
 const PLANS = ["free", "team", "enterprise", "internal"] as const;
 
@@ -361,7 +395,15 @@ export const readPlan = (customer: AutumnCustomer): CloudPlan => {
     features: new Set(Object.keys(customer.flags ?? {})),
     seats: name === "free" && seats && !seats.unlimited ? seats.granted : null,
     started: Boolean(active),
+    pastDueSince: active?.past_due ? oldestOpenInvoice(customer) : null,
   };
+};
+
+const oldestOpenInvoice = (customer: AutumnCustomer) => {
+  const open = (customer.invoices ?? []).filter((i) => i.status === "open");
+  return open.length > 0
+    ? new Date(Math.min(...open.map((i) => i.created_at)))
+    : null;
 };
 
 // A short cache per isolate: gates run on every case and model call.
@@ -387,7 +429,7 @@ const listed = (list: string | undefined, org: OrgId) =>
     .map((id) => id.trim())
     .includes(org);
 
-const isInternal = (env: Env, org: OrgId) =>
+export const isInternal = (env: Env, org: OrgId) =>
   listed(env.BILLING_INTERNAL_ORGS, org);
 
 // Whether billing holds for an organization: for those BILLING_ENFORCED_ORGS
@@ -479,8 +521,8 @@ const grantFreeCredits = async (
   );
   const card = had
     ? null
-    : ((await billing.customer(org, undefined, "payment_method")).payment_method
-        ?.card?.fingerprint ?? null);
+    : ((await billing.customer(org, undefined, ["payment_method"]))
+        .payment_method?.card?.fingerprint ?? null);
   const claimed = await withoutOrg(env, "billing: claim free credits", (tx) =>
     tx
       .insert(freeCreditGrants)
@@ -543,6 +585,9 @@ const loadPlan = async (billing: Autumn, env: Env, org: OrgId) => {
       customer = await billing.customer(org);
     }
   }
+  // A failed payment: read the invoices too, for when it was due.
+  if (customer.subscriptions.some((s) => s.past_due))
+    customer = await billing.customer(org, undefined, ["invoices"]);
   const current = readPlan(customer);
   if (current.started && current.name === "free")
     await grantFreeCredits(billing, env, org, customer);
@@ -582,19 +627,21 @@ export const seatLimitApplies = (env: Env, org: OrgId, now = new Date()) =>
 
 // Whether the organization may use a feature: once cards are required it
 // needs a started plan (every plan, Free included, starts at checkout with a
-// card), and Free caps its monthly cases. Where
-// billing is off everything is allowed, and an Autumn outage fails open.
+// card), a payment past due stops it once its grace runs out, and Free caps
+// its monthly cases. Where billing is off everything is allowed, and an
+// Autumn outage fails open.
 export const entitlement = async (
   env: Env,
   org: OrgId,
   featureId: string,
-): Promise<"ok" | "plan_required" | "used_up"> => {
+): Promise<"ok" | "plan_required" | "past_due" | "used_up"> => {
   const billing = autumn(env);
   if (!billing) return "ok";
   const plan = await cloudPlan(env, org);
   if (!plan) return "ok";
   if (!plan.started)
     return planRequired(env, org, plan.started) ? "plan_required" : "ok";
+  if (pastDueStop(plan)) return "past_due";
   // Internal has no limits, and its customers keep the features they were
   // attached with, which a renamed feature leaves out.
   if (plan.name === "internal") return "ok";

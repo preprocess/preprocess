@@ -1,16 +1,13 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
-import {
-  AuthLayout,
-  authLinkClass,
-  safeRedirect,
-} from "../components/auth-layout";
+import { AuthLayout, authLinkClass } from "../components/auth-layout";
 import {
   LinkSent,
   PasswordlessForm,
   linkSentFooter,
 } from "../components/passwordless-form";
+import { safeRedirect } from "../features/auth/safe-redirect";
 import { loadAuthOptions } from "../features/auth/session";
 
 export const Route = createFileRoute("/sign-in")({

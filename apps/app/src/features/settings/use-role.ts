@@ -3,8 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth, useOrganizationId } from "../auth/auth-context";
 import { apiFetch, orgApi } from "../auth/client";
 
-/** Whether the signed-in person is an Owner or Admin of the active organization. */
-export function useCanAdminister() {
+/**
+ * Whether the signed-in person is an Owner or Admin of the active
+ * organization; undefined until their role has loaded.
+ */
+export function useAdministers() {
   const organizationId = useOrganizationId();
   const member = useQuery({
     queryKey: ["active-member", organizationId],
@@ -13,8 +16,27 @@ export function useCanAdminister() {
         `/api/auth/organization/get-active-member-role?organizationId=${encodeURIComponent(organizationId)}`,
       ),
   });
-  const role = member.data?.role ?? "member";
-  return role.split(",").some((r) => r === "owner" || r === "admin");
+  return member.data?.role
+    .split(",")
+    .some((r) => r === "owner" || r === "admin");
+}
+
+/** Whether the signed-in person is the active organization's Owner. */
+export function useOwns() {
+  const organizationId = useOrganizationId();
+  const member = useQuery({
+    queryKey: ["active-member", organizationId],
+    queryFn: () =>
+      apiFetch<{ role: string }>(
+        `/api/auth/organization/get-active-member-role?organizationId=${encodeURIComponent(organizationId)}`,
+      ),
+  });
+  return member.data?.role.split(",").includes("owner") ?? false;
+}
+
+/** Whether the signed-in person is an Owner or Admin of the active organization. */
+export function useCanAdminister() {
+  return useAdministers() ?? false;
 }
 
 /**

@@ -6,6 +6,7 @@ import type { Pipeline } from "cloudflare:pipelines";
 
 import type { BuildQueue } from "./builds.ts";
 import type { Counter } from "./counter.ts";
+import type { RateLimiter } from "./rate-limit.ts";
 import type { Scheduler } from "./scheduler.ts";
 import type { OtelRetry } from "./otel.ts";
 import type { OutboxMessage } from "./outbox.ts";
@@ -55,6 +56,31 @@ export type WriteResult =
   | { result: "refused"; path: string; reason: string }
   | { result: "conflict"; path: string; version: number };
 
+// apps/runtime's capture.ts, version 1. Events carry arbitrary JSON.
+export type RunCapture = {
+  format: "preprocess.run";
+  version: 1;
+  organizationId: string;
+  agentId: string;
+  deploymentId: string;
+  caseId: string;
+  sdkVersion: string;
+  model: string;
+  status: "completed" | "failed";
+  usage: {
+    input: number;
+    output: number;
+    costMicroUsd: number;
+    charges: { model: number; decide: number; ocr: number };
+  };
+  events: {
+    seq: number;
+    at: string;
+    kind: string;
+    data: Record<string, unknown>;
+  }[];
+};
+
 export type CaseRoomState = {
   status: string;
   run: number;
@@ -101,6 +127,9 @@ export type Runtime = {
     c: CaseKey & { userId: string; text: string },
   ): Promise<{ id: string; mentioned: string[] }>;
   cancelCase(c: CaseKey): Promise<CaseRoomState>;
+  // A closed case's run capture (format preprocess.run), or null when none
+  // is stored (design doc 10).
+  readCapture(c: CaseKey): Promise<RunCapture | null>;
   // Retention (spec 16a): a closed case's run capture, or all of its state.
   deleteCapture(c: CaseKey): Promise<void>;
   deleteCase(c: CaseKey): Promise<void>;
@@ -188,6 +217,9 @@ export type Env = {
   // Autumn (spec 16a): our cloud's billing. Unset, billing is off: nothing is
   // reported and every organization is on the free plan without limits.
   AUTUMN_SECRET_KEY?: string;
+  // Verifies Autumn's webhooks (Svix, whsec_…). Unset, the Autumn webhook
+  // answers 404 and auto-reload failures aren't recorded.
+  AUTUMN_WEBHOOK_SECRET?: string;
   // When cards became required (an ISO date; spec 16a). Unset, an
   // organization without a plan is not limited. Set, organizations created
   // before it are put on Free without a card, and later ones must start a
@@ -201,6 +233,13 @@ export type Env = {
   // Self-hosted only: the signed license key (license.ts). Without a valid
   // one the install runs the free plan.
   PREPROCESS_LICENSE_KEY?: string;
+  // Self-hosted only: "on" turns Training on (training.ts). Our cloud ignores
+  // it.
+  TRAINING_SERVICE?: string;
+  // Our cloud only: where the API posts its heartbeat (heartbeat.ts) and the
+  // bearer token it sends. Unset, as on a self-hosted install, nothing is sent.
+  STATUS_HEARTBEAT_URL?: string;
+  STATUS_HEARTBEAT_SECRET?: string;
   // Where OCR is served (@preprocess/models endpoints): Mistral, an
   // install's own MODEL_ENDPOINTS entry, or MODEL_SERVICE_URL (the stub).
   MISTRAL_API_KEY?: string;
@@ -225,6 +264,9 @@ export type Env = {
   AUDIT_SIGNING_KEY: string;
   AUDIT_SIGNING_KEY_ID: string;
   COUNTER: DurableObjectNamespace<Counter>;
+  // Rate limits (rate-limit.ts): one object per organization, API key and
+  // client address.
+  RATE_LIMITER: DurableObjectNamespace<RateLimiter>;
   // Schedules (scheduler.ts): one object per agent, and one per preview.
   SCHEDULER: DurableObjectNamespace<Scheduler>;
   JOBS: Queue<Job>;

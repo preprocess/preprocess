@@ -63,7 +63,8 @@ export const credentials = async (): Promise<Credentials> => {
   };
 };
 
-const retrying = async (request: () => Promise<Response>) => {
+// Cloudflare's API answers 429 and the odd 5xx; retry those with backoff.
+export const retrying = async (request: () => Promise<Response>) => {
   for (let attempt = 1; ; attempt++) {
     const response = await request();
     if ((response.status !== 429 && response.status < 500) || attempt === 5) {
@@ -291,12 +292,15 @@ const referencedImages = async (c: Credentials, scripts?: string[]) => {
   const names =
     scripts ??
     (await cloudflare<{ id: string }[]>(c, base)).map((script) => script.id);
+  // A Worker that is gone references nothing: a partly deployed stage never
+  // had it, and a listed one can be deleted before its versions are read, by
+  // this teardown or another preview's (PRE-152).
+  const missing = (error: Error) => {
+    if (error.message.includes(": 404 ")) return undefined;
+    throw error;
+  };
   const referenced = new Set<string>();
   await inParallel(names, async (name) => {
-    const missing = (error: Error) => {
-      if (scripts && error.message.includes(": 404 ")) return undefined;
-      throw error;
-    };
     const versions = await cloudflare<{
       items: { id: string; number: number }[];
     }>(c, `${base}/${name}/versions?per_page=100`).catch(missing);
@@ -313,7 +317,11 @@ const referencedImages = async (c: Credentials, scripts?: string[]) => {
       ),
     ]);
     const lists = await inParallel([...ids], async (id) =>
-      images(await cloudflare<Version>(c, `${base}/${name}/versions/${id}`)),
+      images(
+        (await cloudflare<Version>(c, `${base}/${name}/versions/${id}`).catch(
+          missing,
+        )) ?? {},
+      ),
     );
     for (const image of lists.flat()) referenced.add(image);
   });

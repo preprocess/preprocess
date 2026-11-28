@@ -45,7 +45,9 @@ export const orgCaller = createMiddleware<{
   const key = bearer(c.req.raw);
 
   let caller: Caller | null = null;
-  if (key) {
+  // Organization API keys carry the pp_ prefix; any other bearer token is a
+  // session, such as the one `preprocess login` holds, and is read below.
+  if (key?.startsWith("pp_")) {
     const result = await withAuth(c.env, request, (auth) =>
       auth.api.verifyApiKey({ body: { key } }),
     );

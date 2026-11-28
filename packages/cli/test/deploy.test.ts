@@ -9,6 +9,7 @@ import {
   bundle,
   deploy,
   describe as describeDeployment,
+  entryPath,
   gitInfo,
 } from "../src/deploy.ts";
 import { main } from "../src/main.ts";
@@ -76,8 +77,22 @@ describe("gitInfo", () => {
   });
 });
 
+describe("entryPath", () => {
+  it("names the entry from the git root, else from cwd", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "preprocess-entry-"));
+    const project = path.join(dir, "agents/intake");
+    mkdirSync(path.join(project, "src"), { recursive: true });
+    writeFileSync(path.join(project, "src/index.ts"), "");
+    expect(entryPath("src/index.ts", project)).toBe("src/index.ts");
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    expect(entryPath("./src/index.ts", project)).toBe(
+      "agents/intake/src/index.ts",
+    );
+  });
+});
+
 describe("deploy", () => {
-  it("posts the bundle and git to the agent's deployments with the key", async () => {
+  it("posts the bundle, git and entry to the agent's deployments with the key", async () => {
     let seen: Request | undefined;
     const fake = ((input: URL, init: RequestInit) => {
       seen = new Request(input, init);
@@ -107,6 +122,7 @@ describe("deploy", () => {
       key: "pp_k",
       bundle: b,
       git: { branch: "main", commit: "abc" },
+      entry: "agents/stock.ts",
       fetch: fake,
     });
     expect(d.id).toBe("dep_1");
@@ -117,6 +133,7 @@ describe("deploy", () => {
     expect(await seen!.json()).toEqual({
       bundle: b,
       git: { branch: "main", commit: "abc" },
+      entry: "agents/stock.ts",
     });
   });
 
@@ -176,10 +193,12 @@ describe("describe", () => {
 
 describe("main", () => {
   it("names what is missing instead of deploying", async () => {
-    const result = await main(["deploy", fixture, "--agent", "stock"], {});
+    const result = await main(["deploy", fixture, "--agent", "stock"], {
+      XDG_CONFIG_HOME: "/nonexistent",
+    });
     expect(result.code).toBe(1);
     expect(result.out).toContain(
-      "--org or PREPROCESS_ORG, --api or PREPROCESS_API_URL, PREPROCESS_API_KEY",
+      "--org or PREPROCESS_ORG, --api or PREPROCESS_API_URL, a sign-in (preprocess login or PREPROCESS_API_KEY)",
     );
   });
 });

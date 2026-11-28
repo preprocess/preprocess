@@ -51,6 +51,15 @@ export const RETIRED_MODELS: Readonly<Record<string, Model>> = {
 export const currentModel = (model: string): string =>
   RETIRED_MODELS[model] ?? model;
 
+// An organization's own model (design doc 10), registered by endpoint, such as
+// a trained checkpoint: "org:<slug>". MODEL_CATALOG stays the built-in list.
+export const ORG_MODEL = /^org:[a-z0-9][a-z0-9-]{0,62}$/;
+export type OrgModel = `org:${string}`;
+export const isOrgModel = (id: string): id is OrgModel => ORG_MODEL.test(id);
+
+// What an agent names as its model: a catalogue model or an organization's.
+export type ModelId = Model | OrgModel;
+
 export const REASONING = ["low", "medium", "high"] as const;
 export type Reasoning = (typeof REASONING)[number];
 
@@ -343,7 +352,7 @@ type ManifestV1 = {
   protocol: typeof PROTOCOL;
   sdk: { name: "@preprocess/sdk"; version: string };
   instructions: string;
-  model: Model;
+  model: ModelId;
   reasoning: Reasoning;
   secrets: string[];
   mcp: string[];
@@ -479,7 +488,7 @@ export type Manifest = ManifestV1 & {
 // inline ones, and the organization's groups (`preprocess config pull`,
 // `preprocess groups pull`). bundle() injects it as __PREPROCESS_CONFIG__.
 export type ProjectSettings = {
-  model?: Model;
+  model?: ModelId;
   reasoning?: Reasoning;
   ocr?: boolean;
   searchCases?: boolean;

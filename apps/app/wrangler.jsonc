@@ -10,6 +10,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "services": [{ "binding": "API", "service": "preprocess-api-development" }],
+  "vars": { "DOCS_URL": "https://docs.preprocess.com" },
   "env": {
     "staging": { "name": "preprocess-app-staging", "workers_dev": true },
     "production": { "name": "preprocess-app-production", "workers_dev": false },

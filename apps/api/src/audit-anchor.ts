@@ -218,6 +218,10 @@ export const anchorOrganization = async (
   return anchored;
 };
 
+// Organizations anchored at once. Each holds a database connection while it
+// works, so the cron uses at most this many however many organizations exist.
+const ANCHOR_CONCURRENCY = 4;
+
 // The cron job: every organization with a chain, live or deleted, through
 // yesterday. A deleted organization stops after the day it was deleted.
 export const anchorAll = async (env: Env, now: Date) => {
@@ -231,15 +235,30 @@ export const anchorAll = async (env: Env, now: Date) => {
           from audit_heads h left join deleted_organizations d using (organization_id)
          where h.anchored_through is null or h.anchored_through < ${yesterday}`),
   );
-  const results = await Promise.allSettled(
-    heads.rows.map((h) =>
-      anchorOrganization(
-        env,
-        h.organization_id,
-        h.deleted_at && dayOf(new Date(h.deleted_at)) < yesterday
-          ? dayOf(new Date(h.deleted_at))
-          : yesterday,
-      ),
+  const results: PromiseSettledResult<string[]>[] = [];
+  let next = 0;
+  await Promise.all(
+    Array.from(
+      { length: Math.min(ANCHOR_CONCURRENCY, heads.rows.length) },
+      async () => {
+        for (let i = next++; i < heads.rows.length; i = next++) {
+          const h = heads.rows[i]!;
+          try {
+            results[i] = {
+              status: "fulfilled",
+              value: await anchorOrganization(
+                env,
+                h.organization_id,
+                h.deleted_at && dayOf(new Date(h.deleted_at)) < yesterday
+                  ? dayOf(new Date(h.deleted_at))
+                  : yesterday,
+              ),
+            };
+          } catch (reason) {
+            results[i] = { status: "rejected", reason };
+          }
+        }
+      },
     ),
   );
   for (const [i, result] of results.entries())

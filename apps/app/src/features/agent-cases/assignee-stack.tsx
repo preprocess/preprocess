@@ -61,7 +61,7 @@ export function AssigneeStack({
     <Tooltip content={label} side="top">
       <AvatarGroup aria-label={label} className={cn("shrink-0", className)}>
         {shown.map((assignee) => (
-          <Avatar key={assignee.email} size="sm">
+          <Avatar key={assignee.id} size="sm">
             <AvatarFallback name={avatarMarbleSeed(assignee)} />
           </Avatar>
         ))}
@@ -82,9 +82,11 @@ export function AssigneeStack({
 export function NeedsAssignmentTag({
   item,
   className,
+  labelClassName,
 }: Readonly<{
   item: Pick<Case, "awaiting" | "assignees">;
   className?: string;
+  labelClassName?: string;
 }>) {
   const phrase = needsAssignmentPhrase(item);
   if (!phrase) return null;
@@ -98,7 +100,7 @@ export function NeedsAssignmentTag({
       >
         <span className="flex items-center gap-1">
           <TriangleAlertIcon aria-hidden="true" className="size-3" />
-          Needs assignment
+          <span className={labelClassName}>Needs assignment</span>
         </span>
       </Badge>
     </Tooltip>

@@ -6,7 +6,7 @@ import {
   EmptyTitle,
 } from "@preprocess/ui/components/empty";
 
-import { ChatEmptyArt } from "./empty-art";
+import { FillsOnItsOwnArt } from "./empty-art";
 
 export function ChatEmpty() {
   return (
@@ -16,10 +16,12 @@ export function ChatEmpty() {
     >
       <EmptyHeader className="pointer-events-auto group">
         <EmptyMedia variant="graphic">
-          <ChatEmptyArt />
+          <FillsOnItsOwnArt />
         </EmptyMedia>
         <EmptyTitle>No messages yet</EmptyTitle>
-        <EmptyDescription>Send a message to start this case.</EmptyDescription>
+        <EmptyDescription>
+          The agent's thread and any team replies appear here as the case runs.
+        </EmptyDescription>
       </EmptyHeader>
     </Empty>
   );

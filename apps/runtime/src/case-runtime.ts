@@ -13,12 +13,7 @@ import { decide } from "@preprocess/models/decide";
 import { modelEndpoint } from "@preprocess/models/endpoints";
 import { decideCostMicroUsd, microUsd } from "@preprocess/models/prices";
 import { runMode } from "@preprocess/runmode";
-import type {
-  Effect,
-  Manifest,
-  SandboxSize,
-  ToolResult,
-} from "@preprocess/sdk/protocol";
+import type { Effect, Manifest, ToolResult } from "@preprocess/sdk/protocol";
 import { PROTOCOL } from "@preprocess/sdk/protocol";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
@@ -214,13 +209,6 @@ const withSettings = (manifest: Manifest, settings?: Settings): Manifest => {
     ...(settings.sandboxImage !== null && {
       sandboxImage: settings.sandboxImage,
     }),
-    ...(manifest.sandbox &&
-      settings.sandboxSize && {
-        sandbox: {
-          ...manifest.sandbox,
-          size: settings.sandboxSize as SandboxSize,
-        },
-      }),
     evals: { ...manifest.evals, onPush: settings.evals.onPush },
     ...(manifest.schedules && {
       schedules: manifest.schedules.map((s) => ({
@@ -1213,9 +1201,12 @@ export class CaseRuntime extends DurableObject<Env> {
   }
 
   harness = new PiHarness({
-    harness: ({ storage, context, onWake }) => {
+    harness: async ({ storage, context, onWake }) => {
       const meta = this.meta();
       if (!meta) throw new Error("case has not started");
+      // The organization's model endpoints (design doc 10), in memory only.
+      const endpoints =
+        (await this.env.PLATFORM?.modelEndpoints(meta.organizationId)) ?? {};
       const tools = meta.manifest.tools.map((tool) =>
         defineTool({
           name: tool.name,
@@ -1304,6 +1295,9 @@ export class CaseRuntime extends DurableObject<Env> {
             this.record("model.request", {
               turn: current,
               model: model.id,
+              ...(endpoints[model.id] && {
+                endpoint: endpoints[model.id]!.id,
+              }),
               reasoning:
                 (options as { reasoning?: string } | undefined)?.reasoning ??
                 options?.reasoningEffort,
@@ -1331,6 +1325,7 @@ export class CaseRuntime extends DurableObject<Env> {
           })().catch((error: unknown) => stop("error", String(error)));
           return out;
         },
+        endpoints,
       );
       registry.install(
         largeSummaries(

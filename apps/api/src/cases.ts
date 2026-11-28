@@ -21,6 +21,7 @@ import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 import { agentRole, canSeeCase, canWorkCase } from "./access.ts";
+import { assertModelAllowed } from "./allowed-models.ts";
 import type { Caller } from "./caller.ts";
 import type { Manifest } from "./deploy.ts";
 import { acceptedMemories } from "./memories.ts";
@@ -37,13 +38,19 @@ import { notifyLater } from "./notify.ts";
 import { queueWebhooks } from "./webhooks.ts";
 import type { OutboxKind, OutboxMessage } from "./outbox.ts";
 
-// Errors in doc 04's shape: { error: { code, message } }.
+// Errors in doc 04's shape: { error: { code, message } }, with any details
+// a client acts on beside them (model_in_use's refs).
 export class ApiError extends HTTPException {
   readonly code: string;
-  constructor(status: ContentfulStatusCode, code: string, message: string) {
+  constructor(
+    status: ContentfulStatusCode,
+    code: string,
+    message: string,
+    details: Record<string, unknown> = {},
+  ) {
     super(status, {
       message,
-      res: Response.json({ error: { code, message } }, { status }),
+      res: Response.json({ error: { code, message, ...details } }, { status }),
     });
     this.code = code;
   }
@@ -113,14 +120,21 @@ export const createCase = async (
   by: Creator,
   idempotencyKey?: string,
 ): Promise<{ body: CaseAccepted; replayed: boolean }> => {
-  // A plan must be started first; Free caps its monthly cases (spec 16a), and
-  // Free and Team need credits left (PRE-96).
+  // A plan must be started first; a payment past due for 7 days stops new
+  // cases until it's paid; Free caps its monthly cases (spec 16a), and Free
+  // and Team need credits left (PRE-96).
   const entitled = await entitlement(env, org, "cases");
   if (entitled === "plan_required")
     throw new ApiError(
       402,
       "plan_required",
       "This organization has no plan yet. Its Owner can start one, Free included, in Billing.",
+    );
+  if (entitled === "past_due")
+    throw new ApiError(
+      402,
+      "payment_past_due",
+      "The last payment failed more than 7 days ago. An Owner can update the card in Billing.",
     );
   if (entitled === "used_up")
     throw new ApiError(
@@ -196,7 +210,11 @@ export const createCase = async (
     if (!agent) throw new ApiError(404, "not_found", "No such agent.");
 
     const [deployment] = await tx
-      .select({ id: deployments.id, layer: deployments.sandboxLayer })
+      .select({
+        id: deployments.id,
+        layer: deployments.sandboxLayer,
+        manifest: deployments.manifest,
+      })
       .from(deployments)
       .where(
         and(
@@ -225,6 +243,11 @@ export const createCase = async (
         `${agent.slug} is paused because it uses a custom environment, which requires the Team plan. Upgrade to Team to resume automatically, or remove the custom setup in code.`,
       );
 
+    await assertModelAllowed(
+      tx,
+      (await effectiveSettings(tx, agent.id, deployment.manifest as Manifest))
+        .model,
+    );
     await refuseOverLimit(tx);
     const caseId = newId("case");
     if (input.files.length) {

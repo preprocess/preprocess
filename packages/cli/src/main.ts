@@ -1,17 +1,26 @@
 #!/usr/bin/env node
-// The `preprocess` command. The API key comes only from PREPROCESS_API_KEY,
-// so it never lands in shell history or CI logs.
+// The `preprocess` command. It signs in with PREPROCESS_API_KEY, else with
+// the session `preprocess login` saved; a key never comes from a flag, so it
+// never lands in shell history or CI logs.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
 import { casesCreate } from "./cases.ts";
-import { bundle, deploy, describe, gitInfo } from "./deploy.ts";
+import {
+  readCredentials,
+  resolveTarget,
+  writeCredentials,
+} from "./credentials.ts";
+import { bundle, deploy, describe, entryPath, gitInfo } from "./deploy.ts";
 import { evalsList, evalsRun } from "./evals.ts";
 import { githubApp } from "./github-app.ts";
+import { init } from "./init.ts";
 import { install } from "./install.ts";
+import { login } from "./login.ts";
 import { logs } from "./logs.ts";
+import { promote, rollback } from "./promote.ts";
 import { configPull, groupsPull } from "./pull.ts";
 import { usage } from "./usage.ts";
 
@@ -41,6 +50,7 @@ export const main = async (argv: string[], env = process.env) => {
       name: { type: "string" },
       owner: { type: "string" },
       out: { type: "string" },
+      "no-browser": { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -58,6 +68,10 @@ export const main = async (argv: string[], env = process.env) => {
       command !== "logs" &&
       command !== "install" &&
       command !== "github-app" &&
+      command !== "login" &&
+      command !== "init" &&
+      !(command === "promote" && positionals[1]) &&
+      command !== "rollback" &&
       !pull &&
       !cases &&
       !evals)
@@ -72,6 +86,37 @@ export const main = async (argv: string[], env = process.env) => {
       envFiles: values["env-file"] ?? [],
       env,
     });
+  if (command === "login") {
+    const api =
+      values.api ?? env.PREPROCESS_API_URL ?? readCredentials(env)?.api;
+    if (!api)
+      return {
+        code: 1,
+        out: `Missing --api or PREPROCESS_API_URL.\n\n${usage}`,
+      };
+    return login({
+      api,
+      org: values.org ?? env.PREPROCESS_ORG,
+      browser: !values["no-browser"],
+      log: (line) => console.error(line),
+      save: (credentials) => writeCredentials(env, credentials),
+    });
+  }
+  if (command === "init")
+    return init({ dir: positionals[1] ?? ".", name: values.name });
+  if (command === "promote" || command === "rollback") {
+    const { org, api, key } = resolveTarget(values, env);
+    const agent = values.agent ?? packageName(process.cwd());
+    if (!org || !api || !key || !agent)
+      return {
+        code: 1,
+        out: `Missing --agent, --org, --api or a sign-in (preprocess login or PREPROCESS_API_KEY).\n\n${usage}`,
+      };
+    const target = { api, org, key, agent };
+    return command === "promote"
+      ? promote({ ...target, deployment: positionals[1]! })
+      : rollback({ ...target, deployment: positionals[1] });
+  }
   if (command === "github-app") {
     if (!values["app-url"])
       return { code: 1, out: `Missing --app-url.\n\n${usage}` };
@@ -84,14 +129,12 @@ export const main = async (argv: string[], env = process.env) => {
     });
   }
   if (cases) {
-    const org = values.org ?? env.PREPROCESS_ORG;
-    const api = values.api ?? env.PREPROCESS_API_URL;
-    const key = env.PREPROCESS_API_KEY;
+    const { org, api, key } = resolveTarget(values, env);
     const agent = values.agent ?? packageName(process.cwd());
     if (!org || !api || !key || !agent)
       return {
         code: 1,
-        out: `Missing --agent, --org, --api or PREPROCESS_API_KEY.\n\n${usage}`,
+        out: `Missing --agent, --org, --api or a sign-in (preprocess login or PREPROCESS_API_KEY).\n\n${usage}`,
       };
     if (!values.text && !values.file?.length)
       return { code: 1, out: `Give --text, --file or both.\n\n${usage}` };
@@ -110,14 +153,12 @@ export const main = async (argv: string[], env = process.env) => {
     };
   }
   if (evals) {
-    const org = values.org ?? env.PREPROCESS_ORG;
-    const api = values.api ?? env.PREPROCESS_API_URL;
-    const key = env.PREPROCESS_API_KEY;
+    const { org, api, key } = resolveTarget(values, env);
     const agent = values.agent ?? packageName(process.cwd());
     if (!org || !api || !key)
       return {
         code: 1,
-        out: `Missing --org, --api or PREPROCESS_API_KEY.\n\n${usage}`,
+        out: `Missing --org, --api or a sign-in (preprocess login or PREPROCESS_API_KEY).\n\n${usage}`,
       };
     if (positionals[1] === "run")
       return evalsRun({
@@ -132,13 +173,11 @@ export const main = async (argv: string[], env = process.env) => {
     return { code: 0, ...(await evalsList({ api, org, key, agent })) };
   }
   if (command === "logs") {
-    const org = values.org ?? env.PREPROCESS_ORG;
-    const api = values.api ?? env.PREPROCESS_API_URL;
-    const key = env.PREPROCESS_API_KEY;
+    const { org, api, key } = resolveTarget(values, env);
     if (!org || !api || !key)
       return {
         code: 1,
-        out: `Missing --org, --api or PREPROCESS_API_KEY.\n\n${usage}`,
+        out: `Missing --org, --api or a sign-in (preprocess login or PREPROCESS_API_KEY).\n\n${usage}`,
       };
     return {
       code: 0,
@@ -159,14 +198,12 @@ export const main = async (argv: string[], env = process.env) => {
 
   const cwd = process.cwd();
   const agent = values.agent ?? packageName(cwd);
-  const org = values.org ?? env.PREPROCESS_ORG;
-  const api = values.api ?? env.PREPROCESS_API_URL;
-  const key = env.PREPROCESS_API_KEY;
+  const { org, api, key } = resolveTarget(values, env);
   const missing = [
     !agent && command !== "groups" && "--agent",
     !org && "--org or PREPROCESS_ORG",
     !api && "--api or PREPROCESS_API_URL",
-    !key && "PREPROCESS_API_KEY",
+    !key && "a sign-in (preprocess login or PREPROCESS_API_KEY)",
   ].filter(Boolean);
   if (!org || !api || !key || missing.length)
     return { code: 1, out: `Missing ${missing.join(", ")}.\n\n${usage}` };
@@ -183,6 +220,7 @@ export const main = async (argv: string[], env = process.env) => {
     key,
     bundle: await bundle(path.resolve(cwd, entry)),
     git: gitInfo(cwd, env),
+    entry: entryPath(entry, cwd),
     onBuilding: () =>
       console.error(
         `${agent}: building the sandbox's custom environment; this can take a few minutes`,

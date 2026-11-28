@@ -1,0 +1,104 @@
+---
+title: Deploy from GitHub
+description:
+  Install the GitHub App, link a repository to an agent, and every push builds
+  and deploys it.
+---
+
+The GitHub App deploys an agent on every push to a repository you link to it. It
+produces the same deployment as `preprocess deploy`, with the same checks, and
+the branch decides whether it is a production or preview deployment, as
+described in
+[Environments and regions](/deploy-and-operate/environments-and-regions).
+
+Owners and Admins connect GitHub and manage links. Everyone in the organization
+can see an agent's builds.
+
+## Install the App
+
+1. Open **Settings → Developers → GitHub** and choose **Install GitHub App**.
+2. On GitHub, pick the account or organization and the repositories the App may
+   read. You can change this later.
+3. GitHub returns you to the GitHub page, which lists the account and its
+   repositories.
+
+GitHub asks you to authorize the App during installation. Preprocess uses that
+once, to check that your GitHub account can reach the installation, so nobody
+can attach someone else's installation to their organization. An installation
+belongs to one organization.
+
+To connect another GitHub account or organization, choose **Add account**.
+
+## Link a repository to an agent
+
+Choose **Link** on a repository, or **Link agent**, and fill in:
+
+| Field      | Meaning                                                                                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent      | The agent's name. A new name creates the agent on its first build.                                                                              |
+| Repository | One of the repositories the App can read.                                                                                                       |
+| Branch     | Only pushes to this branch deploy. Leave it empty to deploy every branch; branches other than the agent's production branch deploy as previews. |
+| Directory  | The agent's folder in the repository. Empty means the root.                                                                                     |
+| Entry file | The agent's entry module inside the directory. Defaults to `src/index.ts`.                                                                      |
+
+One repository can feed several agents, for example a monorepo with one folder
+per agent. Each agent has one link; linking it again replaces the old link.
+
+**Unlink** stops pushes from deploying the agent. The agent and its deployments
+stay as they are.
+
+## What happens on a push
+
+Each push to a linked branch starts a build in a fresh, isolated build
+container:
+
+- Preprocess fetches that commit with a token limited to read access on that one
+  repository, and revokes the token when the build ends. The token never enters
+  the build container, a log or the build record.
+- Dependencies install from your lockfile (`pnpm-lock.yaml`, `yarn.lock`,
+  `package-lock.json` or `npm-shrinkwrap.json`). A build without a lockfile
+  fails and says to commit one.
+- Builds run one at a time per agent and branch. A newer push replaces a waiting
+  build and stops a running one, so an older commit never deploys over a newer
+  one.
+
+## Change access or uninstall
+
+Choose **Manage** next to an account to open the installation on GitHub. There
+you change which repositories the App can read, suspend it, or uninstall it.
+Preprocess follows those changes: removed repositories disappear from the list,
+a suspended installation shows as suspended, and uninstalling removes the
+account, its repositories and their links.
+
+## Self-hosted installs
+
+A self-hosted install registers its own GitHub App, since GitHub App names are
+global. Create it under your GitHub organization's **Settings → Developer
+settings → GitHub Apps** with these settings, where `{APP_URL}` is your
+install's app origin:
+
+| Setting                                                | Value                                                       |
+| ------------------------------------------------------ | ----------------------------------------------------------- |
+| Callback URL                                           | `{APP_URL}/v1/github/setup`                                 |
+| Request user authorization (OAuth) during installation | On                                                          |
+| Setup URL                                              | `{APP_URL}/v1/github/setup`, with **Redirect on update** on |
+| Webhook URL                                            | `{APP_URL}/v1/github/webhook`, active                       |
+| Webhook secret                                         | A random secret, such as `openssl rand -hex 32`             |
+| Repository permissions                                 | Contents: Read-only. Metadata: Read-only.                   |
+| Organization and account permissions                   | None                                                        |
+| Subscribe to events                                    | Push                                                        |
+| Where can this App be installed                        | Any account, or only your account                           |
+
+Then give the installer these values:
+
+| Variable                          | Source                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `GITHUB_APP_ID`                   | The App's settings page                                                                           |
+| `GITHUB_APP_SLUG`                 | The end of the App's public URL, `github.com/apps/<slug>`                                         |
+| `GITHUB_CLIENT_ID`                | The App's settings page                                                                           |
+| `GITHUB_CLIENT_SECRET` (secret)   | **Generate a new client secret**                                                                  |
+| `GITHUB_WEBHOOK_SECRET` (secret)  | The webhook secret you chose                                                                      |
+| `GITHUB_APP_PRIVATE_KEY` (secret) | **Generate a private key**, converted to PKCS #8 with `openssl pkcs8 -topk8 -nocrypt -in key.pem` |
+
+Without them the GitHub page says the App isn't set up, and the rest of
+Preprocess works as before.

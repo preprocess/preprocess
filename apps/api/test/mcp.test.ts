@@ -8,6 +8,11 @@ import { Client, createOrganization, signUp, testEnv } from "./helpers.ts";
 import crmAgent from "./dist/crm-agent.js?raw";
 
 type Who = { org: OrgId; client: Client };
+// The fake CRM's tokens (fake-mcp.ts), exactly, so a random org slug such as
+// "…-mwzmyort-1cf…" in the same JSON can't match (PRE-147).
+const TOKEN =
+  /[ar]t-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
+
 const seedOrg = async (name: string): Promise<Who> => {
   const { client } = await signUp(name);
   const org = orgId(await createOrganization(client, name));
@@ -114,7 +119,11 @@ describe("MCP servers and the organization's connection", () => {
     const registered = await call(a, "PUT", "/v1/orgs/{org}/mcp-servers/crm", {
       url: "https://crm.test/mcp",
     });
-    expect(registered.body).toEqual({ slug: "crm", auth: "oauth" });
+    expect(registered.body).toEqual({
+      slug: "crm",
+      auth: "oauth",
+      transport: "streamable_http",
+    });
   });
 
   it("holds a deployment that uses an ungranted server until it is granted", async () => {
@@ -176,7 +185,11 @@ describe("MCP servers and the organization's connection", () => {
     const finished = await new Client(testEnv()).call(
       back.pathname + back.search,
     );
-    expect(finished.status).toBe(200);
+    expect(finished.status).toBe(303);
+    const landed = new URL(finished.headers.get("location")!);
+    expect(landed.origin).toBe(new URL(testEnv().APP_URL).origin);
+    expect(landed.pathname).toBe("/settings/organization/integrations");
+    expect(landed.searchParams.get("connected")).toBe("crm");
     const [server] = (
       await call<Server[]>(a, "GET", "/v1/orgs/{org}/mcp-servers")
     ).body;
@@ -186,7 +199,7 @@ describe("MCP servers and the organization's connection", () => {
       agents: ["crm-agent"],
       connection: { status: "active" },
     });
-    expect(JSON.stringify(server)).not.toMatch(/at-|rt-/);
+    expect(JSON.stringify(server)).not.toMatch(TOKEN);
     const tools = await call<Array<{ name: string }>>(
       a,
       "GET",
@@ -199,7 +212,23 @@ describe("MCP servers and the organization's connection", () => {
     const forged = await new Client(testEnv()).call(
       `/v1/mcp/oauth/callback?code=x&state=${a.org}.mca_forged`,
     );
-    expect(forged.status).toBe(400);
+    expect(forged.status).toBe(303);
+    const landed = new URL(forged.headers.get("location")!);
+    expect(landed.pathname).toBe("/settings/organization/integrations");
+    expect(landed.searchParams.get("connect_error")).toBe("expired");
+    expect(landed.searchParams.has("connected")).toBe(false);
+  });
+
+  it("sends the browser back when the person cancels the sign-in", async () => {
+    const cancelled = await new Client(testEnv()).call(
+      `/v1/mcp/oauth/callback?error=access_denied&state=${a.org}.mca_any`,
+    );
+    expect(cancelled.status).toBe(303);
+    expect(
+      new URL(cancelled.headers.get("location")!).searchParams.get(
+        "connect_error",
+      ),
+    ).toBe("cancelled");
   });
 
   it("calls the server for the agent's code with a token the code never sees", async () => {
@@ -211,7 +240,7 @@ describe("MCP servers and the organization's connection", () => {
         content: [{ type: "text", text: "Ada Lovelace, buyer (Acme buyer)" }],
       },
     });
-    expect(JSON.stringify(view)).not.toMatch(/at-|rt-/);
+    expect(JSON.stringify(view)).not.toMatch(TOKEN);
   });
 
   it("refreshes an expired token and retries", async () => {
@@ -292,7 +321,7 @@ describe("MCP servers and the organization's connection", () => {
         "mcp_server.revoked",
       ]),
     );
-    expect(JSON.stringify(events)).not.toMatch(/at-[0-9a-f]|rt-[0-9a-f]/);
+    expect(JSON.stringify(events)).not.toMatch(TOKEN);
   });
 });
 

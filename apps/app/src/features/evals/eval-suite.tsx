@@ -20,6 +20,11 @@ import { MODELS } from "@preprocess/sdk/protocol";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 
+import {
+  FillsOnItsOwnArt,
+  NothingCreatedArt,
+} from "../../components/empty-art";
+
 import { orgApi } from "../auth/client";
 import {
   SettingsConfirmBody,
@@ -136,12 +141,9 @@ export function EvalSuiteView({
       >
         {suite.runs.length === 0 ? (
           <SettingsEmpty
-            description={
-              suite.cases === 0
-                ? "Add cases to the suite, then run it against a deployment."
-                : "Run the suite to score a deployment against these cases."
-            }
-            title="No runs yet"
+            art={<NothingCreatedArt />}
+            description="Run this suite against a deployment to score answers field by field."
+            title="No eval runs yet"
           />
         ) : (
           <SettingsRows>
@@ -186,12 +188,9 @@ export function EvalSuiteView({
       >
         {suite.suiteCases.length === 0 ? (
           <SettingsEmpty
-            description={
-              suite.kind === "automatic"
-                ? "Completed cases of this agent land here."
-                : "Add completed cases with the API or the CLI."
-            }
-            title="No cases"
+            art={<FillsOnItsOwnArt />}
+            description="Add completed cases to replay and score against new deployments."
+            title="No cases in this suite"
           />
         ) : (
           <SettingsRows>
@@ -227,7 +226,7 @@ export function EvalSuiteView({
       <SettingsSection title="Settings">
         <SettingsRows>
           <SettingsRow
-            description="When a new deployment of this agent is ready, run this suite against it."
+            description="When the agent's Run evals on push setting is on, runs this suite against each new production deployment once it is ready."
             label="Run on each new deployment"
           >
             <Switch

@@ -18,15 +18,18 @@ import {
 } from "@preprocess/db/schema/guardrails";
 import type { GuardrailChange } from "@preprocess/db/schema/guardrails";
 import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
+import { modelEndpoints } from "@preprocess/db/schema/models";
 import { secrets } from "@preprocess/db/schema/secrets";
 import { SANDBOX_SIZES } from "@preprocess/sdk/protocol";
 import { desc, eq } from "drizzle-orm";
 
+import { allowedModels, setAllowedModels } from "../allowed-models.ts";
 import { actor, eventBase, requireAdmin, requireDeveloper } from "../caller.ts";
 import type { OrgVariables } from "../caller.ts";
 import { ApiError } from "../cases.ts";
 import { syncAgents } from "../deploy.ts";
 import type { Env } from "../env.ts";
+import { modelId } from "../settings.ts";
 import {
   agentNetwork,
   effectiveNetwork,
@@ -79,6 +82,15 @@ const SandboxMaxSize = z
   .openapi("SandboxMaxSize", {
     description:
       "The largest case sandbox an agent may use; null allows every size",
+  });
+
+const AllowedModels = z
+  .array(modelId)
+  .min(1)
+  .nullable()
+  .openapi("AllowedModels", {
+    description:
+      "The catalogue and organization models (org:<slug>) agents may run on; null allows every model. Deploys, settings, case starts, reruns, approvals and eval runs that resolve to another model are refused with model_not_allowed (409).",
   });
 
 export const Change = z
@@ -391,36 +403,56 @@ export const guardrailRoutes = new OpenAPIHono<{
       path: "/guardrails",
       tags: ["Guardrails"],
       summary:
-        "The organization's network rules, largest sandbox size and model endpoints",
+        "The organization's network rules, largest sandbox size, allowed models and model endpoints",
       request: { params: OrgParam },
       responses: {
         200: json(
           z.object({
             network: Rules,
             sandboxMaxSize: SandboxMaxSize,
-            modelEndpoints: z.literal("hosted").openapi({
-              description:
-                "Hosted service only; self-hosted endpoints arrive with build step 9",
-            }),
+            allowedModels: AllowedModels,
+            modelEndpoints: z
+              .object({
+                kind: z.enum(["hosted", "own"]),
+                endpoints: z.array(
+                  z.object({ model: z.string(), host: z.string() }),
+                ),
+              })
+              .openapi("ModelEndpoints", {
+                description:
+                  'Where case data goes for model calls: "own" when the organization registered endpoints (GET /models lists them), each by model and URL host',
+              }),
           }),
           "Guardrails",
         ),
       },
     }),
     async (c) => {
-      const { network, sandboxSize } = await withOrg(
+      const { network, sandboxSize, models, endpoints } = await withOrg(
         c.env,
         c.var.org,
         async (tx) => ({
           network: await organizationNetwork(tx),
           sandboxSize: await sandboxMaxSize(tx),
+          models: await allowedModels(tx),
+          endpoints: await tx
+            .select({ model: modelEndpoints.model, url: modelEndpoints.url })
+            .from(modelEndpoints)
+            .orderBy(modelEndpoints.model),
         }),
       );
       return c.json(
         {
           network,
           sandboxMaxSize: sandboxSize,
-          modelEndpoints: "hosted" as const,
+          allowedModels: models,
+          modelEndpoints: {
+            kind: endpoints.length ? ("own" as const) : ("hosted" as const),
+            endpoints: endpoints.map((e) => ({
+              model: e.model,
+              host: new URL(e.url).host,
+            })),
+          },
         },
         200,
       );
@@ -455,6 +487,37 @@ export const guardrailRoutes = new OpenAPIHono<{
           await syncAgents(tx, c.var.org, await allAgents(tx));
       });
       return c.json({ size }, 200);
+    },
+  )
+  .openapi(
+    createRoute({
+      method: "put",
+      path: "/guardrails/allowed-models",
+      tags: ["Guardrails"],
+      summary:
+        "Set the models agents may run on (Owner or Admin); null allows every model",
+      request: {
+        params: OrgParam,
+        body: {
+          content: {
+            "application/json": {
+              schema: z.object({ models: AllowedModels }),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(z.object({ models: AllowedModels }), "The allowed models"),
+      },
+    }),
+    async (c) => {
+      requireAdmin(c.var.caller);
+      const { models } = c.req.valid("json");
+      const saved = await withOrg(c.env, c.var.org, async (tx) => {
+        await setAllowedModels(tx, c.var, models);
+        return allowedModels(tx);
+      });
+      return c.json({ models: saved }, 200);
     },
   )
   .openapi(

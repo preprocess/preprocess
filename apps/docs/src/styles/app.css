@@ -161,7 +161,7 @@ button:is(.bg-fd-primary, .bg-fd-secondary) {
 }
 
 .docs-prose :where(a):not(:where(.not-typeset, .not-typeset *)) {
-  text-decoration-color: var(--surface-6);
+  text-decoration-color: var(--muted);
   text-underline-offset: 3px;
   font-variation-settings: var(--docs-medium);
 }
@@ -439,17 +439,14 @@ svg.lucide * {
   vector-effect: non-scaling-stroke;
 }
 
-/* The home page. The highlight is www's .lander-copy-highlight; on the dark
-   page panel it takes one step up. */
+/* The home page. The highlight is www's .lander-copy-highlight, drawn in
+   --muted so it sits darker than the light page and lifts on the dark one. */
 .docs-highlight {
   display: inline;
   padding-inline: 0.1em;
-  background: var(--surface-4);
+  background: var(--muted);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-}
-.dark .docs-highlight {
-  background: var(--surface-5);
 }
 
 /* The art cards' slate field, the same in both themes, sized in container

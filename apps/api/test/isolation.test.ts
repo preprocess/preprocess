@@ -22,6 +22,7 @@ describe("another organization's data", () => {
       `/v1/orgs/${orgB}/groups/${bGroup.body.id}`,
       `/v1/orgs/${orgB}/audit-events`,
       `/v1/orgs/${orgB}/plan`,
+      `/v1/orgs/${orgB}/models`,
     ])
       expect((await a.client.call(path)).status, path).toBe(403);
     expect(

@@ -1,10 +1,6 @@
 import { MODEL_CATALOG, type Model } from "@preprocess/sdk/protocol";
 
-import type {
-  SecretScope,
-  McpServer,
-  NetworkRule,
-} from "../developers/platform-store";
+import type { SecretScope, NetworkRule } from "../developers/platform-store";
 import {
   AGENT_SEED,
   type AgentAccessLevel,
@@ -83,8 +79,6 @@ export type StoredAgent = Omit<AgentSeed, "deploys" | "deployedAt"> & {
   /** The deployment serving production; a rollback moves it. */
   readonly productionId: string;
   readonly env: readonly AgentEnvVar[];
-  /** The sandbox image the agent runs in; null uses the organization's default. */
-  readonly sandboxImageId: string | null;
   /**
    * The agent's own network rules. They sit on top of the organization's;
    * a rule for a pattern the organization also rules on overrides it.
@@ -97,17 +91,6 @@ export type StoredAgent = Omit<AgentSeed, "deploys" | "deployedAt"> & {
   readonly everyone: AgentAccessLevel | null;
   /** Where the agent's code lives; deployments build from it. */
   readonly repo: AgentRepo | null;
-  /** Organization MCP servers this agent has turned on; the rest are off. */
-  readonly mcp: readonly AgentMcpGrant[];
-  /** MCP servers only this agent uses. */
-  readonly mcpServers: readonly McpServer[];
-};
-
-/** An organization MCP server turned on for one agent. */
-export type AgentMcpGrant = {
-  readonly serverId: string;
-  /** The tools it may call; null allows every tool, including new ones. */
-  readonly tools: readonly string[] | null;
 };
 
 /**
@@ -215,12 +198,6 @@ const SEED_EVERYONE: Readonly<Record<string, AgentAccessLevel>> = {
   support: "viewer",
 };
 
-/** Agents that run on a non-default image. */
-const SEED_IMAGES: Readonly<Record<string, string>> = {
-  sales: "img_office",
-  lab: "img_python",
-};
-
 /** Agent rules: plain additions, and a few that override the organization. */
 const SEED_NETWORK: Readonly<Record<string, readonly NetworkRule[]>> = {
   sales: [{ pattern: "api.stripe.com", kind: "allow" }],
@@ -232,33 +209,6 @@ const SEED_NETWORK: Readonly<Record<string, readonly NetworkRule[]>> = {
   legal: [
     // The organization allows GitHub; legal work has no reason to reach it.
     { pattern: "*.github.com", kind: "block" },
-  ],
-};
-
-const SEED_MCP: Readonly<Record<string, readonly AgentMcpGrant[]>> = {
-  intake: [{ serverId: "mcp_documents", tools: null }],
-  review: [
-    { serverId: "mcp_documents", tools: null },
-    { serverId: "mcp_tickets", tools: ["list_tickets", "add_comment"] },
-  ],
-  sales: [{ serverId: "mcp_inventory", tools: ["lookup_part", "check_stock"] }],
-  support: [{ serverId: "mcp_tickets", tools: null }],
-};
-
-const SEED_AGENT_MCP: Readonly<Record<string, readonly McpServer[]>> = {
-  lab: [
-    {
-      id: "mcp_lab_fixtures",
-      name: "Lab fixtures",
-      url: "https://lab.acme.com/mcp",
-      auth: "none",
-      token: null,
-      tools: [
-        { name: "load_fixture", description: "Load a saved test case." },
-        { name: "record_run", description: "Save a run for comparison." },
-      ],
-      addedAt: "2026-09-20T11:00:00.000Z",
-    },
   ],
 };
 
@@ -301,10 +251,7 @@ function store(): Map<string, StoredAgent> {
                 deploymentEnvironment(item.branch) === "production",
             )?.id ?? "",
           env: seedEnv(seed),
-          sandboxImageId: SEED_IMAGES[seed.id] ?? null,
           network: SEED_NETWORK[seed.id] ?? [],
-          mcp: SEED_MCP[seed.id] ?? [],
-          mcpServers: SEED_AGENT_MCP[seed.id] ?? [],
         },
       ];
     }),
@@ -323,25 +270,6 @@ export function agentEnvKeys(): ReadonlyMap<string, readonly string[]> {
   return keys;
 }
 
-/** Agents using each image, by id; null counts agents on the default. */
-export function sandboxImageUsage(): ReadonlyMap<string | null, number> {
-  const usage = new Map<string | null, number>();
-  for (const agent of store().values()) {
-    usage.set(agent.sandboxImageId, (usage.get(agent.sandboxImageId) ?? 0) + 1);
-  }
-  return usage;
-}
-
-/** Moves agents off a removed image, back to the organization default. */
-export function clearSandboxImage(imageId: string): Promise<void> {
-  for (const agent of store().values()) {
-    if (agent.sandboxImageId === imageId) {
-      store().set(agent.id, { ...agent, sandboxImageId: null });
-    }
-  }
-  return Promise.resolve();
-}
-
 /** What other pages show of an agent: its name. */
 export type AgentSummary = {
   readonly id: string;
@@ -355,26 +283,4 @@ export function agentSummaries(): Readonly<Record<string, AgentSummary>> {
       { id: agent.id, name: agent.name },
     ]),
   );
-}
-
-/** Agents that turned on each organization server, by server id. */
-export function mcpServerUsage(): ReadonlyMap<string, number> {
-  const usage = new Map<string, number>();
-  for (const agent of store().values()) {
-    for (const grant of agent.mcp) {
-      usage.set(grant.serverId, (usage.get(grant.serverId) ?? 0) + 1);
-    }
-  }
-  return usage;
-}
-
-/** Turns a removed organization server off for every agent. */
-export function clearMcpServer(serverId: string): Promise<void> {
-  for (const agent of store().values()) {
-    store().set(agent.id, {
-      ...agent,
-      mcp: agent.mcp.filter((grant) => grant.serverId !== serverId),
-    });
-  }
-  return Promise.resolve();
 }

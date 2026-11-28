@@ -47,6 +47,99 @@ export const SCENARIO_SURFACES = {
       "empty",
     ],
   },
+  // Billing settings: "live" reads the API; the rest are seeded plans and
+  // states (Design's round-4 frames).
+  billing: {
+    label: "Billing",
+    states: [
+      "live",
+      "free",
+      "free-empty",
+      "no-card",
+      "team",
+      "team-small",
+      "team-low",
+      "team-empty",
+      "team-negative",
+      "team-limit",
+      "team-past-due",
+      "team-reload-failed",
+      "team-reload-cap",
+      "team-ending",
+      "team-switched",
+      "enterprise",
+      "internal",
+      "loading",
+    ],
+  },
+  // How seeded billing actions (top up, upgrade, cancel) answer.
+  "billing-result": {
+    label: "Billing result",
+    states: ["ok", "confirm-payment", "declined", "error"],
+  },
+  // Retention settings: "live" reads the API; the rest are seeded periods,
+  // and "admin" is an Admin's view (shortening disabled).
+  retention: {
+    label: "Retention",
+    states: ["live", "forever", "custom", "admin", "error", "loading"],
+  },
+  // Settings → Models: "live" reads the API; the rest are seeded catalogues,
+  // roles and failures (PRE-145's frames).
+  models: {
+    label: "Models",
+    states: [
+      "live",
+      "owner",
+      "member",
+      "empty",
+      "member-empty",
+      "self-hosted",
+      "error",
+      "no-access",
+      "loading",
+    ],
+  },
+  // License settings (self-hosted): "live" reads the API; the rest are
+  // seeded license states, and "admin" is an Admin's read-only view.
+  license: {
+    label: "License",
+    states: ["live", "active", "grace", "expired", "invalid", "none", "admin"],
+  },
+  // The sidebar notice stack's billing and license state, role and
+  // announcements.
+  notices: {
+    label: "Notices",
+    states: [
+      "live",
+      "one",
+      "several",
+      "mixed",
+      "reload-failed",
+      "reload-cap",
+      "license-grace",
+      "license-expired",
+      "license-invalid",
+      "member",
+      "none",
+    ],
+  },
+  // An agent's Training tab and dataset page: "live" reads the API; the rest
+  // are seeded, "operator" is a person who can see the cases but not export,
+  // and "off" is an install with the training switch off.
+  training: {
+    label: "Training",
+    states: [
+      "live",
+      "seeded",
+      "operator",
+      "off",
+      "empty",
+      "no-matches",
+      "loading",
+      "error",
+      "no-access",
+    ],
+  },
 } as const;
 
 export type ScenarioSurface = keyof typeof SCENARIO_SURFACES;
@@ -68,6 +161,13 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   cases: "live",
   "case-room": "conversation",
   "case-work": "live",
+  billing: "live",
+  "billing-result": "ok",
+  retention: "live",
+  models: "live",
+  license: "live",
+  notices: "live",
+  training: "live",
 };
 
 /** Builds without `import.meta.env.DEV` never serve seeded records. */
@@ -76,6 +176,13 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   cases: "live",
   "case-room": "empty",
   "case-work": "live",
+  billing: "live",
+  "billing-result": "ok",
+  retention: "live",
+  models: "live",
+  license: "live",
+  notices: "live",
+  training: "live",
 };
 
 export function isScenarioSurface(value: string): value is ScenarioSurface {

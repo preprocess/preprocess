@@ -2,17 +2,15 @@
 // Limits, Entitlements; 16a Self-hosted). The signing keypair here is made
 // for these tests and registered only while they run; no private key is kept.
 
-import { orgId, withOrg } from "@preprocess/db/client";
+import { orgId, withOrg, withoutOrg } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { agents } from "@preprocess/db/schema/access";
+import { installLicense } from "@preprocess/db/schema/license";
+import { env as bindings } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Env } from "../src/env.ts";
-import {
-  licenseKeys,
-  PLACEHOLDER_LICENSE_KEY,
-  readLicense,
-} from "../src/license.ts";
+import { licenseKeys, readLicense } from "../src/license.ts";
 import { getPlan } from "../src/plan.ts";
 import { countSeats } from "../src/seats.ts";
 import {
@@ -86,11 +84,11 @@ beforeAll(async () => {
   signing = await generate();
   other = await generate();
   signingPublic = await publicOf(signing);
-  licenseKeys.push(signingPublic);
+  licenseKeys[TEST_KID] = signingPublic;
 });
 
 afterAll(() => {
-  licenseKeys.splice(licenseKeys.indexOf(signingPublic), 1);
+  delete licenseKeys[TEST_KID];
 });
 
 describe("license key", () => {
@@ -136,32 +134,56 @@ describe("license key", () => {
     expect((await readLicense(tampered)).status).toBe("invalid");
   });
 
-  it("verifies against any listed key, so a rotation adds the new key", async () => {
+  it("rejects a kid the build doesn't know, even when its key signed it", async () => {
+    expect((await readLicense(await sign({ kid: "unknown" }))).status).toBe(
+      "invalid",
+    );
+    for (const kid of ["__proto__", "constructor", "toString"])
+      expect((await readLicense(await sign({ kid }))).status).toBe("invalid");
+  });
+
+  it("verifies only against the key its kid names", async () => {
+    const otherPublic = await publicOf(other);
+    const keys = { ...licenseKeys, "other-kid": otherPublic };
+    // Signed by the other key but claiming the test kid.
+    const misnamed = await sign({}, other.privateKey);
+    expect((await readLicense(misnamed, new Date(), keys)).status).toBe(
+      "invalid",
+    );
+    // Signed by the test key but claiming the other kid.
+    const claimed = await sign({ kid: "other-kid" });
+    expect((await readLicense(claimed, new Date(), keys)).status).toBe(
+      "invalid",
+    );
+  });
+
+  it("a rotation adds the new kid beside the current one", async () => {
     const next = await generate();
     const byNext = await sign({ kid: "next-2027" }, next.privateKey);
     const byCurrent = await sign();
     expect((await readLicense(byNext)).status).toBe("invalid");
-    const keys = [...licenseKeys, await publicOf(next)];
+    const keys = { ...licenseKeys, "next-2027": await publicOf(next) };
     expect((await readLicense(byCurrent, new Date(), keys)).status).toBe(
       "active",
     );
     const state = await readLicense(byNext, new Date(), keys);
     expect(state.status).toBe("active");
     expect(state.status === "active" && state.license.kid).toBe("next-2027");
-    // Retiring the old key leaves its licenses invalid.
+    // Retiring the old kid leaves its licenses invalid.
     expect(
-      (await readLicense(byCurrent, new Date(), [await publicOf(next)])).status,
+      (
+        await readLicense(byCurrent, new Date(), {
+          "next-2027": await publicOf(next),
+        })
+      ).status,
     ).toBe("invalid");
   });
 
-  it("ships only the placeholder key, which verifies nothing", async () => {
-    expect(licenseKeys.filter((k) => k !== signingPublic)).toEqual([
-      PLACEHOLDER_LICENSE_KEY,
-    ]);
-    expect(
-      (await readLicense(await sign(), new Date(), [PLACEHOLDER_LICENSE_KEY]))
-        .status,
-    ).toBe("invalid");
+  it("ships no signing key yet, so nothing verifies", async () => {
+    expect(Object.keys(licenseKeys).filter((k) => k !== TEST_KID)).toEqual([]);
+    expect((await readLicense(await sign(), new Date(), {})).status).toBe(
+      "invalid",
+    );
   });
 
   it("garbage and no key give the free plan", async () => {
@@ -370,5 +392,201 @@ describe("seat limit", () => {
     const shown = await plan(admin);
     expect(shown.body.name).toBe("licensed");
     expect(shown.body.license?.status).toBe("grace");
+  });
+});
+
+type LicenseBody = {
+  status: string;
+  source: string | null;
+  uploadedAt: string | null;
+  customer: string | null;
+  seats: { used: number; limit: number | null };
+  expiresAt: string | null;
+  graceEndsAt: string | null;
+  error?: { code: string; message: string };
+};
+
+describe("uploaded license key", () => {
+  // The install-wide row lives in its own database, so test files running at
+  // the same time never see this file's key.
+  const install = (key?: string) =>
+    testEnv({
+      PREPROCESS_REGION: undefined,
+      PREPROCESS_LICENSE_KEY: key,
+      DB: bindings.INSTALL_DB,
+      DB_SYSTEM: bindings.INSTALL_DB_SYSTEM,
+    } as unknown as Partial<Env>);
+  let env: Env;
+  let owner: Client;
+  let ownerId: string;
+  let admin: Client;
+  let member: Client;
+  let org: string;
+
+  const on = (client: Client, environment = env) => {
+    const moved = new Client(environment);
+    moved.cookie = client.cookie;
+    return moved;
+  };
+  const status = (client: Client, environment = env) =>
+    on(client, environment).call<LicenseBody>(`/v1/orgs/${org}/license`);
+  const upload = (client: Client, key: string, environment = env) =>
+    on(client, environment).call<LicenseBody>(`/v1/orgs/${org}/license`, {
+      method: "PUT",
+      body: { key },
+    });
+  const stored = () =>
+    withoutOrg(env, "test: stored license", (tx) =>
+      tx.select().from(installLicense),
+    );
+
+  beforeAll(async () => {
+    env = install();
+    const signedUp = await signUp("License Owner", env);
+    owner = signedUp.client;
+    ownerId = signedUp.userId;
+    org = await createOrganization(owner, "Licenseco");
+    admin = (await addMember(owner, org, "License Admin", "admin")).client;
+    member = (await addMember(owner, org, "License Member")).client;
+  });
+
+  it("starts with no license", async () => {
+    const shown = await status(owner);
+    expect(shown.status).toBe(200);
+    expect(shown.body).toMatchObject({
+      status: "none",
+      source: null,
+      customer: null,
+      seats: { limit: null },
+    });
+    expect((await getPlan(env, orgId(org))).name).toBe("free");
+  });
+
+  it("refuses a key that doesn't verify and stores nothing", async () => {
+    for (const key of ["not-a-key", await sign({}, other.privateKey)]) {
+      const refused = await upload(owner, key);
+      expect(refused.status).toBe(400);
+      expect(refused.body.error).toEqual({
+        code: "invalid_license",
+        message:
+          "This license key isn't valid. Check that you pasted the whole key.",
+      });
+    }
+    const past = await upload(
+      owner,
+      await sign({ expiresAt: new Date(Date.now() - 31 * day) }),
+    );
+    expect(past.status).toBe(400);
+    expect(past.body.error?.code).toBe("license_expired");
+    expect(await stored()).toEqual([]);
+    expect((await status(owner)).body.status).toBe("none");
+  });
+
+  it("lets only Owners upload, and Owners and Admins read", async () => {
+    const key = await sign();
+    for (const client of [admin, member]) {
+      const refused = await upload(client, key);
+      expect(refused.status).toBe(403);
+    }
+    expect(await stored()).toEqual([]);
+    expect((await status(admin)).status).toBe(200);
+    expect((await status(member)).status).toBe(403);
+  });
+
+  it("an uploaded valid key licenses the install, audited without the key", async () => {
+    const key = await sign({ customer: "Upload Corp", seats: 25 });
+    const uploaded = await upload(owner, key);
+    expect(uploaded.status).toBe(204);
+
+    const shown = await status(admin);
+    expect(shown.body).toMatchObject({
+      status: "active",
+      source: "upload",
+      customer: "Upload Corp",
+      seats: { used: 0, limit: 25 },
+    });
+    expect(shown.body.uploadedAt).not.toBeNull();
+    const plan = await getPlan(env, orgId(org));
+    expect(plan.name).toBe("licensed");
+    expect(plan.has("sso")).toBe(true);
+    expect(plan.limits.seats).toBe(25);
+
+    const [row] = await stored();
+    expect(row).toMatchObject({ key, uploadedBy: ownerId });
+
+    const events = await on(owner).call<{
+      events: {
+        action: string;
+        actorId: string;
+        data: Record<string, unknown>;
+      }[];
+    }>(`/v1/orgs/${org}/audit-events?action=license.uploaded`);
+    expect(events.body.events).toHaveLength(1);
+    const [event] = events.body.events;
+    expect(event).toMatchObject({
+      actorId: ownerId,
+      data: {
+        customer: "Upload Corp",
+        seats: 25,
+        expiresAt: shown.body.expiresAt,
+      },
+    });
+    expect(JSON.stringify(event)).not.toContain(key.split(".")[1]!);
+  });
+
+  it("the uploaded key wins over PREPROCESS_LICENSE_KEY", async () => {
+    const configured = install(await sign({ customer: "Env Corp", seats: 3 }));
+    const plan = await getPlan(configured, orgId(org));
+    expect(
+      plan.license?.status === "active" && plan.license.license.customer,
+    ).toBe("Upload Corp");
+    expect(plan.limits.seats).toBe(25);
+    expect((await status(owner, configured)).body).toMatchObject({
+      source: "upload",
+      customer: "Upload Corp",
+    });
+  });
+
+  it("a key in its grace period keeps paid features", async () => {
+    const graceKey = await sign({
+      customer: "Grace Corp",
+      expiresAt: new Date(Date.now() - 3 * day),
+    });
+    expect((await upload(owner, graceKey)).status).toBe(204);
+    const shown = await status(owner);
+    expect(shown.body).toMatchObject({
+      status: "grace",
+      customer: "Grace Corp",
+    });
+    expect(new Date(shown.body.graceEndsAt!).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
+    const plan = await getPlan(env, orgId(org));
+    expect(plan.name).toBe("licensed");
+    expect(plan.has("sso")).toBe(true);
+  });
+
+  it("past grace, the uploaded key gives the free plan", async () => {
+    // The stored key's grace ran out since it was uploaded.
+    const lapsed = await sign({ expiresAt: new Date(Date.now() - 40 * day) });
+    await withoutOrg(env, "test: lapse license", (tx) =>
+      tx.update(installLicense).set({ key: lapsed }),
+    );
+    const plan = await getPlan(env, orgId(org));
+    expect(plan.name).toBe("free");
+    expect(plan.has("sso")).toBe(false);
+    expect(plan.license?.status).toBe("expired");
+    expect((await status(admin)).body.status).toBe("expired");
+  });
+
+  it("answers 404 on our cloud", async () => {
+    const cloud = testEnv({
+      PREPROCESS_REGION: "us",
+      DB: bindings.INSTALL_DB,
+      DB_SYSTEM: bindings.INSTALL_DB_SYSTEM,
+    });
+    expect((await status(owner, cloud)).status).toBe(404);
+    expect((await upload(owner, await sign(), cloud)).status).toBe(404);
+    expect((await getPlan(cloud, orgId(org))).license).toBeNull();
   });
 });

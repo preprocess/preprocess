@@ -100,7 +100,7 @@ function CsvPreview({ text }: { text: string }) {
     <ScrollArea className="min-h-0 flex-1" orientation="both">
       <table className="w-max min-w-full border-collapse text-body">
         {header ? (
-          <thead className="sticky top-0 bg-surface-3">
+          <thead className="sticky top-0 bg-accent">
             <tr className="border-b border-border">
               {header.map((cell, cellIndex) => (
                 <th

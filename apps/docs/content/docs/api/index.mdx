@@ -11,6 +11,58 @@ description: Every endpoint, generated from the API itself.
 
 <Configured lang="text" code="Authorization: Bearer <your API key>" />
 
+## Rate limits
+
+Requests are counted in one-minute windows:
+
+| What is counted                                                                       | Limit per minute |
+| ------------------------------------------------------------------------------------- | ---------------- |
+| Every `/v1/orgs/{org}` request in one organization, from people and API keys together | 2,400            |
+| Requests made with one API key                                                        | 600              |
+| Sign-in, sign-up and emailed-link requests from one IP address                        | 30               |
+
+A request over a limit gets `429 Too Many Requests` with a `Retry-After` header
+giving the seconds until the window resets, and this body:
+
+```json
+{
+  "error": "rate_limited",
+  "message": "Too many requests. Try again in 12 seconds."
+}
+```
+
+Wait for `Retry-After` before sending again. Spread work across several API keys
+if one integration needs more than its key's share; they still share the
+organization's limit.
+
+## Versioning and deprecation
+
+The API is versioned in its path. Everything on this page is `/v1`.
+
+**Changes within `/v1` are additive.** We may add endpoints, optional request
+fields, response fields, headers and error codes without notice, so your client
+should ignore response fields it doesn't recognize. We never remove an endpoint
+or field from `/v1`, make an optional field required, or change what an existing
+field means.
+
+**Breaking changes ship in a new version.** When a change can't be additive, it
+goes into `/v2`, and `/v1` keeps working beside it.
+
+**Deprecation comes first, with notice.** Before something is replaced, we:
+
+1. Mark it **Deprecated** in this reference and in the OpenAPI schema, naming
+   what replaces it.
+2. Announce it in the release's upgrade notes, so self-hosted installs see it
+   when they upgrade.
+3. Keep it working for at least 12 months after that announcement. A deprecated
+   endpoint or field in `/v1` keeps working for as long as `/v1` is served.
+
+When `/v2` ships, `/v1` stays available for at least 12 months after that, and
+we announce the date it will stop at least 6 months ahead.
+
+The one exception is security: we may change or restrict behavior without notice
+to fix a vulnerability, and we say so in the advisory.
+
 ## Endpoints
 
 <EndpointTags />

@@ -15,19 +15,23 @@ import {
   currentModel,
   DEFAULT_MODEL,
   MODELS,
+  ORG_MODEL,
   REASONING,
-  SANDBOX_SIZES,
-  type SandboxSize,
 } from "@preprocess/sdk/protocol";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Manifest } from "./deploy.ts";
 
+// A model an agent may name (design doc 10): a catalogue id or an
+// organization model's "org:<slug>". Whether the organization has that one is
+// assertModelKnown's check (model-endpoints.ts).
+export const modelId = z.union([z.enum(MODELS), z.string().regex(ORG_MODEL)]);
+
 // Settings an organization can default. `fallback` is the platform's value
 // when nothing sets one; null means the runtime's own behavior.
 export const DEFAULTS = {
-  model: { schema: z.enum(MODELS), fallback: DEFAULT_MODEL },
+  model: { schema: modelId, fallback: DEFAULT_MODEL },
   reasoning: { schema: z.enum(REASONING), fallback: "medium" },
   ocr: { schema: z.boolean(), fallback: false },
   searchCases: { schema: z.boolean(), fallback: false },
@@ -42,9 +46,9 @@ export const DEFAULT_KEYS = Object.keys(DEFAULTS) as DefaultKey[];
 
 const SCHEDULE_PREVIEWS = /^schedules\.([^.]+)\.previews$/;
 
-// The sandbox size: set by code that asks for a sandbox, overridable from the
-// dashboard, and never an organization default, since a sandbox is opt-in and
-// has no default size (spec 3).
+// The sandbox size: set only by code that asks for a sandbox. It is never a
+// dashboard override or an organization default, since a sandbox is opt-in and
+// has no default size (spec 3). Overrides stored before this rule are ignored.
 export const SANDBOX_SIZE_KEY = "sandbox.size";
 
 export type Source = "override" | "code" | "organization" | "default";
@@ -55,9 +59,7 @@ export const settingSchema = (key: string): z.ZodType | undefined =>
     ? DEFAULTS[key as DefaultKey].schema
     : SCHEDULE_PREVIEWS.test(key)
       ? z.boolean()
-      : key === SANDBOX_SIZE_KEY
-        ? z.enum(SANDBOX_SIZES)
-        : undefined;
+      : undefined;
 
 const codeValue = (manifest: Manifest, key: string): unknown => {
   const schedule = SCHEDULE_PREVIEWS.exec(key)?.[1];
@@ -135,9 +137,10 @@ export const resolveSettings = async (
         : key === SANDBOX_SIZE_KEY
           ? null
           : false;
+    const override = settingSchema(key) ? overrides[key] : undefined;
     const [stored, source]: [unknown, Source] =
-      overrides[key] !== undefined
-        ? [overrides[key], "override"]
+      override !== undefined
+        ? [override, "override"]
         : code !== undefined
           ? [code, "code"]
           : org !== undefined
@@ -153,7 +156,7 @@ export const resolveSettings = async (
       source,
       code: code ?? null,
       organization: org ?? null,
-      override: overrides[key] ?? null,
+      override: override ?? null,
     };
   });
 };
@@ -167,8 +170,6 @@ export type EffectiveSettings = {
   timeoutSeconds: number | null;
   toolRetries: number | null;
   sandboxImage: string | null;
-  // Null when the code asks for no sandbox.
-  sandboxSize: SandboxSize | null;
   evals: { onPush: boolean };
   schedules: Record<string, { previews: boolean }>;
 };
@@ -189,9 +190,6 @@ export const effectiveSettings = async (
     timeoutSeconds: values.get("timeoutSeconds") as number | null,
     toolRetries: values.get("toolRetries") as number | null,
     sandboxImage: values.get("sandboxImage") as string | null,
-    sandboxSize: manifest.sandbox
-      ? (values.get(SANDBOX_SIZE_KEY) as SandboxSize)
-      : null,
     evals: { onPush: values.get("evals.onPush") as boolean },
     schedules: Object.fromEntries(
       (manifest.schedules ?? []).map((s) => [
@@ -207,12 +205,17 @@ export const overrideWarnings = (
   overrides: SettingValues,
   manifest: Manifest,
 ) =>
-  Object.entries(overrides).map(([key, value]) => {
-    const code = declares(manifest, key) ? codeValue(manifest, key) : undefined;
-    return code !== undefined && JSON.stringify(code) !== JSON.stringify(value)
-      ? `${key} is ${JSON.stringify(value)} in the dashboard but ${JSON.stringify(code)} in code; promoting this deployment clears the override`
-      : `promoting this deployment clears the dashboard override of ${key} (${JSON.stringify(value)})`;
-  });
+  Object.entries(overrides)
+    .filter(([key]) => settingSchema(key))
+    .map(([key, value]) => {
+      const code = declares(manifest, key)
+        ? codeValue(manifest, key)
+        : undefined;
+      return code !== undefined &&
+        JSON.stringify(code) !== JSON.stringify(value)
+        ? `${key} is ${JSON.stringify(value)} in the dashboard but ${JSON.stringify(code)} in code; promoting this deployment clears the override`
+        : `promoting this deployment clears the dashboard override of ${key} (${JSON.stringify(value)})`;
+    });
 
 // Promotion makes code the truth again: the agent's overrides go, audited.
 export const clearOverrides = async (

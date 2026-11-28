@@ -45,10 +45,10 @@ execution:
 - `search_cases` sees only cases completed _before_ the replayed case started,
   preventing future-data leakage.
 
-<Callout title="Coming soon">
-  Automatic eval runs on push (`evals: {onPush}`) are not wired yet. Today,
-  trigger suites on demand with `preprocess evals run` from your terminal or CI.
-</Callout>
+Suites marked `runOnPush` also run on their own against each new production
+deployment when the agent's `evals: {onPush}` is on; see
+[Evals](/concepts/evals). Trigger any suite on demand with
+`preprocess evals run` from your terminal or CI.
 
 ## Related
 

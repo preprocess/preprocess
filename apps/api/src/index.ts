@@ -16,10 +16,12 @@ import { collectSandboxLayers } from "./sandbox-layers.ts";
 import { handleAuthRequest } from "./auth.ts";
 import { invitationPreview } from "./invitation-preview.ts";
 import { orgCaller } from "./caller.ts";
+import { authRateLimit, orgRateLimit } from "./rate-limit.ts";
 import type { OrgVariables } from "./caller.ts";
 import { startQueuedCase } from "./cases.ts";
 import type { Env, Job } from "./env.ts";
 import { deleteExpiredIdempotencyKeys } from "./idempotency.ts";
+import { heartbeat } from "./heartbeat.ts";
 import { sweepOutbox } from "./outbox.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import { agentRoutes } from "./routes/agents.ts";
@@ -30,17 +32,22 @@ import { sendNotice } from "./notify.ts";
 import { deliverWebhook } from "./webhooks.ts";
 import { auditRoutes } from "./routes/audit.ts";
 import { groupRoutes } from "./routes/groups.ts";
+import { scimRoutes } from "./routes/scim.ts";
 import { organizationRoutes } from "./routes/organization.ts";
+import { ssoRoutes } from "./routes/sso.ts";
 import { githubCallbacks, githubRoutes } from "./routes/github.ts";
 import { mcpCallback, mcpRoutes } from "./routes/mcp.ts";
 import { secretRoutes } from "./routes/secrets.ts";
 import { guardrailRoutes } from "./routes/guardrails.ts";
+import { sandboxRoutes } from "./routes/sandboxes.ts";
 import { scheduleRoutes } from "./routes/schedules.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { spendingRoutes } from "./routes/spending.ts";
 import { retentionRoutes } from "./routes/retention.ts";
+import { licenseRoutes } from "./routes/license.ts";
 import { sweepRetention } from "./retention.ts";
 import { billingRoutes } from "./routes/billing.ts";
+import { autumnWebhook } from "./routes/autumn.ts";
 import { ingestLogs, sendLogs } from "./logs.ts";
 import { startQueuedEval } from "./evals.ts";
 import { exportLogs, type OtelRetry } from "./otel.ts";
@@ -48,11 +55,16 @@ import { logRoutes } from "./routes/logs.ts";
 import { otelRoutes } from "./routes/otel.ts";
 import { evalRoutes } from "./routes/evals.ts";
 import { memoryRoutes } from "./routes/memories.ts";
-import { trainingRoutes } from "./routes/training.ts";
+import { trainingRoutes, trainingTag } from "./routes/training.ts";
+import { modelRoutes } from "./routes/models.ts";
+import { captureRoutes } from "./routes/capture.ts";
+import { datasetRoutes } from "./routes/datasets.ts";
+import { meRoutes } from "./routes/me.ts";
 import { buildTools, handleMcp, type Tool } from "./mcp-server.ts";
 
 export { BuildQueue } from "./builds.ts";
 export { Counter } from "./counter.ts";
+export { RateLimiter } from "./rate-limit.ts";
 export { Scheduler } from "./scheduler.ts";
 export { McpService } from "./mcp.ts";
 export { Platform } from "./platform.ts";
@@ -91,7 +103,15 @@ app.get("/", (c) =>
 
 // Better Auth: sign-up, sign-in, sessions, organizations, members,
 // invitations and API keys. The app serves these on its own origin.
-app.on(["GET", "POST"], "/api/auth/*", (c) =>
+app.on(
+  ["GET", "POST"],
+  "/api/auth/*",
+  async (c) =>
+    (await authRateLimit(c.env, c.req.raw)) ??
+    handleAuthRequest(c.env, c.req.raw),
+);
+// Directory sync (scim.ts): SCIM also replaces, patches and deletes.
+app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/v2/*", (c) =>
   handleAuthRequest(c.env, c.req.raw),
 );
 
@@ -121,9 +141,12 @@ orgApi.use(async (c, next) => {
   c.get("log").set({ organizationId: c.var.org });
   await next();
 });
+orgApi.use(orgRateLimit);
 orgApi.route("/", organizationRoutes);
+orgApi.route("/", ssoRoutes);
 orgApi.route("/", groupRoutes);
 orgApi.route("/", auditRoutes);
+orgApi.route("/", scimRoutes);
 orgApi.route("/", agentRoutes);
 orgApi.route("/", secretRoutes);
 orgApi.route("/", mcpRoutes);
@@ -132,8 +155,10 @@ orgApi.route("/", githubRoutes);
 orgApi.route("/", spendingRoutes);
 orgApi.route("/", billingRoutes);
 orgApi.route("/", guardrailRoutes);
+orgApi.route("/", sandboxRoutes);
 orgApi.route("/", settingsRoutes);
 orgApi.route("/", retentionRoutes);
+orgApi.route("/", licenseRoutes);
 orgApi.route("/", scheduleRoutes);
 orgApi.route("/", webhookRoutes);
 orgApi.route("/", inboxRoutes);
@@ -142,6 +167,9 @@ orgApi.route("/", otelRoutes);
 orgApi.route("/", evalRoutes);
 orgApi.route("/", memoryRoutes);
 orgApi.route("/", trainingRoutes);
+orgApi.route("/", modelRoutes);
+orgApi.route("/", captureRoutes);
+orgApi.route("/", datasetRoutes);
 
 // The MCP server (src/mcp-server.ts) takes an organization API key, and each
 // tool call is a request to this API with the same key, so the API's own
@@ -187,9 +215,11 @@ orgApi.get("/mcp", (c) => c.body(null, 405, { allow: "POST" }));
 
 const v1 = new OpenAPIHono<{ Bindings: Env }>();
 v1.route("/orgs/:org", orgApi);
+v1.route("/me", meRoutes);
 v1.route("/", mcpCallback);
 v1.route("/", githubCallbacks);
-v1.doc31("/openapi.json", OPENAPI);
+v1.route("/", autumnWebhook);
+v1.doc31("/openapi.json", (c) => ({ ...OPENAPI, tags: [trainingTag(c.env)] }));
 app.route("/v1", v1);
 
 export default {
@@ -200,7 +230,7 @@ export default {
     // intervals of sandboxes gone silent, and warn about or apply moves down
     // to Free (our cloud only).
     if (controller.cron === "* * * * *") {
-      ctx.waitUntil(sweepOutbox(env));
+      ctx.waitUntil(sweepOutbox(env).then(() => heartbeat(env, "tick")));
       ctx.waitUntil(reportUsage(env));
       ctx.waitUntil(closeSilentSandboxes(env));
       ctx.waitUntil(runPlanChanges(env, new Date(controller.scheduledTime)));
@@ -221,6 +251,7 @@ export default {
   async queue(
     batch: MessageBatch<Job | OutboxMessage | LogRecord | OtelRetry>,
     env: Env,
+    ctx: ExecutionContext,
   ) {
     if (batch.queue.startsWith("preprocess-logs-")) {
       // A failed store write retries the whole batch; a failed export
@@ -240,7 +271,10 @@ export default {
       for (const message of batch.messages as Message<OutboxMessage>[]) {
         if (message.body.kind === "eval.start")
           await startQueuedEval(env, message.body);
-        else await startQueuedCase(env, message.body);
+        else {
+          await startQueuedCase(env, message.body);
+          ctx.waitUntil(heartbeat(env, "case"));
+        }
         message.ack();
       }
       return;

@@ -25,7 +25,6 @@ import { mcpGrants, mcpServers } from "@preprocess/db/schema/mcp";
 import { secrets } from "@preprocess/db/schema/secrets";
 import {
   currentModel,
-  MODELS,
   PROTOCOL,
   REASONING,
   sandboxManifest,
@@ -46,7 +45,10 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
 import type { AuditInput } from "@preprocess/db/audit";
+import { assertModelAllowed } from "./allowed-models.ts";
+import { assertModelKnown } from "./model-endpoints.ts";
 import { decrypt, orgKeyVersion } from "./crypto.ts";
+import { startPushRuns } from "./evals.ts";
 import type { Env } from "./env.ts";
 import { markSeat } from "./metering.ts";
 import { effectiveNetwork, permits } from "./network.ts";
@@ -58,6 +60,8 @@ import { nextFire, schedulerName } from "./scheduler.ts";
 import {
   agentOverrideValues,
   clearOverrides,
+  effectiveSettings,
+  modelId,
   overrideWarnings,
 } from "./settings.ts";
 import type { NetworkRules } from "./network.ts";
@@ -112,7 +116,7 @@ const manifestSchema = z
     protocol: z.literal(PROTOCOL),
     sdk: z.object({ name: z.literal("@preprocess/sdk"), version: z.string() }),
     instructions: z.string(),
-    model: z.string().transform(currentModel).pipe(z.enum(MODELS)),
+    model: z.string().transform(currentModel).pipe(modelId),
     reasoning: z.enum(REASONING),
     secrets: z.array(z.string()),
     mcp: z.array(z.string()),
@@ -442,6 +446,8 @@ export const syncDeployment = async (
     .update(deployments)
     .set({ status, waitingFor, network })
     .where(eq(deployments.id, deploymentId));
+  if (status === "ready" && deployment.status !== "ready")
+    await startPushRuns(tx, org, deployment);
   const existingSecrets = waiting.length
     ? await tx
         .select({ name: secrets.name })
@@ -634,6 +640,19 @@ export const deployInput = z.object({
       commit: z.string().min(1).optional(),
     })
     .default({}),
+  entry: z
+    .string()
+    .min(1)
+    .max(512)
+    .refine(
+      (p) =>
+        !p.startsWith("/") && !p.includes("\\") && !p.split("/").includes(".."),
+      { message: "entry is a path relative to the repository root" },
+    )
+    .optional()
+    .describe(
+      "The agent's entry file relative to the repository root, e.g. agents/intake.ts",
+    ),
 });
 
 export type DeployInput = z.infer<typeof deployInput> & {
@@ -734,11 +753,17 @@ export const deploy = async (
       throw new HTTPException(422, {
         message: `the code names groups this organization does not have: ${unknown.join(", ")}`,
       });
+    await assertModelKnown(tx, manifest.model);
+    await assertModelAllowed(
+      tx,
+      (await effectiveSettings(tx, agent.id, manifest)).model,
+    );
     await tx.insert(deployments).values({
       id,
       organizationId: org,
       agentId: agent.id,
-      status: "ready",
+      // Ready once the first sync finds nothing it waits for.
+      status: "waiting",
       bundleSha256,
       sdkVersion: manifest.sdk.version,
       ...(setup && {
@@ -747,7 +772,7 @@ export const deploy = async (
       }),
       environment:
         input.git.branch === agent.productionBranch ? "production" : "preview",
-      manifest,
+      manifest: { ...manifest, entry: input.entry },
       gitBranch: input.git.branch ?? null,
       gitCommit: input.git.commit ?? null,
       source: input.source,
@@ -974,13 +999,23 @@ export const getDeployment = (
     };
   });
 
-export const listDeployments = (env: Env, org: OrgId, agentId: string) =>
+export const listDeployments = (
+  env: Env,
+  org: OrgId,
+  agentId: string,
+  environment?: "production" | "preview",
+) =>
   withOrg(env, org, async (tx) => {
     const production = await productionId(tx, agentId);
     const rows = await tx
       .select()
       .from(deployments)
-      .where(eq(deployments.agentId, agentId))
+      .where(
+        and(
+          eq(deployments.agentId, agentId),
+          environment ? eq(deployments.environment, environment) : undefined,
+        ),
+      )
       .orderBy(desc(deployments.createdAt))
       .limit(100);
     return rows.map((d) => view(d, production));

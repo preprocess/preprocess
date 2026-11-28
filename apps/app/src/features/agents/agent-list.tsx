@@ -1,5 +1,7 @@
+import { Button } from "@preprocess/ui/components/button";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -18,7 +20,7 @@ import { cn } from "@preprocess/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, type ReactNode } from "react";
 
-import { AgentsEmptyArt, NoMatchArt } from "../../components/empty-art";
+import { NoResultsArt, NothingCreatedArt } from "../../components/empty-art";
 import { PageHeader, PageTitle } from "../../components/page-header";
 import { useHotkeys } from "../../components/use-hotkeys";
 import { SettingsSearchField } from "../settings/kit";
@@ -169,17 +171,32 @@ export function AgentList({
             >
               <EmptyHeader className="pointer-events-auto group max-w-md">
                 <EmptyMedia variant="graphic">
-                  {agents.length === 0 ? <AgentsEmptyArt /> : <NoMatchArt />}
+                  {agents.length === 0 ? (
+                    <NothingCreatedArt />
+                  ) : (
+                    <NoResultsArt />
+                  )}
                 </EmptyMedia>
                 <EmptyTitle>
-                  {agents.length === 0 ? "No agents yet" : "No agents match"}
+                  {agents.length === 0 ? "No agents yet" : "No matching agents"}
                 </EmptyTitle>
                 <EmptyDescription>
                   {agents.length === 0
-                    ? "Agents in this organization will show up here."
-                    : `Nothing matches “${search.q.trim()}”.`}
+                    ? "Deploy your first agent with the CLI or GitHub to see it here."
+                    : "No agents match your search. Try a different name or clear the filter."}
                 </EmptyDescription>
               </EmptyHeader>
+              {agents.length === 0 ? null : (
+                <EmptyContent className="pointer-events-auto">
+                  <Button
+                    onClick={() => onSearchChange({ q: "" })}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    Clear search
+                  </Button>
+                </EmptyContent>
+              )}
             </Empty>
           )}
         </EmptyPresence>

@@ -75,9 +75,22 @@ jobs:
       # not secret, so it may be stored as either.
       GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID || secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      # The product's GitHub App for staging, optional: without it the App's
+      # routes answer 503. GitHub reserves the GITHUB_ prefix for its own
+      # variables and secrets, so they are stored as GH_* in this environment
+      # (written by preprocess/internal's apps/github-setup).
+      GITHUB_APP_ID: ${{ vars.GH_APP_ID }}
+      GITHUB_APP_SLUG: ${{ vars.GH_APP_SLUG }}
+      GITHUB_CLIENT_ID: ${{ vars.GH_CLIENT_ID }}
+      GITHUB_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+      GITHUB_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
+      GITHUB_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
       # Autumn's sandbox (spec 16a): staging bills against it. Optional; without
       # it staging runs with billing off and no plans are pushed.
       AUTUMN_SECRET_KEY: ${{ secrets.AUTUMN_SECRET_KEY }}
+      # Optional: verifies Autumn's webhooks (auto-reload failures). Without
+      # it the webhook endpoint answers 404.
+      AUTUMN_WEBHOOK_SECRET: ${{ secrets.AUTUMN_WEBHOOK_SECRET }}
       BILLING_REQUIRED_FROM: ${{ vars.BILLING_REQUIRED_FROM }}
       BILLING_INTERNAL_ORGS: ${{ vars.BILLING_INTERNAL_ORGS }}
       BILLING_ENFORCED_ORGS: ${{ vars.BILLING_ENFORCED_ORGS }}
@@ -134,8 +147,10 @@ jobs:
         if: steps.credentials.outputs.ready == 'true'
         run: |
           # An unset optional value must stay unset, not bind an empty string.
-          for name in AUTUMN_SECRET_KEY BILLING_REQUIRED_FROM BILLING_INTERNAL_ORGS \
-            BILLING_ENFORCED_ORGS REAL_MODELS BASETEN_API_KEY MISTRAL_API_KEY; do
+          for name in AUTUMN_SECRET_KEY AUTUMN_WEBHOOK_SECRET BILLING_REQUIRED_FROM BILLING_INTERNAL_ORGS \
+            BILLING_ENFORCED_ORGS REAL_MODELS BASETEN_API_KEY MISTRAL_API_KEY \
+            GITHUB_APP_ID GITHUB_APP_SLUG GITHUB_CLIENT_ID GITHUB_APP_PRIVATE_KEY \
+            GITHUB_WEBHOOK_SECRET GITHUB_CLIENT_SECRET; do
             [ -n "${!name}" ] || unset "$name"
           done
           pnpm --filter @preprocess/infra staging:deploy

@@ -1,12 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { ApiError, orgApi } from "../auth/client";
+import { safeRedirect } from "../auth/safe-redirect";
 
 // Every plan, Free included, starts at Autumn's checkout, which takes a card
-// (spec 16a). Where billing is off the API answers 404, and these give null.
+// (spec 16a). Where billing is off, or before it holds for the organization,
+// the API answers 404, and these give null.
 
 /** Checkout for Free in a new organization, or null to carry on. */
-export async function freeCheckout(organizationId: string) {
+export async function freeCheckout(organizationId: string, next: string) {
   try {
     const { url } = await orgApi<{ url: string }>(
       organizationId,
@@ -15,7 +17,7 @@ export async function freeCheckout(organizationId: string) {
         method: "POST",
         body: JSON.stringify({
           plan: "free",
-          returnTo: `${window.location.origin}/`,
+          returnTo: `${window.location.origin}${next}`,
         }),
       },
     );
@@ -31,8 +33,9 @@ export async function freeCheckout(organizationId: string) {
  * Checkout for an organization that has to start a plan before it can work,
  * when the person is its Owner; otherwise null.
  */
-export const loadRequiredCheckout = createServerFn({ method: "GET" }).handler(
-  async (): Promise<string | null> => {
+export const loadRequiredCheckout = createServerFn({ method: "GET" })
+  .validator((next: string) => safeRedirect(next))
+  .handler(async ({ data: next }): Promise<string | null> => {
     const { activeOrgRequest } = await import("../../server/api.server");
     const billing = await activeOrgRequest("/billing");
     if (!billing.ok) return null;
@@ -46,10 +49,9 @@ export const loadRequiredCheckout = createServerFn({ method: "GET" }).handler(
       method: "POST",
       body: JSON.stringify({
         plan: "free",
-        returnTo: `${new URL(getRequest().url).origin}/`,
+        returnTo: `${new URL(getRequest().url).origin}${next}`,
       }),
     });
     if (!checkout.ok) return null;
     return (await checkout.json<{ url: string }>()).url;
-  },
-);
+  });

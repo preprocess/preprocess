@@ -2,6 +2,7 @@
 // suite; a run replays a suite's cases against one deployment and one model
 // as eval cases, and scores each one's answers field by field.
 
+import { audit } from "@preprocess/db/audit";
 import { orgId, withOrg } from "@preprocess/db/client";
 import type { OrgId, Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
@@ -18,6 +19,7 @@ import {
 import { currentModel } from "@preprocess/sdk/protocol";
 import { and, asc, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
 
+import { allowedModels, modelAllowed } from "./allowed-models.ts";
 import { agentGroups } from "./cases.ts";
 import type { Manifest } from "./deploy.ts";
 import { acceptedMemories } from "./memories.ts";
@@ -26,6 +28,7 @@ import type { Env, StartCase } from "./env.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import { drainOutbox, readOutbox, writeOutbox } from "./outbox.ts";
 import { effectiveSettings } from "./settings.ts";
+import { spendGate } from "./spend.ts";
 
 // One schema field, by its dotted path in the answers.
 export type SchemaField = { path: string };
@@ -232,7 +235,8 @@ export const evalCaseId = (runId: string, caseId: string) =>
   `eval:${runId}:${caseId}`;
 
 // Inside the request's transaction: one run per model, each with a result
-// row per suite case and an outbox row that starts its eval case.
+// row per suite case and an outbox row that starts its eval case. A suite
+// runs on push at most once per deployment: a second push run is skipped.
 export const createRuns = async (
   tx: Tx,
   input: {
@@ -257,20 +261,28 @@ export const createRuns = async (
   const outboxRows: { id: string; kind: "eval.start" }[] = [];
   for (const model of input.models) {
     const id = newId("evalRun");
+    const inserted = await tx
+      .insert(evalRuns)
+      .values({
+        id,
+        organizationId: input.organizationId,
+        suiteId: input.suiteId,
+        deploymentId: input.deploymentId,
+        model,
+        trigger: input.trigger,
+        memories,
+        status: suiteCases.length ? "running" : "completed",
+        cases: suiteCases.length,
+        createdBy: input.createdBy,
+        ...(suiteCases.length === 0 && { finishedAt: new Date() }),
+      })
+      .onConflictDoNothing({
+        target: [evalRuns.suiteId, evalRuns.deploymentId],
+        where: sql`trigger = 'push'`,
+      })
+      .returning({ id: evalRuns.id });
+    if (!inserted.length) continue;
     runs.push(id);
-    await tx.insert(evalRuns).values({
-      id,
-      organizationId: input.organizationId,
-      suiteId: input.suiteId,
-      deploymentId: input.deploymentId,
-      model,
-      trigger: input.trigger,
-      memories,
-      status: suiteCases.length ? "running" : "completed",
-      cases: suiteCases.length,
-      createdBy: input.createdBy,
-      ...(suiteCases.length === 0 && { finishedAt: new Date() }),
-    });
     for (const { caseId } of suiteCases) {
       await tx.insert(evalResults).values({
         organizationId: input.organizationId,
@@ -288,6 +300,79 @@ export const createRuns = async (
     }
   }
   return { runs, outboxRows };
+};
+
+// A production deployment that just became ready runs its agent's suites
+// marked runOnPush when evals.onPush is on (design doc 09). Nobody started
+// these runs, so the platform does, on the deployment's own model, and skips
+// them when the organization is at its spending limit or no longer allows
+// that model. The outbox sweep starts their eval cases.
+export const startPushRuns = async (
+  tx: Tx,
+  organizationId: string,
+  deployment: {
+    id: string;
+    agentId: string;
+    environment: string;
+    manifest: unknown;
+  },
+) => {
+  if (deployment.environment !== "production") return;
+  const settings = await effectiveSettings(
+    tx,
+    deployment.agentId,
+    deployment.manifest as Manifest,
+  );
+  if (!settings.evals.onPush) return;
+  const suites = await tx
+    .select({ id: evalSuites.id })
+    .from(evalSuites)
+    .where(
+      and(
+        eq(evalSuites.agentId, deployment.agentId),
+        eq(evalSuites.runOnPush, true),
+      ),
+    );
+  if (!suites.length) return;
+  const event = {
+    organizationId,
+    actorType: "platform" as const,
+    actorId: `deployment:${deployment.id}`,
+    targetType: "deployment",
+    targetId: deployment.id,
+  };
+  const skipped =
+    (await spendGate(tx)) !== "ok"
+      ? "spending_limit_reached"
+      : !modelAllowed(await allowedModels(tx), settings.model)
+        ? "model_not_allowed"
+        : null;
+  if (skipped) {
+    await audit(tx, {
+      ...event,
+      action: "eval_run.skipped",
+      data: { suites: suites.map((s) => s.id), reason: skipped },
+    });
+    return;
+  }
+  for (const suite of suites) {
+    const { runs } = await createRuns(tx, {
+      organizationId,
+      suiteId: suite.id,
+      deploymentId: deployment.id,
+      models: [settings.model],
+      trigger: "push",
+      createdBy: "platform",
+    });
+    if (runs.length)
+      await audit(tx, {
+        ...event,
+        action: "eval_run.started",
+        targetType: "eval_suite",
+        targetId: suite.id,
+        data: { deployment: deployment.id, models: [settings.model], runs },
+      });
+  }
 };
 
 export const drainRuns = (

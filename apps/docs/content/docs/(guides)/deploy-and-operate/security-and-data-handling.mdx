@@ -101,6 +101,23 @@ control.
   `waiting` and automatically files a guardrail request for an Owner or Admin to
   approve or reject.
 
+### MCP server traffic
+
+Calls to MCP servers don't go through the network guardrail. When agent code
+calls an MCP server, the request leaves from Preprocess's API Worker, which adds
+the organization's token, not from the agent's isolate or sandbox. The
+`Outbound` gateway never sees it, so network allow and block rules don't apply
+to it.
+
+The organization's list of registered MCP servers is the allowlist for this
+traffic instead. Only Owners and Admins register servers and grant them to
+agents, and an agent can reach only servers that are registered, declared in its
+code and granted to it. To keep a host out of reach, don't register it.
+
+Server URLs must use `https`. For servers on the legacy HTTP+SSE transport,
+Preprocess posts messages only to the registered URL's origin, whatever endpoint
+the server names.
+
 ## Case sandbox isolation
 
 Agents that declare a `sandbox` get a dedicated Linux container per case

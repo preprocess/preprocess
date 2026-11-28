@@ -225,6 +225,90 @@
       "when": 1795724305732,
       "tag": "0035_plan_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795732901212,
+      "tag": "0036_allowed_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795734880548,
+      "tag": "0038_eval_runs_one_push",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795735320219,
+      "tag": "0039_mcp_transport",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795768457848,
+      "tag": "0040_notice_dismissals",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795817360912,
+      "tag": "0041_device_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795818676071,
+      "tag": "0042_auto_reload_states",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795822756200,
+      "tag": "0043_datasets",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795824626709,
+      "tag": "0044_model_endpoints",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795825812128,
+      "tag": "0045_install_license",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795827839689,
+      "tag": "0046_sso_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795827848037,
+      "tag": "0047_sso_provider_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795828222355,
+      "tag": "0048_scim",
+      "breakpoints": true
     }
   ]
 }

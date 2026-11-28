@@ -2,6 +2,9 @@ import type { ReactNode } from "react";
 import { SidebarTrigger, useSidebar } from "@preprocess/ui/components/sidebar";
 import { cn } from "@preprocess/ui/lib/utils";
 
+import { CollapsedNoticesButton } from "../../features/notices/notice-stack";
+import { CollapsedHelpButton } from "./help";
+
 // ---------------------------------------------------------------------------
 // The main region's topbar. While the sidebar is only PEEKED the trigger
 // hides (the overlay covers it anyway); after a pin it fades back in
@@ -30,6 +33,8 @@ export function SidebarInsetTopbar({
           isPeeking ? "opacity-0" : "opacity-100"
         }`}
       />
+      <CollapsedNoticesButton />
+      <CollapsedHelpButton />
       {children}
     </header>
   );

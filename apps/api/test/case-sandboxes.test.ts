@@ -1,7 +1,8 @@
 // Case sandboxes (spec 3, 5 and 16a): a deploy that asks for a sandbox needs a
 // size, the organization's largest-size guardrail holds a larger one in
-// waiting until an Owner or Admin approves, a dashboard override cannot pass
-// it, and who may read a case's sandbox time. Billing of awake time is tested
+// waiting until an Owner or Admin approves, the size is set in code only (no
+// dashboard override, and a stored one is ignored), and who may read a case's
+// sandbox time. Billing of awake time is tested
 // in sandbox.test.ts.
 
 import { orgId, withOrg, type OrgId } from "@preprocess/db/client";
@@ -10,6 +11,7 @@ import { agents } from "@preprocess/db/schema/access";
 import { auditEvents } from "@preprocess/db/schema/audit";
 import { cases } from "@preprocess/db/schema/cases";
 import { deployments } from "@preprocess/db/schema/deployments";
+import { agentOverrides } from "@preprocess/db/schema/settings";
 import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -117,23 +119,57 @@ describe("deploying an agent with a sandbox", () => {
     );
     expect(waiting.waitingFor.sandboxSize).toBe("large");
 
-    // The size shows as the code's, and an override cannot pass the cap.
-    const settings = await owner.call<{
-      settings: { key: string; value: unknown; source: string }[];
-    }>(`/v1/orgs/${org}/agents/reconciler/settings`);
-    expect(
-      settings.body.settings.find((s) => s.key === "sandbox.size"),
-    ).toMatchObject({ value: "large", source: "code" });
-    const tooBig = await owner.call(
+    // The size is the code's and cannot be overridden from the dashboard.
+    const sizeSetting = async () => {
+      const read = await owner.call<{
+        settings: {
+          key: string;
+          value: unknown;
+          source: string;
+          override: unknown;
+        }[];
+        warnings: string[];
+      }>(`/v1/orgs/${org}/agents/reconciler/settings`);
+      return {
+        setting: read.body.settings.find((s) => s.key === "sandbox.size"),
+        warnings: read.body.warnings,
+      };
+    };
+    expect((await sizeSetting()).setting).toMatchObject({
+      value: "large",
+      source: "code",
+      override: null,
+    });
+    for (const value of ["small", "large"]) {
+      const put = await owner.call<{ error: { code: string } }>(
+        `/v1/orgs/${org}/agents/reconciler/settings/sandbox.size`,
+        { method: "PUT", body: { value } },
+      );
+      expect(put.status).toBe(404);
+      expect(put.body.error.code).toBe("not_found");
+    }
+    const cleared = await owner.call(
       `/v1/orgs/${org}/agents/reconciler/settings/sandbox.size`,
-      { method: "PUT", body: { value: "large" } },
+      { method: "DELETE" },
     );
-    expect(tooBig.status).toBe(409);
-    const smaller = await owner.call(
-      `/v1/orgs/${org}/agents/reconciler/settings/sandbox.size`,
-      { method: "PUT", body: { value: "small" } },
+    expect(cleared.status).toBe(404);
+
+    // An override stored before the size became code-only is ignored.
+    await withOrg(environment, org, (tx) =>
+      tx.insert(agentOverrides).values({
+        organizationId: org,
+        agentId: deployed.body.agentId,
+        values: { "sandbox.size": "small" },
+        updatedBy: "usr_test",
+      }),
     );
-    expect(smaller.status).toBe(200);
+    const stored = await sizeSetting();
+    expect(stored.setting).toMatchObject({
+      value: "large",
+      source: "code",
+      override: null,
+    });
+    expect(stored.warnings.join("\n")).not.toContain("sandbox.size");
 
     const requests = await owner.call<{ requests: Request[] } | Request[]>(
       `/v1/orgs/${org}/guardrail-requests?status=pending`,

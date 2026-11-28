@@ -23,6 +23,8 @@ import { cn } from "@preprocess/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { useState, type ReactElement, type ReactNode } from "react";
 
+import { NotDeployedArt } from "../../components/empty-art";
+
 import { PageHeader } from "../../components/page-header";
 import {
   SettingsEmpty,
@@ -283,8 +285,9 @@ export function AgentOverview({ agent }: Readonly<{ agent: OrgAgentDetail }>) {
           </SettingsRows>
         ) : (
           <SettingsEmpty
-            description="Deploy the agent to serve cases."
-            title="Not deployed"
+            art={<NotDeployedArt />}
+            description="Push to your production branch or run preprocess deploy to serve live cases."
+            title="Not deployed to production"
           />
         )}
       </SettingsSection>

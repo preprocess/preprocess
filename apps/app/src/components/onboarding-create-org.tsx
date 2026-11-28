@@ -12,7 +12,10 @@ import { createOrganization } from "../features/organizations/user-organizations
 import { validateOrganizationName } from "../server/organization-name";
 import { AuthField, AuthLayout, authLinkClass } from "./auth-layout";
 
-function OnboardingCreateOrg({ email }: Readonly<{ email: string }>) {
+function OnboardingCreateOrg({
+  email,
+  next,
+}: Readonly<{ email: string; next: string }>) {
   const { signOut } = useAuth();
   const continueRef = useRef<LoadingButtonHandle>(null);
   const [name, setName] = useState("");
@@ -34,10 +37,10 @@ function OnboardingCreateOrg({ email }: Readonly<{ email: string }>) {
 
     try {
       const { organizationId } = await createOrganization(name);
-      const checkout = await freeCheckout(organizationId);
+      const checkout = await freeCheckout(organizationId, next);
       // Let LoadingButton show success, then hard-navigate for a fresh load.
       window.setTimeout(() => {
-        window.location.assign(checkout ?? "/");
+        window.location.assign(checkout ?? next);
       }, 1100);
     } catch (cause) {
       const message =

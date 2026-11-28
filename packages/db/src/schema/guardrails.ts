@@ -39,6 +39,8 @@ export const organizationGuardrails = pgTable("organization_guardrails", {
     .default({ allow: [], block: [] }),
   // The largest case sandbox an agent may use; null allows every size.
   sandboxMaxSize: sandboxSize(),
+  // The catalogue models agents may run on; null allows every model.
+  allowedModels: text().array(),
   updatedBy: text().notNull(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });

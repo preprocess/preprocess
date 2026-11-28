@@ -8,7 +8,9 @@
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
 } from "@preprocess/ui/components/select";
 import {
@@ -19,9 +21,16 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@preprocess/ui/components/sidebar-menu";
+import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+
+import { useBilling, useIsOwner } from "../billing/billing-api";
+import { billingShown } from "../billing/billing-types";
+import { currentScenario } from "../../scenarios/current-scenario";
+import { useLicense } from "./license-api";
+import { useAdministers } from "./use-role";
 
 type Page = {
   to:
@@ -32,7 +41,17 @@ type Page = {
     | "/settings/organization/defaults"
     | "/settings/organization/guardrails"
     | "/settings/organization/audit-logs"
-    | "/settings/organization/opentelemetry";
+    | "/settings/organization/retention"
+    | "/settings/organization/opentelemetry"
+    | "/settings/organization/billing"
+    | "/settings/organization/api-keys"
+    | "/settings/organization/github"
+    | "/settings/organization/integrations"
+    | "/settings/organization/secrets"
+    | "/settings/organization/network"
+    | "/settings/organization/sandboxes"
+    | "/settings/organization/models"
+    | "/settings/organization/license";
   label: string;
   anchors?: readonly { id: string; label: string }[];
 };
@@ -42,7 +61,7 @@ export const GUARDRAIL_SECTIONS = [
   { id: "network", label: "Network" },
   { id: "spending", label: "Spending limit" },
   { id: "sandbox", label: "Sandbox size" },
-  { id: "models", label: "Model endpoints" },
+  { id: "models", label: "Models" },
 ] as const;
 
 const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
@@ -56,6 +75,28 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
       { to: "/settings/organization", label: "General" },
       { to: "/settings/organization/members", label: "Members" },
       { to: "/settings/organization/groups", label: "Groups" },
+      { to: "/settings/organization/billing", label: "Billing" },
+    ],
+  },
+  {
+    label: "Developers",
+    pages: [
+      { to: "/settings/organization/api-keys", label: "API keys & webhooks" },
+      { to: "/settings/organization/github", label: "GitHub" },
+      { to: "/settings/organization/integrations", label: "Integrations" },
+      { to: "/settings/organization/secrets", label: "Secrets" },
+      { to: "/settings/organization/network", label: "Network" },
+      { to: "/settings/organization/sandboxes", label: "Sandboxes" },
+      { to: "/settings/organization/models", label: "Models" },
+      {
+        to: "/settings/organization/opentelemetry",
+        label: "OpenTelemetry export",
+      },
+    ],
+  },
+  {
+    label: "Governance",
+    pages: [
       { to: "/settings/organization/defaults", label: "Defaults" },
       {
         to: "/settings/organization/guardrails",
@@ -63,24 +104,52 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
         anchors: GUARDRAIL_SECTIONS,
       },
       { to: "/settings/organization/audit-logs", label: "Audit log" },
-      {
-        to: "/settings/organization/opentelemetry",
-        label: "OpenTelemetry export",
-      },
+      { to: "/settings/organization/retention", label: "Retention" },
     ],
+  },
+  {
+    label: "Self-hosted",
+    pages: [{ to: "/settings/organization/license", label: "License" }],
   },
 ];
 
-const PAGES = GROUPS.flatMap((group) => group.pages);
+const PAGES = GROUPS.flatMap((group) =>
+  group.pages.map((page) => ({ ...page, group: group.label })),
+);
 
 // The deepest page the path is under; group detail keeps Groups selected.
-export function currentSettingsPage(pathname: string): Page | undefined {
+export function currentSettingsPage(pathname: string) {
   const path = pathname
     .replace(/\/+$/, "")
     .replace("/settings/organization_/", "/settings/organization/");
   return PAGES.filter(
     (page) => path === page.to || path.startsWith(`${page.to}/`),
   ).sort((a, b) => b.to.length - a.to.length)[0];
+}
+
+// Billing shows only to the Owner, on our cloud with billing on, once the plan
+// has started or billing holds for the organization. Retention shows to Owners
+// and Admins, self-hosted included; seeded retention states always show it.
+// License shows to Owners and Admins of a self-hosted install, and in seeded
+// license states.
+function useVisible() {
+  const owner = useIsOwner();
+  const billing = useBilling();
+  const administers = useAdministers();
+  const showBilling =
+    owner === true && Boolean(billing.data && billingShown(billing.data));
+  const showRetention =
+    administers === true || currentScenario().retention !== "live";
+  const license = useLicense(administers === true);
+  const showLicense = Boolean(license.data);
+  return (page: Page) =>
+    page.to === "/settings/organization/billing"
+      ? showBilling
+      : page.to === "/settings/organization/retention"
+        ? showRetention
+        : page.to === "/settings/organization/license"
+          ? showLicense
+          : true;
 }
 
 function usePathname() {
@@ -90,49 +159,54 @@ function usePathname() {
 export function SettingsNav() {
   const current = currentSettingsPage(usePathname());
   const hash = useRouterState({ select: (state) => state.location.hash });
+  const visible = useVisible();
   return (
     <ShapeProvider defaultShape="rounded">
-      <nav
-        aria-label="Settings"
-        className="hidden w-[220px] shrink-0 flex-col gap-5 border-r border-border/60 px-3 py-8 md:flex"
+      <ScrollArea
+        className="hidden min-h-0 w-[220px] shrink-0 border-r border-border/60 md:block"
+        viewportClassName="scroll-fade overscroll-none"
       >
-        {GROUPS.map((group) => (
-          <div className="flex flex-col gap-1" key={group.label}>
-            <h2
-              className="px-2 text-caption text-muted-foreground"
-              style={{ fontVariationSettings: fontWeights.semibold }}
-            >
-              {group.label}
-            </h2>
-            <SidebarMenu aria-label={group.label} className="gap-1">
-              {group.pages.map((page) => (
-                <SidebarMenuItem key={page.to}>
-                  <SidebarMenuButton
-                    isActive={page === current && !(page.anchors && hash)}
-                    render={<Link to={page.to} />}
-                  >
-                    {page.label}
-                  </SidebarMenuButton>
-                  {page.anchors && page === current ? (
-                    <SidebarMenuSub>
-                      {page.anchors.map((anchor) => (
-                        <SidebarMenuSubItem key={anchor.id}>
-                          <SidebarMenuSubButton
-                            isActive={hash === anchor.id}
-                            render={<Link hash={anchor.id} to={page.to} />}
-                          >
-                            {anchor.label}
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
-                    </SidebarMenuSub>
-                  ) : null}
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </div>
-        ))}
-      </nav>
+        <nav aria-label="Settings" className="flex flex-col gap-5 px-3 py-8">
+          {GROUPS.filter((group) => group.pages.some(visible)).map((group) => (
+            <div className="flex flex-col gap-1" key={group.label}>
+              <h2
+                className="px-2 text-caption text-muted-foreground"
+                style={{ fontVariationSettings: fontWeights.semibold }}
+              >
+                {group.label}
+              </h2>
+              <SidebarMenu aria-label={group.label} className="gap-1">
+                {group.pages.filter(visible).map((page) => (
+                  <SidebarMenuItem key={page.to}>
+                    <SidebarMenuButton
+                      isActive={
+                        page.to === current?.to && !(page.anchors && hash)
+                      }
+                      render={<Link to={page.to} />}
+                    >
+                      {page.label}
+                    </SidebarMenuButton>
+                    {page.anchors && page.to === current?.to ? (
+                      <SidebarMenuSub>
+                        {page.anchors.map((anchor) => (
+                          <SidebarMenuSubItem key={anchor.id}>
+                            <SidebarMenuSubButton
+                              isActive={hash === anchor.id}
+                              render={<Link hash={anchor.id} to={page.to} />}
+                            >
+                              {anchor.label}
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    ) : null}
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </div>
+          ))}
+        </nav>
+      </ScrollArea>
     </ShapeProvider>
   );
 }
@@ -141,6 +215,8 @@ export function SettingsNav() {
 export function SettingsSwitcher() {
   const navigate = useNavigate();
   const current = currentSettingsPage(usePathname());
+  const visible = useVisible();
+  const items = PAGES.filter(visible).map((page) => page.to);
   return (
     <div className="md:hidden">
       <Select
@@ -152,10 +228,23 @@ export function SettingsSwitcher() {
       >
         <SelectTrigger aria-label="Settings section" className="w-56" />
         <SelectContent>
-          {PAGES.map((page, index) => (
-            <SelectItem index={index} key={page.to} value={page.to}>
-              {page.label}
-            </SelectItem>
+          {GROUPS.filter((group) => group.pages.some(visible)).map((group) => (
+            <SelectGroup key={group.label}>
+              <SelectLabel
+                style={{ fontVariationSettings: fontWeights.semibold }}
+              >
+                {group.label}
+              </SelectLabel>
+              {group.pages.filter(visible).map((page) => (
+                <SelectItem
+                  index={items.indexOf(page.to)}
+                  key={page.to}
+                  value={page.to}
+                >
+                  {page.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           ))}
         </SelectContent>
       </Select>

@@ -78,12 +78,18 @@ external mutations:
   completed before the source case started (excluding the source case itself so
   scores aren't inflated).
 
-<Callout title="Coming soon">
-  Automatic eval runs on git push (`evals.onPush` in agent code/settings and
-  `runOnPush` on suites) are accepted in the configuration schema and API, but
-  are not yet wired to start runs automatically on push. Today, start eval runs
-  manually from the app, CLI, API or MCP.
-</Callout>
+## Runs on each new deployment
+
+Automatic eval runs on each new deployment take two switches: the agent's
+`evals.onPush` setting (in code as `evals: {onPush: true}`, as an organization
+default or as an agent override) and `runOnPush` on each suite that should run.
+When a production deployment of the agent becomes ready, including one that
+becomes ready after a guardrail approval or a custom environment build, the
+platform starts one run of each such suite against it on the deployment's model,
+with the trigger `push`. Each suite runs at most once per deployment. Preview
+deployments don't start runs. The runs are skipped, with an `eval_run.skipped`
+audit event, while the organization is at its spending limit or doesn't allow
+the deployment's model.
 
 ## How to use it
 

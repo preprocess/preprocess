@@ -4,6 +4,7 @@
 // comes from, with dashboard overrides that last until the next promotion, and
 // the agent's own network rules, which only narrow the organization's.
 
+import { Button } from "@preprocess/ui/components/button";
 import { LoadingButton } from "@preprocess/ui/components/loading-button";
 import {
   Select,
@@ -14,6 +15,8 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+
+import { AllCaughtUpArt, GoneArt } from "../../components/empty-art";
 
 import { useOrganizationId } from "../auth/auth-context";
 import { orgApi } from "../auth/client";
@@ -72,7 +75,7 @@ const SOURCE = {
 const text = (value: Scalar | null) => value?.toString() ?? "";
 
 // Listed only for an agent whose code asks for a sandbox; never an
-// organization default.
+// organization default. The size is set in code only, so it is read-only.
 const AGENT_FIELDS: readonly Field<string>[] = [
   ...FIELDS,
   {
@@ -137,12 +140,24 @@ function AgentRequests({
         <SettingsSkeletonRows count={1} />
       ) : highlight && !shown.some((r) => r.id === highlight) ? (
         <SettingsEmpty
-          description="It may have been withdrawn after the deployment that filed it was replaced."
-          title="This request no longer exists"
+          action={
+            <Button asChild size="compact" variant="ghost">
+              <Link
+                params={{ agentId: agentSlug }}
+                to="/agents/$agentId/settings"
+              >
+                Back to agent settings
+              </Link>
+            </Button>
+          }
+          art={<GoneArt />}
+          description="This guardrail request no longer exists."
+          title="Request not found"
         />
       ) : shown.length === 0 ? (
         <SettingsEmpty
-          description="Nothing is waiting on a guardrail for this agent."
+          art={<AllCaughtUpArt />}
+          description="This agent has no deployments waiting on a guardrail decision."
           title="No pending requests"
         />
       ) : (
@@ -223,6 +238,18 @@ function SettingRow({
   useEffect(() => setDraft(text(setting.value)), [setting.value]);
   const label = field?.label ?? setting.key;
   const changed = draft !== "" && draft !== text(setting.value);
+
+  if (setting.key === "sandbox.size")
+    return (
+      <SettingsRow
+        description={SOURCE[setting.source]}
+        label={label}
+        value={
+          SANDBOX_SIZE_OPTIONS.find((option) => option.value === setting.value)
+            ?.label ?? text(setting.value)
+        }
+      />
+    );
 
   return (
     <SettingsRow
