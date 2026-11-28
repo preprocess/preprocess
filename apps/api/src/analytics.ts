@@ -8,6 +8,7 @@ import {
   type ProductEventName,
   type ProductProperties,
 } from "@preprocess/logs";
+import { isOrgModel } from "@preprocess/sdk/protocol";
 import { eq } from "drizzle-orm";
 
 import type { Env } from "./env.ts";
@@ -38,6 +39,10 @@ export const track = async (env: Env, events: ProductEvent[]) => {
     );
   }
 };
+
+// A model id as events carry it: an organization's own model is `org`,
+// since its slug is a name the organization chose.
+export const modelSlug = (model: string) => (isOrgModel(model) ? "org" : model);
 
 // One event. `actor` is the person who acted; an API key, the platform or
 // nobody passes null, and the event is the organization's alone.

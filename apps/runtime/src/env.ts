@@ -49,6 +49,8 @@ export type McpProps = {
   organizationId: string;
   agentId: string;
   deploymentId: string;
+  // The case a tool call serves, so its MCP calls count in the case's run.
+  caseId?: string;
 };
 
 export type McpService = {
@@ -189,6 +191,9 @@ export type CaseEvent = CaseKey &
         captureBytes?: number;
         // Set when the case waits on an approval, whose own event notifies.
         approvalId?: string;
+        // On completion or failure: what the run used, for product
+        // analytics. Counts and ids only.
+        stats?: CaseStats;
         // On completion: what an eval suite keeps of the case (doc 09), and
         // the agent's final message for case search (spec 10).
         completed?: {
@@ -209,6 +214,17 @@ export type CaseEvent = CaseKey &
     // person changes an answer.
     | { type: "review"; fields: string[] }
   );
+
+export type CaseStats = {
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  toolCalls: number;
+  modelErrors: number;
+  ocrPages: number;
+  // Per MCP server slug the case called.
+  mcp: { server: string; calls: number; errors: number }[];
+};
 
 export type Platform = {
   caseEvent(event: CaseEvent): Promise<void>;
