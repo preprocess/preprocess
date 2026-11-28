@@ -273,6 +273,10 @@ export const localAppUrl = "https://app.preprocess.localhost";
 // domain of its own.
 export const publicDocsUrl = "https://docs.preprocess.com";
 
+// Our public status page, linked from the app and docs on our own stages only;
+// a self-hosted install has no status page of ours (spec 16).
+export const publicStatusUrl = "https://status.preprocess.com";
+
 // The GitHub App in `pnpm dev`: scripts/github-stub.ts stands in for GitHub
 // and apps/builder/local/server.ts runs the build sandbox under Docker. The
 // private key, webhook secret and client secret are generated into

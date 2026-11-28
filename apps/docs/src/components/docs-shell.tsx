@@ -53,6 +53,7 @@ import {
   Code,
   Copy,
   FileText,
+  Gauge,
   Hash,
   Headset,
   Home,
@@ -458,6 +459,31 @@ function SupportLink({
   );
 }
 
+// Our status page, where the install links one.
+function StatusLink({
+  className,
+  url,
+  variant = "ghost",
+}: {
+  className?: string;
+  url: string | null;
+  variant?: "ghost" | "tertiary";
+}) {
+  if (!url) return null;
+  return (
+    <Button
+      aria-label="Status"
+      className={cn("text-muted-foreground hover:text-foreground", className)}
+      render={<a href={url} rel="noopener" target="_blank" />}
+      size="icon-sm"
+      title="Status"
+      variant={variant}
+    >
+      <Gauge aria-hidden />
+    </Button>
+  );
+}
+
 // The GitHub mark (Octicons mark-github, MIT). Lucide dropped its brand
 // icons, so the kit has none to offer.
 function GitHubLink({
@@ -505,9 +531,11 @@ function OpenApp({ appUrl }: { appUrl: string }) {
 // The sidebar's contents beside the page on wide screens.
 function SidebarBody({
   onSearch,
+  statusUrl,
   tree,
 }: {
   onSearch: () => void;
+  statusUrl: string | null;
   tree: PageTree.Root;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -548,6 +576,7 @@ function SidebarBody({
         >
           Support
         </Button>
+        <StatusLink url={statusUrl} />
         <GitHubLink />
         <ThemeToggle />
       </SidebarFooter>
@@ -897,11 +926,13 @@ function MobileMenu({
   appUrl,
   onClose,
   onSearch,
+  statusUrl,
   tree,
 }: {
   appUrl: string;
   onClose: () => void;
   onSearch: () => void;
+  statusUrl: string | null;
   tree: PageTree.Root;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -962,6 +993,11 @@ function MobileMenu({
                   className="size-11 rounded-full"
                   variant="tertiary"
                 />
+                <StatusLink
+                  className="size-11 rounded-full"
+                  url={statusUrl}
+                  variant="tertiary"
+                />
                 <GitHubLink
                   className="size-11 rounded-full"
                   variant="tertiary"
@@ -982,6 +1018,7 @@ function MobileHeader({
   hasToc,
   onSearch,
   panel,
+  statusUrl,
   title,
   tree,
 }: {
@@ -989,6 +1026,7 @@ function MobileHeader({
   hasToc: boolean;
   onSearch: () => void;
   panel: RefObject<HTMLElement | null>;
+  statusUrl: string | null;
   title?: string;
   tree: PageTree.Root;
 }) {
@@ -1069,6 +1107,7 @@ function MobileHeader({
                 setMenuOpen(false);
                 onSearch();
               }}
+              statusUrl={statusUrl}
               tree={tree}
             />
           </SurfaceProvider>
@@ -1082,6 +1121,7 @@ export function DocsShell({
   tree,
   appUrl,
   markdown,
+  statusUrl,
   title,
   toc = [],
   children,
@@ -1089,6 +1129,7 @@ export function DocsShell({
   tree: PageTree.Root;
   appUrl: string;
   markdown?: string;
+  statusUrl: string | null;
   title?: string;
   toc?: TOCItemType[];
   children: ReactNode;
@@ -1124,7 +1165,11 @@ export function DocsShell({
     >
       <ShapeProvider defaultShape="rounded">
         <Sidebar rail={false} variant="inset">
-          <SidebarBody onSearch={openSearch} tree={tree} />
+          <SidebarBody
+            onSearch={openSearch}
+            statusUrl={statusUrl}
+            tree={tree}
+          />
         </Sidebar>
       </ShapeProvider>
       <SidebarInset
@@ -1138,6 +1183,7 @@ export function DocsShell({
               hasToc={toc.length > 0}
               onSearch={openSearch}
               panel={panel}
+              statusUrl={statusUrl}
               title={title}
               tree={tree}
             />

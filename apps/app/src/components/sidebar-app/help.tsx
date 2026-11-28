@@ -15,28 +15,47 @@ import {
   ArrowUpRight,
   BookOpen,
   CircleHelp,
+  Gauge,
   Mail,
 } from "@preprocess/ui/lib/icons";
 import { SIDEBAR_MENU_POPUP } from "@preprocess/ui/lib/sidebar-menu-grid";
+import { getRouteApi } from "@tanstack/react-router";
 
-const DOCS_URL = "https://docs.preprocess.com";
 const SUPPORT_EMAIL = "support@preprocess.com";
 
+const rootRoute = getRouteApi("__root__");
+
 function HelpMenuItems() {
+  const { docsUrl, statusUrl } = rootRoute.useLoaderData({
+    select: (d) => d.helpLinks,
+  });
   return (
     <>
-      <MenuItem
-        icon={BookOpen}
-        index={0}
-        label="Documentation"
-        onSelect={() => {
-          window.open(DOCS_URL, "_blank", "noopener,noreferrer");
-        }}
-        trailingIcon={ArrowUpRight}
-      />
+      {docsUrl ? (
+        <MenuItem
+          icon={BookOpen}
+          index={0}
+          label="Documentation"
+          onSelect={() => {
+            window.open(docsUrl, "_blank", "noopener,noreferrer");
+          }}
+          trailingIcon={ArrowUpRight}
+        />
+      ) : null}
+      {statusUrl ? (
+        <MenuItem
+          icon={Gauge}
+          index={docsUrl ? 1 : 0}
+          label="Status"
+          onSelect={() => {
+            window.open(statusUrl, "_blank", "noopener,noreferrer");
+          }}
+          trailingIcon={ArrowUpRight}
+        />
+      ) : null}
       <MenuItem
         icon={Mail}
-        index={1}
+        index={(docsUrl ? 1 : 0) + (statusUrl ? 1 : 0)}
         label="Contact support"
         onSelect={() => {
           window.location.href = `mailto:${SUPPORT_EMAIL}`;

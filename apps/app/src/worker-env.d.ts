@@ -9,6 +9,8 @@ declare global {
       GOOGLE_CLIENT_ID?: string;
       /** The docs site the app links to. */
       DOCS_URL?: string;
+      /** Our status page; set only on our own stages (spec 16). */
+      STATUS_URL?: string;
     }
   }
 }

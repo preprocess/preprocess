@@ -18,8 +18,10 @@ const loadPage = createServerFn({ method: "GET" })
   .validator((slugs: string[]) => slugs)
   .handler(async ({ data: slugs }) => {
     const pageTree = await source.serializePageTree(source.getPageTree());
+    const statusUrl = env.STATUS_URL ?? null;
     const page = source.getPage(slugs);
-    if (!page) throw notFound({ data: { apiUrl: env.API_URL, pageTree } });
+    if (!page)
+      throw notFound({ data: { apiUrl: env.API_URL, pageTree, statusUrl } });
     if (page.type === "openapi")
       return {
         type: "openapi" as const,
@@ -28,6 +30,7 @@ const loadPage = createServerFn({ method: "GET" })
         title: page.data.title,
         pageTree,
         props: page.data.getOpenAPIPageProps(),
+        statusUrl,
       };
     return {
       type: "docs" as const,
@@ -36,6 +39,7 @@ const loadPage = createServerFn({ method: "GET" })
       apiUrl: env.API_URL,
       markdown: await page.data.getText("processed"),
       pageTree,
+      statusUrl,
     };
   });
 
@@ -55,12 +59,14 @@ function Content({
   appUrl,
   markdown,
   path,
+  statusUrl,
   tree,
   url,
 }: {
   appUrl: string;
   markdown: string;
   path: string;
+  statusUrl: string | null;
   tree: Parameters<typeof DocsArticle>[0]["tree"];
   url: string;
 }) {
@@ -72,6 +78,7 @@ function Content({
     <DocsShell
       appUrl={appUrl}
       markdown={markdown}
+      statusUrl={statusUrl}
       title={page.title}
       toc={toc}
       tree={tree}
@@ -96,7 +103,11 @@ function Page() {
   const appUrl = new URL(page.apiUrl).origin;
   if (page.type === "openapi")
     return (
-      <DocsShell appUrl={appUrl} tree={page.pageTree}>
+      <DocsShell
+        appUrl={appUrl}
+        statusUrl={page.statusUrl}
+        tree={page.pageTree}
+      >
         <DocsArticle
           layout="api"
           title={page.title}
@@ -116,6 +127,7 @@ function Page() {
           appUrl={appUrl}
           markdown={page.markdown}
           path={page.path}
+          statusUrl={page.statusUrl}
           tree={page.pageTree}
           url={page.url}
         />
