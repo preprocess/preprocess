@@ -205,6 +205,12 @@ export const trainingVars = ["TRAINING_SERVICE"] as const;
 export const statusHeartbeatVars = ["STATUS_HEARTBEAT_URL"] as const;
 export const statusHeartbeatSecrets = ["STATUS_HEARTBEAT_SECRET"] as const;
 
+// Feedback about Preprocess (apps/api routes/feedback.ts), optional and on
+// production only: FEEDBACK_EMAIL_TO (support@preprocess.com) gets each item
+// by email. Staging, previews and self-hosted installs store feedback and
+// send nothing.
+export const feedbackProductionVars = ["FEEDBACK_EMAIL_TO"] as const;
+
 // PostHog (spec 12 and 15): server errors and request events from the app,
 // docs, API and runtime, and the app's browser errors. Production and staging
 // each send to their own PostHog project, so staging never reaches
