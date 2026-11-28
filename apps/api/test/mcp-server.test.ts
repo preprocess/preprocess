@@ -7,6 +7,7 @@ import { newId } from "@preprocess/db/ids";
 import { agents } from "@preprocess/db/schema/access";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import type { Env } from "../src/env.ts";
 import { TOOLS } from "../src/mcp-server.ts";
 import { Client, createOrganization, signUp, testEnv } from "./helpers.ts";
 
@@ -141,5 +142,48 @@ describe("the MCP server", () => {
       arguments: {},
     });
     expect(noSuchTool.body.error?.code).toBe(-32602);
+  });
+  it("sends feedback about Preprocess, on our cloud and self-hosted alike", async () => {
+    const list = await rpc<{
+      tools: {
+        name: string;
+        description: string;
+        inputSchema: {
+          required: string[];
+          properties: Record<string, unknown>;
+        };
+      }[];
+    }>(keyed, "tools/list");
+    const tool = list.body.result!.tools.find(
+      (t) => t.name === "send_feedback",
+    )!;
+    expect(tool.description).toMatch(/broken, missing or confusing/);
+    expect(tool.description).toMatch(/Never include secrets/);
+    expect(tool.inputSchema.required.sort()).toEqual(["category", "message"]);
+    expect(Object.keys(tool.inputSchema.properties).sort()).toEqual([
+      "agent",
+      "case",
+      "category",
+      "client",
+      "message",
+    ]);
+    const sentFeedback = await callTool("send_feedback", {
+      category: "bug",
+      message: "get_case_logs returns nothing for a running case.",
+      agent: "intake",
+    });
+    expect(sentFeedback.isError).toBe(false);
+    const receipt = JSON.parse(sentFeedback.content[0]!.text) as {
+      id: string;
+    };
+    expect(receipt.id).toMatch(/^fbk_/);
+    const selfHosted = new Client(
+      testEnv({ PREPROCESS_REGION: undefined } as unknown as Partial<Env>),
+      keyed.headers,
+    );
+    const names = (
+      await rpc<{ tools: { name: string }[] }>(selfHosted, "tools/list")
+    ).body.result!.tools.map((t) => t.name);
+    expect(names).toContain("send_feedback");
   });
 });
