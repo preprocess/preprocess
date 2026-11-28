@@ -220,96 +220,69 @@ afterAll(() => {
 });
 
 describe("directory sync tokens", () => {
-  it("are issued once, one at a time, regenerated and revoked", async () => {
+  it("are issued once, listed without the secret, and refused once revoked", async () => {
     const { owner, org, token } = await directory("Tokenco");
     const [prefix] = token.split(".");
     expect(prefix).toMatch(/^ba_scim_credential_/);
 
     const status = await owner.client.call<{
       allowed: boolean;
-      canEdit: boolean;
       baseUrl: string;
       connection: { id: string } | null;
-      token: Record<string, unknown> | null;
+      tokens: { prefix: string; status: string; lastUsedAt: string | null }[];
     }>(`/v1/orgs/${org}/scim`);
     expect(status.status).toBe(200);
     expect(status.body).toMatchObject({
       allowed: true,
-      canEdit: true,
       baseUrl: new URL("/api/auth/scim/v2", licensed.APP_URL).toString(),
-      token: {
-        prefix,
-        status: "active",
-        last4: token.slice(-4),
-        createdBy: { id: owner.userId, name: "Tokenco Owner" },
-        lastUsedAt: null,
-      },
+      tokens: [{ prefix, status: "active", lastUsedAt: null }],
     });
     expect(status.body.connection?.id).toMatch(/^ba_scim_connection_/);
     expect(JSON.stringify(status.body)).not.toContain(token);
 
     expect((await scim(licensed, token, "GET", "/Users")).status).toBe(200);
     const used = await owner.client.call<{
-      token: { lastUsedAt: string | null };
+      tokens: { lastUsedAt: string | null }[];
     }>(`/v1/orgs/${org}/scim`);
-    expect(used.body.token.lastUsedAt).not.toBeNull();
+    expect(used.body.tokens[0]?.lastUsedAt).not.toBeNull();
 
-    // One token at a time: a second is a regeneration.
-    const again = await owner.client.call(`/v1/orgs/${org}/scim/tokens`, {
-      body: {},
-    });
-    expect(again.status).toBe(409);
-    expect(again.body).toMatchObject({
-      error:
-        "This organization already has a directory sync token. Regenerate it to replace it.",
-    });
-    const second = await owner.client.call<{
-      token: string;
-      prefix: string;
-      last4: string;
-    }>(`/v1/orgs/${org}/scim/tokens/regenerate`, {
-      body: { expiresInDays: 30 },
-    });
-    expect(second.status).toBe(201);
-    expect(second.body.last4).toBe(second.body.token.slice(-4));
-    const replaced = await scim(licensed, token, "GET", "/Users");
-    expect(replaced.status).toBe(401);
-    expect(replaced.body.schemas).toEqual([ERROR]);
-    expect(
-      (await scim(licensed, second.body.token, "GET", "/Users")).status,
-    ).toBe(200);
-    const current = await owner.client.call<{ token: { prefix: string } }>(
-      `/v1/orgs/${org}/scim`,
+    const second = await owner.client.call<{ token: string; prefix: string }>(
+      `/v1/orgs/${org}/scim/tokens`,
+      { body: { expiresInDays: 30 } },
     );
-    expect(current.body.token.prefix).toBe(second.body.prefix);
+    expect(second.status).toBe(201);
 
     const revoked = await owner.client.call(
-      `/v1/orgs/${org}/scim/tokens/${second.body.prefix}`,
+      `/v1/orgs/${org}/scim/tokens/${prefix}`,
       { method: "DELETE" },
     );
     expect(revoked.status).toBe(204);
+    const refused = await scim(licensed, token, "GET", "/Users");
+    expect(refused.status).toBe(401);
+    expect(refused.body.schemas).toEqual([ERROR]);
     expect(
       (await scim(licensed, second.body.token, "GET", "/Users")).status,
-    ).toBe(401);
-    const none = await owner.client.call<{ token: unknown }>(
-      `/v1/orgs/${org}/scim`,
+    ).toBe(200);
+
+    const after = await owner.client.call<{
+      tokens: { prefix: string; status: string }[];
+    }>(`/v1/orgs/${org}/scim`);
+    expect(after.body.tokens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ prefix, status: "revoked" }),
+        expect.objectContaining({
+          prefix: second.body.prefix,
+          status: "active",
+        }),
+      ]),
     );
-    expect(none.body.token).toBeNull();
-    const regenerateNone = await owner.client.call(
-      `/v1/orgs/${org}/scim/tokens/regenerate`,
-      { body: {} },
-    );
-    expect(regenerateNone.status).toBe(404);
-    const third = await owner.client.call<{ prefix: string }>(
-      `/v1/orgs/${org}/scim/tokens`,
-      { body: {} },
-    );
-    expect(third.status).toBe(201);
     expect(
       (
         await owner.client.call(
           `/v1/orgs/${org}/scim/tokens/ba_scim_credential_nope`,
-          { method: "DELETE" },
+          {
+            method: "DELETE",
+          },
         )
       ).status,
     ).toBe(404);
@@ -318,37 +291,146 @@ describe("directory sync tokens", () => {
       e.action.startsWith("scim.token."),
     );
     expect(
-      audited.map((e) => [
-        e.action,
-        e.actorType,
-        e.actorId,
-        e.targetId,
-        e.data,
-      ]),
+      audited.map((e) => [e.action, e.actorType, e.actorId, e.targetId]),
     ).toEqual([
-      ["scim.token.created", "person", owner.userId, prefix, expect.anything()],
-      [
-        "scim.token.revoked",
-        "person",
-        owner.userId,
-        prefix,
-        { regenerated: true },
-      ],
+      ["scim.token.created", "person", owner.userId, prefix],
+      ["scim.token.created", "person", owner.userId, second.body.prefix],
+      ["scim.token.revoked", "person", owner.userId, prefix],
+    ]);
+  });
+
+  it("are for Owners only, and five at a time", async () => {
+    const { owner, org } = await directory("Ownerco");
+    const admin = await addMember(owner.client, org, "Token Admin", "admin");
+    const adminClient = asEnv(admin.client, licensed);
+    for (const call of [
+      adminClient.call(`/v1/orgs/${org}/scim/tokens`, { body: {} }),
+    ]) {
+      const refused = await call;
+      expect(refused.status).toBe(403);
+      expect(refused.body).toMatchObject({
+        error: "Only Owners can manage directory sync.",
+      });
+    }
+    for (let n = 1; n < 5; n++)
+      expect(
+        (await owner.client.call(`/v1/orgs/${org}/scim/tokens`, { body: {} }))
+          .status,
+      ).toBe(201);
+    const sixth = await owner.client.call(`/v1/orgs/${org}/scim/tokens`, {
+      body: {},
+    });
+    expect(sixth.status).toBe(409);
+    expect(sixth.body).toMatchObject({
+      error:
+        "An organization can have 5 directory sync tokens at a time. Revoke one first.",
+    });
+  });
+
+  it("show the newest active one, and regenerate by replacing every active one", async () => {
+    const { owner, org, token } = await directory("Regenco");
+    const [prefix] = token.split(".");
+    const status = await owner.client.call<{
+      token: Record<string, unknown> | null;
+    }>(`/v1/orgs/${org}/scim`);
+    expect(status.body.token).toMatchObject({
+      prefix,
+      status: "active",
+      last4: token.slice(-4),
+      createdBy: { id: owner.userId, name: "Regenco Owner" },
+      lastUsedAt: null,
+    });
+    expect(Object.keys(status.body.token!).sort()).toEqual([
+      "createdAt",
+      "createdBy",
+      "expiresAt",
+      "last4",
+      "lastUsedAt",
+      "prefix",
+      "status",
+    ]);
+    expect(JSON.stringify(status.body)).not.toContain(token);
+
+    const second = await owner.client.call<{ token: string; prefix: string }>(
+      `/v1/orgs/${org}/scim/tokens`,
+      { body: {} },
+    );
+    expect(second.status).toBe(201);
+    const newest = await owner.client.call<{ token: { prefix: string } }>(
+      `/v1/orgs/${org}/scim`,
+    );
+    expect(newest.body.token.prefix).toBe(second.body.prefix);
+
+    const regenerated = await owner.client.call<{
+      token: string;
+      prefix: string;
+      status: string;
+      createdBy: string;
+    }>(`/v1/orgs/${org}/scim/tokens/regenerate`, {
+      body: { expiresInDays: 30 },
+    });
+    expect(regenerated.status).toBe(201);
+    expect(regenerated.body).toMatchObject({
+      status: "active",
+      createdBy: owner.userId,
+    });
+    for (const old of [token, second.body.token]) {
+      const refused = await scim(licensed, old, "GET", "/Users");
+      expect(refused.status).toBe(401);
+      expect(refused.body.schemas).toEqual([ERROR]);
+    }
+    expect(
+      (await scim(licensed, regenerated.body.token, "GET", "/Users")).status,
+    ).toBe(200);
+    const after = await owner.client.call<{
+      token: { prefix: string; last4: string };
+      tokens: { prefix: string; status: string }[];
+    }>(`/v1/orgs/${org}/scim`);
+    expect(after.body.token).toMatchObject({
+      prefix: regenerated.body.prefix,
+      last4: regenerated.body.token.slice(-4),
+    });
+    expect(after.body.tokens.map((t) => [t.prefix, t.status])).toEqual([
+      [regenerated.body.prefix, "active"],
+      [second.body.prefix, "revoked"],
+      [prefix, "revoked"],
+    ]);
+
+    expect(
+      (
+        await owner.client.call(
+          `/v1/orgs/${org}/scim/tokens/${regenerated.body.prefix}`,
+          { method: "DELETE" },
+        )
+      ).status,
+    ).toBe(204);
+    const none = await owner.client.call<{ token: unknown }>(
+      `/v1/orgs/${org}/scim`,
+    );
+    expect(none.body.token).toBeNull();
+    const nothing = await owner.client.call(
+      `/v1/orgs/${org}/scim/tokens/regenerate`,
+      { body: {} },
+    );
+    expect(nothing.status).toBe(404);
+    expect(nothing.body).toMatchObject({
+      error: "There's no directory sync token to regenerate.",
+    });
+
+    const audited = (await events(org)).filter((e) =>
+      e.action.startsWith("scim.token."),
+    );
+    expect(audited.map((e) => [e.action, e.targetId, e.data])).toEqual([
+      ["scim.token.created", prefix, expect.anything()],
+      ["scim.token.created", second.body.prefix, expect.anything()],
+      ["scim.token.revoked", prefix, { regenerated: true }],
+      ["scim.token.revoked", second.body.prefix, { regenerated: true }],
       [
         "scim.token.created",
-        "person",
-        owner.userId,
-        second.body.prefix,
+        regenerated.body.prefix,
         expect.objectContaining({ regenerated: true }),
       ],
-      ["scim.token.revoked", "person", owner.userId, second.body.prefix, {}],
-      [
-        "scim.token.created",
-        "person",
-        owner.userId,
-        third.body.prefix,
-        expect.anything(),
-      ],
+      ["scim.token.revoked", regenerated.body.prefix, {}],
     ]);
   });
 
@@ -386,7 +468,7 @@ describe("directory sync tokens", () => {
     );
     expect(hidden.status).toBe(403);
     expect(hidden.body).toMatchObject({
-      error: "Only Owners and Admins can see directory sync.",
+      error: "Only Owners can manage directory sync.",
     });
   });
 });
@@ -422,6 +504,7 @@ describe("plans", () => {
     expect(issue.status).toBe(403);
     const status = await asEnv(owner.client, free).call<{
       allowed: boolean;
+      tokens: unknown[];
       token: unknown;
     }>(`/v1/orgs/${org}/scim`);
     expect(status.body).toMatchObject({
@@ -430,6 +513,7 @@ describe("plans", () => {
       license: null,
       canEdit: false,
     });
+    expect(status.body.tokens).toHaveLength(1);
     expect(status.body.token).not.toBeNull();
 
     // Back on a licensed plan, the same token and user are there.
@@ -962,8 +1046,8 @@ describe("expired licenses", () => {
 });
 
 type SyncStatus = {
+  lastSyncAt: string | null;
   sync: {
-    lastSyncAt: string | null;
     running: boolean;
     received: number | null;
     people: { synced: number; deactivated: number };
@@ -981,10 +1065,11 @@ type SyncStatus = {
 describe("sync status", () => {
   it("counts a run of SCIM writes as one sync, and people synced and deactivated", async () => {
     const { owner, org, token } = await directory("Syncco");
-    const status = async () =>
-      (await owner.client.call<SyncStatus>(`/v1/orgs/${org}/scim`)).body.sync;
+    const read = async () =>
+      (await owner.client.call<SyncStatus>(`/v1/orgs/${org}/scim`)).body;
+    const status = async () => (await read()).sync;
+    expect((await read()).lastSyncAt).toBeNull();
     expect(await status()).toEqual({
-      lastSyncAt: null,
       running: false,
       received: null,
       people: { synced: 0, deactivated: 0 },
@@ -1004,7 +1089,7 @@ describe("sync status", () => {
       received: 3,
       people: { synced: 1, deactivated: 1 },
     });
-    expect(running.lastSyncAt).not.toBeNull();
+    expect((await read()).lastSyncAt).not.toBeNull();
 
     // Three minutes later the sync is over; the next write starts another.
     await withoutOrg(licensed, "test: directory sync", (tx) =>
@@ -1094,17 +1179,17 @@ describe("a group removed in the directory", () => {
     ).toBe(204);
     const status = await owner.client.call<SyncStatus>(`/v1/orgs/${org}/scim`);
     expect(status.body.groups.map((g) => g.name)).toEqual([
-      "Payables",
       "Accounts",
+      "Payables",
     ]);
-    expect(status.body.groups[0]).toMatchObject({
+    expect(status.body.groups[1]).toMatchObject({
       id: payables!.id,
       memberCount: 0,
       removedMembers: 2,
       agents: 1,
     });
-    expect(status.body.groups[0]!.removedAt).not.toBeNull();
-    expect(status.body.groups[1]).toMatchObject({
+    expect(status.body.groups[1]!.removedAt).not.toBeNull();
+    expect(status.body.groups[0]).toMatchObject({
       memberCount: 1,
       removedAt: null,
       removedMembers: null,

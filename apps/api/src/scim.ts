@@ -51,6 +51,8 @@ export const SCIM_SCOPES = [
   "scim.groups.read",
   "scim.groups.write",
 ] as const;
+// The plugin's default; it refuses a sixth active token.
+export const MAX_SCIM_TOKENS = 5;
 // A sync is SCIM writes less than this apart; it is running until this long
 // after the latest one.
 export const SYNC_GAP_MS = 2 * 60_000;

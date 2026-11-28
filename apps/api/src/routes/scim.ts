@@ -1,9 +1,10 @@
 // Directory sync settings (spec 13, PRE-138). Owners manage them; Admins read
 // them (Design's decision 1). The status of the organization's SCIM
-// connection, its one token, its latest sync and its synced groups; issuing
-// a token (shown once, kept only as a digest and its last four characters)
-// needs scim in the plan, while reading and revoking keep working after the
-// plan or license lapses. SCIM itself is served by Better Auth at
+// connection, its tokens (up to five; the settings page shows the newest and
+// regenerates it), its latest sync and its synced groups; issuing a token
+// (shown once, kept only as a digest and its last four characters) needs
+// scim in the plan, while reading and revoking keep working after the plan or
+// license lapses. /v1 is additive: #220's shapes and limits stay. SCIM itself is served by Better Auth at
 // /api/auth/scim/v2 (scim.ts).
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
@@ -19,7 +20,7 @@ import {
   user,
 } from "@preprocess/db/schema/auth";
 import { directorySync } from "@preprocess/db/schema/directory-sync";
-import { and, asc, count, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNotNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
@@ -30,17 +31,41 @@ import { agentsNamingGroup } from "../deploy.ts";
 import type { Env } from "../env.ts";
 import { removedGroupAudience } from "../notify.ts";
 import { getPlan, unavailable } from "../plan.ts";
-import { refusal, SCIM_PATH, SCIM_SCOPES, SYNC_GAP_MS } from "../scim.ts";
+import {
+  MAX_SCIM_TOKENS,
+  refusal,
+  SCIM_PATH,
+  SCIM_SCOPES,
+  SYNC_GAP_MS,
+} from "../scim.ts";
 
 const OrgParam = z.object({ org: z.string() });
 const TokenParam = OrgParam.extend({ prefix: z.string() });
 
+// As #220 shipped it (/v1 is additive): every token, revoked ones included.
 const Token = z
   .object({
     prefix: z.string().openapi({
       description: "The token's public start, which identifies it",
     }),
-    status: z.enum(["active", "expired"]),
+    status: z.enum(["active", "expired", "revoked"]),
+    createdAt: z.string(),
+    createdBy: z.string(),
+    lastUsedAt: z.string().nullable().openapi({
+      description: "Updated at most every five minutes",
+    }),
+    expiresAt: z.string(),
+    revokedAt: z.string().nullable(),
+  })
+  .openapi("ScimToken");
+
+// The newest active token, for settings that show one at a time.
+const CurrentToken = z
+  .object({
+    prefix: z.string().openapi({
+      description: "The token's public start, which identifies it",
+    }),
+    status: z.literal("active"),
     last4: z.string().nullable().openapi({
       description: "The token's last four characters",
     }),
@@ -54,7 +79,7 @@ const Token = z
     }),
     expiresAt: z.string(),
   })
-  .openapi("ScimToken");
+  .openapi("ScimCurrentToken");
 
 const SyncedGroup = z
   .object({
@@ -97,13 +122,14 @@ const Status = z
     }),
     baseUrl: z.string(),
     connection: z.object({ id: z.string(), createdAt: z.string() }).nullable(),
-    token: Token.nullable().openapi({
-      description: "The current token; there is one at a time",
+    lastSyncAt: z.string().nullable().openapi({
+      description: "The directory's latest change to a user or group",
+    }),
+    tokens: z.array(Token),
+    token: CurrentToken.nullable().openapi({
+      description: "The newest active token, with its last four characters",
     }),
     sync: z.object({
-      lastSyncAt: z.string().nullable().openapi({
-        description: "The directory's latest change",
-      }),
       running: z.boolean().openapi({
         description:
           "Whether the directory sent a change in the last 2 minutes",
@@ -113,9 +139,7 @@ const Status = z
       }),
       people: z.object({ synced: z.number(), deactivated: z.number() }),
     }),
-    groups: z.array(SyncedGroup).openapi({
-      description: "Removed groups first, then by name",
-    }),
+    groups: z.array(SyncedGroup),
   })
   .openapi("ScimStatus");
 
@@ -174,6 +198,7 @@ const credentials = (tx: Tx, org: string, where: SQL | undefined) =>
       createdByName: user.name,
       lastUsedAt: scimManagedCredential.lastUsedAt,
       expiresAt: scimManagedCredential.expiresAt,
+      revokedAt: scimManagedCredential.revokedAt,
       connectionId: scimManagedConnection.connectionId,
       last4: directorySync.tokenLast4,
       last4Of: directorySync.tokenCredentialId,
@@ -195,12 +220,26 @@ const credentials = (tx: Tx, org: string, where: SQL | undefined) =>
 
 type Credential = Awaited<ReturnType<typeof credentials>>[number];
 
-const toToken = (c: Credential, now = Date.now()) => ({
+const live = (c: Credential, now = Date.now()) =>
+  c.status === "active" && c.expiresAt.getTime() > now;
+
+const toToken = (c: Credential) => ({
   prefix: c.prefix,
-  status:
-    c.status === "active" && c.expiresAt.getTime() > now
-      ? ("active" as const)
+  status: live(c)
+    ? ("active" as const)
+    : c.status === "revoked"
+      ? ("revoked" as const)
       : ("expired" as const),
+  createdAt: c.createdAt.toISOString(),
+  createdBy: c.createdById,
+  lastUsedAt: c.lastUsedAt?.toISOString() ?? null,
+  expiresAt: c.expiresAt.toISOString(),
+  revokedAt: c.revokedAt?.toISOString() ?? null,
+});
+
+const toCurrentToken = (c: Credential) => ({
+  prefix: c.prefix,
+  status: "active" as const,
   last4: c.last4Of === c.prefix ? c.last4 : null,
   createdAt: c.createdAt.toISOString(),
   createdBy:
@@ -289,18 +328,17 @@ const issue = (
         )
       : [];
     const now = Date.now();
-    const current = active.filter((t) => t.expiresAt.getTime() > now);
-    if (!replace && current.length)
+    const current = active.filter((t) => live(t, now));
+    if (!replace && current.length >= MAX_SCIM_TOKENS)
       throw new HTTPException(409, {
-        message:
-          "This organization already has a directory sync token. Regenerate it to replace it.",
+        message: `An organization can have ${MAX_SCIM_TOKENS} directory sync tokens at a time. Revoke one first.`,
       });
     if (replace && !current.length)
       throw new HTTPException(404, {
         message: "There's no directory sync token to regenerate.",
       });
-    if (connection)
-      await revoke(c, tx, userId, connection.connectionId, active, replace);
+    if (connection && replace)
+      await revoke(c, tx, userId, connection.connectionId, active, true);
     const body = {
       provisioningDomainId: org,
       scopes: [...SCIM_SCOPES],
@@ -362,7 +400,7 @@ export const scimRoutes = new OpenAPIHono<{
       const caller = c.var.caller;
       if (caller.role === "member")
         throw new HTTPException(403, {
-          message: "Only Owners and Admins can see directory sync.",
+          message: "Only Owners can manage directory sync.",
         });
       const org = c.var.org;
       const plan = await getPlan(c.env, org);
@@ -378,13 +416,10 @@ export const scimRoutes = new OpenAPIHono<{
           : null;
       const status = await withoutOrg(c.env, "scim: status", async (tx) => {
         const connection = await activeConnection(tx, org);
-        const [token] = await credentials(
-          tx,
-          org,
-          inArray(scimManagedCredential.status, ["active", "expired"]),
-        )
-          .orderBy(desc(scimManagedCredential.createdAt))
-          .limit(1);
+        const tokens = await credentials(tx, org, undefined).orderBy(
+          desc(scimManagedCredential.createdAt),
+        );
+        const token = tokens.find((t) => live(t));
         const [sync] = await tx
           .select()
           .from(directorySync)
@@ -409,7 +444,7 @@ export const scimRoutes = new OpenAPIHono<{
             and(eq(groups.organizationId, org), isNotNull(groups.scimGroupId)),
           )
           .groupBy(groups.id)
-          .orderBy(desc(isNotNull(groups.syncedRemovedAt)), asc(groups.name));
+          .orderBy(asc(groups.name));
         const listed = [];
         for (const g of synced)
           listed.push({
@@ -431,9 +466,10 @@ export const scimRoutes = new OpenAPIHono<{
                 createdAt: connection.createdAt.toISOString(),
               }
             : null,
-          token: token ? toToken(token) : null,
+          lastSyncAt: lastSyncAt?.toISOString() ?? null,
+          tokens: tokens.map(toToken),
+          token: token ? toCurrentToken(token) : null,
           sync: {
-            lastSyncAt: lastSyncAt?.toISOString() ?? null,
             running,
             received: running ? (sync?.syncReceived ?? 0) : null,
             people: {
@@ -465,11 +501,11 @@ export const scimRoutes = new OpenAPIHono<{
       method: "post",
       path: "/scim/tokens",
       tags: ["Directory sync"],
-      summary: "Generate the directory sync token (Owner)",
+      summary: "Issue a directory sync token (Owner)",
       request: { params: OrgParam, body: TokenBody },
       responses: {
         201: json(Issued, "The new token"),
-        409: { description: "The organization already has a token" },
+        409: { description: "The organization has the most tokens it may" },
       },
     }),
     async (c) => {
@@ -484,9 +520,9 @@ export const scimRoutes = new OpenAPIHono<{
       method: "post",
       path: "/scim/tokens/regenerate",
       tags: ["Directory sync"],
-      summary: "Replace the directory sync token (Owner)",
+      summary: "Replace the directory sync tokens (Owner)",
       description:
-        "Revokes the current token at once and issues a new one, in one transaction.",
+        "Revokes every active token at once and issues a new one, in one transaction.",
       request: { params: OrgParam, body: TokenBody },
       responses: {
         201: json(Issued, "The new token"),
