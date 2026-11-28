@@ -267,6 +267,13 @@
       "when": 1795818676071,
       "tag": "0042_auto_reload_states",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795824771352,
+      "tag": "0045_sso_provider",
+      "breakpoints": true
     }
   ]
 }

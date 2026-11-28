@@ -32,6 +32,7 @@ import { deliverWebhook } from "./webhooks.ts";
 import { auditRoutes } from "./routes/audit.ts";
 import { groupRoutes } from "./routes/groups.ts";
 import { organizationRoutes } from "./routes/organization.ts";
+import { ssoRoutes } from "./routes/sso.ts";
 import { githubCallbacks, githubRoutes } from "./routes/github.ts";
 import { mcpCallback, mcpRoutes } from "./routes/mcp.ts";
 import { secretRoutes } from "./routes/secrets.ts";
@@ -133,6 +134,7 @@ orgApi.use(async (c, next) => {
 });
 orgApi.use(orgRateLimit);
 orgApi.route("/", organizationRoutes);
+orgApi.route("/", ssoRoutes);
 orgApi.route("/", groupRoutes);
 orgApi.route("/", auditRoutes);
 orgApi.route("/", agentRoutes);
