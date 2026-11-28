@@ -6,7 +6,7 @@ import type { Env, McpProps } from "./env.ts";
 // 03). Its props, which the agent's code cannot read or change, fix the
 // organization, agent, deployment and case; the API's token service adds the
 // organization's token. The model loop never sees it. Each call made for a
-// case is counted in that case's run.
+// case is counted in that case's run, off the call's path.
 export class McpBroker extends WorkerEntrypoint<Env, McpProps> {
   private service() {
     if (!this.env.MCP_SERVICE)
@@ -42,11 +42,13 @@ export class McpBroker extends WorkerEntrypoint<Env, McpProps> {
     } finally {
       const { organizationId, agentId, caseId } = this.ctx.props;
       if (caseId)
-        await this.env.CASE_RUNTIME.getByName(
-          `${organizationId}:${agentId}:${caseId}`,
-        )
-          .mcpCalled(server, failed)
-          .catch(() => undefined);
+        this.ctx.waitUntil(
+          this.env.CASE_RUNTIME.getByName(
+            `${organizationId}:${agentId}:${caseId}`,
+          )
+            .mcpCalled(server, failed)
+            .catch(() => undefined),
+        );
     }
   }
 }
