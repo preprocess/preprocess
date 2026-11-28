@@ -112,6 +112,7 @@ describe("model catalogue", () => {
       allowed: true,
       isDefault: false,
       trainable: false,
+      canOverride: true,
       endpoint: null,
     });
     expect(listed.body.filter((m) => m.isDefault).map((m) => m.id)).toEqual([
@@ -121,6 +122,14 @@ describe("model catalogue", () => {
   });
 
   it("refuses serving a built-in model from your own URL on our cloud", async () => {
+    const listed = await cloudOwner.call<
+      (Listed & { canOverride?: boolean })[]
+    >(path("/models"));
+    expect(
+      listed.body
+        .filter((m) => m.kind === "catalog")
+        .every((m) => m.canOverride === false),
+    ).toBe(true);
     const refused = await register(cloudOwner, {
       model: "kimi-k3.1-pro",
       url: MODEL_ORIGIN,

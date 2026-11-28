@@ -122,6 +122,10 @@ const CatalogModel = z
         "The model agents run on when nothing else names one: the organization default, else the platform's",
     }),
     trainable: z.boolean(),
+    canOverride: z.boolean().openapi({
+      description:
+        "Whether an Owner or Admin may serve it from the organization's own endpoint (POST /models/endpoints): only on a self-hosted install",
+    }),
     endpoint: Endpoint.nullable(),
   })
   .openapi("CatalogModel");
@@ -248,6 +252,7 @@ export const modelRoutes = new OpenAPIHono<{
           ? currentModel(defaults.model)
           : DEFAULT_MODEL;
       const install = installEndpoints(c.env);
+      const canOverride = runMode(c.env).kind !== "cloud";
       const catalog = MODELS.map((id) => {
         const row = rows.find((r) => r.model === id);
         return {
@@ -262,6 +267,7 @@ export const modelRoutes = new OpenAPIHono<{
           allowed: modelAllowed(allowed, id),
           isDefault: id === defaultModel,
           trainable: MODEL_CATALOG[id].trainable,
+          canOverride,
           endpoint: row ? toEndpoint(row) : null,
         };
       });
