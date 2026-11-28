@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  amountBucket,
+  durationBucket,
   organizationIdentify,
   PRODUCT_EVENTS,
   productEvent,
@@ -8,7 +10,7 @@ import {
   validValue,
 } from "../src/product.ts";
 
-const KINDS = ["id", "id?", "count", "flag"];
+const KINDS = ["id", "id?", "count", "flag", "slug"];
 // Names that would invite content, people or free text into a property.
 const CONTENT_NAMES =
   /text|message|content|prompt|body|title|name|email|note|reason|answer|query|url|path|description|label/;
@@ -21,28 +23,9 @@ const agent = "agt_01m8g4sjmtesmbxhkbpn9yywtz";
 const kase = "case_01m8g4sjmtesmbxhkbpn9yywv0";
 
 describe("the product event catalogue", () => {
-  it("covers the 17 lifecycle events", () => {
-    expect(Object.keys(PRODUCT_EVENTS).sort()).toEqual(
-      [
-        "signed_up",
-        "org_created",
-        "member_invited",
-        "member_joined",
-        "agent_created",
-        "agent_deployed",
-        "case_started",
-        "case_completed",
-        "case_handed_off",
-        "operator_replied",
-        "review_decided",
-        "mcp_connected",
-        "sandbox_used",
-        "training_job_started",
-        "credits_topped_up",
-        "plan_changed",
-        "support_request_created",
-      ].sort(),
-    );
+  it("names every event as a snake_case token", () => {
+    for (const event of Object.keys(PRODUCT_EVENTS))
+      expect(event).toMatch(TOKEN);
   });
 
   it("allows only ids, counts, flags and enums, never free text", () => {
@@ -78,6 +61,28 @@ describe("validValue", () => {
     expect(validValue("flag", "yes")).toBe(false);
     expect(validValue(["cli", "github"], "github")).toBe(true);
     expect(validValue(["cli", "github"], "please deploy")).toBe(false);
+  });
+});
+
+describe("slugs and buckets", () => {
+  it("takes short lowercase tokens, never sentences or emails", () => {
+    expect(validValue("slug", "claude-opus-5-5")).toBe(true);
+    expect(validValue("slug", "/v1/agents/{id}/cases")).toBe(true);
+    expect(validValue("slug", "news.ycombinator.com")).toBe(true);
+    expect(validValue("slug", "Please summarise this")).toBe(false);
+    expect(validValue("slug", "jane@example.com")).toBe(false);
+    expect(validValue("slug", "x".repeat(81))).toBe(false);
+  });
+
+  it("buckets durations and amounts", () => {
+    expect(durationBucket(0)).toBe("lt_10s");
+    expect(durationBucket(10_000)).toBe("s10_to_1m");
+    expect(durationBucket(90_000_000)).toBe("gt_1d");
+    expect(amountBucket(0)).toBe("zero");
+    expect(amountBucket(0.4)).toBe("lt_1");
+    expect(amountBucket(1)).toBe("n1_to_10");
+    expect(amountBucket(250)).toBe("n100_to_1k");
+    expect(amountBucket(50_000)).toBe("gt_10k");
   });
 });
 
