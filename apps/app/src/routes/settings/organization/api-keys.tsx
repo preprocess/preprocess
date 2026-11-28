@@ -1,7 +1,7 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+
+import { KeysAndWebhooks } from "../../../features/developers/keys-and-webhooks";
 
 export const Route = createFileRoute("/settings/organization/api-keys")({
-  beforeLoad: () => {
-    throw redirect({ to: "/developers/api" });
-  },
+  component: KeysAndWebhooks,
 });

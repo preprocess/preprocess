@@ -548,7 +548,7 @@ class SignInFailed extends Error {
 }
 
 mcpCallback.get("/mcp/oauth/callback", async (c) => {
-  const back = new URL("/developers/integrations", c.env.APP_URL);
+  const back = new URL("/settings/organization/integrations", c.env.APP_URL);
   try {
     back.searchParams.set(
       "connected",

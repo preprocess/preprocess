@@ -191,6 +191,8 @@ export const durableObjects = {
   // One per organization and agent, and one per preview deployment with
   // schedules (design doc 04).
   SCHEDULER: "Scheduler",
+  // Rate limits: one per organization, API key and client address.
+  RATE_LIMITER: "RateLimiter",
 } as const;
 
 // Durable Object classes the runtime Worker exports: one Pi Durable case

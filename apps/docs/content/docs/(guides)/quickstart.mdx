@@ -18,7 +18,7 @@ an invoice, review its answers in the app, and complete the case.
 
 - Node 24 or later, and git.
 - An organization on Preprocess, and an organization API key. An Owner or Admin
-  creates one in Developers → Keys & webhooks.
+  creates one in Settings → Developers → API keys & webhooks.
 
 ## Create the project
 
@@ -179,8 +179,8 @@ Read the finished result from the status URL:
 
 The case now has `"status": "completed"` and its structured `answers`. To push
 results to your own systems instead of polling, add an outbound webhook in
-Developers → Keys & webhooks; Preprocess delivers `case.completed` with the
-answers.
+Settings → Developers → API keys & webhooks; Preprocess delivers
+`case.completed` with the answers.
 
 ## Next
 

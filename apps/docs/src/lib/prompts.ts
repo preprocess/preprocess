@@ -41,7 +41,7 @@ Set up the Preprocess CLI in this project and deploy the agent.
 
 Connect this MCP client to my Preprocess organization.
 
-1. Ask me for my organization id and an organization API key. An Owner or Admin creates the key in Developers → Keys & webhooks. A signed-in session doesn't work.
+1. Ask me for my organization id and an organization API key. An Owner or Admin creates the key in Settings → Developers → API keys & webhooks. A signed-in session doesn't work.
 2. Add a remote MCP server named "preprocess" that uses the streamable HTTP transport at {api}/orgs/<org id>/mcp and sends \`Authorization: Bearer <API key>\` on every request. Keep the key in an environment variable, not in a committed file.
 3. List the server's tools to check the connection, then list my agents.`,
   },

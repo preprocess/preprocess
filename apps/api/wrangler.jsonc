@@ -42,12 +42,18 @@
       { "name": "COUNTER", "class_name": "Counter" },
       { "name": "BUILDS", "class_name": "BuildQueue" },
       { "name": "SCHEDULER", "class_name": "Scheduler" },
+      { "name": "RATE_LIMITER", "class_name": "RateLimiter" },
     ],
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["Counter", "BuildQueue", "Scheduler"],
+      "new_sqlite_classes": [
+        "Counter",
+        "BuildQueue",
+        "Scheduler",
+        "RateLimiter",
+      ],
     },
   ],
   "queues": {

@@ -49,6 +49,7 @@ import {
 } from "../src/schema/settings.ts";
 import { logSummaries } from "../src/schema/logs.ts";
 import { agentMemories } from "../src/schema/memories.ts";
+import { datasets } from "../src/schema/datasets.ts";
 import {
   autoReloadStates,
   sandboxIntervals,
@@ -476,6 +477,15 @@ export const seedOrganization = async (name: string) =>
       text: "Order forms put the term dates on page one.",
       status: "accepted",
     });
+    await tx.insert(datasets).values({
+      id: newId("dataset"),
+      organizationId: org,
+      agentId,
+      name: "Corrected order forms",
+      query: { outcome: "corrected" },
+      createdBy: "usr_seed",
+      updatedBy: "usr_seed",
+    });
     await tx.insert(usageRecords).values({
       id: newId("usageRecord"),
       organizationId: org,
@@ -572,6 +582,7 @@ export const tenantTables = {
   case_mentions: "organization_id",
   case_approvals: "organization_id",
   agent_memories: "organization_id",
+  datasets: "organization_id",
   usage_records: "organization_id",
   usage_reports: "organization_id",
   seat_activity: "organization_id",

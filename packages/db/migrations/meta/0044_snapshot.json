@@ -1,6 +1,6 @@
 {
-  "id": "d3c02109-df9e-4281-b7d6-47b71f7bdd11",
-  "prevId": "1bb90a96-f9a1-482d-908b-86d174403e48",
+  "id": "0f0173e6-6bc6-4efa-8d8d-051e6d743b7b",
+  "prevId": "87efed5c-ba79-404b-bfc0-fc6528c72def",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3442,6 +3442,105 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.datasets": {
+      "name": "datasets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "query": {
+          "name": "query",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "datasets_organization_id_organization_id_fk": {
+          "name": "datasets_organization_id_organization_id_fk",
+          "tableFrom": "datasets",
+          "tableTo": "organization",
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "datasets_organization_id_agent_id_agents_organization_id_id_fk": {
+          "name": "datasets_organization_id_agent_id_agents_organization_id_id_fk",
+          "tableFrom": "datasets",
+          "tableTo": "agents",
+          "columnsFrom": ["organization_id", "agent_id"],
+          "columnsTo": ["organization_id", "id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "datasets_org_id_unique": {
+          "name": "datasets_org_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["organization_id", "id"]
+        },
+        "datasets_organizationId_agentId_name_unique": {
+          "name": "datasets_organizationId_agentId_name_unique",
+          "nullsNotDistinct": false,
+          "columns": ["organization_id", "agent_id", "name"]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

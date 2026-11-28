@@ -46,8 +46,8 @@ const refusal = {
 export const trainingTag = (env: Env) => ({
   name: "Training",
   description: trainingEnabled(env)
-    ? "Training runs, Retrain on corrections and the Tinker-compatible API are coming soon."
-    : "Training is off on this install. Its routes answer 404.",
+    ? "Training runs, Retrain on corrections and the Tinker-compatible API are coming soon and answer 501 coming_soon. Run capture, its export and datasets work either way."
+    : "Training is off on this install: training runs, Retrain on corrections and the Tinker-compatible API answer 404. Run capture, its export and datasets work either way.",
 });
 
 export const trainingRoutes = new OpenAPIHono<{

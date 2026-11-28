@@ -1,20 +1,7 @@
-import { ScrollArea } from "@preprocess/ui/components/scroll-area";
-import { createFileRoute } from "@tanstack/react-router";
-
-import { KeysAndWebhooks } from "../../features/developers/keys-and-webhooks";
-import { DeveloperSettingsPage } from "../../features/settings/settings-widgets";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/developers/api")({
-  component: DevelopersApiPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/organization/api-keys" });
+  },
 });
-
-/** How outside code talks to Preprocess: keys to call in, webhooks to hear back. */
-function DevelopersApiPage() {
-  return (
-    <ScrollArea className="min-h-0 flex-1" viewportClassName="scroll-fade">
-      <DeveloperSettingsPage title="Keys & webhooks">
-        <KeysAndWebhooks />
-      </DeveloperSettingsPage>
-    </ScrollArea>
-  );
-}
