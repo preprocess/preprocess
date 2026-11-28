@@ -15,7 +15,7 @@ export const ANNOUNCEMENTS: readonly Announcement[] = [
     id: "case-sandboxes",
     title: "Case sandboxes are live",
     detail: "Run agent code in containers",
-    href: "/developers/sandboxes",
+    href: "/settings/organization/sandboxes",
     date: "2026-11-27",
   },
 ];

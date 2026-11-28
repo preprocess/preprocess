@@ -228,7 +228,7 @@ githubCallbacks.post("/github/webhook", async (c) => {
 // organization and person who asked; their OAuth code proves they can reach
 // the installation, so nobody links someone else's installation by its id.
 githubCallbacks.get("/github/setup", async (c) => {
-  const page = new URL("/developers/github", c.env.APP_URL).href;
+  const page = new URL("/settings/organization/github", c.env.APP_URL).href;
   // Changing an installation's repositories on GitHub returns here without
   // our state; the installation_repositories webhook carries the change.
   if (c.req.query("setup_action") === "update" && !c.req.query("state"))

@@ -8,7 +8,9 @@
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
 } from "@preprocess/ui/components/select";
 import {
@@ -19,6 +21,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@preprocess/ui/components/sidebar-menu";
+import { ScrollArea } from "@preprocess/ui/components/scroll-area";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import { ShapeProvider } from "@preprocess/ui/lib/shape-context";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -39,7 +42,13 @@ type Page = {
     | "/settings/organization/audit-logs"
     | "/settings/organization/retention"
     | "/settings/organization/opentelemetry"
-    | "/settings/organization/billing";
+    | "/settings/organization/billing"
+    | "/settings/organization/api-keys"
+    | "/settings/organization/github"
+    | "/settings/organization/integrations"
+    | "/settings/organization/secrets"
+    | "/settings/organization/network"
+    | "/settings/organization/sandboxes";
   label: string;
   anchors?: readonly { id: string; label: string }[];
 };
@@ -63,6 +72,27 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
       { to: "/settings/organization", label: "General" },
       { to: "/settings/organization/members", label: "Members" },
       { to: "/settings/organization/groups", label: "Groups" },
+      { to: "/settings/organization/billing", label: "Billing" },
+    ],
+  },
+  {
+    label: "Developers",
+    pages: [
+      { to: "/settings/organization/api-keys", label: "API keys & webhooks" },
+      { to: "/settings/organization/github", label: "GitHub" },
+      { to: "/settings/organization/integrations", label: "Integrations" },
+      { to: "/settings/organization/secrets", label: "Secrets" },
+      { to: "/settings/organization/network", label: "Network" },
+      { to: "/settings/organization/sandboxes", label: "Sandboxes" },
+      {
+        to: "/settings/organization/opentelemetry",
+        label: "OpenTelemetry export",
+      },
+    ],
+  },
+  {
+    label: "Governance",
+    pages: [
       { to: "/settings/organization/defaults", label: "Defaults" },
       {
         to: "/settings/organization/guardrails",
@@ -71,19 +101,16 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
       },
       { to: "/settings/organization/audit-logs", label: "Audit log" },
       { to: "/settings/organization/retention", label: "Retention" },
-      {
-        to: "/settings/organization/opentelemetry",
-        label: "OpenTelemetry export",
-      },
-      { to: "/settings/organization/billing", label: "Billing" },
     ],
   },
 ];
 
-const PAGES = GROUPS.flatMap((group) => group.pages);
+const PAGES = GROUPS.flatMap((group) =>
+  group.pages.map((page) => ({ ...page, group: group.label })),
+);
 
 // The deepest page the path is under; group detail keeps Groups selected.
-export function currentSettingsPage(pathname: string): Page | undefined {
+export function currentSettingsPage(pathname: string) {
   const path = pathname
     .replace(/\/+$/, "")
     .replace("/settings/organization_/", "/settings/organization/");
@@ -121,47 +148,51 @@ export function SettingsNav() {
   const visible = useVisible();
   return (
     <ShapeProvider defaultShape="rounded">
-      <nav
-        aria-label="Settings"
-        className="hidden w-[220px] shrink-0 flex-col gap-5 border-r border-border/60 px-3 py-8 md:flex"
+      <ScrollArea
+        className="hidden min-h-0 w-[220px] shrink-0 border-r border-border/60 md:block"
+        viewportClassName="scroll-fade overscroll-none"
       >
-        {GROUPS.map((group) => (
-          <div className="flex flex-col gap-1" key={group.label}>
-            <h2
-              className="px-2 text-caption text-muted-foreground"
-              style={{ fontVariationSettings: fontWeights.semibold }}
-            >
-              {group.label}
-            </h2>
-            <SidebarMenu aria-label={group.label} className="gap-1">
-              {group.pages.filter(visible).map((page) => (
-                <SidebarMenuItem key={page.to}>
-                  <SidebarMenuButton
-                    isActive={page === current && !(page.anchors && hash)}
-                    render={<Link to={page.to} />}
-                  >
-                    {page.label}
-                  </SidebarMenuButton>
-                  {page.anchors && page === current ? (
-                    <SidebarMenuSub>
-                      {page.anchors.map((anchor) => (
-                        <SidebarMenuSubItem key={anchor.id}>
-                          <SidebarMenuSubButton
-                            isActive={hash === anchor.id}
-                            render={<Link hash={anchor.id} to={page.to} />}
-                          >
-                            {anchor.label}
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
-                    </SidebarMenuSub>
-                  ) : null}
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </div>
-        ))}
-      </nav>
+        <nav aria-label="Settings" className="flex flex-col gap-5 px-3 py-8">
+          {GROUPS.map((group) => (
+            <div className="flex flex-col gap-1" key={group.label}>
+              <h2
+                className="px-2 text-caption text-muted-foreground"
+                style={{ fontVariationSettings: fontWeights.semibold }}
+              >
+                {group.label}
+              </h2>
+              <SidebarMenu aria-label={group.label} className="gap-1">
+                {group.pages.filter(visible).map((page) => (
+                  <SidebarMenuItem key={page.to}>
+                    <SidebarMenuButton
+                      isActive={
+                        page.to === current?.to && !(page.anchors && hash)
+                      }
+                      render={<Link to={page.to} />}
+                    >
+                      {page.label}
+                    </SidebarMenuButton>
+                    {page.anchors && page.to === current?.to ? (
+                      <SidebarMenuSub>
+                        {page.anchors.map((anchor) => (
+                          <SidebarMenuSubItem key={anchor.id}>
+                            <SidebarMenuSubButton
+                              isActive={hash === anchor.id}
+                              render={<Link hash={anchor.id} to={page.to} />}
+                            >
+                              {anchor.label}
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    ) : null}
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </div>
+          ))}
+        </nav>
+      </ScrollArea>
     </ShapeProvider>
   );
 }
@@ -171,6 +202,7 @@ export function SettingsSwitcher() {
   const navigate = useNavigate();
   const current = currentSettingsPage(usePathname());
   const visible = useVisible();
+  const items = PAGES.filter(visible).map((page) => page.to);
   return (
     <div className="md:hidden">
       <Select
@@ -182,10 +214,23 @@ export function SettingsSwitcher() {
       >
         <SelectTrigger aria-label="Settings section" className="w-56" />
         <SelectContent>
-          {PAGES.filter(visible).map((page, index) => (
-            <SelectItem index={index} key={page.to} value={page.to}>
-              {page.label}
-            </SelectItem>
+          {GROUPS.map((group) => (
+            <SelectGroup key={group.label}>
+              <SelectLabel
+                style={{ fontVariationSettings: fontWeights.semibold }}
+              >
+                {group.label}
+              </SelectLabel>
+              {group.pages.filter(visible).map((page) => (
+                <SelectItem
+                  index={items.indexOf(page.to)}
+                  key={page.to}
+                  value={page.to}
+                >
+                  {page.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           ))}
         </SelectContent>
       </Select>

@@ -63,8 +63,11 @@ import { Route as SettingsOrganizationGithubRouteImport } from "./routes/setting
 import { Route as SettingsOrganizationGuardrailsRouteImport } from "./routes/settings/organization/guardrails";
 import { Route as SettingsOrganizationIntegrationsRouteImport } from "./routes/settings/organization/integrations";
 import { Route as SettingsOrganizationMembersRouteImport } from "./routes/settings/organization/members";
+import { Route as SettingsOrganizationNetworkRouteImport } from "./routes/settings/organization/network";
 import { Route as SettingsOrganizationOpentelemetryRouteImport } from "./routes/settings/organization/opentelemetry";
 import { Route as SettingsOrganizationRetentionRouteImport } from "./routes/settings/organization/retention";
+import { Route as SettingsOrganizationSandboxesRouteImport } from "./routes/settings/organization/sandboxes";
+import { Route as SettingsOrganizationSecretsRouteImport } from "./routes/settings/organization/secrets";
 import { Route as AgentsAgentIdEvaluationsIndexRouteImport } from "./routes/agents/$agentId/evaluations/index";
 import { Route as AgentsAgentIdCasesIndexRouteImport } from "./routes/agents/$agentId_/cases/index";
 import { Route as AgentsAgentIdCasesCaseIdRouteImport } from "./routes/agents/$agentId_/cases/$caseId";
@@ -356,6 +359,12 @@ const SettingsOrganizationMembersRoute =
     path: "/members",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
+const SettingsOrganizationNetworkRoute =
+  SettingsOrganizationNetworkRouteImport.update({
+    id: "/network",
+    path: "/network",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
 const SettingsOrganizationOpentelemetryRoute =
   SettingsOrganizationOpentelemetryRouteImport.update({
     id: "/opentelemetry",
@@ -366,6 +375,18 @@ const SettingsOrganizationRetentionRoute =
   SettingsOrganizationRetentionRouteImport.update({
     id: "/retention",
     path: "/retention",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
+const SettingsOrganizationSandboxesRoute =
+  SettingsOrganizationSandboxesRouteImport.update({
+    id: "/sandboxes",
+    path: "/sandboxes",
+    getParentRoute: () => SettingsOrganizationRoute,
+  } as any);
+const SettingsOrganizationSecretsRoute =
+  SettingsOrganizationSecretsRouteImport.update({
+    id: "/secrets",
+    path: "/secrets",
     getParentRoute: () => SettingsOrganizationRoute,
   } as any);
 const AgentsAgentIdEvaluationsIndexRoute =
@@ -462,8 +483,11 @@ export interface FileRoutesByFullPath {
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/network": typeof SettingsOrganizationNetworkRoute;
   "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
+  "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
+  "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -524,8 +548,11 @@ export interface FileRoutesByTo {
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/network": typeof SettingsOrganizationNetworkRoute;
   "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
+  "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
+  "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
   "/agents/$agentId": typeof AgentsAgentIdIndexRoute;
   "/settings/account": typeof SettingsAccountIndexRoute;
   "/settings/organization": typeof SettingsOrganizationIndexRoute;
@@ -590,8 +617,11 @@ export interface FileRoutesById {
   "/settings/organization/guardrails": typeof SettingsOrganizationGuardrailsRoute;
   "/settings/organization/integrations": typeof SettingsOrganizationIntegrationsRoute;
   "/settings/organization/members": typeof SettingsOrganizationMembersRoute;
+  "/settings/organization/network": typeof SettingsOrganizationNetworkRoute;
   "/settings/organization/opentelemetry": typeof SettingsOrganizationOpentelemetryRoute;
   "/settings/organization/retention": typeof SettingsOrganizationRetentionRoute;
+  "/settings/organization/sandboxes": typeof SettingsOrganizationSandboxesRoute;
+  "/settings/organization/secrets": typeof SettingsOrganizationSecretsRoute;
   "/agents/$agentId/": typeof AgentsAgentIdIndexRoute;
   "/settings/account/": typeof SettingsAccountIndexRoute;
   "/settings/organization/": typeof SettingsOrganizationIndexRoute;
@@ -657,8 +687,11 @@ export interface FileRouteTypes {
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
     | "/settings/organization/members"
+    | "/settings/organization/network"
     | "/settings/organization/opentelemetry"
     | "/settings/organization/retention"
+    | "/settings/organization/sandboxes"
+    | "/settings/organization/secrets"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -719,8 +752,11 @@ export interface FileRouteTypes {
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
     | "/settings/organization/members"
+    | "/settings/organization/network"
     | "/settings/organization/opentelemetry"
     | "/settings/organization/retention"
+    | "/settings/organization/sandboxes"
+    | "/settings/organization/secrets"
     | "/agents/$agentId"
     | "/settings/account"
     | "/settings/organization"
@@ -784,8 +820,11 @@ export interface FileRouteTypes {
     | "/settings/organization/guardrails"
     | "/settings/organization/integrations"
     | "/settings/organization/members"
+    | "/settings/organization/network"
     | "/settings/organization/opentelemetry"
     | "/settings/organization/retention"
+    | "/settings/organization/sandboxes"
+    | "/settings/organization/secrets"
     | "/agents/$agentId/"
     | "/settings/account/"
     | "/settings/organization/"
@@ -1210,6 +1249,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationMembersRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
+    "/settings/organization/network": {
+      id: "/settings/organization/network";
+      path: "/network";
+      fullPath: "/settings/organization/network";
+      preLoaderRoute: typeof SettingsOrganizationNetworkRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
     "/settings/organization/opentelemetry": {
       id: "/settings/organization/opentelemetry";
       path: "/opentelemetry";
@@ -1222,6 +1268,20 @@ declare module "@tanstack/react-router" {
       path: "/retention";
       fullPath: "/settings/organization/retention";
       preLoaderRoute: typeof SettingsOrganizationRetentionRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
+    "/settings/organization/sandboxes": {
+      id: "/settings/organization/sandboxes";
+      path: "/sandboxes";
+      fullPath: "/settings/organization/sandboxes";
+      preLoaderRoute: typeof SettingsOrganizationSandboxesRouteImport;
+      parentRoute: typeof SettingsOrganizationRoute;
+    };
+    "/settings/organization/secrets": {
+      id: "/settings/organization/secrets";
+      path: "/secrets";
+      fullPath: "/settings/organization/secrets";
+      preLoaderRoute: typeof SettingsOrganizationSecretsRouteImport;
       parentRoute: typeof SettingsOrganizationRoute;
     };
     "/agents/$agentId/evaluations/": {
@@ -1298,8 +1358,11 @@ interface SettingsOrganizationRouteChildren {
   SettingsOrganizationGuardrailsRoute: typeof SettingsOrganizationGuardrailsRoute;
   SettingsOrganizationIntegrationsRoute: typeof SettingsOrganizationIntegrationsRoute;
   SettingsOrganizationMembersRoute: typeof SettingsOrganizationMembersRoute;
+  SettingsOrganizationNetworkRoute: typeof SettingsOrganizationNetworkRoute;
   SettingsOrganizationOpentelemetryRoute: typeof SettingsOrganizationOpentelemetryRoute;
   SettingsOrganizationRetentionRoute: typeof SettingsOrganizationRetentionRoute;
+  SettingsOrganizationSandboxesRoute: typeof SettingsOrganizationSandboxesRoute;
+  SettingsOrganizationSecretsRoute: typeof SettingsOrganizationSecretsRoute;
   SettingsOrganizationIndexRoute: typeof SettingsOrganizationIndexRoute;
   SettingsOrganizationGroupsIndexRoute: typeof SettingsOrganizationGroupsIndexRoute;
 }
@@ -1314,9 +1377,12 @@ const SettingsOrganizationRouteChildren: SettingsOrganizationRouteChildren = {
   SettingsOrganizationGuardrailsRoute: SettingsOrganizationGuardrailsRoute,
   SettingsOrganizationIntegrationsRoute: SettingsOrganizationIntegrationsRoute,
   SettingsOrganizationMembersRoute: SettingsOrganizationMembersRoute,
+  SettingsOrganizationNetworkRoute: SettingsOrganizationNetworkRoute,
   SettingsOrganizationOpentelemetryRoute:
     SettingsOrganizationOpentelemetryRoute,
   SettingsOrganizationRetentionRoute: SettingsOrganizationRetentionRoute,
+  SettingsOrganizationSandboxesRoute: SettingsOrganizationSandboxesRoute,
+  SettingsOrganizationSecretsRoute: SettingsOrganizationSecretsRoute,
   SettingsOrganizationIndexRoute: SettingsOrganizationIndexRoute,
   SettingsOrganizationGroupsIndexRoute: SettingsOrganizationGroupsIndexRoute,
 };
