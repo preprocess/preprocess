@@ -135,6 +135,23 @@ type Settings = {
     defaultGroupId: string | null;
   } | null;
   domains: Domain[];
+  allowed: boolean;
+};
+// What PUT /sso and #217's POST /sso/verify-domain answer: the connection,
+// with #217's deprecated fields.
+type Connection = NonNullable<Settings["connection"]> & {
+  providerId: string;
+  issuer: string;
+  domains: string[];
+  domainVerified: boolean;
+  verification: { name: string; value: string } | null;
+  enforced: boolean;
+  serviceProvider: {
+    entityId: string | null;
+    acsUrl: string | null;
+    metadataUrl: string | null;
+    redirectUrl: string | null;
+  };
 };
 
 // An Owner whose own address is at the organization's domain, so Require SSO
@@ -299,13 +316,12 @@ describe("SSO settings", () => {
     ).toBe(403);
 
     const onInternal = await organization();
-    const saved = await onInternal.owner.client.call<Settings>(
+    const saved = await onInternal.owner.client.call<Connection>(
       `/v1/orgs/${onInternal.org}/sso`,
       { method: "PUT", body: oidc() },
     );
     expect(saved.status).toBe(200);
-    expect(saved.body.access).toMatchObject({ available: true, canEdit: true });
-    expect(saved.body.connection).toEqual({
+    expect(saved.body).toMatchObject({
       protocol: "oidc",
       saml: null,
       oidc: { issuer: IDP, clientId: "preprocess", hasSecret: true },
@@ -314,8 +330,16 @@ describe("SSO settings", () => {
       jit: true,
       defaultGroupId: null,
     });
+    const internalRead = await settings(
+      onInternal.owner.client,
+      onInternal.org,
+    );
+    expect(internalRead.body.access).toMatchObject({
+      available: true,
+      canEdit: true,
+    });
     // The values the IdP needs exist before any connection, per organization.
-    expect(saved.body.serviceProvider).toEqual({
+    expect(internalRead.body.serviceProvider).toEqual({
       acsUrl: expect.stringContaining(
         `/api/auth/sso/saml2/sp/acs/${onInternal.org}`,
       ) as string,
@@ -328,6 +352,7 @@ describe("SSO settings", () => {
     });
     // The secret never comes back.
     expect(JSON.stringify(saved.body)).not.toContain("shh");
+    expect(JSON.stringify(internalRead.body)).not.toContain("shh");
     expect(await events(onInternal.org, "sso.connection.created")).toHaveLength(
       1,
     );
@@ -373,12 +398,12 @@ describe("SSO settings", () => {
 
   it("read SAML metadata from its URL, with the certificate's expiry", async () => {
     const { org, owner } = await organization();
-    const saved = await owner.client.call<Settings>(`/v1/orgs/${org}/sso`, {
+    const saved = await owner.client.call<Connection>(`/v1/orgs/${org}/sso`, {
       method: "PUT",
       body: { protocol: "saml", metadataUrl: `${IDP}/saml/metadata` },
     });
     expect(saved.status).toBe(200);
-    const saml = saved.body.connection!.saml!;
+    const saml = saved.body.saml!;
     expect(saml).toMatchObject({
       metadataUrl: `${IDP}/saml/metadata`,
       pastedXml: false,
@@ -394,11 +419,11 @@ describe("SSO settings", () => {
     );
 
     const xml = await (await fetch(`${IDP}/saml/metadata`)).text();
-    const pasted = await owner.client.call<Settings>(`/v1/orgs/${org}/sso`, {
+    const pasted = await owner.client.call<Connection>(`/v1/orgs/${org}/sso`, {
       method: "PUT",
       body: { protocol: "saml", metadataXml: xml },
     });
-    expect(pasted.body.connection!.saml).toMatchObject({
+    expect(pasted.body.saml).toMatchObject({
       metadataUrl: null,
       pastedXml: true,
     });
@@ -415,22 +440,23 @@ describe("SSO settings", () => {
       message: "Couldn't read the metadata: the URL returned 404 Not Found.",
       status: "404 Not Found",
     });
-    const plain = await owner.client.call<{ error: { message: string } }>(
-      `/v1/orgs/${org}/sso`,
-      {
-        method: "PUT",
-        body: { protocol: "saml", metadataUrl: "http://idp.test/x" },
-      },
-    );
+    // #217's validation errors keep their shape on PUT.
+    const plain = await owner.client.call<unknown>(`/v1/orgs/${org}/sso`, {
+      method: "PUT",
+      body: { protocol: "saml", metadataUrl: "http://idp.test/x" },
+    });
     expect(plain.status).toBe(400);
-    expect(plain.body.error.message).toBe("Use an https:// URL.");
+    expect(plain.body).toMatchObject({ success: false });
+    expect(JSON.stringify(plain.body)).toContain("Use an https:// URL.");
     // A connection can't switch protocols in place.
-    const switched = await owner.client.call<{ error: { code: string } }>(
+    const switched = await owner.client.call<{ error: string }>(
       `/v1/orgs/${org}/sso`,
       { method: "PUT", body: oidc() },
     );
     expect(switched.status).toBe(409);
-    expect(switched.body.error.code).toBe("protocol_change");
+    expect(switched.body.error).toBe(
+      "Remove the connection before switching between SAML and OIDC.",
+    );
   });
 });
 
@@ -817,7 +843,7 @@ describe("SSO sign-in", () => {
   it("works over SAML, signed by the IdP's certificate", async () => {
     const { org, owner, domain } = await organization();
     const certificate = await (await fetch(`${IDP}/saml/cert`)).text();
-    const saved = await owner.client.call<Settings>(`/v1/orgs/${org}/sso`, {
+    const saved = await owner.client.call<Connection>(`/v1/orgs/${org}/sso`, {
       method: "PUT",
       body: {
         protocol: "saml",
@@ -827,7 +853,7 @@ describe("SSO sign-in", () => {
       },
     });
     expect(saved.status).toBe(200);
-    expect(saved.body.connection!.saml!.certificateExpiresAt).not.toBeNull();
+    expect(saved.body.saml!.certificateExpiresAt).not.toBeNull();
     await verify(owner.client, org, domain);
 
     const client = new Client(environment);
@@ -877,12 +903,12 @@ describe("SSO sign-in", () => {
   it("is audited when the connection changes or goes away, and keeps the domains", async () => {
     const { org, owner, domain } = await organization();
     await connect(owner.client, org, domain);
-    const changed = await owner.client.call<Settings>(`/v1/orgs/${org}/sso`, {
+    const changed = await owner.client.call<Connection>(`/v1/orgs/${org}/sso`, {
       method: "PUT",
       body: oidc({ clientSecret: undefined, clientId: "renamed" }),
     });
     expect(changed.status).toBe(200);
-    expect(changed.body.connection!.oidc).toEqual({
+    expect(changed.body.oidc).toEqual({
       issuer: IDP,
       clientId: "renamed",
       hasSecret: true,
@@ -900,5 +926,232 @@ describe("SSO sign-in", () => {
     const read = await settings(owner.client, org);
     expect(read.body.connection).toBeNull();
     expect(read.body.domains.map((d) => d.domain)).toEqual([domain]);
+  });
+});
+
+// #217's /v1 shapes, deprecated and kept working (CONTRIBUTING.md): domains,
+// enforced and jit on PUT /sso, POST /sso/verify-domain, and the connection's
+// fields as #217 answered them.
+describe("SSO settings through #217's deprecated fields", () => {
+  const legacy = (domain: string, extra: object = {}) =>
+    oidc({ domains: [domain], ...extra });
+
+  const legacyConnect = async (
+    owner: Client,
+    org: string,
+    domain: string,
+    extra: object = {},
+  ) => {
+    const saved = await owner.call<Connection>(`/v1/orgs/${org}/sso`, {
+      method: "PUT",
+      body: legacy(domain, extra),
+    });
+    expect(saved.status).toBe(200);
+    const record = saved.body.verification!;
+    await publish(`${record.name}.${domain}`, record.value);
+    const verified = await owner.call<Connection>(
+      `/v1/orgs/${org}/sso/verify-domain`,
+      { method: "POST" },
+    );
+    expect(verified.status).toBe(200);
+    return verified.body;
+  };
+
+  it("are refused on plans without SSO, and allowed on Internal", async () => {
+    const onTeam = await organization(team);
+    const read = await settings(onTeam.owner.client, onTeam.org);
+    expect(read.body).toMatchObject({ allowed: false, connection: null });
+    const refused = await onTeam.owner.client.call(
+      `/v1/orgs/${onTeam.org}/sso`,
+      { method: "PUT", body: legacy(onTeam.domain) },
+    );
+    expect(refused.status).toBe(403);
+
+    const onInternal = await organization();
+    const saved = await onInternal.owner.client.call<Connection>(
+      `/v1/orgs/${onInternal.org}/sso`,
+      { method: "PUT", body: legacy(onInternal.domain) },
+    );
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({
+      providerId: onInternal.org,
+      domains: [onInternal.domain],
+      domainVerified: false,
+      enforced: false,
+      jit: true,
+    });
+    expect(saved.body.serviceProvider.redirectUrl).toContain(
+      `/api/auth/sso/callback/${onInternal.org}`,
+    );
+    expect(
+      (await settings(onInternal.owner.client, onInternal.org)).body.allowed,
+    ).toBe(true);
+    expect(await events(onInternal.org, "sso.connection.created")).toHaveLength(
+      1,
+    );
+  });
+
+  it("are changed by Owners only, and never reach another organization", async () => {
+    const { org, owner, domain } = await organization();
+    const admin = await addMember(owner.client, org, "Ada Admin", "admin");
+    // Admins read the settings now; changing them stays the Owners'.
+    expect((await admin.client.call(`/v1/orgs/${org}/sso`)).status).toBe(200);
+    for (const [path, method, body] of [
+      [`/v1/orgs/${org}/sso`, "PUT", legacy(domain)],
+      [`/v1/orgs/${org}/sso/verify-domain`, "POST", undefined],
+    ] as const)
+      expect((await admin.client.call(path, { method, body })).status).toBe(
+        403,
+      );
+    const other = await organization();
+    expect((await other.owner.client.call(`/v1/orgs/${org}/sso`)).status).toBe(
+      403,
+    );
+  });
+
+  it("verify the domains by their DNS TXT record", async () => {
+    const { org, owner, domain } = await organization();
+    const second = `${unique("acme")}.test`;
+    const saved = await owner.client.call<Connection>(`/v1/orgs/${org}/sso`, {
+      method: "PUT",
+      body: legacy(domain, { domains: [domain, second] }),
+    });
+    const record = saved.body.verification!;
+    expect(record.name).toBe("_preprocess");
+    const early = await owner.client.call(`/v1/orgs/${org}/sso/verify-domain`, {
+      method: "POST",
+    });
+    expect(early.status).toBe(409);
+    // Nobody signs in through an unverified domain.
+    const refused = await new Client(environment).call(
+      "/api/auth/sign-in/sso",
+      {
+        body: { email: `sam@${domain}`, callbackURL: "/" },
+      },
+    );
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+
+    // One record, published at each domain, proves them all.
+    await publish(`${record.name}.${domain}`, record.value);
+    await publish(`${record.name}.${second}`, record.value);
+    const verified = await owner.client.call<Connection>(
+      `/v1/orgs/${org}/sso/verify-domain`,
+      { method: "POST" },
+    );
+    expect(verified.status).toBe(200);
+    expect(verified.body).toMatchObject({
+      domains: [domain, second],
+      domainVerified: true,
+      verification: null,
+    });
+    expect(await events(org, "sso.domain.verified")).toHaveLength(2);
+
+    // The list replaces the organization's domains.
+    const narrowed = await owner.client.call<Connection>(
+      `/v1/orgs/${org}/sso`,
+      {
+        method: "PUT",
+        body: legacy(second, { clientSecret: undefined }),
+      },
+    );
+    expect(narrowed.body.domains).toEqual([second]);
+    expect((await settings(owner.client, org)).body.domains).toMatchObject([
+      { domain: second, status: "verified" },
+    ]);
+  });
+
+  it("add a new person with JIT, or with JIT off take only members and invited people", async () => {
+    const { org, owner, domain } = await organization();
+    await legacyConnect(owner.client, org, domain);
+    const sam = await ssoSignIn(`sam@${domain}`);
+    expect(sam.userId).toBeDefined();
+    expect(await isMember(org, sam.userId!)).toBe(true);
+
+    const off = await organization();
+    await legacyConnect(off.owner.client, off.org, off.domain, { jit: false });
+    expect(
+      (await settings(off.owner.client, off.org)).body.connection!.jit,
+    ).toBe(false);
+    const stranger = await ssoSignIn(`stranger@${off.domain}`);
+    expect(stranger.userId).toBeUndefined();
+  });
+
+  it("once enforced, turn other sign-in off at the domain, except for Owners", async () => {
+    const { org, owner, domain } = await organization();
+    await signUp("Jo Member", environment, `jo@${domain}`);
+    await legacyConnect(owner.client, org, domain);
+    // Enforcing now needs a passed test sign-in, as Require SSO does.
+    const early = await owner.client.call<{ error: { code: string } }>(
+      `/v1/orgs/${org}/sso`,
+      {
+        method: "PUT",
+        body: legacy(domain, { clientSecret: undefined, enforced: true }),
+      },
+    );
+    expect(early.status).toBe(409);
+    expect(early.body.error.code).toBe("sso_not_ready");
+    await testSignIn(owner.client, org, {
+      sub: `olive@${domain}`,
+      email: `olive@${domain}`,
+    });
+    const enforced = await owner.client.call<Connection>(
+      `/v1/orgs/${org}/sso`,
+      {
+        method: "PUT",
+        body: legacy(domain, { clientSecret: undefined, enforced: true }),
+      },
+    );
+    expect(enforced.status).toBe(200);
+    // Saving the same connection again keeps its test.
+    expect(enforced.body).toMatchObject({
+      enforced: true,
+      requireSso: true,
+      lastTest: { ok: true },
+    });
+    const byLink = await signInByLink(new Client(environment), `jo@${domain}`);
+    expect(byLink.status).toBe(403);
+    expect(JSON.stringify(byLink.body)).toContain("SSO_REQUIRED");
+    expect(
+      (await signInByLink(new Client(environment), `olive@${domain}`)).status,
+    ).toBeLessThan(400);
+    const [updated] = await events(org, "sso.sign_in.updated");
+    expect(updated?.data).toMatchObject({
+      from: { requireSso: false },
+      to: { requireSso: true },
+    });
+  });
+
+  it("keep working when the plan lapses, and turn read-only", async () => {
+    const { org, owner, domain } = await organization();
+    await legacyConnect(owner.client, org, domain);
+    plans.set(org, team);
+    const later = Date.now() + 60_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => later);
+    const read = await settings(owner.client, org);
+    expect(read.body.allowed).toBe(false);
+    expect(read.body.connection).toMatchObject({ domainVerified: true });
+    for (const [path, method] of [
+      [`/v1/orgs/${org}/sso`, "PUT"],
+      [`/v1/orgs/${org}/sso/verify-domain`, "POST"],
+    ] as const)
+      expect(
+        (
+          await owner.client.call(path, {
+            method,
+            body: method === "PUT" ? legacy(domain) : undefined,
+          })
+        ).status,
+      ).toBe(403);
+    clock.mockRestore();
+  });
+
+  it("answer verify-domain with 404 before a connection exists", async () => {
+    const { org, owner } = await organization();
+    const missing = await owner.client.call<{ error: string }>(
+      `/v1/orgs/${org}/sso/verify-domain`,
+      { method: "POST" },
+    );
+    expect(missing.status).toBe(404);
+    expect(missing.body.error).toBe("Set up a connection first.");
   });
 });

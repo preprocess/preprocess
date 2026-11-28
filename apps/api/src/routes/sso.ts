@@ -53,8 +53,45 @@ const https = z
   .url("Use an https:// URL.")
   .refine((value) => value.startsWith("https://"), "Use an https:// URL.");
 
+const deprecated = (replacement: string) => ({
+  deprecated: true,
+  description: `Deprecated: ${replacement}`,
+});
+
+// #217's fields on PUT /sso, kept working for /v1 (CONTRIBUTING.md).
+const legacyInput = {
+  domains: z
+    .array(
+      z
+        .string()
+        .trim()
+        .toLowerCase()
+        .regex(
+          /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/,
+          "Enter a domain like example.com.",
+        ),
+    )
+    .min(1)
+    .max(MAX_DOMAINS)
+    .optional()
+    .openapi(
+      deprecated(
+        "add and remove domains with POST /sso/domains and DELETE /sso/domains/{domain}. When given, the organization's domains become exactly this list.",
+      ),
+    ),
+  enforced: z
+    .boolean()
+    .optional()
+    .openapi(deprecated("use requireSso on PATCH /sso/sign-in.")),
+  jit: z
+    .boolean()
+    .optional()
+    .openapi(deprecated("use jit on PATCH /sso/sign-in.")),
+};
+
 const Saml = z.object({
   protocol: z.literal("saml"),
+  ...legacyInput,
   // The IdP's metadata, read from its URL or pasted, or its entity id, single
   // sign-on URL and signing certificate.
   metadataUrl: https.optional(),
@@ -66,6 +103,7 @@ const Saml = z.object({
 
 const Oidc = z.object({
   protocol: z.literal("oidc"),
+  ...legacyInput,
   issuer: https,
   clientId: z.string().trim().min(1),
   // Required when the connection is created; left out on an update, the
@@ -143,6 +181,70 @@ const Domain = z
   })
   .openapi("SsoDomain");
 
+const Connection = z
+  .object({
+    protocol: z.enum(["saml", "oidc"]),
+    saml: z
+      .object({
+        metadataUrl: z.string().nullable(),
+        pastedXml: z.boolean(),
+        metadataReadAt: z.string().nullable(),
+        certificateExpiresAt: z.string().nullable(),
+        idpEntityId: z.string().nullable(),
+        ssoUrl: z
+          .string()
+          .nullable()
+          .openapi(deprecated("read from the identity provider's metadata.")),
+        hasCertificate: z
+          .boolean()
+          .openapi(deprecated("use certificateExpiresAt.")),
+      })
+      .nullable(),
+    oidc: z
+      .object({
+        issuer: z.string(),
+        clientId: z.string(),
+        hasSecret: z.boolean(),
+      })
+      .nullable(),
+    lastTest: TestResult.nullable(),
+    requireSso: z.boolean(),
+    jit: z.boolean(),
+    defaultGroupId: z.string().nullable(),
+    providerId: z.string().openapi(deprecated("the organization's id.")),
+    issuer: z
+      .string()
+      .openapi(deprecated("use oidc.issuer or serviceProvider.entityId.")),
+    domains: z
+      .array(z.string())
+      .openapi(deprecated("use domains in the settings, one per domain.")),
+    domainVerified: z
+      .boolean()
+      .openapi(
+        deprecated(
+          "use each domain's status. True when every domain is verified.",
+        ),
+      ),
+    verification: z
+      .object({ name: z.string(), value: z.string() })
+      .nullable()
+      .openapi(
+        deprecated(
+          "use each domain's record. The TXT record, at name.<domain>, for the first domain not verified yet.",
+        ),
+      ),
+    enforced: z.boolean().openapi(deprecated("use requireSso.")),
+    serviceProvider: z
+      .object({
+        entityId: z.string().nullable(),
+        acsUrl: z.string().nullable(),
+        metadataUrl: z.string().nullable(),
+        redirectUrl: z.string().nullable(),
+      })
+      .openapi(deprecated("use serviceProvider in the settings.")),
+  })
+  .openapi("SsoConnection");
+
 const Settings = z
   .object({
     access: z.object({
@@ -167,32 +269,9 @@ const Settings = z
       entityId: z.string(),
       redirectUri: z.string(),
     }),
-    connection: z
-      .object({
-        protocol: z.enum(["saml", "oidc"]),
-        saml: z
-          .object({
-            metadataUrl: z.string().nullable(),
-            pastedXml: z.boolean(),
-            metadataReadAt: z.string().nullable(),
-            certificateExpiresAt: z.string().nullable(),
-            idpEntityId: z.string().nullable(),
-          })
-          .nullable(),
-        oidc: z
-          .object({
-            issuer: z.string(),
-            clientId: z.string(),
-            hasSecret: z.boolean(),
-          })
-          .nullable(),
-        lastTest: TestResult.nullable(),
-        requireSso: z.boolean(),
-        jit: z.boolean(),
-        defaultGroupId: z.string().nullable(),
-      })
-      .nullable(),
+    connection: Connection.nullable(),
     domains: z.array(Domain),
+    allowed: z.boolean().openapi(deprecated("use access.available.")),
   })
   .openapi("SsoSettings");
 
@@ -208,7 +287,7 @@ const access = async (env: Env, vars: Vars): Promise<Access> => {
   const role = vars.caller.role;
   if (role !== "owner" && role !== "admin")
     throw new HTTPException(403, {
-      message: "Only Owners and Admins can see single sign-on.",
+      message: "Only Owners can manage single sign-on.",
     });
   const plan = await getPlan(env, vars.org);
   if (plan.has("sso"))
@@ -241,7 +320,7 @@ const access = async (env: Env, vars: Vars): Promise<Access> => {
 const requireEditor = async (env: Env, vars: Vars) => {
   if (vars.caller.type !== "person" || vars.caller.role !== "owner")
     throw new HTTPException(403, {
-      message: "Only Owners can change single sign-on.",
+      message: "Only Owners can manage single sign-on.",
     });
   if (!(await access(env, vars)).available)
     throw new HTTPException(403, {
@@ -272,7 +351,11 @@ const serviceProvider = (env: Env, providerId: string) => ({
 const parse = <T>(text: string | null | undefined) =>
   text ? (JSON.parse(text) as T) : null;
 
-type StoredSaml = { idpMetadata?: { entityID?: string; metadata?: string } };
+type StoredSaml = {
+  entryPoint?: string;
+  cert?: string | string[];
+  idpMetadata?: { entityID?: string; metadata?: string; cert?: unknown };
+};
 type StoredOidc = { clientId: string; clientSecret?: string };
 type DomainRow = typeof ssoDomains.$inferSelect;
 
@@ -313,9 +396,12 @@ const read = async (env: Env, vars: Vars) => {
     const provider = row?.provider;
     const saml = parse<StoredSaml>(provider?.samlConfig);
     const oidc = parse<StoredOidc>(provider?.oidcConfig);
+    const sp = serviceProvider(env, vars.org);
+    const unverified = domains.find((d) => d.status !== "verified");
     return {
       access: granted,
-      serviceProvider: serviceProvider(env, vars.org),
+      allowed: granted.available,
+      serviceProvider: sp,
       connection: provider
         ? {
             protocol: saml ? ("saml" as const) : ("oidc" as const),
@@ -330,6 +416,12 @@ const read = async (env: Env, vars: Vars) => {
                   certificateExpiresAt:
                     provider.certificateExpiresAt?.toISOString() ?? null,
                   idpEntityId: saml.idpMetadata?.entityID ?? null,
+                  ssoUrl: saml.entryPoint ?? null,
+                  hasCertificate: Boolean(
+                    saml.cert ||
+                    saml.idpMetadata?.cert ||
+                    saml.idpMetadata?.metadata,
+                  ),
                 }
               : null,
             oidc: oidc
@@ -343,6 +435,30 @@ const read = async (env: Env, vars: Vars) => {
             requireSso: provider.enforced,
             jit: provider.jit,
             defaultGroupId: row.defaultGroup,
+            providerId: provider.providerId,
+            issuer: provider.issuer,
+            domains: domains.map((d) => d.domain),
+            domainVerified: domains.length > 0 && !unverified,
+            verification: unverified
+              ? {
+                  name: RECORD_NAME,
+                  value: `${RECORD_VALUE}${unverified.token}`,
+                }
+              : null,
+            enforced: provider.enforced,
+            serviceProvider: saml
+              ? {
+                  entityId: sp.entityId,
+                  acsUrl: sp.acsUrl,
+                  metadataUrl: sp.entityId,
+                  redirectUrl: null,
+                }
+              : {
+                  entityId: null,
+                  acsUrl: null,
+                  metadataUrl: null,
+                  redirectUrl: sp.redirectUri,
+                },
           }
         : null,
       domains: domains.map(domainView),
@@ -588,6 +704,144 @@ const endOtherSessions = async (tx: SystemTx, org: string) => {
   return ended.length;
 };
 
+const newToken = () => crypto.randomUUID().replaceAll("-", "");
+
+// Adds a domain and checks its TXT record at once. A domain another
+// organization verified is refused.
+const insertDomain = async (
+  tx: SystemTx,
+  vars: Vars,
+  owner: string,
+  domain: string,
+  token = newToken(),
+) => {
+  const [elsewhere] = await tx
+    .select({ id: ssoDomains.id })
+    .from(ssoDomains)
+    .where(
+      and(eq(ssoDomains.domain, domain), eq(ssoDomains.status, "verified")),
+    );
+  if (elsewhere) throw taken();
+  const [row] = await tx
+    .insert(ssoDomains)
+    .values({
+      id: newId("ssoDomain"),
+      organizationId: vars.org,
+      domain,
+      token,
+      createdBy: owner,
+    })
+    .returning();
+  await audit(tx, {
+    ...eventBase(vars),
+    action: "sso.domain.added",
+    targetType: "sso_domain",
+    targetId: row!.id,
+    data: { domain },
+  });
+  return check(tx, vars, row!);
+};
+
+const removeDomain = async (tx: SystemTx, vars: Vars, row: DomainRow) => {
+  await tx.delete(ssoDomains).where(eq(ssoDomains.id, row.id));
+  const requireSsoOff = await syncConnection(tx, vars.org);
+  await audit(tx, {
+    ...eventBase(vars),
+    action: "sso.domain.removed",
+    targetType: "sso_domain",
+    targetId: row.id,
+    data: { domain: row.domain, status: row.status, requireSsoOff },
+  });
+};
+
+// #217's domains on PUT /sso: the organization's domains become exactly this
+// list. Domains added together share one TXT record, as #217's did.
+const setDomains = async (
+  tx: SystemTx,
+  vars: Vars,
+  owner: string,
+  list: string[],
+) => {
+  const wanted = [...new Set(list)];
+  const rows = await tx
+    .select()
+    .from(ssoDomains)
+    .where(eq(ssoDomains.organizationId, vars.org));
+  for (const row of rows)
+    if (!wanted.includes(row.domain)) await removeDomain(tx, vars, row);
+  const token =
+    rows.find((r) => r.status !== "verified" && wanted.includes(r.domain))
+      ?.token ?? newToken();
+  for (const domain of wanted)
+    if (!rows.some((r) => r.domain === domain))
+      await insertDomain(tx, vars, owner, domain, token);
+};
+
+type SignInChange = z.infer<typeof SignInInput>;
+
+// Require SSO, JIT and the default group. Turning Require SSO on needs a
+// verified domain and a passed last test, and ends other sessions.
+const changeSignIn = async (
+  tx: SystemTx,
+  vars: Vars,
+  existing: typeof ssoProvider.$inferSelect,
+  input: SignInChange,
+) => {
+  const turningOn = input.requireSso === true && !existing.enforced;
+  if (
+    turningOn &&
+    (!(await verifiedDomains(tx, vars.org)).length ||
+      !parse<SsoTest>(existing.lastTest)?.ok)
+  )
+    throw new ApiError(
+      409,
+      "sso_not_ready",
+      "Verify a domain and pass a test sign-in first.",
+    );
+  if (input.defaultGroupId) {
+    const [group] = await tx
+      .select({ id: groups.id })
+      .from(groups)
+      .where(
+        and(
+          eq(groups.organizationId, vars.org),
+          eq(groups.id, input.defaultGroupId),
+        ),
+      );
+    if (!group)
+      throw new ApiError(400, "invalid_request", "That group doesn't exist.");
+  }
+  const next = {
+    enforced: input.requireSso ?? existing.enforced,
+    jit: input.jit ?? existing.jit,
+    defaultGroupId:
+      input.defaultGroupId === undefined
+        ? existing.defaultGroupId
+        : input.defaultGroupId,
+  };
+  await tx.update(ssoProvider).set(next).where(eq(ssoProvider.id, existing.id));
+  const endedSessions = turningOn ? await endOtherSessions(tx, vars.org) : 0;
+  await audit(tx, {
+    ...eventBase(vars),
+    action: "sso.sign_in.updated",
+    targetType: "sso_connection",
+    targetId: existing.providerId,
+    data: {
+      from: {
+        requireSso: existing.enforced,
+        jit: existing.jit,
+        defaultGroupId: existing.defaultGroupId,
+      },
+      to: {
+        requireSso: next.enforced,
+        jit: next.jit,
+        defaultGroupId: next.defaultGroupId,
+      },
+      ...(turningOn ? { endedSessions } : {}),
+    },
+  });
+};
+
 export const ssoRoutes = new OpenAPIHono<{
   Bindings: Env;
   Variables: Vars;
@@ -629,20 +883,20 @@ export const ssoRoutes = new OpenAPIHono<{
       tags: ["Single sign-on"],
       summary: "Create or change the connection (Owner)",
       description:
-        "SAML takes the identity provider's metadata URL (read now), its metadata XML, or its entity ID, SSO URL and certificate. OIDC reads the issuer's discovery document now. A change clears the last test sign-in.",
+        "SAML takes the identity provider's metadata URL (read now), its metadata XML, or its entity ID, SSO URL and certificate. OIDC reads the issuer's discovery document now. A changed connection clears the last test sign-in. The deprecated domains, enforced and jit fields still work: domains replaces the organization's domains, and enforced and jit act as on PATCH /sso/sign-in.",
       request: {
         params: OrgParam,
         body: { content: { "application/json": { schema: ConnectionInput } } },
       },
       responses: {
-        200: json(Settings, "The settings with the saved connection"),
+        200: json(Connection, "The saved connection"),
         400: { description: "Invalid, or the metadata couldn't be read" },
         403: { description: "Not an Owner, or SSO isn't available" },
         409: { description: "Switching between SAML and OIDC" },
       },
     }),
     async (c) => {
-      await requireEditor(c.env, c.var);
+      const owner = await requireEditor(c.env, c.var);
       const given = c.req.valid("json");
       const providerId = c.var.org;
       const headers = c.req.raw.headers;
@@ -708,27 +962,21 @@ export const ssoRoutes = new OpenAPIHono<{
           existing &&
           Boolean(existing.samlConfig) !== (input.protocol === "saml")
         )
-          throw new ApiError(
-            409,
-            "protocol_change",
-            "Remove the connection before switching between SAML and OIDC.",
-          );
+          throw new HTTPException(409, {
+            message:
+              "Remove the connection before switching between SAML and OIDC.",
+          });
         if (
           input.protocol === "saml" &&
           !input.metadataXml &&
           !(input.idpEntityId && input.ssoUrl && input.certificate)
         )
-          throw new ApiError(
-            400,
-            "invalid_request",
-            "Paste the IdP metadata, or its entity ID, SSO URL and certificate.",
-          );
+          throw new HTTPException(400, {
+            message:
+              "Paste the IdP metadata, or its entity ID, SSO URL and certificate.",
+          });
         if (input.protocol === "oidc" && !existing && !input.clientSecret)
-          throw new ApiError(
-            400,
-            "invalid_request",
-            "Enter the client secret.",
-          );
+          throw new HTTPException(400, { message: "Enter the client secret." });
         const domain =
           (await verifiedDomains(tx, c.var.org)).join(",") || SSO_NO_DOMAIN;
         const protocolConfig =
@@ -746,6 +994,23 @@ export const ssoRoutes = new OpenAPIHono<{
           input.protocol === "saml"
             ? ssoEntityId(c.env, providerId)
             : input.issuer;
+        // Saving the same connection again (as #217's clients do with every
+        // change) keeps its last test sign-in.
+        const stored = {
+          saml: parse<StoredSaml>(existing?.samlConfig),
+          oidc: parse<StoredOidc>(existing?.oidcConfig),
+        };
+        const unchanged =
+          !!existing &&
+          (input.protocol === "saml"
+            ? stored.saml?.entryPoint === input.ssoUrl &&
+              stored.saml?.cert === input.certificate &&
+              stored.saml?.idpMetadata?.metadata === input.metadataXml &&
+              stored.saml?.idpMetadata?.entityID === input.idpEntityId
+            : existing?.issuer === input.issuer &&
+              stored.oidc?.clientId === input.clientId &&
+              (!input.clientSecret ||
+                input.clientSecret === stored.oidc?.clientSecret));
         if (existing) {
           await auth.api.updateSSOProvider({
             body: { providerId, issuer, domain, ...protocolConfig },
@@ -773,8 +1038,7 @@ export const ssoRoutes = new OpenAPIHono<{
             metadataUrl,
             metadataReadAt,
             certificateExpiresAt: certificateExpiry(certificate),
-            lastTest: null,
-            testId: null,
+            ...(unchanged ? {} : { lastTest: null, testId: null }),
           })
           .where(eq(ssoProvider.organizationId, c.var.org));
         await audit(tx, {
@@ -798,8 +1062,69 @@ export const ssoRoutes = new OpenAPIHono<{
                   idpEntityId: input.idpEntityId ?? null,
                 },
         });
+        if (given.domains) await setDomains(tx, c.var, owner, given.domains);
+        if (given.enforced !== undefined || given.jit !== undefined) {
+          const [saved] = await tx
+            .select()
+            .from(ssoProvider)
+            .where(eq(ssoProvider.organizationId, c.var.org));
+          await changeSignIn(tx, c.var, saved!, {
+            requireSso: given.enforced,
+            jit: given.jit,
+          });
+        }
       }).catch(authError);
-      return c.json(await read(c.env, c.var), 200);
+      return c.json((await read(c.env, c.var)).connection!, 200);
+    },
+    // #217's validation errors kept their default shape on this route.
+    () => undefined,
+  )
+  .openapi(
+    createRoute({
+      method: "post",
+      path: "/sso/verify-domain",
+      tags: ["Single sign-on"],
+      deprecated: true,
+      summary: "Check every domain's TXT record (Owner)",
+      description:
+        "Deprecated: use POST /sso/domains/{domain}/check, one domain at a time. Checks every domain not verified yet.",
+      request: { params: OrgParam },
+      responses: {
+        200: json(Connection, "The connection with its domains verified"),
+        404: { description: "No connection" },
+        409: { description: "A domain's TXT record wasn't found yet" },
+      },
+    }),
+    async (c) => {
+      await requireEditor(c.env, c.var);
+      const checked = await withoutOrg(c.env, "sso", async (tx) => {
+        const [existing] = await tx
+          .select({ id: ssoProvider.id })
+          .from(ssoProvider)
+          .where(eq(ssoProvider.organizationId, c.var.org));
+        if (!existing)
+          throw new HTTPException(404, {
+            message: "Set up a connection first.",
+          });
+        const rows = await tx
+          .select()
+          .from(ssoDomains)
+          .where(
+            and(
+              eq(ssoDomains.organizationId, c.var.org),
+              ne(ssoDomains.status, "verified"),
+            ),
+          );
+        const after = [];
+        for (const row of rows) after.push(await check(tx, c.var, row));
+        return after;
+      }).catch(uniqueAsTaken);
+      if (checked.some((row) => row.status !== "verified"))
+        throw new HTTPException(409, {
+          message:
+            "We couldn't find the TXT record yet. DNS changes can take a while; try again in a few minutes.",
+        });
+      return c.json((await read(c.env, c.var)).connection!, 200);
     },
   )
   .openapi(
@@ -914,68 +1239,7 @@ export const ssoRoutes = new OpenAPIHono<{
           .where(eq(ssoProvider.organizationId, c.var.org));
         if (!existing)
           throw new ApiError(404, "not_found", "Connect a provider first.");
-        const turningOn = input.requireSso === true && !existing.enforced;
-        if (
-          turningOn &&
-          (!(await verifiedDomains(tx, c.var.org)).length ||
-            !parse<SsoTest>(existing.lastTest)?.ok)
-        )
-          throw new ApiError(
-            409,
-            "sso_not_ready",
-            "Verify a domain and pass a test sign-in first.",
-          );
-        if (input.defaultGroupId) {
-          const [group] = await tx
-            .select({ id: groups.id })
-            .from(groups)
-            .where(
-              and(
-                eq(groups.organizationId, c.var.org),
-                eq(groups.id, input.defaultGroupId),
-              ),
-            );
-          if (!group)
-            throw new ApiError(
-              400,
-              "invalid_request",
-              "That group doesn't exist.",
-            );
-        }
-        const next = {
-          enforced: input.requireSso ?? existing.enforced,
-          jit: input.jit ?? existing.jit,
-          defaultGroupId:
-            input.defaultGroupId === undefined
-              ? existing.defaultGroupId
-              : input.defaultGroupId,
-        };
-        await tx
-          .update(ssoProvider)
-          .set(next)
-          .where(eq(ssoProvider.id, existing.id));
-        const endedSessions = turningOn
-          ? await endOtherSessions(tx, c.var.org)
-          : 0;
-        await audit(tx, {
-          ...eventBase(c.var),
-          action: "sso.sign_in.updated",
-          targetType: "sso_connection",
-          targetId: existing.providerId,
-          data: {
-            from: {
-              requireSso: existing.enforced,
-              jit: existing.jit,
-              defaultGroupId: existing.defaultGroupId,
-            },
-            to: {
-              requireSso: next.enforced,
-              jit: next.jit,
-              defaultGroupId: next.defaultGroupId,
-            },
-            ...(turningOn ? { endedSessions } : {}),
-          },
-        });
+        await changeSignIn(tx, c.var, existing, input);
       });
       return c.json(await read(c.env, c.var), 200);
     },
@@ -1004,20 +1268,21 @@ export const ssoRoutes = new OpenAPIHono<{
       const owner = await requireEditor(c.env, c.var);
       const { domain } = c.req.valid("json");
       const added = await withoutOrg(c.env, "sso", async (tx) => {
-        const existing = await tx
-          .select({
-            organizationId: ssoDomains.organizationId,
-            status: ssoDomains.status,
-          })
+        const [listed] = await tx
+          .select({ id: ssoDomains.id })
           .from(ssoDomains)
-          .where(eq(ssoDomains.domain, domain));
-        if (existing.some((d) => d.organizationId === c.var.org))
+          .where(
+            and(
+              eq(ssoDomains.organizationId, c.var.org),
+              eq(ssoDomains.domain, domain),
+            ),
+          );
+        if (listed)
           throw new ApiError(
             409,
             "domain_exists",
             "That domain is already on the list.",
           );
-        if (existing.some((d) => d.status === "verified")) throw taken();
         const [{ count = 0 } = {}] = await tx
           .select({ count: sql<number>`count(*)::int` })
           .from(ssoDomains)
@@ -1028,24 +1293,7 @@ export const ssoRoutes = new OpenAPIHono<{
             "invalid_request",
             `An organization can have up to ${MAX_DOMAINS} domains.`,
           );
-        const [row] = await tx
-          .insert(ssoDomains)
-          .values({
-            id: newId("ssoDomain"),
-            organizationId: c.var.org,
-            domain,
-            token: crypto.randomUUID().replaceAll("-", ""),
-            createdBy: owner,
-          })
-          .returning();
-        await audit(tx, {
-          ...eventBase(c.var),
-          action: "sso.domain.added",
-          targetType: "sso_domain",
-          targetId: row!.id,
-          data: { domain },
-        });
-        return check(tx, c.var, row!);
+        return insertDomain(tx, c.var, owner, domain);
       }).catch(uniqueAsTaken);
       return c.json(domainView(added), 201);
     },
@@ -1089,16 +1337,7 @@ export const ssoRoutes = new OpenAPIHono<{
       await requireEditor(c.env, c.var);
       const { domain } = c.req.valid("param");
       await withoutOrg(c.env, "sso", async (tx) => {
-        const row = await findDomain(tx, c.var.org, domain);
-        await tx.delete(ssoDomains).where(eq(ssoDomains.id, row.id));
-        const requireSsoOff = await syncConnection(tx, c.var.org);
-        await audit(tx, {
-          ...eventBase(c.var),
-          action: "sso.domain.removed",
-          targetType: "sso_domain",
-          targetId: row.id,
-          data: { domain: row.domain, status: row.status, requireSsoOff },
-        });
+        await removeDomain(tx, c.var, await findDomain(tx, c.var.org, domain));
       });
       return c.body(null, 204);
     },
