@@ -41,15 +41,15 @@ export const assertModelKnown = async (tx: Tx, model: string) => {
 export type ModelEndpointRow = typeof modelEndpoints.$inferSelect;
 
 // What the runtime routes a model to: the endpoint's id for capture, the
-// route itself, which never leaves the runtime's memory, and for an
-// organization model the catalogue model it is priced as.
+// route itself, which never leaves the runtime's memory, and whether it serves
+// an organization model or overrides a catalogue one. Every call to it
+// carries no model charge (design doc 10).
 export type RegisteredEndpoint = {
   id: string;
   url: string;
   key: string;
   model: string;
   kind: "override" | "model";
-  baseModel: string | null;
 };
 
 const aad = (organizationId: string, id: string) =>
@@ -187,7 +187,6 @@ export const registeredEndpoints = (env: Env, organizationId: string) =>
         key: await openKey(env, tx, row),
         model: row.providerModel,
         kind: row.kind,
-        baseModel: row.baseModel,
       };
     return out;
   });

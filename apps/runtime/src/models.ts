@@ -152,17 +152,17 @@ export const routeFetch =
 // through MODEL_SERVICE_URL. pi-ai prices each response from `cost`; a Fast
 // request served from base capacity is repriced at base rates before capture
 // records it.
-// An organization model is priced as the catalogue model it was trained
-// from; with none, the model charge is zero, since its endpoint bills the
-// organization itself (design doc 10). An override keeps the catalogue price.
+// A case pays for a model call only when it goes through our providers or
+// Workers AI (spec 16a: the provider's price plus 5%). A call to an
+// organization's own endpoint, for an org:<slug> model or a catalogue model
+// it registered an override for, carries no model charge: the organization
+// pays its endpoint (design doc 10). An org model's base model is metadata
+// only.
 const priceOf = (
   env: Env,
   id: string,
   registered: Record<string, RegisteredEndpoint>,
-) => {
-  const base = isOrgModel(id) ? registered[id]?.baseModel : id;
-  return base && base in LIST ? modelCost(env, base as AgentModel) : FREE;
-};
+) => (registered[id] ? FREE : modelCost(env, id as AgentModel));
 
 export const openModels = (
   env: Env,
@@ -207,7 +207,9 @@ export const openModels = (
   );
   // Every call goes through its model's route. A Fast request's usage is
   // repriced before anything else reads the result: this reaction is
-  // registered first, so capture records the corrected cost.
+  // registered first, so capture records the corrected cost. Only provider
+  // routes are repriced; a call to the organization's own endpoint stays free
+  // whatever model name its response carries.
   const routed = <F extends Stream>(fn: F) =>
     ((model, context, options) => {
       const id = model.id as AgentModel;
@@ -215,10 +217,11 @@ export const openModels = (
         ...options,
         fetch: routeFetch(env, routes.get(id)),
       });
-      void events.result().then((message) => {
-        const served = billedAs(id, message.responseModel);
-        if (served !== id) reprice(message.usage, modelCost(env, served));
-      });
+      if (!registered[id])
+        void events.result().then((message) => {
+          const served = billedAs(id, message.responseModel);
+          if (served !== id) reprice(message.usage, modelCost(env, served));
+        });
       return events;
     }) as F;
   const registry = createModels();

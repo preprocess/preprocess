@@ -63,11 +63,12 @@ agent's model setting or the organization default, in an eval run's `models` to
 compare it with the current model, and in the allowed-models guardrail. A model
 the organization hasn't registered is refused with `unknown_model`.
 
-An organization model is billed at the per-token price of the catalog model it
-was trained from (its `baseModel`), and with no base model there is no model
-charge. An organization model can't be deleted while a live deployment, an agent
-setting, the organization default or an unfinished eval run still names it
-(`model_in_use`).
+Model calls to your own endpoint carry no model charge, since your endpoint
+bills you. That holds for an organization model, with or without a `baseModel`,
+and on a self-hosted install for a catalog model you serve from your own URL.
+Case fees, `decide` and OCR are billed as usual. An organization model can't be
+deleted while a live deployment, an agent setting, the organization default or
+an unfinished eval run still names it (`model_in_use`).
 
 ## The `decide` tool (`groundhog-1`)
 

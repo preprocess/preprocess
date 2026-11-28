@@ -74,7 +74,7 @@ Catalog API (`apps/api/src/routes/models.ts`, tag Models):
 
 Using org models (PRE-132): everywhere a model is validated today (`deploy.ts` manifest model, `settings.ts` model, eval runs' `models`, allowed-models guardrail) accepts a catalog id or an `org:<slug>` that exists in the org. A preview deployment pins one through config or a settings override; eval runs already take up to five models, so a suite compares it with the current model; promotion is the existing promote. The allowed-models guardrail lists org models like catalog models (unset still allows all). The SDK protocol gets `isOrgModel(id)`; `MODEL_CATALOG` stays the built-in list.
 
-Pricing: an org model is metered at its base model's per-token price (spec 12a serving), a catalog override at the catalog price; an org model with no base model is metered at zero model charge (their endpoint, their bill). Recorded in `metering.ts`.
+Pricing (spec 16a: models at provider cost plus 5%): a call that goes to an organization's own endpoint carries zero model charge, both for every `org:<slug>` model, with or without a base model, and for a catalog override the organization registered. Their endpoint, their bill. `baseModel` is metadata only. Calls through our providers or Workers AI keep the catalog price. Case fees, decide, OCR and the other meters apply as usual. Priced in the runtime (`priceOf` in `apps/runtime/src/models.ts`), which also never applies the Fast reprice to an endpoint's response. Recorded in `metering.ts`.
 
 ## 5. UI (after Design, PLAT-44)
 
