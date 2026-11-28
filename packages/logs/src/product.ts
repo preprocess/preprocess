@@ -58,7 +58,17 @@ export const amountBucket = (amount: number) =>
     : AMOUNT_BUCKETS[1 + AMOUNT_EDGES.filter((edge) => amount >= edge).length]!;
 
 export const PRODUCT_EVENTS = {
-  signed_up: { method: ["email", "google", "sso", "directory"] },
+  // The marketing site's first-touch utm_* params and referring hostname,
+  // lowercased, when the sign-up came through its link (apps/api auth.ts).
+  // utm_content is left out: the catalogue test rejects "content" names.
+  signed_up: {
+    method: ["email", "google", "sso", "directory"],
+    utm_source: SLUG,
+    utm_medium: SLUG,
+    utm_campaign: SLUG,
+    utm_term: SLUG,
+    referrer_domain: SLUG,
+  },
   org_created: {},
   member_invited: { invitation_id: ID, role: ROLES },
   member_joined: {
@@ -99,8 +109,45 @@ export const PRODUCT_EVENTS = {
   // Reserved: training jobs are hidden for now (2026-11-28), so nothing
   // sends it yet.
   training_job_started: { job_id: ID },
-  credits_topped_up: { credits: COUNT },
+  credits_topped_up: {
+    credits: COUNT,
+    credits_bucket: AMOUNT_BUCKETS,
+    source: ["purchase", "auto_reload", "retry"],
+  },
   plan_changed: { from: PLANS, to: PLANS, timing: ["now", "period_end"] },
+  // Billing (PRE-160, apps/api routes/billing.ts, spending.ts, auto-reload.ts
+  // and auth.ts). Credits are $0.01 each; buckets are amountBucket(credits).
+  checkout_started: {
+    plan: ["free", "team"],
+    credits: COUNT,
+    credits_bucket: AMOUNT_BUCKETS,
+    paid: FLAG,
+  },
+  auto_reload_changed: {
+    enabled: FLAG,
+    below_credits: COUNT,
+    add_credits: COUNT,
+    add_bucket: AMOUNT_BUCKETS,
+    monthly_cap: FLAG,
+  },
+  // Autumn's signed billing.auto_topup_failed, once recorded.
+  auto_reload_failed: {
+    cause: ["card_declined", "card", "monthly_cap"],
+    credits: COUNT,
+    credits_bucket: AMOUNT_BUCKETS,
+  },
+  spending_limit_set: {
+    limit: FLAG,
+    limit_credits: COUNT,
+    limit_bucket: AMOUNT_BUCKETS,
+    loosened: FLAG,
+    via: ["settings", "request"],
+  },
+  // The Owner opened the move from Team to Free; plan_changed to free is
+  // the confirmation.
+  plan_cancel_started: { seats_over: COUNT, agents_paused: COUNT },
+  plan_cancel_withdrawn: { plan: PLANS, instead: PLANS },
+  org_deleted: {},
 } as const satisfies Record<string, Record<string, PropertySpec>>;
 
 export type ProductEventName = keyof typeof PRODUCT_EVENTS;
