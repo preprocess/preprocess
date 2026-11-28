@@ -97,6 +97,23 @@ export const SCENARIO_SURFACES = {
       "none",
     ],
   },
+  // An agent's Training tab and dataset page: "live" reads the API; the rest
+  // are seeded, "operator" is a person who can see the cases but not export,
+  // and "off" is an install with the training switch off.
+  training: {
+    label: "Training",
+    states: [
+      "live",
+      "seeded",
+      "operator",
+      "off",
+      "empty",
+      "no-matches",
+      "loading",
+      "error",
+      "no-access",
+    ],
+  },
 } as const;
 
 export type ScenarioSurface = keyof typeof SCENARIO_SURFACES;
@@ -122,6 +139,7 @@ export const SEEDED_SCENARIO: ScenarioSelection = {
   "billing-result": "ok",
   retention: "live",
   notices: "live",
+  training: "live",
 };
 
 /** Builds without `import.meta.env.DEV` never serve seeded records. */
@@ -134,6 +152,7 @@ export const UNSEEDED_SCENARIO: ScenarioSelection = {
   "billing-result": "ok",
   retention: "live",
   notices: "live",
+  training: "live",
 };
 
 export function isScenarioSurface(value: string): value is ScenarioSurface {

@@ -1,6 +1,3 @@
-import { Badge } from "@preprocess/ui/components/badge";
-import { Button } from "@preprocess/ui/components/button";
-
 import type { ReactNode } from "react";
 
 import { ComingSoonArt } from "../../components/empty-art";
@@ -29,29 +26,6 @@ function Placeholder({
         title={emptyTitle}
       />
     </SettingsSection>
-  );
-}
-
-/** Placeholder: the agent's datasets, training runs and fine-tuned models.
- *  Training runs and Retrain on corrections are Coming soon (spec 12a). */
-export function AgentTraining() {
-  return (
-    <Placeholder
-      actions={
-        <>
-          <Badge color="gray" size="sm">
-            Coming soon
-          </Badge>
-          <Button disabled variant="secondary">
-            Retrain on corrections
-          </Button>
-        </>
-      }
-      description="Datasets built from this agent's reviewed cases, training runs, and the fine-tuned models they produce."
-      emptyDescription="Fine-tuning models on your reviewed cases and serving trained versions aren't available yet."
-      emptyTitle="Training is coming soon"
-      title="Training"
-    />
   );
 }
 
