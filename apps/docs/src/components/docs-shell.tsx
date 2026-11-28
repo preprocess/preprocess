@@ -44,6 +44,7 @@ import {
 import { useTouchPrimary } from "@preprocess/ui/hooks/use-touch-primary";
 import { fontWeights } from "@preprocess/ui/lib/font-weight";
 import {
+  Activity,
   ArrowUpRight,
   BookOpen,
   Braces,
@@ -53,7 +54,6 @@ import {
   Code,
   Copy,
   FileText,
-  Gauge,
   Hash,
   Headset,
   Home,
@@ -479,7 +479,7 @@ function StatusLink({
       title="Status"
       variant={variant}
     >
-      <Gauge aria-hidden />
+      <Activity aria-hidden />
     </Button>
   );
 }

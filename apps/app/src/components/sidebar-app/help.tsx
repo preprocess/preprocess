@@ -12,10 +12,10 @@ import {
   useSidebar,
 } from "@preprocess/ui/components/sidebar";
 import {
+  Activity,
   ArrowUpRight,
   BookOpen,
   CircleHelp,
-  Gauge,
   Mail,
 } from "@preprocess/ui/lib/icons";
 import { SIDEBAR_MENU_POPUP } from "@preprocess/ui/lib/sidebar-menu-grid";
@@ -44,7 +44,7 @@ function HelpMenuItems() {
       ) : null}
       {statusUrl ? (
         <MenuItem
-          icon={Gauge}
+          icon={Activity}
           index={docsUrl ? 1 : 0}
           label="Status"
           onSelect={() => {
