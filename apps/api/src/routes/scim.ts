@@ -17,6 +17,7 @@ import {
   scimUser,
 } from "@preprocess/db/schema/auth";
 import { and, asc, count, desc, eq, gt, isNotNull, max } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { createAuth } from "../auth.ts";
@@ -100,7 +101,9 @@ const activeConnection = async (tx: Tx, org: string) => {
   return found;
 };
 
-const credentials = (tx: Tx, org: string) =>
+// The organization's tokens, narrowed by `where`. A later .where() would
+// replace the organization condition, so filters come in here.
+const credentials = (tx: Tx, org: string, where?: SQL) =>
   tx
     .select({
       prefix: scimManagedCredential.credentialId,
@@ -117,7 +120,7 @@ const credentials = (tx: Tx, org: string) =>
       scimManagedConnection,
       eq(scimManagedConnection.id, scimManagedCredential.connectionRecordId),
     )
-    .where(eq(scimManagedConnection.provisioningDomainId, org))
+    .where(and(eq(scimManagedConnection.provisioningDomainId, org), where))
     .$dynamic();
 
 type Credential = Awaited<ReturnType<typeof credentials>>[number];
@@ -288,7 +291,9 @@ export const scimRoutes = new OpenAPIHono<{
               body: { ...body, creationRequestId: crypto.randomUUID() },
             });
           }
-          const [credential] = await credentials(tx, org).where(
+          const [credential] = await credentials(
+            tx,
+            org,
             eq(
               scimManagedCredential.credentialId,
               created.credential.credentialId,
@@ -326,7 +331,9 @@ export const scimRoutes = new OpenAPIHono<{
       const org = c.var.org;
       const { prefix } = c.req.valid("param");
       await withoutOrg(c.env, "scim: revoke token", async (tx) => {
-        const [found] = await credentials(tx, org).where(
+        const [found] = await credentials(
+          tx,
+          org,
           eq(scimManagedCredential.credentialId, prefix),
         );
         if (!found) throw new HTTPException(404, { message: "No such token." });

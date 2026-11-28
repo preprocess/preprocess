@@ -873,5 +873,17 @@ describe("one organization's token", () => {
         (e) => e.targetId === bea || JSON.stringify(e.data).includes(bUser.id!),
       ),
     ).toBe(false);
+
+    // Nor can one organization's Owner revoke another's token.
+    const bPrefix = b.token.split(".")[0]!;
+    const revoke = await a.owner.client.call(
+      `/v1/orgs/${a.org}/scim/tokens/${bPrefix}`,
+      { method: "DELETE" },
+    );
+    expect(revoke.status).toBe(404);
+    expect((await scim(licensed, b.token, "GET", "/Users")).status).toBe(200);
+    expect((await events(a.org)).some((e) => e.targetId === bPrefix)).toBe(
+      false,
+    );
   });
 });
