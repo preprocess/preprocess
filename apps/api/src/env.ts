@@ -221,12 +221,6 @@ export type Builder = {
 // POSTHOG_KEY and POSTHOG_HOST (@preprocess/logs posthog.ts): set on our
 // production and on a self-hosted install that names its own PostHog.
 export type Env = PostHogEnv & {
-  // Deleting an organization (purge.ts) deletes the PostHog persons of its
-  // members who belong to no other organization, through PostHog's API with
-  // a personal API key (person:write) on this project. Either unset, persons
-  // are left in PostHog.
-  POSTHOG_PERSONAL_API_KEY?: string;
-  POSTHOG_PROJECT_ID?: string;
   STAGE: string;
   // Set on our cloud, unset on a self-hosted install; read it through
   // @preprocess/runmode.
@@ -247,6 +241,10 @@ export type Env = PostHogEnv & {
   // Organizations billed like customers now, whatever BILLING_REQUIRED_FROM
   // says, comma-separated ids: a test organization before go-live.
   BILLING_ENFORCED_ORGS?: string;
+  // Our own test runs' addresses, comma-separated, `*` for any characters
+  // before the @: their events, their organizations' events and both their
+  // person and group carry test=true in PostHog (analytics.ts).
+  ANALYTICS_TEST_EMAILS?: string;
   // Self-hosted only: the signed license key (license.ts). Without a valid
   // one the install runs the free plan.
   PREPROCESS_LICENSE_KEY?: string;

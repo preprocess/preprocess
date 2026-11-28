@@ -337,6 +337,13 @@
       "when": 1795843232222,
       "tag": "0052_organization_purges",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1795846645537,
+      "tag": "0053_drop_support_tables",
+      "breakpoints": true
     }
   ]
 }
