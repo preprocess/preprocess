@@ -13,17 +13,29 @@ and licensed self-hosted installs.
 
 ## Connect your identity provider
 
-Organization **Owners** issue and revoke SCIM bearer tokens (up to **5 tokens**
-per organization; each token is shown once at creation). **Admins** can view
-sync status and existing tokens.
+Organization **Owners** manage directory sync in **Settings → Governance →
+Directory sync** (**Admins** can view the connection, tokens and synced groups
+read-only).
 
-1. Create a SCIM bearer token through your organization's SCIM settings endpoint
-   (`/v1/orgs/{org}/scim/...`). A dedicated directory-sync settings page in the
-   app UI is coming soon.
-2. In your identity provider's SCIM provisioning settings, enter:
-   - **SCIM base URL:** `https://<your-app-origin>/api/auth/scim/v2`
-   - **Authentication:** Bearer token (paste the token you created)
-3. Enable user and group push in your identity provider.
+1. Open **Settings → Governance → Directory sync**.
+2. Under **Connection**, copy the **Base URL**
+   (`https://<your-app-origin>/api/auth/scim/v2`).
+3. Generate a **Bearer token** and copy it immediately—it won't be shown again.
+4. In your identity provider's SCIM provisioning settings, paste the **Base
+   URL** and **Bearer token**, then assign people and groups to the app.
+
+Once your identity provider syncs, synced people and groups appear under
+**Synced from your identity provider**.
+
+### Rotate or revoke a SCIM token
+
+Open **Token actions** next to **Bearer token** in **Settings → Governance →
+Directory sync**:
+
+- **Regenerate:** stops the current token immediately and issues a new one. Your
+  identity provider won't sync until you paste in the new token.
+- **Revoke:** disables syncing until you generate a new token. People and groups
+  already synced stay as they are.
 
 ## How SCIM users map to Preprocess
 
