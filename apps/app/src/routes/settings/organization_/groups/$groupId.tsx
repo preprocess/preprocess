@@ -5,6 +5,7 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 
+import { GroupNotFound } from "../../../../components/route-states";
 import { useOrganizationId } from "../../../../features/auth/auth-context";
 import {
   addGroupMember,
@@ -61,8 +62,4 @@ function OrganizationGroupPage() {
       }}
     />
   );
-}
-
-function GroupNotFound() {
-  return <p className="p-6 text-body">This group doesn't exist.</p>;
 }

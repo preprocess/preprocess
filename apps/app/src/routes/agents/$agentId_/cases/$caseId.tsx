@@ -1,6 +1,10 @@
 import { createFileRoute, notFound, useRouter } from "@tanstack/react-router";
 
 import {
+  AgentNotFound,
+  CaseLinkNotValid,
+} from "../../../../components/route-states";
+import {
   parseAgentCaseRef,
   stringifyAgentCaseRef,
 } from "../../../../features/agent-cases/agent-case-ref";
@@ -45,10 +49,8 @@ export const Route = createFileRoute("/agents/$agentId_/cases/$caseId")({
     return { ...page, agent: page.agent };
   },
   component: AgentCasePage,
-  errorComponent: AgentCaseParamsError,
-  notFoundComponent: () => (
-    <p className="p-6 text-body">This agent doesn't exist.</p>
-  ),
+  errorComponent: CaseLinkNotValid,
+  notFoundComponent: AgentNotFound,
 });
 
 function AgentCasePage() {
@@ -107,8 +109,4 @@ function AgentCasePage() {
       }
     />
   );
-}
-
-function AgentCaseParamsError() {
-  return <p className="p-6 text-body">This case link is not valid.</p>;
 }

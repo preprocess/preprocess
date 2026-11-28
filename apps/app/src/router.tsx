@@ -1,5 +1,6 @@
 import { createRouter } from "@tanstack/react-router";
 
+import { RouteError } from "./components/route-states";
 import { routeTree } from "./routeTree.gen";
 // Keep the build:probe entry reachable; real builds define its guard as false.
 import "./bundle-probe";
@@ -7,6 +8,7 @@ import "./bundle-probe";
 export function getRouter() {
   return createRouter({
     routeTree,
+    defaultErrorComponent: RouteError,
     scrollRestoration: true,
     // Revisiting a page within 15 s reuses its loader data; any write the
     // browser makes marks it stale first (lib/data-changed.ts).
