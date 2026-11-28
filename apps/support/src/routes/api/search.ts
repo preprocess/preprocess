@@ -39,7 +39,7 @@ function docsPages() {
     const pages = fetchDocs(env.DOCS_URL);
     docs = { pages, until: now + docsTtl };
     pages.catch((error: unknown) => {
-      console.error(error);
+      console.error(String(error));
       if (docs?.pages === pages) docs.until = Date.now() + retryTtl;
     });
   }
