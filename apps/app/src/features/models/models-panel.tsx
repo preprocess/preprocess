@@ -929,8 +929,8 @@ function EndpointDialog({
                 </SelectContent>
               </Select>
               <FieldDescription>
-                The built-in model it was trained from. Billed at that model's
-                token rate, or no model charge if left empty.
+                The built-in model it was trained from. For your records; models
+                on your endpoint have no model charge.
               </FieldDescription>
             </Field>
             <ValidatedField
