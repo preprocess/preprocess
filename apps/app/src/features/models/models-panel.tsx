@@ -152,9 +152,12 @@ function Strong({ children }: { children: ReactNode }) {
   );
 }
 
-function Mono({ children }: { children: ReactNode }) {
+function Mono({ children }: { children: string }) {
   return (
-    <span className="block truncate font-mono text-caption text-muted-foreground">
+    <span
+      className="block truncate font-mono text-caption text-muted-foreground"
+      title={children}
+    >
       {children}
     </span>
   );
