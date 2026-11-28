@@ -13,6 +13,7 @@ import {
   member,
   invitation,
   apikey,
+  ssoProvider,
 } from "../src/schema/auth.ts";
 import {
   agentGrants,
@@ -477,6 +478,14 @@ export const seedOrganization = async (name: string) =>
       text: "Order forms put the term dates on page one.",
       status: "accepted",
     });
+    await tx.insert(ssoProvider).values({
+      id: newId("ssoProvider"),
+      issuer: "https://idp.example",
+      providerId: `sso-${org}`,
+      organizationId: org,
+      domain: `${org}.example`,
+      domainVerified: true,
+    });
     await tx.insert(datasets).values({
       id: newId("dataset"),
       organizationId: org,
@@ -566,6 +575,7 @@ export const tenantTables = {
   member: "organization_id",
   invitation: "organization_id",
   apikey: "reference_id",
+  sso_provider: "organization_id",
   groups: "organization_id",
   group_members: "organization_id",
   agents: "organization_id",
