@@ -9,13 +9,14 @@ import type { CaptureResult, PostHog } from "posthog-js";
 //
 // Privacy: no autocapture or surveys. Page performance is the four web
 // vitals (LCP, INP, CLS, FCP) without attribution, which would name page
-// elements and resource URLs; no network timing and no console logs. Session replay records layout and
-// clicks only: every input and all text are masked, element attributes too,
-// network requests are not recorded (bodies, headers or timings), and the case
-// room, document panes and other customer content carry REPLAY_BLOCK, which
-// replay leaves out entirely. URLs lose their query and hash, which can hold
-// search terms, including the URLs inside each web vital. People are identified by user id only, never by email or
-// name, and their organization is the `organization` group.
+// elements and resource URLs; no network timing and no console logs.
+// Session replay records layout and clicks only: every input and all text
+// are masked, element attributes too, network requests are not recorded
+// (bodies, headers or timings), and the case room, document panes and other
+// customer content carry REPLAY_BLOCK, which replay leaves out entirely. URLs
+// lose their query and hash, which can hold search terms, including the URLs
+// inside each web vital. People are identified by user id only, never by
+// email or name, and their organization is the `organization` group.
 //
 // Storage: PostHog keeps its state in page memory only, so it writes no
 // cookie and nothing to local or session storage. A full page load starts a
