@@ -1,0 +1,53 @@
+---
+title: When a license ends
+description:
+  What a self-hosted install keeps and what turns off when its license key
+  expires, and how to renew.
+---
+
+A self-hosted install runs the free product without a license. A license key
+adds paid features, such as audit log export, SSO, directory sync, synced
+groups, custom roles and custom sandbox environments, and sets the install's
+seat limit. This page says what happens when that key expires.
+
+**Nothing is deleted when a license ends.** Your cases, agents, deployments,
+files, logs and audit log stay in your own Cloudflare account and database, and
+the free product keeps working.
+
+## How the key is checked
+
+The license key is a signed file that your install checks offline. There is no
+license server, and an install never reports usage or contacts Preprocess, Inc.
+to check its license. Keys last one year and are renewed with a new key.
+
+## The 30-day grace period
+
+When the key's expiry date passes, the install enters a 30-day grace period.
+Paid features keep working, and Owners and Admins see a warning in the sidebar
+and on the **License** settings page with the date grace ends. Members see
+nothing.
+
+## After grace ends
+
+When the grace period ends, paid features turn off and the install runs the free
+product:
+
+- **Data:** everything stays, and you can still read and export it through the
+  API. Audit log export turns off, but the audit log itself keeps recording and
+  stays readable in the app and the API.
+- **SSO:** people who already sign in with SSO keep signing in. SSO settings
+  become read-only.
+- **Directory sync** stops. People and groups it created stay as they were.
+- **Custom sandbox environments:** agents that use them pause. Their cases don't
+  start until the license is renewed, and other agents keep running.
+- **Seats:** the license's seat limit no longer applies.
+
+Renewing turns the paid features back on immediately, and paused agents resume.
+There is nothing to restore.
+
+## Renewing
+
+Contact us for a new key before your current one expires. To install it, an
+Owner pastes it in **Settings → License**, or sets `PREPROCESS_LICENSE_KEY` and
+redeploys. A key pasted in Settings takes precedence over the variable. The
+change takes effect on the next request, with no restart.

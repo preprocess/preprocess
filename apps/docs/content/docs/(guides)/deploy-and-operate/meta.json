@@ -2,6 +2,7 @@
   "pages": [
     "cloud-vs-self-hosted",
     "self-hosting",
+    "license-end",
     "github-app",
     "environments-and-regions",
     "security-and-data-handling"
