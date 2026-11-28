@@ -15,6 +15,8 @@ import { orgId, withOrg, withoutOrg } from "@preprocess/db/client";
 import type { Tx } from "@preprocess/db/client";
 import { newId } from "@preprocess/db/ids";
 import { sandboxIntervals } from "@preprocess/db/schema/billing";
+import { cases } from "@preprocess/db/schema/cases";
+import { deployments } from "@preprocess/db/schema/deployments";
 import { organizationGuardrails } from "@preprocess/db/schema/guardrails";
 import { runMode } from "@preprocess/runmode";
 import type { SandboxEvent } from "@preprocess/sandbox";
@@ -117,13 +119,13 @@ const close = async (
       ),
     )
     .for("update");
-  if (!open) return;
+  if (!open) return false;
   const endedAt = at === "lastSeen" ? open.lastSeenAt : at;
   await tx
     .update(sandboxIntervals)
     .set({ endedAt, endReason: reason })
     .where(eq(sandboxIntervals.id, open.id));
-  if (open.kind !== "case" || !open.caseId) return;
+  if (open.kind !== "case" || !open.caseId) return true;
   const seconds =
     Math.max(0, endedAt.getTime() - open.startedAt.getTime()) / 1000;
   await meter(tx, env, {
@@ -132,6 +134,28 @@ const close = async (
     quantity: sandboxPrice(open.size as CaseSandboxSize, seconds),
     caseId: open.caseId,
   });
+  return true;
+};
+
+// The preset a case's sandbox runs, from its deployment's code.
+const casePreset = async (
+  tx: Tx,
+  caseId: string | undefined,
+): Promise<"standard" | "node" | "python" | "python_data" | "unknown"> => {
+  if (!caseId) return "unknown" as const;
+  const [row] = await tx
+    .select({ manifest: deployments.manifest })
+    .from(cases)
+    .innerJoin(deployments, eq(deployments.id, cases.deploymentId))
+    .where(eq(cases.id, caseId));
+  const preset = (
+    row?.manifest as { sandbox?: { preset?: string } } | undefined
+  )?.sandbox?.preset;
+  return preset === "python-data"
+    ? ("python_data" as const)
+    : preset === "standard" || preset === "node" || preset === "python"
+      ? preset
+      : ("unknown" as const);
 };
 
 export const recordSandboxEvent = async (
@@ -142,7 +166,7 @@ export const recordSandboxEvent = async (
   if (runMode(env).kind !== "cloud" || !validSize(event)) return;
   const where = { sandboxId: event.sandboxId, seq: event.seq };
   const at = eventTime(event, now);
-  const started = await withOrg(
+  const outcome = await withOrg(
     env,
     orgId(event.organizationId),
     async (tx) => {
@@ -165,7 +189,9 @@ export const recordSandboxEvent = async (
             })
             .onConflictDoNothing()
             .returning({ id: sandboxIntervals.id });
-          return Boolean(opened) && event.type === "start";
+          return opened && event.type === "start" && event.kind === "case"
+            ? { started: await casePreset(tx, event.caseId) }
+            : null;
         }
         case "heartbeat":
           await tx
@@ -178,23 +204,31 @@ export const recordSandboxEvent = async (
                 isNull(sandboxIntervals.endedAt),
               ),
             );
-          return;
+          return null;
         case "sleep":
         case "destroy":
           await close(tx, env, where, at ?? now, event.type);
-          return;
+          return null;
         case "crash":
-          await close(tx, env, where, at ?? "lastSeen", "crash");
+          return (await close(tx, env, where, at ?? "lastSeen", "crash"))
+            ? { crashed: true }
+            : null;
       }
-      return false;
+      return null;
     },
   );
-  // A case's sandbox, the first time it starts.
-  if (started && event.kind === "case")
+  if (event.kind !== "case" || !outcome) return;
+  const ids = {
+    case_id: event.caseId ?? null,
+    size: event.size as CaseSandboxSize,
+  };
+  // A case's sandbox, the first time it starts, and one that crashed.
+  if ("started" in outcome)
     await trackEvent(env, "sandbox_used", event.organizationId, null, {
-      case_id: event.caseId ?? null,
-      size: event.size as "small",
+      ...ids,
+      preset: outcome.started,
     });
+  else await trackEvent(env, "sandbox_failed", event.organizationId, null, ids);
 };
 
 // Every minute: intervals whose sandbox went silent end at their last

@@ -1,4 +1,4 @@
-import type { Deployment, DeploymentRef, Env } from "./env.ts";
+import type { Deployment, DeploymentRef, Env, McpProps } from "./env.ts";
 import type { OutboundProps } from "./outbound.ts";
 
 // Agent code runs as a Dynamic Worker (design doc 03): the deployment's bundle
@@ -17,7 +17,7 @@ type Context = {
 
 type Exports = {
   Outbound(options: { props: OutboundProps }): Fetcher;
-  McpBroker(options: { props: DeploymentRef }): Fetcher;
+  McpBroker(options: { props: McpProps }): Fetcher;
 };
 
 export type Bundle = { mainModule: string; modules: Record<string, string> };
@@ -223,7 +223,14 @@ export const agentWorker = (
     return guard(ctx).run(id, () =>
       worker
         .getEntrypoint(undefined, {
-          props: { MCP: exports.McpBroker({ props: target }) },
+          props: {
+            MCP: exports.McpBroker({
+              props: {
+                ...target,
+                ...(deployment.caseId && { caseId: deployment.caseId }),
+              },
+            }),
+          },
         })
         .fetch(`https://agent${path}`, scoped(init)),
     );

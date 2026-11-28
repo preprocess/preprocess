@@ -25,6 +25,9 @@ export type PropertySpec = Kind | readonly string[];
 
 const ROLES = ["owner", "admin", "member"] as const;
 const PLANS = ["free", "team", "enterprise", "internal"] as const;
+const SANDBOX_SIZES = ["small", "medium", "large"] as const;
+// The SDK's presets, python-data as python_data.
+const SANDBOX_PRESETS = ["standard", "node", "python", "python_data"] as const;
 
 // Buckets for breakdowns, beside the raw count they summarise.
 export const DURATION_BUCKETS = [
@@ -58,7 +61,17 @@ export const amountBucket = (amount: number) =>
     : AMOUNT_BUCKETS[1 + AMOUNT_EDGES.filter((edge) => amount >= edge).length]!;
 
 export const PRODUCT_EVENTS = {
-  signed_up: { method: ["email", "google", "sso", "directory"] },
+  // The marketing site's first-touch utm_* params and referring hostname,
+  // lowercased, when the sign-up came through its link (apps/api auth.ts).
+  // utm_content is left out: the catalogue test rejects "content" names.
+  signed_up: {
+    method: ["email", "google", "sso", "directory"],
+    utm_source: SLUG,
+    utm_medium: SLUG,
+    utm_campaign: SLUG,
+    utm_term: SLUG,
+    referrer_domain: SLUG,
+  },
   org_created: {},
   member_invited: { invitation_id: ID, role: ROLES },
   member_joined: {
@@ -80,22 +93,154 @@ export const PRODUCT_EVENTS = {
     deployment_id: ID,
     source: ["api", "app", "mcp", "schedule"],
     files: COUNT,
+    test: FLAG,
   },
+  // A case reaching completed or failed. Its usage is the run's: the agent
+  // model's tokens, tool and MCP calls, OCR pages, sandbox time, and the
+  // credits its model, decide and OCR calls cost (sandbox time is billed
+  // apart). error_class is none for a completed case.
   case_completed: {
     case_id: ID,
     agent_id: ID,
     outcome: ["completed", "failed"],
+    error_class: ["none", "timeout", "model_error", "run_failed"],
+    duration_ms: COUNT,
+    duration_bucket: DURATION_BUCKETS,
+    model: SLUG,
+    tokens_in: COUNT,
+    tokens_out: COUNT,
+    credits: COUNT,
+    credits_bucket: AMOUNT_BUCKETS,
+    tool_calls: COUNT,
+    mcp_calls: COUNT,
+    sandbox_seconds: COUNT,
+    ocr_pages: COUNT,
+    test: FLAG,
   },
-  case_handed_off: { case_id: ID, agent_id: ID, group_id: ID, approval: FLAG },
-  operator_replied: { case_id: ID, agent_id: ID, mentions: COUNT },
+  case_handed_off: {
+    case_id: ID,
+    agent_id: ID,
+    group_id: ID,
+    approval: FLAG,
+    test: FLAG,
+  },
+  // first: the case's first message from a person. response_ms runs from
+  // when the case started waiting on its group, or from its creation.
+  operator_replied: {
+    case_id: ID,
+    agent_id: ID,
+    mentions: COUNT,
+    first: FLAG,
+    response_ms: COUNT,
+    response_bucket: DURATION_BUCKETS,
+    test: FLAG,
+  },
+  // An approval decided; wait_ms runs from its request.
   review_decided: {
     case_id: ID,
     agent_id: ID,
     decision: ["approved", "rejected"],
     level: ["completion", "field", "tool"],
+    wait_ms: COUNT,
+    wait_bucket: DURATION_BUCKETS,
+    test: FLAG,
   },
   mcp_connected: { mcp_server_id: ID, auth: ["oauth", "none"] },
-  sandbox_used: { case_id: OPTIONAL_ID, size: ["small", "medium", "large"] },
+  // A case's sandbox starting for the first time.
+  sandbox_used: {
+    case_id: OPTIONAL_ID,
+    size: SANDBOX_SIZES,
+    preset: [...SANDBOX_PRESETS, "unknown"],
+  },
+  // Agents and deploys, cases, models and tools (PRE-160). `test` marks a
+  // case that runs on a preview deployment.
+  agent_setting_changed: {
+    agent_id: ID,
+    setting: [
+      "model",
+      "reasoning",
+      "ocr",
+      "search_cases",
+      "timeout_seconds",
+      "tool_retries",
+      "sandbox_image",
+      "evals_on_push",
+      "schedule_previews",
+    ],
+    cleared: FLAG,
+  },
+  agent_archived: { agent_id: ID },
+  // rejected: the deploy failed a check (manifest, groups, model, plan).
+  deployment_failed: {
+    agent_id: OPTIONAL_ID,
+    deployment_id: OPTIONAL_ID,
+    source: ["cli", "github", "api"],
+    failure: [
+      "build_failed",
+      "build_timed_out",
+      "rejected",
+      "environment_build_failed",
+    ],
+  },
+  // Promoted by a person or key; rollback when it is older than the
+  // deployment it replaces. A production deploy's own promotion is
+  // agent_deployed.
+  deployment_promoted: { agent_id: ID, deployment_id: ID, rollback: FLAG },
+  secret_added: { secrets: COUNT },
+  network_rule_changed: {
+    scope: ["organization", "agent"],
+    agent_id: OPTIONAL_ID,
+    allow: COUNT,
+    block: COUNT,
+    cleared: FLAG,
+  },
+  github_repo_linked: { link_id: ID, repository_id: ID, relinked: FLAG },
+  case_halted: {
+    case_id: ID,
+    agent_id: ID,
+    cause: ["credit_exhausted", "spending_limit_reached"],
+    test: FLAG,
+  },
+  case_rerun: {
+    case_id: ID,
+    agent_id: ID,
+    from: ["waiting", "halted", "completed", "failed"],
+    test: FLAG,
+  },
+  document_uploaded: {
+    file_id: ID,
+    mime: ["pdf", "image", "office", "text", "other"],
+  },
+  approval_requested: {
+    case_id: ID,
+    agent_id: ID,
+    level: ["completion", "field", "tool"],
+    group: FLAG,
+    test: FLAG,
+  },
+  operator_assigned: {
+    case_id: ID,
+    agent_id: ID,
+    added: COUNT,
+    removed: COUNT,
+  },
+  // An organization's own models are all `org`: their slugs are names.
+  model_selected: {
+    model: SLUG,
+    scope: ["organization", "agent"],
+    agent_id: OPTIONAL_ID,
+  },
+  // One per MCP server a case called, when the case completes or fails.
+  mcp_tool_called: {
+    case_id: ID,
+    agent_id: ID,
+    mcp_server_id: ID,
+    calls: COUNT,
+    errors: COUNT,
+    test: FLAG,
+  },
+  mcp_auth_failed: { mcp_server_id: ID, step: ["refresh", "sign_in"] },
+  sandbox_failed: { case_id: OPTIONAL_ID, size: SANDBOX_SIZES },
   // Reserved: training jobs are hidden for now (2026-11-28), so nothing
   // sends it yet.
   training_job_started: { job_id: ID },

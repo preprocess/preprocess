@@ -4,12 +4,16 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { SIGNUP_ATTRIBUTION_COOKIE } from "../src/auth.ts";
 import {
   addMember,
+  Client,
   createOrganization,
+  signInByLink,
   signUp,
   testEnv,
   tracked,
+  unique,
 } from "./helpers.ts";
 
 const since = (start: number) => tracked.slice(start);
@@ -65,6 +69,52 @@ describe("product analytics", () => {
     expect(sent).not.toContain(email);
     expect(sent).not.toContain("Ada");
     expect(sent).not.toContain("Analytics Org");
+  });
+
+  it("puts the marketing link's UTM slugs and referring domain on signed_up", async () => {
+    const env = testEnv({ POSTHOG_KEY: "phc_test", STAGE: "test" });
+    const signUpFrom = async (attribution: Record<string, string>) => {
+      const email = `${unique("utm-person")}@example.test`;
+      const client = new Client(env);
+      client.cookie = `${SIGNUP_ATTRIBUTION_COOKIE}=${encodeURIComponent(
+        new URLSearchParams(attribution).toString(),
+      )}`;
+      const start = tracked.length;
+      const signedIn = await signInByLink(client, email);
+      expect(signedIn.status).toBeLessThan(400);
+      const event = since(start).find((e) => e.event === "signed_up");
+      expect(JSON.stringify(event)).not.toContain(email);
+      return event?.properties;
+    };
+
+    const valid = await signUpFrom({
+      utm_source: "Google",
+      utm_medium: "cpc",
+      utm_campaign: "launch-2026",
+      utm_content: "Black Friday Sale",
+      utm_term: "jane@example.com",
+      referrer_domain: "News.YCombinator.com",
+      name: "Ada Lovelace",
+    });
+    expect(valid).toMatchObject({
+      method: "email",
+      utm_source: "google",
+      utm_medium: "cpc",
+      utm_campaign: "launch-2026",
+      referrer_domain: "news.ycombinator.com",
+    });
+    expect(valid).not.toHaveProperty("utm_content");
+    expect(valid).not.toHaveProperty("utm_term");
+    expect(valid).not.toHaveProperty("name");
+    expect(JSON.stringify(valid)).not.toMatch(/ada|lovelace|jane/i);
+
+    const invalid = await signUpFrom({
+      utm_source: "x".repeat(81),
+      referrer_domain: "https://news.ycombinator.com/item?id=1",
+    });
+    expect(invalid).toMatchObject({ method: "email" });
+    expect(invalid).not.toHaveProperty("utm_source");
+    expect(invalid).not.toHaveProperty("referrer_domain");
   });
 
   it("queues nothing without a PostHog key", async () => {

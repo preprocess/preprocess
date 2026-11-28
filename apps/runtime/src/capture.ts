@@ -17,6 +17,7 @@ export type CaptureEvent = {
     | "context.summary"
     | "tool.call"
     | "tool.result"
+    | "mcp.call"
     | "case.completed"
     | "case.failed"
     | "case.halted"
