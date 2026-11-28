@@ -56,6 +56,7 @@ function SignInPage() {
           </Link>
         </>
       }
+      terms
       subtitle={
         invited
           ? "Sign in to accept your invite."

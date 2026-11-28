@@ -91,6 +91,7 @@ function SignUpPage() {
           </Link>
         </>
       }
+      terms
       subtitle={
         invited
           ? "Create your account to join."
