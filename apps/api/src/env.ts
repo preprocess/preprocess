@@ -12,7 +12,10 @@ import type { OtelRetry } from "./otel.ts";
 import type { OutboxMessage } from "./outbox.ts";
 import type { EffectiveSettings } from "./settings.ts";
 
-export type Job = { organizationId: string; id: string; requestedAt: string };
+export type Job =
+  | { organizationId: string; id: string; requestedAt: string }
+  // A deleted organization's R2 objects and Durable Objects (purge.ts).
+  | { kind: "organization.purge"; organizationId: string };
 
 type CaseKey = { organizationId: string; agentId: string; caseId: string };
 type Edit = CaseKey & { path: string; version: number; userId: string };
@@ -133,6 +136,12 @@ export type Runtime = {
   // Retention (spec 16a): a closed case's run capture, or all of its state.
   deleteCapture(c: CaseKey): Promise<void>;
   deleteCase(c: CaseKey): Promise<void>;
+  // Deleting an organization (purge.ts): up to `pages` listings of its
+  // objects in RUNS and BUNDLES, deleted; done once none are left.
+  deleteOrganizationObjects(
+    organizationId: string,
+    pages: number,
+  ): Promise<{ runs: number; bundles: number; done: boolean }>;
   completeCase(
     c: CaseKey,
   ): Promise<

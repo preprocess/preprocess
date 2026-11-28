@@ -104,6 +104,7 @@ const runtime: Runtime = {
   readCapture: () => Promise.reject(new Error("unused")),
   deleteCapture: () => Promise.reject(new Error("unused")),
   deleteCase: () => Promise.reject(new Error("unused")),
+  deleteOrganizationObjects: () => Promise.reject(new Error("unused")),
   cancelCase: (input) => {
     calls.push({ method: "cancel", input });
     return Promise.resolve({

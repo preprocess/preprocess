@@ -109,6 +109,9 @@ export default defineConfig({
           if (isFakeIdp(url)) return fakeIdp(request);
           return fakeMcp(request);
         },
+        // The runtime's buckets, shared with it by name, so the organization
+        // purge's test can seed and list them.
+        r2Buckets: { RUNS: "runs", BUNDLES: "bundles" },
         serviceBindings: {
           RUNTIME: "preprocess-runtime-development",
           BUILDER: { name: "fake-builder", entrypoint: "Builder" },

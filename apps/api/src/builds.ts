@@ -229,6 +229,13 @@ export class BuildQueue extends DurableObject<Env> {
       await this.ctx.storage.setAlarm(Date.now());
   }
 
+  // Deleting the organization (purge.ts): the queued build and any running.
+  async wipe() {
+    this.running?.stop.abort();
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+  }
+
   override async alarm() {
     for (;;) {
       const next = await this.ctx.storage.get<BuildRef>("next");
