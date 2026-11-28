@@ -46,6 +46,7 @@ import { applyCorrection } from "../case-search.ts";
 import { ApiError, createCase, type Approval } from "../cases.ts";
 import type { Env, WriteResult } from "../env.ts";
 import { trackEvent } from "../analytics.ts";
+import { durationBucket } from "@preprocess/logs";
 import { acceptedMemories } from "../memories.ts";
 import { markSeat, meter } from "../metering.ts";
 import { notifyLater } from "../notify.ts";
@@ -221,8 +222,15 @@ const Edit = z.object({
 const loadCase = async (c: Ctx, id: string, work: boolean) => {
   const found = await withOrg(c.env, c.var.org, async (tx) => {
     const [row] = await tx
-      .select({ agentId: cases.agentId, status: cases.status })
+      .select({
+        agentId: cases.agentId,
+        status: cases.status,
+        createdAt: cases.createdAt,
+        waitingSince: cases.waitingSince,
+        environment: deployments.environment,
+      })
       .from(cases)
+      .innerJoin(deployments, eq(deployments.id, cases.deploymentId))
       .where(eq(cases.id, id));
     if (!row) return null;
     return { ...row, role: await agentRole(tx, c.var.caller, row.agentId) };
@@ -238,7 +246,28 @@ const loadCase = async (c: Ctx, id: string, work: boolean) => {
   return {
     status: found.status,
     key: { organizationId: c.var.org, agentId: found.agentId, caseId: id },
+    // For product analytics: a case on a preview deployment is a test.
+    test: found.environment === "preview",
+    createdAt: found.createdAt,
+    waitingSince: found.waitingSince,
   };
+};
+
+// A file's type for product analytics, never its name.
+const mimeFamily = (type: string) => {
+  const t = type.toLowerCase();
+  if (t === "application/pdf") return "pdf" as const;
+  if (t.startsWith("image/")) return "image" as const;
+  if (t.startsWith("text/") || t === "application/json") return "text" as const;
+  if (
+    t.includes("officedocument") ||
+    t.includes("msword") ||
+    t.includes("ms-excel") ||
+    t.includes("ms-powerpoint") ||
+    t.includes("opendocument")
+  )
+    return "office" as const;
+  return "other" as const;
 };
 
 const runtime = (c: Ctx) => {
@@ -335,7 +364,7 @@ const decideApproval = async (
   approve: boolean,
   note: string | undefined,
 ) => {
-  const { key, status } = await loadCase(c, caseId, true);
+  const { key, status, test } = await loadCase(c, caseId, true);
   const state = (await runtime(c).caseState(key)) as unknown as {
     approvals?: Approval[];
   };
@@ -370,6 +399,7 @@ const decideApproval = async (
     note: note ?? null,
   });
   const decision = approve ? "approved" : "rejected";
+  const waitMs = Math.max(0, Date.now() - found.requestedAt);
   await withOrg(c.env, c.var.org, async (tx) => {
     await recordReview(tx, c, caseId, {
       kind: `approval.${decision}`,
@@ -401,6 +431,9 @@ const decideApproval = async (
       agent_id: key.agentId,
       decision,
       level: found.level,
+      wait_ms: waitMs,
+      wait_bucket: durationBucket(waitMs),
+      test,
     },
   );
   return c.json(next as unknown as z.infer<typeof RoomState>, 200);
@@ -477,6 +510,13 @@ export const caseRoutes = new OpenAPIHono<{
             createdBy: personId(c),
           })
           .returning(),
+      );
+      await trackEvent(
+        c.env,
+        "document_uploaded",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        { file_id: id, mime: mimeFamily(contentType) },
       );
       return c.json(
         {
@@ -1021,7 +1061,11 @@ export const caseRoutes = new OpenAPIHono<{
       },
     }),
     async (c) => {
-      const { key, status } = await loadCase(c, c.req.valid("param").id, true);
+      const { key, status, test, createdAt, waitingSince } = await loadCase(
+        c,
+        c.req.valid("param").id,
+        true,
+      );
       if (status === "queued")
         throw new ApiError(409, "case_queued", "The case has not started yet.");
       const posted = await runtime(c).postMessage({
@@ -1030,6 +1074,10 @@ export const caseRoutes = new OpenAPIHono<{
         text: c.req.valid("json").text,
       });
       await withOrg(c.env, c.var.org, (tx) => markOperator(tx, c));
+      const responseMs = Math.max(
+        0,
+        Date.now() - (waitingSince ?? createdAt).getTime(),
+      );
       await trackEvent(
         c.env,
         "operator_replied",
@@ -1039,9 +1087,13 @@ export const caseRoutes = new OpenAPIHono<{
           case_id: key.caseId,
           agent_id: key.agentId,
           mentions: posted.mentioned.length,
+          first: posted.first,
+          response_ms: responseMs,
+          response_bucket: durationBucket(responseMs),
+          test,
         },
       );
-      return c.json(posted, 201);
+      return c.json({ id: posted.id, mentioned: posted.mentioned }, 201);
     },
   )
   .openapi(
@@ -1058,7 +1110,11 @@ export const caseRoutes = new OpenAPIHono<{
       },
     }),
     async (c) => {
-      const { key, status } = await loadCase(c, c.req.valid("param").id, true);
+      const { key, status, test } = await loadCase(
+        c,
+        c.req.valid("param").id,
+        true,
+      );
       if (status === "queued" || status === "running" || status === "cancelled")
         throw new ApiError(
           409,
@@ -1102,6 +1158,13 @@ export const caseRoutes = new OpenAPIHono<{
       const state = await runtime(c).rerun({ ...key, notes, memories });
       await withOrg(c.env, c.var.org, (tx) =>
         recordReview(tx, c, key.caseId, { kind: "rerun" }),
+      );
+      await trackEvent(
+        c.env,
+        "case_rerun",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        { case_id: key.caseId, agent_id: key.agentId, from: status, test },
       );
       return c.json(state, 200);
     },
@@ -1413,9 +1476,22 @@ export const caseRoutes = new OpenAPIHono<{
             caseId: id,
             data: { added, removed },
           });
-        return outbox;
+        return { outbox, added: added.length, removed: removed.length };
       });
-      if (rows.length) await drainOutbox(c.env, c.var.org, rows);
+      if (rows.outbox.length) await drainOutbox(c.env, c.var.org, rows.outbox);
+      if (rows.added || rows.removed)
+        await trackEvent(
+          c.env,
+          "operator_assigned",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          {
+            case_id: id,
+            agent_id: key.agentId,
+            added: rows.added,
+            removed: rows.removed,
+          },
+        );
       return c.json({ assignees: wanted.map((u) => ({ id: u })) }, 200);
     },
   )

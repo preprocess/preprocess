@@ -580,6 +580,8 @@ const completeSignIn = async (
   const code = query("code");
   if (!org || !id || !code) throw new SignInFailed("cancelled");
   const organization = orgId(org);
+  // Set once the server is known, for a refused sign-in's event.
+  let refused = null as { server: string; by: string } | null;
   const connected = await withOrg(env, organization, async (tx) => {
     const [pending] = await tx
       .delete(mcpAuthorizations)
@@ -598,6 +600,7 @@ const completeSignIn = async (
       redirect_uri: pending.redirectUri,
       code_verifier: pending.codeVerifier,
     }).catch(() => {
+      refused = { server: server.id, by: pending.createdBy };
       throw new SignInFailed("refused");
     });
     await saveConnection(
@@ -618,6 +621,16 @@ const completeSignIn = async (
       data: { server: server.slug },
     });
     return { slug: server.slug, id: server.id, by: pending.createdBy };
+  }).catch(async (error: unknown) => {
+    if (refused)
+      await trackEvent(
+        env,
+        "mcp_auth_failed",
+        org,
+        refused.by.startsWith("key_") ? null : refused.by,
+        { mcp_server_id: refused.server, step: "sign_in" },
+      );
+    throw error;
   });
   await trackEvent(
     env,

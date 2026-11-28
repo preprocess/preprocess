@@ -92,7 +92,7 @@ const runtime: Runtime = {
   confirmAnswer: () => Promise.reject(new Error("unused")),
   acceptSuggestion: () => Promise.reject(new Error("unused")),
   searchOptions: () => Promise.resolve({ items: [] }),
-  postMessage: () => Promise.resolve({ id: "m1", mentioned: [] }),
+  postMessage: () => Promise.resolve({ id: "m1", mentioned: [], first: true }),
   decideApproval: (input) => {
     calls.push({ method: "decide", input });
     return Promise.resolve(roomState);
