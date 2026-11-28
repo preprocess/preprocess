@@ -50,6 +50,7 @@ type Page = {
     | "/settings/organization/secrets"
     | "/settings/organization/network"
     | "/settings/organization/sandboxes"
+    | "/settings/organization/models"
     | "/settings/organization/license";
   label: string;
   anchors?: readonly { id: string; label: string }[];
@@ -86,6 +87,7 @@ const GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
       { to: "/settings/organization/secrets", label: "Secrets" },
       { to: "/settings/organization/network", label: "Network" },
       { to: "/settings/organization/sandboxes", label: "Sandboxes" },
+      { to: "/settings/organization/models", label: "Models" },
       {
         to: "/settings/organization/opentelemetry",
         label: "OpenTelemetry export",
