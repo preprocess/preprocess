@@ -7,7 +7,7 @@
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { audit } from "@preprocess/db/audit";
-import { organizationIdentify } from "@preprocess/logs";
+import { amountBucket, organizationIdentify } from "@preprocess/logs";
 import { orgId, withOrg } from "@preprocess/db/client";
 import { HTTPException } from "hono/http-exception";
 
@@ -526,6 +526,18 @@ export const billingRoutes = new OpenAPIHono<{
         });
       if (plan === "free") {
         const { url } = await billing.checkout(c.var.org, plan, back);
+        await trackEvent(
+          c.env,
+          "checkout_started",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          {
+            plan,
+            credits: 0,
+            credits_bucket: "zero",
+            paid: false,
+          },
+        );
         return c.json({ url, paid: false, action: null }, 200);
       }
       // A card on file is charged at once, and the Owner goes straight back.
@@ -536,6 +548,18 @@ export const billingRoutes = new OpenAPIHono<{
           { planId: CREDITS_PLAN, quantities: { [CREDITS]: first } },
         ],
         back,
+      );
+      await trackEvent(
+        c.env,
+        "checkout_started",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        {
+          plan,
+          credits: first,
+          credits_bucket: amountBucket(first),
+          paid: !attached.payment_url,
+        },
       );
       return c.json(
         {
@@ -764,6 +788,16 @@ export const billingRoutes = new OpenAPIHono<{
           data: { plan: current.name, instead: change.plan },
         }),
       );
+      await trackEvent(
+        c.env,
+        "plan_cancel_withdrawn",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        {
+          plan: current.name,
+          instead: change.plan,
+        },
+      );
       return c.body(null, 204);
     },
   )
@@ -846,11 +880,26 @@ export const billingRoutes = new OpenAPIHono<{
         customer.subscriptions.find(
           (s) => s.plan_id === "team" && s.status === "active",
         )?.current_period_end;
-      return c.json(
+      const items = await changePreview(c.env, c.var.org);
+      let seatsOver = 0;
+      let agentsPaused = 0;
+      for (const item of items) {
+        if (item.kind === "seats")
+          seatsOver = Math.max(0, item.people.length - item.limit);
+        if (item.kind === "agents") agentsPaused = item.agents.length;
+      }
+      await trackEvent(
+        c.env,
+        "plan_cancel_started",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
         {
-          at: end ? new Date(end).toISOString() : null,
-          items: await changePreview(c.env, c.var.org),
+          seats_over: seatsOver,
+          agents_paused: agentsPaused,
         },
+      );
+      return c.json(
+        { at: end ? new Date(end).toISOString() : null, items },
         200,
       );
     },
@@ -962,6 +1011,8 @@ export const billingRoutes = new OpenAPIHono<{
           c.var.caller.type === "person" ? c.var.caller.userId : null,
           {
             credits: quantity,
+            credits_bucket: amountBucket(quantity),
+            source: "purchase",
           },
         );
       if (!attached.payment_url) await clearReloadFailure(c.env, c.var.org);
@@ -1058,6 +1109,19 @@ export const billingRoutes = new OpenAPIHono<{
           data: saved,
         }),
       );
+      await trackEvent(
+        c.env,
+        "auto_reload_changed",
+        c.var.org,
+        c.var.caller.type === "person" ? c.var.caller.userId : null,
+        {
+          enabled: saved.enabled,
+          below_credits: saved.belowCredits,
+          add_credits: saved.addCredits,
+          add_bucket: amountBucket(saved.addCredits),
+          monthly_cap: saved.monthlyLimitUsd !== null,
+        },
+      );
       return c.json(saved, 200);
     },
   )
@@ -1117,7 +1181,20 @@ export const billingRoutes = new OpenAPIHono<{
           data: { credits: reload.addCredits, paid: !attached.payment_url },
         }),
       );
-      if (!attached.payment_url) await clearReloadFailure(c.env, c.var.org);
+      if (!attached.payment_url) {
+        await trackEvent(
+          c.env,
+          "credits_topped_up",
+          c.var.org,
+          c.var.caller.type === "person" ? c.var.caller.userId : null,
+          {
+            credits: reload.addCredits,
+            credits_bucket: amountBucket(reload.addCredits),
+            source: "retry",
+          },
+        );
+        await clearReloadFailure(c.env, c.var.org);
+      }
       return c.json(
         {
           url: paymentUrl(attached),
