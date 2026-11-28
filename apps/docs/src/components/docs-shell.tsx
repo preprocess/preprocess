@@ -70,6 +70,8 @@ import { spring } from "@preprocess/ui/lib/springs";
 import { SurfaceProvider } from "@preprocess/ui/lib/surface-context";
 import { typeClass } from "@preprocess/ui/lib/type-scale";
 import { cn } from "@preprocess/ui/lib/utils";
+import type * as SearchModule from "@preprocess/search";
+import type { SearchPage } from "@preprocess/search";
 import { useRouter, useRouterState } from "@tanstack/react-router";
 import type { TOCItemType } from "fumadocs-core/toc";
 import type * as PageTree from "fumadocs-core/page-tree";
@@ -100,8 +102,6 @@ import {
   sectionsOf,
   textOf,
 } from "./page-tree";
-import type * as SearchModule from "@/lib/search";
-import type { SearchPage } from "@/lib/search";
 
 import { MobileContents, OnThisPagePopover } from "./docs-toc";
 import { Wordmark } from "./wordmark";
@@ -598,7 +598,7 @@ type SearchEngine = typeof SearchModule & {
 let engine: Promise<SearchEngine> | undefined;
 function loadEngine() {
   engine ??= Promise.all([
-    import("@/lib/search"),
+    import("@preprocess/search"),
     fetch("/api/search").then((response): Promise<SearchPage[]> => {
       if (!response.ok) throw new Error(`search index: ${response.status}`);
       return response.json();

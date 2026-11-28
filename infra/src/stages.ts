@@ -51,6 +51,9 @@ export const names = (stage: string) => ({
   app: `preprocess-app-${stage}`,
   // The docs site (apps/docs).
   docs: `preprocess-docs-${stage}`,
+  // The help center (apps/support), on our cloud's stages only: selfhost
+  // stages never deploy it.
+  support: `preprocess-support-${stage}`,
   api: `preprocess-api-${stage}`,
   queue: `preprocess-jobs-${stage}`,
   // Case starts (design doc 04): the API enqueues after commit and consumes.
@@ -283,6 +286,9 @@ export const localRoleDatabaseUrl = (
 // The app's local origin. It serves Better Auth and /v1 from the API Worker,
 // so cookies stay first-party.
 export const localAppUrl = "https://app.preprocess.localhost";
+
+// The docs site's local origin, whose search index the help center merges.
+export const localDocsUrl = "https://docs.preprocess.localhost";
 
 // The public docs site, linked from the app wherever a stage has no docs
 // domain of its own.

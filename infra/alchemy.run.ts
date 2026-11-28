@@ -7,7 +7,9 @@
 // and consumers, the case runtime that loads agent code as Dynamic Workers,
 // the Tail Worker on that code, the GitHub build sandbox (apps/builder, a
 // Container), the PDF renderer (apps/pdf-render, a Container), the stub model service (apps/model-stub) unless
-// MODEL_SERVICE_URL names a real one, and Postgres behind Hyperdrive.
+// MODEL_SERVICE_URL names a real one, and Postgres behind Hyperdrive. Our
+// cloud's stages also get the help center (apps/support); selfhost stages
+// don't.
 //
 // Stages differ only in their database, run mode and what survives a destroy:
 // - pr-<number>: its own PlanetScale branch, migrated and seeded, removed with
@@ -395,6 +397,51 @@ export default Alchemy.Stack(
       },
     });
     const docsUrl = docsDomain ? `https://${docsDomain}` : docs.url;
+
+    // The help center (apps/support), hosted-only: selfhost stages deploy
+    // none, so a self-hosted install has no support intake and its data stays
+    // in its account. Production serves it on SUPPORT_DOMAIN, set by the
+    // deploy environment; other stages use workers.dev. It merges the stage's
+    // own docs index, and sends PostHog events from production only, so
+    // staging and previews reach no PostHog project.
+    let supportUrl: string | Output.Output<string | undefined> | undefined;
+    if (!selfHost) {
+      const supportDomain = yield* Config.String("SUPPORT_DOMAIN").pipe(
+        Config.withDefault(""),
+      );
+      const supportDist = at("apps/support/dist");
+      if (!existsSync(path.join(supportDist, "server/index.js")))
+        throw new Error(
+          "apps/support/dist is missing. Build the help center first.",
+        );
+      const support = yield* Cloudflare.Worker("Support", {
+        ...worker,
+        name: n.support,
+        main: path.join(supportDist, "server/index.js"),
+        bundle: false,
+        rules: [{ globs: ["**/*.js", "**/*.mjs"] }],
+        assets: { directory: path.join(supportDist, "client") },
+        workersDev: !supportDomain,
+        ...(supportDomain && { domain: supportDomain }),
+        env: {
+          ...(stage === "production" && posthog),
+          STAGE: stage,
+          APP_URL: appUrl,
+          DOCS_URL: docsDomain
+            ? `https://${docsDomain}`
+            : Output.map(docs.url, (url) => {
+                if (!url) throw new Error("The docs have no workers.dev URL");
+                return url;
+              }),
+          STATUS_URL: publicStatusUrl,
+          // Workers on one account can't fetch each other over workers.dev
+          // or a shared zone (error 1042), so the docs index comes through
+          // a service binding.
+          DOCS: Cloudflare.WorkerEntrypoint(docs),
+        },
+      });
+      supportUrl = supportDomain ? `https://${supportDomain}` : support.url;
+    }
 
     const roles = selfHost
       ? yield* selfHostPostgres
@@ -879,6 +926,7 @@ export default Alchemy.Stack(
     return {
       app: appUrl,
       docs: docsUrl,
+      ...(supportUrl && { support: supportUrl }),
       api: api.url,
       ...(modelStub && { modelStub: modelStub.url }),
       branch: n.branch,
