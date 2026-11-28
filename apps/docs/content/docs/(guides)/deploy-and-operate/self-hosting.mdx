@@ -138,6 +138,27 @@ variables are set.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                                                                                        | Enables Google sign-in; without both, users sign in via emailed link                                                                                                                           |
 | `LOG_CATALOG_TOKEN`                                                                                                               | Token with R2 Data Catalog, R2 storage and R2 SQL access to route run logs through Cloudflare Pipelines into an Iceberg table; without it, run logs are stored as NDJSON in the logs R2 bucket |
 | `PREPROCESS_LICENSE_KEY`                                                                                                          | Signed offline Ed25519 license key; without a valid key, the install runs the free feature set                                                                                                 |
+| `POSTHOG_KEY`                                                                                                                     | Project API key (`phc_…`) of your own PostHog project; sends server errors, request events and browser errors there. Without it, nothing is sent                                               |
+| `POSTHOG_HOST`                                                                                                                    | Ingestion host of your PostHog, for example `https://eu.i.posthog.com` or your own instance; defaults to `https://us.i.posthog.com`                                                            |
+
+## Error monitoring with your own PostHog
+
+A self-hosted install sends nothing to Preprocess or to anyone else. To watch
+your install's errors and latency, point it at a PostHog project you own: set
+`POSTHOG_KEY` and, unless your project is on PostHog's US cloud, `POSTHOG_HOST`,
+then deploy again. Leave both unset to keep monitoring off.
+
+With a key set, the app, docs, API and runtime Workers send two events:
+
+- `server_request`: one event per request, with the service, stage, method,
+  route (ids replaced by `:id`), status, duration in milliseconds and, for API
+  requests, the organization id.
+- `$exception`: each server error, with its type, a message with quoted values,
+  emails, query strings and long numbers removed, and its stack frames. Errors
+  during a case carry only the kind of step that failed, never text.
+
+Request bodies, answers, files, tool output, secrets and messages are never
+sent.
 
 ## Installing with `preprocess install`
 

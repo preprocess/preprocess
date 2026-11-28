@@ -4,6 +4,7 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
     "exactOptionalPropertyTypes": false,
     "noUncheckedIndexedAccess": false,
     "resolvePackageJsonImports": true,
