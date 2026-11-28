@@ -105,17 +105,19 @@ describe("productEvent", () => {
       $groups: { organization: org },
       stage: "staging",
       service: "api",
+      $geoip_disable: true,
     });
   });
 
-  it("is the organization's, without a person, when nobody acted", () => {
+  it("is the organization's, and still grouped, when nobody acted", () => {
     const event = productEvent({}, "case_completed", org, null, {
       case_id: kase,
       agent_id: agent,
       outcome: "completed",
     });
     expect(event.distinctId).toBe(org);
-    expect(event.properties.$process_person_profile).toBe(false);
+    expect(event.properties.$process_person_profile).toBeUndefined();
+    expect(event.properties.$groups).toEqual({ organization: org });
   });
 
   it("sets the organization group's plan, seats and created_at", () => {
